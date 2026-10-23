@@ -29,7 +29,7 @@ class CoachCompanionApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Coach Companion',
+      title: 'myCouch',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
       // Lokalisierung (u.a. für den Rich-Text-Editor flutter_quill).
