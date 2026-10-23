@@ -7,9 +7,11 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/nomination.dart';
 import '../models/player.dart';
+import '../models/player_note.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
+import '../models/team_event.dart';
 import 'app_database.dart';
 
 /// Einziger Zugang zur Persistenz. Gruppiert nach Entität; jede Entität
@@ -319,5 +321,69 @@ class CoachRepository {
       out.putIfAbsent(pid, () => {})[type] = r['c'] as int;
     }
     return out;
+  }
+
+  // ------------------------------------------------------------- Player notes
+  Future<List<PlayerNote>> getNotes(String playerId) async {
+    final db = await _db;
+    final rows = await db.query('player_notes',
+        where: 'player_id = ?', whereArgs: [playerId], orderBy: 'created_at DESC');
+    return rows.map(PlayerNote.fromMap).toList();
+  }
+
+  Future<void> upsertNote(PlayerNote note) async {
+    final db = await _db;
+    await db.insert('player_notes', note.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteNote(String id) async {
+    final db = await _db;
+    await db.delete('player_notes', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ------------------------------------------------------------- Team events
+  Future<List<TeamEvent>> getTeamEvents(String teamId) async {
+    final db = await _db;
+    final rows = await db.query('team_events',
+        where: 'team_id = ?', whereArgs: [teamId], orderBy: 'date ASC');
+    return rows.map(TeamEvent.fromMap).toList();
+  }
+
+  Future<TeamEvent?> getTeamEvent(String id) async {
+    final db = await _db;
+    final rows = await db
+        .query('team_events', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : TeamEvent.fromMap(rows.first);
+  }
+
+  Future<void> upsertTeamEvent(TeamEvent event) async {
+    final db = await _db;
+    await db.insert('team_events', event.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteTeamEvent(String id) async {
+    final db = await _db;
+    await db.delete('team_events', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<List<EventAttendance>> getEventAttendance(String eventId) async {
+    final db = await _db;
+    final rows = await db.query('event_attendance',
+        where: 'event_id = ?', whereArgs: [eventId]);
+    return rows.map(EventAttendance.fromMap).toList();
+  }
+
+  Future<void> upsertEventAttendance(EventAttendance a) async {
+    final db = await _db;
+    await db.insert('event_attendance', a.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteEventAttendance(String eventId, String playerId) async {
+    final db = await _db;
+    await db.delete('event_attendance',
+        where: 'event_id = ? AND player_id = ?', whereArgs: [eventId, playerId]);
   }
 }

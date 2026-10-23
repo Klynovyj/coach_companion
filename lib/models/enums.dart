@@ -88,6 +88,24 @@ enum MatchEventType {
           orElse: () => MatchEventType.goal);
 }
 
+/// Art eines Mannschafts-Termins (kein Pflichtspiel – dafür gibt es Spiele).
+enum TeamEventType {
+  feier('feier', 'Feier', '🎉'),
+  foto('foto', 'Mannschaftsfoto', '📷'),
+  grillen('grillen', 'Grillen', '🍖'),
+  training('training', 'Training', '🏃'),
+  sonstiges('sonstiges', 'Sonstiges', '📌');
+
+  const TeamEventType(this.storageKey, this.label, this.symbol);
+  final String storageKey;
+  final String label;
+  final String symbol;
+
+  static TeamEventType fromKey(String? key) =>
+      TeamEventType.values.firstWhere((e) => e.storageKey == key,
+          orElse: () => TeamEventType.sonstiges);
+}
+
 /// Kartentyp für den Disziplin-/Kartenverlauf eines Spielers.
 enum CardType {
   yellow('yellow', 'Gelbe Karte', '🟨'),

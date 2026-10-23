@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/card_entry.dart';
 import '../models/enums.dart';
 import '../models/player.dart';
+import '../models/player_note.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 
@@ -84,14 +85,103 @@ class PlayerDetailScreen extends StatelessWidget {
                             onTap: () => _editCard(context, c),
                           ),
                         )),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 8),
                 ],
               );
             },
           ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Row(
+              children: [
+                Text('Notizen',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => _addNote(context),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Notiz'),
+                ),
+              ],
+            ),
+          ),
+          FutureBuilder<List<PlayerNote>>(
+            future: state.notesOf(player.id),
+            builder: (context, snap) {
+              if (!snap.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: LinearProgressIndicator(),
+                );
+              }
+              final notes = snap.data!;
+              if (notes.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Noch keine Notizen.',
+                      style: TextStyle(color: Colors.grey)),
+                );
+              }
+              return Column(
+                children: [
+                  for (final n in notes)
+                    Dismissible(
+                      key: ValueKey(n.id),
+                      direction: DismissDirection.endToStart,
+                      background: Container(
+                        color: Colors.red,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20),
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      onDismissed: (_) =>
+                          context.read<AppState>().deleteNote(n.id),
+                      child: ListTile(
+                        leading: const Icon(Icons.sticky_note_2_outlined),
+                        title: Text(n.text),
+                        subtitle: Text(df.format(n.createdAt)),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 24),
         ],
       ),
     );
+  }
+
+  Future<void> _addNote(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Notiz hinzufügen'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          decoration: const InputDecoration(hintText: 'Beobachtung, Hinweis …'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (text != null && text.isNotEmpty && context.mounted) {
+      await context.read<AppState>().addNote(player.id, text);
+    }
   }
 
   Widget _header(BuildContext context) {

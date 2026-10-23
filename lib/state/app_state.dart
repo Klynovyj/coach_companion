@@ -9,6 +9,8 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/nomination.dart';
 import '../models/player.dart';
+import '../models/player_note.dart';
+import '../models/team_event.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
@@ -464,6 +466,87 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteCard(String id) async {
     await _repo.deleteCard(id);
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------------- Player notes
+  Future<List<PlayerNote>> notesOf(String playerId) => _repo.getNotes(playerId);
+
+  Future<void> addNote(String playerId, String text) async {
+    await _repo.upsertNote(PlayerNote(
+      id: _uuid.v4(),
+      playerId: playerId,
+      text: text.trim(),
+      createdAt: DateTime.now(),
+    ));
+    notifyListeners();
+  }
+
+  Future<void> deleteNote(String id) async {
+    await _repo.deleteNote(id);
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------------- Team events
+  Future<List<TeamEvent>> teamEvents() async {
+    final team = await _repo.getOwnTeam();
+    if (team == null) return [];
+    return _repo.getTeamEvents(team.id);
+  }
+
+  Future<TeamEvent> addTeamEvent({
+    required String title,
+    required TeamEventType type,
+    required DateTime date,
+    String? location,
+    String? note,
+  }) async {
+    final team = await ensureOwnTeam();
+    final event = TeamEvent(
+      id: _uuid.v4(),
+      teamId: team.id,
+      title: title.trim(),
+      type: type,
+      date: date,
+      location: location,
+      note: note,
+      createdAt: DateTime.now(),
+    );
+    await _repo.upsertTeamEvent(event);
+    notifyListeners();
+    return event;
+  }
+
+  Future<TeamEvent?> getTeamEvent(String id) => _repo.getTeamEvent(id);
+
+  Future<void> updateTeamEvent(TeamEvent event) async {
+    await _repo.upsertTeamEvent(event);
+    notifyListeners();
+  }
+
+  Future<void> deleteTeamEvent(String id) async {
+    await _repo.deleteTeamEvent(id);
+    notifyListeners();
+  }
+
+  Future<Map<String, NominationStatus>> eventAttendance(String eventId) async {
+    final rows = await _repo.getEventAttendance(eventId);
+    return {for (final a in rows) a.playerId: a.status};
+  }
+
+  Future<void> setEventAttendance(
+      String eventId, String playerId, NominationStatus status) async {
+    if (status == NominationStatus.open) {
+      await _repo.deleteEventAttendance(eventId, playerId);
+    } else {
+      await _repo.upsertEventAttendance(EventAttendance(
+        id: _uuid.v4(),
+        eventId: eventId,
+        playerId: playerId,
+        status: status,
+        updatedAt: DateTime.now(),
+      ));
+    }
     notifyListeners();
   }
 

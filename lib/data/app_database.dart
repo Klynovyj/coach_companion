@@ -13,7 +13,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 7;
+  static const _dbVersion = 8;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -73,7 +73,53 @@ class AppDatabase {
       await db.execute(_cardEntriesTableSql);
       await db.execute('CREATE INDEX idx_cards_player ON card_entries (player_id)');
     }
+    // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
+    if (oldV < 8) {
+      await db.execute(_playerNotesTableSql);
+      await db.execute('CREATE INDEX idx_notes_player ON player_notes (player_id)');
+      await db.execute(_teamEventsTableSql);
+      await db.execute('CREATE INDEX idx_events_team ON team_events (team_id)');
+      await db.execute(_eventAttendanceTableSql);
+      await db.execute(
+          'CREATE UNIQUE INDEX idx_att_event_player ON event_attendance (event_id, player_id)');
+    }
   }
+
+  static const _playerNotesTableSql = '''
+      CREATE TABLE player_notes (
+        id TEXT PRIMARY KEY,
+        player_id TEXT NOT NULL,
+        text TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+      )
+  ''';
+
+  static const _teamEventsTableSql = '''
+      CREATE TABLE team_events (
+        id TEXT PRIMARY KEY,
+        team_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        type TEXT NOT NULL,
+        date TEXT NOT NULL,
+        location TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
+      )
+  ''';
+
+  static const _eventAttendanceTableSql = '''
+      CREATE TABLE event_attendance (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL,
+        player_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (event_id) REFERENCES team_events (id) ON DELETE CASCADE,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+      )
+  ''';
 
   static const _cardEntriesTableSql = '''
       CREATE TABLE card_entries (
@@ -248,6 +294,14 @@ class AppDatabase {
 
     await db.execute(_cardEntriesTableSql);
     await db.execute('CREATE INDEX idx_cards_player ON card_entries (player_id)');
+
+    await db.execute(_playerNotesTableSql);
+    await db.execute('CREATE INDEX idx_notes_player ON player_notes (player_id)');
+    await db.execute(_teamEventsTableSql);
+    await db.execute('CREATE INDEX idx_events_team ON team_events (team_id)');
+    await db.execute(_eventAttendanceTableSql);
+    await db.execute(
+        'CREATE UNIQUE INDEX idx_att_event_player ON event_attendance (event_id, player_id)');
 
     await db.execute('''
       CREATE TABLE settings (

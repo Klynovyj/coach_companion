@@ -4,21 +4,8 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/player.dart';
 import '../state/app_state.dart';
+import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
-
-/// Farbe je Nominierungsstatus (SpielerPlus-Anmutung).
-Color nominationColor(NominationStatus s) {
-  switch (s) {
-    case NominationStatus.zugesagt:
-      return const Color(0xFF2E7D32);
-    case NominationStatus.unsicher:
-      return const Color(0xFFF9A825);
-    case NominationStatus.abgesagt:
-      return const Color(0xFFC62828);
-    case NominationStatus.open:
-      return const Color(0xFF9E9E9E);
-  }
-}
 
 class NominationScreen extends StatefulWidget {
   const NominationScreen({
@@ -126,76 +113,22 @@ class _NominationScreenState extends State<NominationScreen> {
   }
 
   Widget _summary() {
-    Widget chip(NominationStatus s, String label) {
-      final c = nominationColor(s);
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: c.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            CircleAvatar(radius: 5, backgroundColor: c),
-            const SizedBox(width: 6),
-            Text('${_count(s)} $label',
-                style: TextStyle(color: c, fontWeight: FontWeight.w600)),
-          ],
-        ),
-      );
-    }
-
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          chip(NominationStatus.zugesagt, 'zu'),
-          chip(NominationStatus.unsicher, 'unsicher'),
-          chip(NominationStatus.abgesagt, 'ab'),
-          chip(NominationStatus.open, 'offen'),
-        ],
-      ),
+      child: AvailabilitySummary(counts: {
+        for (final s in NominationStatus.values) s: _count(s),
+      }),
     );
   }
 
   Widget _row(Player p) {
-    final current = _statusOf(p);
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
       title: Text(p.fullName),
       subtitle: p.position == null ? null : Text(p.position!),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _choice(p, NominationStatus.zugesagt, Icons.check, current),
-          const SizedBox(width: 4),
-          _choice(p, NominationStatus.unsicher, Icons.help_outline, current),
-          const SizedBox(width: 4),
-          _choice(p, NominationStatus.abgesagt, Icons.close, current),
-        ],
-      ),
-    );
-  }
-
-  Widget _choice(
-      Player p, NominationStatus s, IconData icon, NominationStatus current) {
-    final selected = current == s;
-    final c = nominationColor(s);
-    return InkWell(
-      borderRadius: BorderRadius.circular(20),
-      onTap: () => _set(p, selected ? NominationStatus.open : s),
-      child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: selected ? c : c.withValues(alpha: 0.12),
-          shape: BoxShape.circle,
-        ),
-        child: Icon(icon,
-            size: 20, color: selected ? Colors.white : c),
+      trailing: AvailabilityChoices(
+        current: _statusOf(p),
+        onChanged: (s) => _set(p, s),
       ),
     );
   }

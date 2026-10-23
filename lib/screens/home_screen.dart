@@ -5,6 +5,7 @@ import '../state/app_state.dart';
 import 'schedule_screen.dart';
 import 'settings_screen.dart';
 import 'squad_screen.dart';
+import 'termine_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -28,6 +29,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final pages = const [
       ScheduleScreen(),
       SquadScreen(),
+      TermineScreen(),
       SettingsScreen(),
     ];
 
@@ -45,6 +47,10 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icon(Icons.groups_outlined),
               selectedIcon: Icon(Icons.groups),
               label: 'Kader'),
+          NavigationDestination(
+              icon: Icon(Icons.event_outlined),
+              selectedIcon: Icon(Icons.event),
+              label: 'Termine'),
           NavigationDestination(
               icon: Icon(Icons.settings_outlined),
               selectedIcon: Icon(Icons.settings),
