@@ -371,6 +371,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                 _TeamActionBar(
                   label: _ownTeam?.name ?? 'Eigenes Team',
                   color: Theme.of(context).colorScheme.primary,
+                  // Erst nach Anpfiff (während einer Halbzeit) erfassbar.
+                  enabled: _actionsEnabled,
                   onGoal: () => _addGoal(ownSide: true),
                   onCard: () => _addCard(ownSide: true),
                   onSub: () => _addSub(ownSide: true),
@@ -378,6 +380,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                 _TeamActionBar(
                   label: match.opponentName,
                   color: Theme.of(context).colorScheme.tertiary,
+                  enabled: _actionsEnabled,
                   onGoal: () => _addGoal(ownSide: false),
                   // Gegner: nur Tore für den Spielstand – keine Karten/Wechsel.
                   onCard: null,
@@ -407,6 +410,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     // Eigenes Team: ausschließlich nominierte (zugesagte) Spieler.
     return _ownPlayers.where((p) => _nominatedIds.contains(p.id)).toList();
   }
+
+  /// Tor/Karte/Wechsel nur während einer laufenden Halbzeit (nach Anpfiff).
+  bool get _actionsEnabled =>
+      _phase == _Phase.firstHalf || _phase == _Phase.secondHalf;
 
   /// Eigene Spieler, die aktuell auf dem Feld stehen (für Tor/Karte).
   List<Player> _onFieldPlayers(bool ownSide) {
@@ -882,6 +889,7 @@ class _TeamActionBar extends StatelessWidget {
     required this.onGoal,
     this.onCard,
     this.onSub,
+    this.enabled = true,
   });
 
   final String label;
@@ -889,6 +897,9 @@ class _TeamActionBar extends StatelessWidget {
   final VoidCallback onGoal;
   final VoidCallback? onCard;
   final VoidCallback? onSub;
+
+  /// Nur nach Anpfiff aktiv.
+  final bool enabled;
 
   // Icon über Label – Text bleibt auch auf schmalen Handys lesbar.
   static final _actionStyle = ButtonStyle(
@@ -936,7 +947,7 @@ class _TeamActionBar extends StatelessWidget {
               children: [
                 Expanded(
                   child: FilledButton(
-                    onPressed: onGoal,
+                    onPressed: enabled ? onGoal : null,
                     style: _actionStyle,
                     child: _actionChild(
                         const Text('⚽', style: TextStyle(fontSize: 18)), 'Tor'),
@@ -946,7 +957,7 @@ class _TeamActionBar extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: onCard,
+                      onPressed: enabled ? onCard : null,
                       style: _actionStyle,
                       child: _actionChild(
                           const Icon(Icons.style, size: 20), 'Karte'),
@@ -957,7 +968,7 @@ class _TeamActionBar extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: onSub,
+                      onPressed: enabled ? onSub : null,
                       style: _actionStyle,
                       child: _actionChild(
                           const Icon(Icons.swap_horiz, size: 20), 'Wechsel'),
@@ -1052,7 +1063,14 @@ class _EventLog extends StatelessWidget {
 
   Widget _phaseRow(BuildContext context, MatchEvent e) {
     final score = e.note ?? '';
-    final label = '${e.type.label}${score.isNotEmpty ? '  ·  $score' : ''}';
+    final t = e.createdAt.toLocal();
+    final time =
+        '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')} Uhr';
+    final label = [
+      e.type.label,
+      time,
+      if (score.isNotEmpty) score,
+    ].join('  ·  ');
     return InkWell(
       onTap: () => onEdit(e),
       child: Padding(
