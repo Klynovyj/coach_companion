@@ -418,7 +418,17 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     final match = _match;
     if (match == null) return;
     final state = context.read<AppState>();
-    final info = await state.matchAnnouncement(widget.matchId);
+    var info = await state.matchAnnouncement(widget.matchId);
+    // Noch nichts für dieses Spiel gespeichert → Werte vom letzten Spieltag
+    // übernehmen (Best-Guess, Nutzer korrigiert). Spieltag automatisch +1.
+    if (info.isEmpty) {
+      final last = await state.matchAnnouncement('last_${match.ownTeamId}');
+      if (last.isNotEmpty) {
+        info = {...last};
+        final n = int.tryParse((last['spieltag'] ?? '').trim());
+        if (n != null) info['spieltag'] = '${n + 1}';
+      }
+    }
     final players = await state.playersOf(match.ownTeamId);
     final noms = await state.nominationsOf(widget.matchId);
     if (!mounted) return;
@@ -431,6 +441,8 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     );
     if (data == null || !mounted) return;
     await state.saveMatchAnnouncement(widget.matchId, data);
+    // Als Vorlage für den nächsten Spieltag merken.
+    await state.saveMatchAnnouncement('last_${match.ownTeamId}', data);
     await shareViaWhatsApp(_buildAnnouncement(data, match, players, noms));
   }
 
