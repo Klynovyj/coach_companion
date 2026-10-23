@@ -113,13 +113,13 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     initialValue: _categoryId,
                     isExpanded: true,
                     decoration: const InputDecoration(
-                      labelText: 'Rubrik',
+                      labelText: 'Kategorie',
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
                     items: [
                       const DropdownMenuItem<String?>(
-                          value: null, child: Text('Ohne Rubrik')),
+                          value: null, child: Text('Ohne Kategorie')),
                       ..._categories.map((c) => DropdownMenuItem<String?>(
                           value: c.id, child: Text(c.name))),
                     ],

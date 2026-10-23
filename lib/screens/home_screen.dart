@@ -14,6 +14,26 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
+/// Stellt den aktuellen Haupt-Tab und das Umschalten bereit – damit auch das
+/// Seitenmenü (Drawer) die unteren Bereiche wechseln kann.
+class HomeNav extends InheritedWidget {
+  const HomeNav({
+    super.key,
+    required this.index,
+    required this.onSelect,
+    required super.child,
+  });
+
+  final int index;
+  final void Function(int) onSelect;
+
+  static HomeNav? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<HomeNav>();
+
+  @override
+  bool updateShouldNotify(HomeNav old) => old.index != index;
+}
+
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
 
@@ -33,12 +53,15 @@ class _HomeScreenState extends State<HomeScreen> {
       TermineScreen(),
     ];
 
-    return Scaffold(
-      body: pages[_index],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: [
+    return HomeNav(
+      index: _index,
+      onSelect: (i) => setState(() => _index = i),
+      child: Scaffold(
+        body: pages[_index],
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _index,
+          onDestinationSelected: (i) => setState(() => _index = i),
+          destinations: [
           const NavigationDestination(
               icon: Icon(Icons.event_note_outlined),
               selectedIcon: Icon(Icons.event_note),
@@ -51,11 +74,12 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: _NachholenIcon(state: state, outlined: true),
               selectedIcon: _NachholenIcon(state: state, outlined: false),
               label: 'Nachholen'),
-          const NavigationDestination(
-              icon: Icon(Icons.event_outlined),
-              selectedIcon: Icon(Icons.event),
-              label: 'Termine'),
-        ],
+            const NavigationDestination(
+                icon: Icon(Icons.event_outlined),
+                selectedIcon: Icon(Icons.event),
+                label: 'Termine'),
+          ],
+        ),
       ),
     );
   }

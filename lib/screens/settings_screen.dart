@@ -184,12 +184,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
-          _sectionTitle(context, 'Notiz-Rubriken'),
+          _sectionTitle(context, 'Notiz-Kategorien'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Text(
-              'Rubriken ordnen die Spieler-Notizen (z.B. „Taktik", „Fitness", '
-              '„Verhalten"). Beim Erstellen einer Notiz wählst du eine Rubrik.',
+              'Kategorien ordnen die Spieler-Notizen (z.B. „Taktik", „Fitness", '
+              '„Verhalten"). Beim Erstellen einer Notiz wählst du eine Kategorie.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -242,7 +242,7 @@ class _RubrikenCard extends StatelessWidget {
                 if (cats.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(8),
-                    child: Text('Noch keine Rubriken.',
+                    child: Text('Noch keine Kategorien.',
                         style: TextStyle(color: Colors.grey)),
                   )
                 else
@@ -273,7 +273,7 @@ class _RubrikenCard extends StatelessWidget {
                   child: TextButton.icon(
                     onPressed: () => _add(context),
                     icon: const Icon(Icons.add),
-                    label: const Text('Rubrik hinzufügen'),
+                    label: const Text('Kategorie hinzufügen'),
                   ),
                 ),
               ],
@@ -285,14 +285,14 @@ class _RubrikenCard extends StatelessWidget {
   }
 
   Future<void> _add(BuildContext context) async {
-    final name = await _promptName(context, title: 'Rubrik hinzufügen');
+    final name = await _promptName(context, title: 'Kategorie hinzufügen');
     if (name == null || name.isEmpty || !context.mounted) return;
     await state.addNoteCategory(name);
   }
 
   Future<void> _rename(BuildContext context, NoteCategory c) async {
-    final name =
-        await _promptName(context, title: 'Rubrik umbenennen', initial: c.name);
+    final name = await _promptName(context,
+        title: 'Kategorie umbenennen', initial: c.name);
     if (name == null || name.isEmpty || !context.mounted) return;
     await state.updateNoteCategory(c.copyWith(name: name));
   }
@@ -301,10 +301,10 @@ class _RubrikenCard extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Rubrik löschen?'),
+        title: const Text('Kategorie löschen?'),
         content: Text(
             '„${c.name}" wird entfernt. Vorhandene Notizen bleiben erhalten, '
-            'landen aber unter „Ohne Rubrik".'),
+            'landen aber unter „Ohne Kategorie".'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context, false),
@@ -330,7 +330,7 @@ class _RubrikenCard extends StatelessWidget {
         content: TextField(
           controller: ctrl,
           autofocus: true,
-          decoration: const InputDecoration(labelText: 'Name der Rubrik'),
+          decoration: const InputDecoration(labelText: 'Name der Kategorie'),
           onSubmitted: (v) => Navigator.pop(context, v.trim()),
         ),
         actions: [

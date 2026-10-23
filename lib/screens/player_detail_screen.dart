@@ -462,7 +462,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
           final groups = <(String, List<PlayerNote>)>[
             for (final c in cats)
               if (byCat[c.id] != null) (c.name, byCat[c.id]!),
-            if (byCat[null] != null) ('Ohne Rubrik', byCat[null]!),
+            if (byCat[null] != null) ('Ohne Kategorie', byCat[null]!),
           ];
           return Column(
             children: [
