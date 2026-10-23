@@ -16,6 +16,15 @@ Color availabilityColor(NominationStatus s) {
   }
 }
 
+/// Farbe je Spieler-Verfügbarkeitsstatus (Stammdaten).
+Color playerStatusColor(PlayerStatus s) => switch (s) {
+      PlayerStatus.fit => const Color(0xFF2E7D32),
+      PlayerStatus.verletzt => const Color(0xFFEF6C00),
+      PlayerStatus.krank => const Color(0xFFFF8F00),
+      PlayerStatus.gesperrt => const Color(0xFFC62828),
+      PlayerStatus.inaktiv => const Color(0xFF9E9E9E),
+    };
+
 /// Drei runde Status-Buttons (Zu / Unsicher / Ab). Erneutes Tippen auf den
 /// aktiven Status setzt zurück auf „offen".
 class AvailabilityChoices extends StatelessWidget {

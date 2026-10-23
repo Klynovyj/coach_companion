@@ -105,7 +105,8 @@ enum PlayerStatus {
   fit('fit', 'Fit', '🟢'),
   verletzt('verletzt', 'Verletzt', '🤕'),
   krank('krank', 'Krank', '🤒'),
-  gesperrt('gesperrt', 'Gesperrt', '⛔');
+  gesperrt('gesperrt', 'Gesperrt', '⛔'),
+  inaktiv('inaktiv', 'Inaktiv', '⚪');
 
   const PlayerStatus(this.storageKey, this.label, this.symbol);
   final String storageKey;
