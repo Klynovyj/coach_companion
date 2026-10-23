@@ -45,16 +45,16 @@ class AppDrawer extends StatelessWidget {
                   const _HeaderClock(),
                   const Spacer(),
                   if (team?.logoPath != null)
-                    TeamLogo(logoPath: team!.logoPath, size: 44),
-                  const SizedBox(height: 8),
+                    TeamLogo(logoPath: team!.logoPath, size: 36),
+                  const SizedBox(height: 6),
                   Text(
                     team?.name ?? 'myCouch',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onPrimary,
-                      fontSize: 20,
+                      fontSize: 18,
                       fontWeight: FontWeight.bold,
                     ),
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -160,19 +160,16 @@ class _HeaderClockState extends State<_HeaderClock> {
     final onP = Theme.of(context).colorScheme.onPrimary;
     final time = DateFormat("HH:mm:ss 'Uhr'", 'de_DE').format(_now);
     final date = DateFormat('EEEE, dd.MM.yyyy', 'de_DE').format(_now);
-    return Padding(
-      padding: const EdgeInsets.only(top: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(time,
-              style: TextStyle(
-                  color: onP, fontSize: 22, fontWeight: FontWeight.bold)),
-          Text(date,
-              style: TextStyle(
-                  color: onP.withValues(alpha: 0.85), fontSize: 13)),
-        ],
-      ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(time,
+            style: TextStyle(
+                color: onP, fontSize: 20, fontWeight: FontWeight.bold)),
+        Text(date,
+            style: TextStyle(
+                color: onP.withValues(alpha: 0.85), fontSize: 12)),
+      ],
     );
   }
 }
