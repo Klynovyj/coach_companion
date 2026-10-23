@@ -335,9 +335,25 @@ class AppState extends ChangeNotifier {
     await updatePlayer(player.copyWith(status: status));
   }
 
+  Future<void> updateAbsence(PlayerAbsence a) async {
+    await _repo.upsertAbsence(a);
+    notifyListeners();
+  }
+
   Future<void> deleteAbsence(String id) async {
     await _repo.deleteAbsence(id);
     notifyListeners();
+  }
+
+  /// FuPa-Saisonstatistik eines Spielers (über den Namen zugeordnet).
+  Future<PlayerStat?> playerSeasonStat(String teamId, String dedupKey) async {
+    final stats = await _repo.getStats(teamId);
+    for (final s in stats) {
+      final key =
+          '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}';
+      if (key == dedupKey) return s;
+    }
+    return null;
   }
 
   /// Setzt Spieler, deren Abwesenheit abgelaufen ist, automatisch auf „Fit".

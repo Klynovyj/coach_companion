@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/player.dart';
+import '../models/player_stat.dart';
 import '../models/scout_marker.dart';
 import '../state/app_state.dart';
 import 'player_avatar.dart';
@@ -36,6 +37,7 @@ class _ScoutSheetState extends State<_ScoutSheet> {
   final _commentCtrl = TextEditingController();
   Set<ScoutMarker> _markers = {};
   String _savedComment = '';
+  PlayerStat? _stat;
   bool _loading = true;
 
   @override
@@ -48,14 +50,27 @@ class _ScoutSheetState extends State<_ScoutSheet> {
   Future<void> _load() async {
     final markers = await _state.scoutMarkersOf(widget.player.id);
     final comment = await _state.scoutCommentOf(widget.player.id);
+    final stat = await _state.playerSeasonStat(
+        widget.player.teamId, widget.player.dedupKey);
     if (!mounted) return;
     setState(() {
       _markers = markers;
       _commentCtrl.text = comment;
       _savedComment = comment;
+      _stat = stat;
       _loading = false;
     });
   }
+
+  Widget _statCol(String label, String value) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      );
 
   void _commitComment() {
     if (_commentCtrl.text == _savedComment) return;
@@ -151,6 +166,30 @@ class _ScoutSheetState extends State<_ScoutSheet> {
                       ],
                     ),
                   ),
+                // FuPa-Saisonstatistik (Spiele/Tore/Vorlagen) – wie bei FuPa.
+                const SizedBox(height: 14),
+                if (_stat != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 10),
+                    decoration: BoxDecoration(
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _statCol('Spiele', '${_stat!.matches}'),
+                        _statCol('Tore', '${_stat!.goals}'),
+                        _statCol('Vorlagen', '${_stat!.assists}'),
+                        _statCol('Min', '${_stat!.minutes}'),
+                      ],
+                    ),
+                  )
+                else
+                  Text('Keine FuPa-Saisonstatistik für diesen Spieler.',
+                      style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 16),
                 Text('Besondere Marker',
                     style: Theme.of(context)

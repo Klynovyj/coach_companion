@@ -110,19 +110,37 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
             ],
           ),
           actions: [
-            IconButton(
-              tooltip: 'Gegner neu synchronisieren',
-              icon: const Icon(Icons.sync),
-              onPressed: () => _load(force: true),
-            ),
             PopupMenuButton<String>(
               onSelected: (v) {
+                if (v == 'sync') _load(force: true);
                 if (v == 'reset') _resetMatch();
                 if (v == 'rate') _openRating();
               },
               itemBuilder: (_) => const [
-                PopupMenuItem(value: 'rate', child: Text('Spieler bewerten')),
-                PopupMenuItem(value: 'reset', child: Text('Spiel zurücksetzen')),
+                PopupMenuItem(
+                    value: 'sync',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.sync),
+                      title: Text('Gegner neu synchronisieren'),
+                    )),
+                PopupMenuItem(
+                    value: 'rate',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.star_border),
+                      title: Text('Spieler bewerten'),
+                    )),
+                PopupMenuItem(
+                    value: 'reset',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.restart_alt),
+                      title: Text('Spiel zurücksetzen'),
+                    )),
               ],
             ),
           ],

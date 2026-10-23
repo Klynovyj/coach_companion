@@ -90,8 +90,21 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          widget.existing == null ? 'Neue Notiz' : 'Notiz bearbeiten',
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(widget.existing == null ? 'Neue Notiz' : 'Notiz bearbeiten'),
+            Text(
+              widget.playerName,
+              style: TextStyle(
+                fontSize: 13,
+                color: Theme.of(context).colorScheme.onPrimary.withValues(
+                    alpha: 0.85),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
         ),
         actions: [
           TextButton(

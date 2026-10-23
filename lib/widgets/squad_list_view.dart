@@ -433,8 +433,6 @@ class _SquadListViewState extends State<SquadListView> {
           number: data.number,
           position: data.position,
           wishPosition: data.wishPosition,
-          status: data.status,
-          captainRole: data.captainRole,
         );
   }
 

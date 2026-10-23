@@ -10,6 +10,7 @@ import '../models/note_category.dart';
 import '../models/player.dart';
 import '../models/player_absence.dart';
 import '../models/player_note.dart';
+import '../models/player_stat.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
@@ -64,13 +65,33 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     if (mounted) setState(() => _player = _player.copyWith(status: s));
   }
 
+  Future<void> _editAbsence(PlayerAbsence a) async {
+    final res = await _showAbsenceDialog(a.status,
+        initialFrom: a.from, initialUntil: a.until, initialNote: a.note);
+    if (res == null || !mounted) return;
+    await context.read<AppState>().updateAbsence(PlayerAbsence(
+          id: a.id,
+          playerId: a.playerId,
+          status: a.status,
+          from: res.$1,
+          until: res.$2,
+          note: res.$3,
+          createdAt: a.createdAt,
+        ));
+    if (mounted) setState(() {});
+  }
+
   /// Dialog für Zeitraum (von–bis) + optionalen Grund einer Abwesenheit.
   Future<(DateTime, DateTime, String?)?> _showAbsenceDialog(
-      PlayerStatus s) async {
+    PlayerStatus s, {
+    DateTime? initialFrom,
+    DateTime? initialUntil,
+    String? initialNote,
+  }) async {
     final df = DateFormat('dd.MM.yyyy', 'de_DE');
-    var from = DateTime.now();
-    var until = DateTime.now().add(const Duration(days: 7));
-    final noteCtrl = TextEditingController();
+    var from = initialFrom ?? DateTime.now();
+    var until = initialUntil ?? DateTime.now().add(const Duration(days: 7));
+    final noteCtrl = TextEditingController(text: initialNote ?? '');
     return showDialog<(DateTime, DateTime, String?)>(
       context: context,
       builder: (context) => StatefulBuilder(
@@ -199,7 +220,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   _tabList(
                       [_stammdatenCard(context), _absencesCard(context, state)]),
                   _tabList([_cardsCard(context, state, df)]),
-                  _tabList([_goalsCard(context, state, df)]),
+                  _tabList([
+                    _fupaStatCard(context, state),
+                    _goalsCard(context, state, df),
+                  ]),
                   _tabList([_notesCard(context, state, df)]),
                   _tabList([_bewertungenCard(context, state, df)]),
                 ],
@@ -467,6 +491,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                                 TextStyle(color: Colors.grey, fontSize: 12))
                         : Icon(Icons.circle,
                             size: 10, color: playerStatusColor(a.status)),
+                    onTap: () => _editAbsence(a),
                   ),
                 ),
             ],
@@ -536,6 +561,70 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                         onTap: () => _editCard(context, c),
                       ),
                     )),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  // -------------------------------------------------- FuPa-Saisonstatistik
+  Widget _fupaStatCard(BuildContext context, AppState state) {
+    return _SectionCard(
+      icon: Icons.insights,
+      title: 'Saison (FuPa)',
+      child: FutureBuilder<PlayerStat?>(
+        future: state.playerSeasonStat(_player.teamId, _player.dedupKey),
+        builder: (context, snap) {
+          if (!snap.hasData && snap.connectionState != ConnectionState.done) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final s = snap.data;
+          if (s == null) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                    'Keine FuPa-Statistik. In den Einstellungen/Kader über '
+                    '„Statistik" importieren.',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            );
+          }
+          Widget stat(String label, String value) => Column(
+                children: [
+                  Text(value,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text(label,
+                      style: Theme.of(context).textTheme.bodySmall),
+                ],
+              );
+          return Column(
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  stat('Spiele', '${s.matches}'),
+                  stat('Tore', '${s.goals}'),
+                  stat('Vorlagen', '${s.assists}'),
+                  stat('Minuten', '${s.minutes}'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  stat('🟨', '${s.yellowCards}'),
+                  stat('🟨🟥', '${s.yellowRedCards}'),
+                  stat('🟥', '${s.redCards}'),
+                  stat('⭐ Top11', '${s.topEleven}'),
+                ],
+              ),
             ],
           );
         },

@@ -104,40 +104,69 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
+  // Kompakte, bildschirmfüllende Tabelle (passt auch auf dem Handy, ohne
+  // horizontales Scrollen). Spalten: Sp · Tore · Vorlagen · Gelb · Rot · Top11.
+  static const _numW = 30.0;
+
+  Widget _num(String t, {bool header = false, Color? color}) => SizedBox(
+        width: _numW,
+        child: Text(t,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.clip,
+            style: TextStyle(
+                fontWeight: header ? FontWeight.bold : FontWeight.w600,
+                color: color)),
+      );
+
   Widget _table(List<PlayerStat> stats) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.vertical,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          columnSpacing: 18,
-          columns: const [
-            DataColumn(label: Text('Spieler')),
-            DataColumn(label: Text('Sp'), numeric: true),
-            DataColumn(label: Text('Tore'), numeric: true),
-            DataColumn(label: Text('Vorl'), numeric: true),
-            DataColumn(label: Text('🟨'), numeric: true),
-            DataColumn(label: Text('🟨🟥'), numeric: true),
-            DataColumn(label: Text('🟥'), numeric: true),
-            DataColumn(label: Text('Min'), numeric: true),
-            DataColumn(label: Text('⭐'), numeric: true),
-          ],
-          rows: [
-            for (final s in stats)
-              DataRow(cells: [
-                DataCell(Text(s.fullName)),
-                DataCell(Text('${s.matches}')),
-                DataCell(Text('${s.goals}')),
-                DataCell(Text('${s.assists}')),
-                DataCell(Text('${s.yellowCards}')),
-                DataCell(Text('${s.yellowRedCards}')),
-                DataCell(Text('${s.redCards}')),
-                DataCell(Text('${s.minutes}')),
-                DataCell(Text('${s.topEleven}')),
-              ]),
-          ],
+    return Column(
+      children: [
+        // Kopfzeile
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 12, 6),
+          child: Row(
+            children: [
+              const Expanded(
+                  child: Text('Spieler',
+                      style: TextStyle(fontWeight: FontWeight.bold))),
+              _num('Sp', header: true),
+              _num('⚽', header: true),
+              _num('🅰', header: true),
+              _num('🟨', header: true),
+              _num('🟥', header: true),
+              _num('⭐', header: true),
+            ],
+          ),
         ),
-      ),
+        const Divider(height: 1),
+        Expanded(
+          child: ListView.separated(
+            itemCount: stats.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final s = stats[i];
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 12, 8),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text('${i + 1}. ${s.fullName}',
+                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                    ),
+                    _num('${s.matches}'),
+                    _num('${s.goals}'),
+                    _num('${s.assists}'),
+                    _num('${s.yellowCards}'),
+                    _num('${s.yellowRedCards + s.redCards}'),
+                    _num('${s.topEleven}'),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
