@@ -81,24 +81,38 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
         .map((l) => l.trim())
         .where((l) => l.isNotEmpty)
         .toList();
-    final urlLines = lines.where(FupaReduxImporter.isPlayerUrl).toList();
+    final teamUrls = lines.where(FupaReduxImporter.isTeamUrl).toList();
+    final playerUrls = lines.where(FupaReduxImporter.isPlayerUrl).toList();
     final textLines =
-        lines.where((l) => !FupaReduxImporter.isPlayerUrl(l)).toList();
+        lines.where((l) => !FupaReduxImporter.isFupaUrl(l)).toList();
 
     final parsedText = SquadPasteParser.parse(textLines.join('\n'));
 
     final fetched = <ParsedPlayer>[];
     var failed = 0;
-    if (urlLines.isNotEmpty) {
+    final urlCount = teamUrls.length + playerUrls.length;
+    if (urlCount > 0) {
       setState(() {
         _loading = true;
         _progress = '';
       });
       final importer = FupaReduxImporter();
-      for (var i = 0; i < urlLines.length; i++) {
-        setState(() => _progress = 'Lade FuPa-Profil ${i + 1}/${urlLines.length} …');
+      var done = 0;
+      // Team-Links zuerst: liefern den ganzen Kader.
+      for (final url in teamUrls) {
+        done++;
+        setState(() => _progress = 'Lade FuPa-Kader $done/$urlCount …');
         try {
-          fetched.add(await importer.importPlayer(urlLines[i]));
+          fetched.addAll(await importer.importTeamPlayers(url));
+        } catch (_) {
+          failed++;
+        }
+      }
+      for (final url in playerUrls) {
+        done++;
+        setState(() => _progress = 'Lade FuPa-Profil $done/$urlCount …');
+        try {
+          fetched.add(await importer.importPlayer(url));
         } catch (_) {
           failed++;
           fetched.add(const ParsedPlayer()); // leere Zeile zum Ausfüllen
@@ -121,13 +135,13 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text(
-                'Keine Spieler erkannt. Tipp: eine Zeile pro Spieler oder einen FuPa-Spielerlink einfügen.')),
+                'Keine Spieler erkannt. Tipp: einen FuPa-Team-/Spielerlink oder eine Zeile pro Spieler einfügen.')),
       );
     } else if (failed > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content: Text(
-                '$failed von ${urlLines.length} FuPa-Links konnten nicht geladen werden – bitte manuell ergänzen.')),
+                '$failed von $urlCount FuPa-Links konnten nicht geladen werden – bitte manuell ergänzen.')),
       );
     }
   }
@@ -191,10 +205,11 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         Text(
-          'Zwei Wege, beliebig mischbar (eine Zeile pro Spieler):\n'
-          '• FuPa-Spielerlinks (…/player/…) – werden abgerufen und automatisch '
-          'mit Name, Position und Trikotnummer befüllt.\n'
-          '• oder Klartext wie „7 Max Mustermann Sturm“.',
+          'Drei Wege, beliebig mischbar:\n'
+          '• FuPa-Teamlink (…/team/…) – holt den ganzen Kader auf einmal.\n'
+          '• FuPa-Spielerlinks (…/player/…) – je ein Spieler mit Name, '
+          'Position und Trikotnummer.\n'
+          '• oder Klartext wie „7 Max Mustermann Sturm“ (eine Zeile pro Spieler).',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
@@ -222,10 +237,10 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
           minLines: 8,
           maxLines: 20,
           decoration: const InputDecoration(
-            labelText: 'Spielerliste oder FuPa-Links einfügen',
+            labelText: 'FuPa-Link oder Spielerliste einfügen',
             alignLabelWithHint: true,
             hintText:
-                'https://www.fupa.net/player/...\n7 Max Mustermann Sturm\n1 Jonas Keller Tor',
+                'https://www.fupa.net/team/...\noder: 7 Max Mustermann Sturm',
           ),
         ),
         const SizedBox(height: 16),

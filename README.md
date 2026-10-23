@@ -24,15 +24,18 @@ optionalem FuPa-Import, automatischem Gegner-Sync und Live-Spielerfassung für
 
 ## FuPa-Import
 
-Spielerstammdaten lassen sich über **FuPa-Spielerlinks** importieren – gleicher
+Spielerstammdaten lassen sich über **FuPa-Links** importieren – gleicher
 Ansatz wie im Schwesterprojekt *Coach Studio*:
 
-- Im Einfügen-Import (Kader bzw. Gegner) fügst du einen oder mehrere
-  FuPa-Spielerlinks (`…/player/…`) ein – beliebig gemischt mit Klartextzeilen.
-- Für jeden Link lädt die App die öffentliche Spielerseite, extrahiert den
+- Im Einfügen-Import (Kader bzw. Gegner) fügst du ein, beliebig gemischt:
+  - einen **FuPa-Teamlink** (`…/team/…`) → holt den **ganzen Kader** auf einmal
+    (`dataHistory[].TeamPlayersPage.data.players`),
+  - **FuPa-Spielerlinks** (`…/player/…`) → je ein Spieler,
+  - oder **Klartextzeilen** (`7 Max Mustermann Sturm`).
+- Für jeden Link lädt die App die öffentliche Seite, extrahiert den
   eingebetteten `window.REDUX_DATA`-Block (`FupaReduxImporter`) und übernimmt
   **Name, Position und Trikotnummer**. Kein HTML-Scraping – es wird das von
-  FuPa selbst gelieferte JSON gelesen.
+  FuPa selbst gelieferte JSON gelesen; deaktivierte Spieler werden übersprungen.
 - **Abhängigkeit:** Ändert FuPa das Seitenlayout, muss die Extraktion
   angepasst werden (wie bei Coach Studio auch).
 

@@ -49,4 +49,31 @@ void main() {
       );
     });
   });
+
+  group('FupaReduxImporter.parseTeamPlayersHtml', () {
+    test('liest den Kader und überspringt Deaktivierte', () {
+      const html = 'window.REDUX_DATA = '
+          '{"dataHistory":[{"TeamPlayersPage":{"data":{"players":['
+          '{"firstName":"Felix","lastName":"Leithold","position":"Torwart","jerseyNumber":1,"isDeactivated":false},'
+          '{"firstName":"Max","lastName":"Mustermann","position":"Angriff","jerseyNumber":9},'
+          '{"firstName":"Weg","lastName":"Gegangen","position":"Abwehr","jerseyNumber":4,"isDeactivated":true}'
+          ']}}}]};';
+      final squad = FupaReduxImporter.parseTeamPlayersHtml(html);
+      expect(squad, hasLength(2));
+      expect(squad[0].lastName, 'Leithold');
+      expect(squad[0].position, 'Tor');
+      expect(squad[0].number, 1);
+      expect(squad[1].position, 'Sturm');
+      expect(squad[1].number, 9);
+    });
+
+    test('Team-URL-Erkennung', () {
+      expect(FupaReduxImporter.isTeamUrl(
+          'https://www.fupa.net/team/garather-sv-m1-2026-27'), isTrue);
+      expect(FupaReduxImporter.isTeamUrl(
+          'https://www.fupa.net/player/x'), isFalse);
+      expect(FupaReduxImporter.isFupaUrl(
+          'https://www.fupa.net/player/x'), isTrue);
+    });
+  });
 }
