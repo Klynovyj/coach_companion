@@ -103,7 +103,7 @@ class FupaReduxImporter {
           'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
     }
     final ownSlug = _teamSlug(trimmed);
-    final matchesUrl = _matchesUrlFor(trimmed);
+    final matchesUrl = _subPageUrlFor(trimmed, 'matches');
     final html = await _fetchHtml(matchesUrl);
     final matches = parseTeamMatchesHtml(html, ownSlug);
 
@@ -125,17 +125,74 @@ class FupaReduxImporter {
     ];
   }
 
-  /// Baut aus einem Teamlink die zugehörige `/matches`-URL.
-  static String _matchesUrlFor(String url) {
-    var u = url.trim();
-    u = u.replaceAll(RegExp(r'/+$'), '');
-    if (u.endsWith('/matches')) return u;
-    // evtl. /playerstats o.ä. am Ende entfernen -> bis einschließlich Slug.
+  /// Importiert die Spieler-Saison-Statistik (aus `/playerstats`).
+  Future<List<PlayerStatData>> importStats(String url) async {
+    final trimmed = url.trim();
+    if (!isTeamUrl(trimmed)) {
+      throw FupaImportException(
+          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+    }
+    final statsUrl = _subPageUrlFor(trimmed, 'playerstats');
+    return parseTeamStatsHtml(await _fetchHtml(statsUrl));
+  }
+
+  /// Extrahiert die Statistik aus `dataHistory[].TeamPlayerStatsPage.season.players`.
+  /// Netzwerkfrei testbar.
+  static List<PlayerStatData> parseTeamStatsHtml(String html) {
+    final redux = _extractRedux(html);
+    final dh = redux['dataHistory'];
+    if (dh is! List) {
+      throw FupaImportException('REDUX_DATA enthält kein dataHistory-Array.');
+    }
+    List? players;
+    for (final entry in dh) {
+      if (entry is! Map) continue;
+      final page = entry['TeamPlayerStatsPage'];
+      if (page is Map && page['season'] is Map) {
+        final p = (page['season'] as Map)['players'];
+        if (p is List) {
+          players = p;
+          break;
+        }
+      }
+    }
+    if (players == null) {
+      throw FupaImportException(
+          'Keine Statistik (TeamPlayerStatsPage) gefunden – zeigt der Link auf die Mannschaft?');
+    }
+    int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
+    final out = <PlayerStatData>[];
+    for (final raw in players) {
+      if (raw is! Map) continue;
+      final first = (raw['firstName'] as String?)?.trim() ?? '';
+      final last = (raw['lastName'] as String?)?.trim() ?? '';
+      if (first.isEmpty && last.isEmpty) continue;
+      out.add(PlayerStatData(
+        externalId: (raw['id'] ?? raw['slug'])?.toString(),
+        firstName: first,
+        lastName: last,
+        matches: asInt(raw['matches']),
+        goals: asInt(raw['goals']),
+        assists: asInt(raw['assists']),
+        yellowCards: asInt(raw['yellowCards']),
+        yellowRedCards: asInt(raw['yellowRedCards']),
+        redCards: asInt(raw['redCards']),
+        minutes: asInt(raw['minutesPlayed']),
+        topEleven: asInt(raw['topEleven']),
+      ));
+    }
+    return out;
+  }
+
+  /// Baut aus einem Team-/Unterseitenlink die URL einer bestimmten Unterseite
+  /// (z.B. `matches`, `playerstats`) – egal welche Unterseite eingefügt wurde.
+  static String _subPageUrlFor(String url, String sub) {
+    final u = url.trim().replaceAll(RegExp(r'/+$'), '');
     final match = RegExp(r'^(https?://(?:www\.)?fupa\.(?:net|de)/team/[^/]+)',
             caseSensitive: false)
         .firstMatch(u);
     final base = match?.group(1) ?? u;
-    return '$base/matches';
+    return '$base/$sub';
   }
 
   static String _teamSlug(String url) {

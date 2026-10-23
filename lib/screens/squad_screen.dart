@@ -5,6 +5,7 @@ import '../models/team.dart';
 import '../state/app_state.dart';
 import '../widgets/squad_list_view.dart';
 import '../widgets/team_logo.dart';
+import 'stats_screen.dart';
 
 /// Kader des eigenen Teams.
 class SquadScreen extends StatelessWidget {
@@ -25,6 +26,21 @@ class SquadScreen extends StatelessWidget {
             : null,
         title: Text(team?.name ?? 'Mein Kader'),
         actions: [
+          if (team != null)
+            IconButton(
+              tooltip: 'Statistik',
+              icon: const Icon(Icons.bar_chart),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => StatsScreen(
+                    teamId: team.id,
+                    teamName: team.name,
+                    fupaUrl: team.fupaUrl,
+                  ),
+                ),
+              ),
+            ),
           if (team != null)
             IconButton(
               tooltip: 'Team umbenennen',

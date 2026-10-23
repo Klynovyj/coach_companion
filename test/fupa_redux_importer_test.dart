@@ -128,4 +128,23 @@ void main() {
       expect(m1.ownGoals, isNull);
     });
   });
+
+  group('FupaReduxImporter.parseTeamStatsHtml', () {
+    test('liest Spieler-Saison-Statistik', () {
+      const html = 'window.REDUX_DATA = '
+          '{"dataHistory":[{"TeamPlayerStatsPage":{"season":{"players":['
+          '{"id":1,"firstName":"Max","lastName":"Mustermann","matches":10,"goals":7,"assists":3,"yellowCards":2,"yellowRedCards":0,"redCards":0,"minutesPlayed":850,"topEleven":4},'
+          '{"id":2,"firstName":"Jonas","lastName":"Keller","matches":12,"goals":0,"assists":0,"minutesPlayed":1080}'
+          ']}}}]};';
+      final stats = FupaReduxImporter.parseTeamStatsHtml(html);
+      expect(stats, hasLength(2));
+      expect(stats[0].lastName, 'Mustermann');
+      expect(stats[0].goals, 7);
+      expect(stats[0].assists, 3);
+      expect(stats[0].minutes, 850);
+      expect(stats[0].topEleven, 4);
+      expect(stats[1].minutes, 1080);
+      expect(stats[1].goals, 0);
+    });
+  });
 }

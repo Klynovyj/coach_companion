@@ -52,6 +52,22 @@ Daneben gibt es weiterhin:
 Alle Importe laufen durch dieselbe **Duplikaterkennung** (`FupaPersistence`):
 Abgleich über externe ID bzw. normalisierten Namen, kein Doppel-Import.
 
+### Spielplan, Gegner-Kader und Statistik aus dem Teamlink
+
+- **Spielplan** (Spielplan-Tab → „FuPa-Spielplan importieren"): liest
+  `TeamMatchesPage.items` von `…/team/<slug>/matches` – alle Spiele mit Gegner,
+  Datum, Heim/Auswärts, Wettbewerb, **Ergebnis** (gespielte Spiele als
+  „beendet" inkl. Spielstand), Gegner-Teamlink und -Wappen.
+- **Gegner-Kader automatisch**: Beim Öffnen eines Spiels lädt der
+  `OpponentSyncService` den Gegnerkader über den im Spielplan gespeicherten
+  FuPa-Teamlink (inkl. Name/Logo). Ohne Link: Platzhalter + manuelle Pflege.
+- **Spieler-Statistik** (Kader-Tab → Diagramm-Symbol): liest
+  `TeamPlayerStatsPage.season.players` von `…/team/<slug>/playerstats` –
+  Spiele, Tore, Vorlagen, Karten, Minuten, Elf-des-Tages; sortierbare Tabelle.
+
+Alle drei akzeptieren den Basis-Teamlink und hängen die passende Unterseite
+selbst an.
+
 ## Architektur
 
 ```

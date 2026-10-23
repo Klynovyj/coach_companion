@@ -8,6 +8,7 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/player.dart';
 import '../models/player_rating.dart';
+import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../services/fupa/approved_api_fupa_data_source.dart';
 import '../services/fupa/fupa_dtos.dart';
@@ -118,6 +119,35 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     return added;
   }
+
+  /// Importiert die Spieler-Saison-Statistik aus einem FuPa-Link und ersetzt
+  /// den bisherigen Stand des Teams. Gibt die Anzahl Spieler zurück.
+  Future<int> importStats(String teamId, String url) async {
+    final importer = FupaReduxImporter();
+    final data = await importer.importStats(url);
+    final stats = data
+        .map((d) => PlayerStat(
+              id: _uuid.v4(),
+              teamId: teamId,
+              externalId: d.externalId,
+              firstName: d.firstName,
+              lastName: d.lastName,
+              matches: d.matches,
+              goals: d.goals,
+              assists: d.assists,
+              yellowCards: d.yellowCards,
+              yellowRedCards: d.yellowRedCards,
+              redCards: d.redCards,
+              minutes: d.minutes,
+              topEleven: d.topEleven,
+            ))
+        .toList();
+    await _repo.replaceStats(teamId, stats);
+    notifyListeners();
+    return stats.length;
+  }
+
+  Future<List<PlayerStat>> statsOf(String teamId) => _repo.getStats(teamId);
 
   Future<ImportResult> resyncOwnTeam() async {
     final result = await importService.resyncOwnTeam();

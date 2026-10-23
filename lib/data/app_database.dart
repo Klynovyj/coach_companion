@@ -13,7 +13,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 3;
+  static const _dbVersion = 4;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -54,7 +54,30 @@ class AppDatabase {
       await db.execute('ALTER TABLE matches ADD COLUMN opponent_fupa_url TEXT');
       await db.execute('ALTER TABLE matches ADD COLUMN opponent_logo_path TEXT');
     }
+    // v3 -> v4: Spieler-Saison-Statistik.
+    if (oldV < 4) {
+      await db.execute(_playerStatsTableSql);
+    }
   }
+
+  static const _playerStatsTableSql = '''
+      CREATE TABLE player_stats (
+        id TEXT PRIMARY KEY,
+        team_id TEXT NOT NULL,
+        external_id TEXT,
+        first_name TEXT NOT NULL,
+        last_name TEXT NOT NULL,
+        matches INTEGER NOT NULL DEFAULT 0,
+        goals INTEGER NOT NULL DEFAULT 0,
+        assists INTEGER NOT NULL DEFAULT 0,
+        yellow_cards INTEGER NOT NULL DEFAULT 0,
+        yellow_red_cards INTEGER NOT NULL DEFAULT 0,
+        red_cards INTEGER NOT NULL DEFAULT 0,
+        minutes INTEGER NOT NULL DEFAULT 0,
+        top_eleven INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
+      )
+  ''';
 
   Future<void> _createSchema(Database db, int version) async {
     await db.execute('''
@@ -172,6 +195,10 @@ class AppDatabase {
     ''');
     await db.execute(
         'CREATE UNIQUE INDEX idx_rating_match_player ON player_ratings (match_id, player_id)');
+
+    await db.execute(_playerStatsTableSql);
+    await db.execute(
+        'CREATE INDEX idx_stats_team ON player_stats (team_id)');
 
     await db.execute('''
       CREATE TABLE settings (

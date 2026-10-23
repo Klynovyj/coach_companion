@@ -6,6 +6,7 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/player.dart';
 import '../models/player_rating.dart';
+import '../models/player_stat.dart';
 import '../models/team.dart';
 import 'app_database.dart';
 
@@ -231,5 +232,25 @@ class CoachRepository {
   Future<void> deleteRating(String id) async {
     final db = await _db;
     await db.delete('player_ratings', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ------------------------------------------------------------ Player stats
+  Future<List<PlayerStat>> getStats(String teamId) async {
+    final db = await _db;
+    final rows = await db.query('player_stats',
+        where: 'team_id = ?', whereArgs: [teamId]);
+    return rows.map(PlayerStat.fromMap).toList();
+  }
+
+  /// Ersetzt die Statistik eines Teams atomar (ein Import = ein Stand).
+  Future<void> replaceStats(String teamId, List<PlayerStat> stats) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      await txn
+          .delete('player_stats', where: 'team_id = ?', whereArgs: [teamId]);
+      for (final s in stats) {
+        await txn.insert('player_stats', s.toMap());
+      }
+    });
   }
 }

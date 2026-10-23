@@ -107,6 +107,35 @@ class ScheduledMatchData {
       );
 }
 
+/// Saison-Statistik eines Spielers aus FuPa (quellneutral).
+class PlayerStatData {
+  final String? externalId;
+  final String firstName;
+  final String lastName;
+  final int matches;
+  final int goals;
+  final int assists;
+  final int yellowCards;
+  final int yellowRedCards;
+  final int redCards;
+  final int minutes;
+  final int topEleven;
+
+  const PlayerStatData({
+    this.externalId,
+    required this.firstName,
+    required this.lastName,
+    this.matches = 0,
+    this.goals = 0,
+    this.assists = 0,
+    this.yellowCards = 0,
+    this.yellowRedCards = 0,
+    this.redCards = 0,
+    this.minutes = 0,
+    this.topEleven = 0,
+  });
+}
+
 /// Verfügbarkeit einer Datenquelle zum aktuellen Zeitpunkt.
 class SourceAvailability {
   /// true = kann jetzt automatisch (online) importieren.
