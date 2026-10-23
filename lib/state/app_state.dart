@@ -916,6 +916,38 @@ class AppState extends ChangeNotifier {
     return (standing, form, table);
   }
 
+  /// Komplette Liga-Tabelle + die Zeile unseres Teams (für die Statistik).
+  Future<(StandingRow?, List<StandingRow>)> leagueTable(String ownTeamId) async {
+    final own = await _repo.getTeam(ownTeamId);
+    final ownSlug = FupaReduxImporter.teamSlugFromUrl(own?.fupaUrl);
+    const empty = (null, <StandingRow>[]);
+    var leagueSlug = await _repo.getSetting('league_slug');
+    if (leagueSlug == null || leagueSlug.isEmpty) {
+      final url = own?.fupaUrl;
+      if (url != null) {
+        leagueSlug = await _importer.leagueSlugForTeam(url);
+        if (leagueSlug != null) {
+          await _repo.setSetting('league_slug', leagueSlug);
+        }
+      }
+    }
+    if (leagueSlug == null) return empty;
+    var table = const <StandingRow>[];
+    try {
+      table = await _importer.fetchStanding(leagueSlug);
+    } catch (_) {}
+    StandingRow? ours;
+    if (ownSlug != null) {
+      for (final r in table) {
+        if (r.teamSlug == ownSlug) {
+          ours = r;
+          break;
+        }
+      }
+    }
+    return (ours, table);
+  }
+
   Future<void> toggleScoutMarker(
       String playerId, ScoutMarker m, bool on) async {
     if (on) {
