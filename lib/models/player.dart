@@ -25,8 +25,14 @@ class Player {
   /// Rolle im Trainerteam (z.B. „Trainer", „Co-Trainer"); null = Spieler.
   final String? staffRole;
 
-  /// true = gehört zum Trainerteam (kein Feldspieler).
+  /// true = hat eine Trainerrolle (auch spielender Co-Trainer) – kein
+  /// Ball-/Materialdienst.
   bool get isStaff => staffRole != null && staffRole!.isNotEmpty;
+
+  /// true = reines Trainerteam (nicht spielend) – eigener Kader-Bereich,
+  /// keine Nominierung/Aufstellung. Ein „spielender Co-Trainer" bleibt Spieler.
+  bool get isStaffOnly =>
+      isStaff && !staffRole!.toLowerCase().contains('spielend');
 
   /// Verfügbarkeitsstatus (Fit/Verletzt/Krank/Gesperrt).
   final PlayerStatus status;

@@ -37,9 +37,10 @@ class _NominationScreenState extends State<NominationScreen> {
 
   Future<void> _load() async {
     final state = context.read<AppState>();
-    // Trainerteam wird nicht nominiert.
-    final players =
-        (await state.playersOf(widget.teamId)).where((p) => !p.isStaff).toList();
+    // Reines Trainerteam wird nicht nominiert (spielender Co-Trainer schon).
+    final players = (await state.playersOf(widget.teamId))
+        .where((p) => !p.isStaffOnly)
+        .toList();
     final noms = await state.nominationsOf(widget.matchId);
     if (!mounted) return;
     setState(() {

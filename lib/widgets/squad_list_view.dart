@@ -89,9 +89,9 @@ class _SquadListViewState extends State<SquadListView> {
         // Trainerteam getrennt führen: erscheint nicht in der Spielerliste und
         // nur im vollen Kader (nicht bei Nominierungs-/Gegneransicht).
         final staff = (!widget.isOpponent && widget.onlyPlayerIds == null)
-            ? players.where((p) => p.isStaff).toList()
+            ? players.where((p) => p.isStaffOnly).toList()
             : const <Player>[];
-        players = players.where((p) => !p.isStaff).toList();
+        players = players.where((p) => !p.isStaffOnly).toList();
 
         if (all.isEmpty) {
           if (!widget.showActions) {

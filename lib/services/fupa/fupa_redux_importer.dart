@@ -577,11 +577,12 @@ class FupaReduxImporter {
         photoUrl: _imagePath(raw['image']),
       ));
     }
-    // Trainerteam (coaches) ergänzen – als Staff mit Rolle. Wer bereits als
-    // Spieler im Kader steht (z.B. „spielender Co-Trainer"), bleibt Spieler.
-    final playerNames = {
-      for (final p in out)
-        '${p.firstName.toLowerCase()}|${p.lastName.toLowerCase()}',
+    // Trainerteam (coaches). Ein „spielender Co-Trainer" ist zugleich Spieler:
+    // dann wird die Rolle am vorhandenen Spieler gesetzt (er bleibt Spieler),
+    // sonst als reines Trainerteam-Mitglied ergänzt.
+    final idxByName = <String, int>{
+      for (var i = 0; i < out.length; i++)
+        '${out[i].firstName.toLowerCase()}|${out[i].lastName.toLowerCase()}': i,
     };
     for (final raw in _extractCoaches(redux)) {
       if (raw is! Map) continue;
@@ -589,18 +590,32 @@ class FupaReduxImporter {
       final first = (raw['firstName'] as String?)?.trim() ?? '';
       final last = (raw['lastName'] as String?)?.trim() ?? '';
       if (first.isEmpty && last.isEmpty) continue;
-      if (playerNames.contains('${first.toLowerCase()}|${last.toLowerCase()}')) {
-        continue;
-      }
       final role = (raw['role'] as String?)?.trim();
-      out.add(ParsedPlayer(
-        firstName: first,
-        lastName: last,
-        externalId: (raw['id'] ?? raw['slug'])?.toString(),
-        slug: raw['slug']?.toString(),
-        photoUrl: _imagePath(raw['image']),
-        staffRole: (role == null || role.isEmpty) ? 'Trainerteam' : role,
-      ));
+      final staffRole = (role == null || role.isEmpty) ? 'Trainerteam' : role;
+      final key = '${first.toLowerCase()}|${last.toLowerCase()}';
+      final existing = idxByName[key];
+      if (existing != null) {
+        final e = out[existing];
+        out[existing] = ParsedPlayer(
+          number: e.number,
+          firstName: e.firstName,
+          lastName: e.lastName,
+          position: e.position,
+          externalId: e.externalId,
+          slug: e.slug,
+          photoUrl: e.photoUrl,
+          staffRole: staffRole,
+        );
+      } else {
+        out.add(ParsedPlayer(
+          firstName: first,
+          lastName: last,
+          externalId: (raw['id'] ?? raw['slug'])?.toString(),
+          slug: raw['slug']?.toString(),
+          photoUrl: _imagePath(raw['image']),
+          staffRole: staffRole,
+        ));
+      }
     }
     return out;
   }
