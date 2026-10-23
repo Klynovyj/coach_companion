@@ -94,6 +94,19 @@ class Player {
     return '$n$fullName';
   }
 
+  /// Spitzname, falls gepflegt – sonst der volle Name (Listen/Aufgebot).
+  String get shortOrFullName {
+    final n = nickname?.trim();
+    return (n != null && n.isNotEmpty) ? n : fullName;
+  }
+
+  /// Kurzer Anzeigename fürs Feld: Spitzname, sonst Nachname (bzw. Vorname).
+  String get pitchName {
+    final n = nickname?.trim();
+    if (n != null && n.isNotEmpty) return n;
+    return lastName.isNotEmpty ? lastName : firstName;
+  }
+
   /// Normalisierter Name für die Duplikaterkennung ohne externalId.
   String get dedupKey =>
       '${firstName.trim().toLowerCase()}|${lastName.trim().toLowerCase()}';

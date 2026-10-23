@@ -292,7 +292,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   String _squadText() {
     List<String> names(Iterable<String> ids) => ids
         .where(_byId.containsKey)
-        .map((id) => _byId[id]!.fullName)
+        .map((id) => _byId[id]!.shortOrFullName)
         .toList()
       ..sort();
     final start = names(_starters.keys);
@@ -315,7 +315,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final ids = {..._starters.keys, ..._bench};
     return ids
         .where(_byId.containsKey)
-        .map((id) => _byId[id]!.fullName)
+        .map((id) => _byId[id]!.shortOrFullName)
         .toList()
       ..sort();
   }
@@ -612,7 +612,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             borderRadius: BorderRadius.circular(6),
           ),
           child: Text(
-            p.lastName.isNotEmpty ? p.lastName : p.firstName,
+            p.pitchName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
@@ -696,7 +696,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   }
 
   Widget _compactChip(Player p) {
-    final name = p.lastName.isNotEmpty ? p.lastName : p.firstName;
+    final name = p.pitchName;
     return Container(
       constraints: const BoxConstraints(maxWidth: 170),
       padding: const EdgeInsets.fromLTRB(4, 4, 10, 4),
@@ -780,7 +780,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final role = isStarter ? 'start' : (onBench ? 'bank' : 'raus');
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
-      title: Text(p.fullName),
+      title: Text(p.shortOrFullName),
       subtitle: p.position == null ? null : Text(p.position!),
       trailing: SegmentedButton<String>(
         style: const ButtonStyle(
