@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
 import '../models/player.dart';
+import '../models/player_stat.dart';
 import '../models/scout_marker.dart';
 import '../screens/paste_import_screen.dart';
 import '../screens/player_detail_screen.dart';
@@ -75,6 +76,7 @@ class _SquadListViewState extends State<SquadListView> {
         final ratings = snap.data!.ratings;
         final markers = snap.data!.markers;
         final goals = snap.data!.goals;
+        final stats = snap.data!.stats;
 
         var players = all;
         if (widget.onlyPlayerIds != null) {
@@ -121,8 +123,8 @@ class _SquadListViewState extends State<SquadListView> {
                   : ListView.separated(
                       itemCount: players.length,
                       separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, i) => _playerTile(
-                          context, players[i], cards, ratings, markers, goals),
+                      itemBuilder: (context, i) => _playerTile(context,
+                          players[i], cards, ratings, markers, goals, stats),
                     ),
             ),
             if (widget.showActions)
@@ -150,8 +152,11 @@ class _SquadListViewState extends State<SquadListView> {
     Map<String, (double, int)> ratings,
     Map<String, Set<ScoutMarker>> markers,
     Map<String, int> goals,
+    Map<String, PlayerStat> stats,
   ) {
-    if (widget.isOpponent) return _opponentTile(context, p, markers, goals);
+    if (widget.isOpponent) {
+      return _opponentTile(context, p, markers, stats[p.dedupKey]);
+    }
 
     final inactive = p.status == PlayerStatus.inaktiv;
     final tile = ListTile(
@@ -172,7 +177,7 @@ class _SquadListViewState extends State<SquadListView> {
           ],
         ],
       ),
-      subtitle: _subtitle(p, cards[p.id], ratings[p.id]),
+      subtitle: _subtitle(p, cards[p.id], ratings[p.id], stats[p.dedupKey]),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => PlayerDetailScreen(player: p)),
@@ -196,10 +201,10 @@ class _SquadListViewState extends State<SquadListView> {
     BuildContext context,
     Player p,
     Map<String, Set<ScoutMarker>> markers,
-    Map<String, int> goals,
+    PlayerStat? stat,
   ) {
     final ms = (markers[p.id] ?? const <ScoutMarker>{}).toList();
-    final g = goals[p.dedupKey] ?? 0;
+    final g = stat?.goals ?? 0;
     final scheme = Theme.of(context).colorScheme;
     return ListTile(
       leading: PlayerAvatar(player: p),
@@ -215,20 +220,23 @@ class _SquadListViewState extends State<SquadListView> {
           ],
         ],
       ),
-      subtitle: Row(
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (p.position != null)
-            Flexible(
-                child: Text(p.position!,
-                    maxLines: 1, overflow: TextOverflow.ellipsis)),
-          if (g > 0) ...[
-            if (p.position != null) const Text('  ·  '),
-            const Text('⚽ ', style: TextStyle(fontSize: 12)),
-            Text('$g',
+            Text(p.position!, maxLines: 1, overflow: TextOverflow.ellipsis),
+          if (stat != null &&
+              (stat.matches > 0 || stat.goals > 0 || stat.assists > 0))
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                '${stat.matches} Sp · ⚽ ${stat.goals} · 🅰 ${stat.assists}',
                 style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: g >= 5 ? Colors.red.shade700 : null)),
-          ],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: g >= 5 ? Colors.red.shade700 : null),
+              ),
+            ),
         ],
       ),
       trailing: ms.isEmpty
@@ -341,12 +349,20 @@ class _SquadListViewState extends State<SquadListView> {
     final goals = widget.isOpponent
         ? await state.scoutGoals(widget.teamId)
         : const <String, int>{};
-    return _SquadData(players, cards, ratings, markers, goals);
+    // FuPa-Saisonstatistik je Spieler (über den Namen zugeordnet).
+    final statsList = await state.statsOf(widget.teamId);
+    final stats = <String, PlayerStat>{
+      for (final s in statsList)
+        '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}':
+            s,
+    };
+    return _SquadData(players, cards, ratings, markers, goals, stats);
   }
 
-  /// Untertitel mit Position, Bewertungsschnitt und – falls vorhanden –
-  /// Karten-Badges.
-  Widget? _subtitle(Player p, Map<CardType, int>? cards, (double, int)? rating) {
+  /// Untertitel mit Position, Bewertungsschnitt, Karten-Badges und – falls
+  /// vorhanden – der FuPa-Saisonstatistik (Spiele/Tore/Vorlagen).
+  Widget? _subtitle(Player p, Map<CardType, int>? cards, (double, int)? rating,
+      PlayerStat? stat) {
     final parts = <Widget>[];
     if (p.position != null) parts.add(Text(p.position!));
     if (rating != null) {
@@ -366,14 +382,36 @@ class _SquadListViewState extends State<SquadListView> {
       ];
       if (badges.isNotEmpty) parts.add(Text(badges.join('  ')));
     }
-    if (parts.isEmpty) return null;
-    return Row(
+    final statLine = _statLine(stat);
+    if (parts.isEmpty && statLine == null) return null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (var i = 0; i < parts.length; i++) ...[
-          if (i > 0) const Text('  ·  '),
-          parts[i],
-        ],
+        if (parts.isNotEmpty)
+          Row(
+            children: [
+              for (var i = 0; i < parts.length; i++) ...[
+                if (i > 0) const Text('  ·  '),
+                parts[i],
+              ],
+            ],
+          ),
+        ?statLine,
       ],
+    );
+  }
+
+  /// Kompakte Saison-Zeile (FuPa): „13 Sp · ⚽ 5 · 🅰 3".
+  Widget? _statLine(PlayerStat? s) {
+    if (s == null || (s.matches == 0 && s.goals == 0 && s.assists == 0)) {
+      return null;
+    }
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Text(
+        '${s.matches} Sp · ⚽ ${s.goals} · 🅰 ${s.assists}',
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+      ),
     );
   }
 
@@ -464,8 +502,9 @@ class _SquadData {
   final Map<String, (double, int)> ratings;
   final Map<String, Set<ScoutMarker>> markers;
   final Map<String, int> goals;
-  const _SquadData(
-      this.players, this.cardCounts, this.ratings, this.markers, this.goals);
+  final Map<String, PlayerStat> stats;
+  const _SquadData(this.players, this.cardCounts, this.ratings, this.markers,
+      this.goals, this.stats);
 }
 
 class _EmptyState extends StatelessWidget {

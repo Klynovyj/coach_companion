@@ -232,20 +232,20 @@ class FupaReduxImporter {
     return m?.group(1)?.toLowerCase();
   }
 
-  /// Tabellenzeile eines Teams aus der Liga-Tabelle (Standing-Seite der Liga).
-  Future<StandingRow?> fetchStandingRow(
-      String leagueSlug, String teamSlug) async {
-    final html = await _fetchHtml(
-        'https://www.fupa.net/league/$leagueSlug/standing');
-    return parseStandingRow(html, teamSlug);
+  /// Komplette Liga-Tabelle (alle Teams) von der Standing-Seite der Liga.
+  Future<List<StandingRow>> fetchStanding(String leagueSlug) async {
+    final html =
+        await _fetchHtml('https://www.fupa.net/league/$leagueSlug/standing');
+    return parseStanding(html);
   }
 
-  /// Netzwerkfrei testbar: Tabellenzeile aus dem Standing-HTML.
-  static StandingRow? parseStandingRow(String html, String teamSlug) {
+  /// Netzwerkfrei testbar: komplette Tabelle aus dem Standing-HTML.
+  static List<StandingRow> parseStanding(String html) {
     int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
     final redux = _extractRedux(html);
     final dh = redux['dataHistory'];
-    if (dh is! List) return null;
+    final out = <StandingRow>[];
+    if (dh is! List) return out;
     for (final entry in dh) {
       if (entry is! Map) continue;
       final page = entry['LeagueStandingPage'];
@@ -257,23 +257,32 @@ class FupaReduxImporter {
       for (final s in standings) {
         if (s is! Map) continue;
         final team = s['team'];
-        if (team is Map &&
-            (team['slug'] as String?)?.toLowerCase() == teamSlug) {
-          return StandingRow(
-            rank: asInt(s['rank']),
-            matches: asInt(s['matches']),
-            wins: asInt(s['wins']),
-            draws: asInt(s['draws']),
-            defeats: asInt(s['defeats']),
-            goalsFor: asInt(s['ownGoals']),
-            goalsAgainst: asInt(s['againstGoals']),
-            goalDiff: asInt(s['goalDifference']),
-            points: asInt(s['points']),
-            totalTeams: standings.length,
-            teamName: _teamName(team),
-          );
-        }
+        out.add(StandingRow(
+          rank: asInt(s['rank']),
+          matches: asInt(s['matches']),
+          wins: asInt(s['wins']),
+          draws: asInt(s['draws']),
+          defeats: asInt(s['defeats']),
+          goalsFor: asInt(s['ownGoals']),
+          goalsAgainst: asInt(s['againstGoals']),
+          goalDiff: asInt(s['goalDifference']),
+          points: asInt(s['points']),
+          totalTeams: standings.length,
+          teamName: team is Map ? _teamName(team) : 'Team',
+          teamSlug: team is Map
+              ? (team['slug'] as String?)?.toLowerCase() ?? ''
+              : '',
+        ));
       }
+      break; // erste Tabellenseite genügt
+    }
+    return out;
+  }
+
+  /// Tabellenzeile eines Teams (aus der kompletten Tabelle).
+  static StandingRow? parseStandingRow(String html, String teamSlug) {
+    for (final r in parseStanding(html)) {
+      if (r.teamSlug == teamSlug) return r;
     }
     return null;
   }

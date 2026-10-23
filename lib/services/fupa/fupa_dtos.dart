@@ -135,6 +135,7 @@ class StandingRow {
   final int points;
   final int totalTeams;
   final String teamName;
+  final String teamSlug;
 
   const StandingRow({
     required this.rank,
@@ -148,6 +149,7 @@ class StandingRow {
     required this.points,
     required this.totalTeams,
     required this.teamName,
+    this.teamSlug = '',
   });
 }
 

@@ -874,13 +874,14 @@ class AppState extends ChangeNotifier {
   Future<Map<String, String>> scoutCommentsForTeam(String teamId) =>
       _repo.commentsForTeam(teamId);
 
-  /// Liga-Tabellenplatz + Form (letzte 5) des Gegners – aus der FuPa-Liga.
-  Future<(StandingRow?, List<FormMatch>)> opponentAnalysis(
+  /// Liga-Tabelle (komplett) + Platz + Form (letzte 5) des Gegners.
+  Future<(StandingRow?, List<FormMatch>, List<StandingRow>)> opponentAnalysis(
       String ownTeamId, String opponentTeamId) async {
     final own = await _repo.getTeam(ownTeamId);
     final opp = await _repo.getTeam(opponentTeamId);
     final oppSlug = FupaReduxImporter.teamSlugFromUrl(opp?.fupaUrl);
-    if (oppSlug == null) return (null, const <FormMatch>[]);
+    const empty = (null, <FormMatch>[], <StandingRow>[]);
+    if (oppSlug == null) return empty;
     // Liga-Slug aus Einstellungen (Cache) oder aus dem eigenen Team ableiten.
     var leagueSlug = await _repo.getSetting('league_slug');
     if (leagueSlug == null || leagueSlug.isEmpty) {
@@ -892,16 +893,23 @@ class AppState extends ChangeNotifier {
         }
       }
     }
-    if (leagueSlug == null) return (null, const <FormMatch>[]);
-    StandingRow? standing;
+    if (leagueSlug == null) return empty;
+    var table = const <StandingRow>[];
     var form = const <FormMatch>[];
     try {
-      standing = await _importer.fetchStandingRow(leagueSlug, oppSlug);
+      table = await _importer.fetchStanding(leagueSlug);
     } catch (_) {}
     try {
       form = await _importer.fetchTeamForm(leagueSlug, oppSlug, limit: 5);
     } catch (_) {}
-    return (standing, form);
+    StandingRow? standing;
+    for (final r in table) {
+      if (r.teamSlug == oppSlug) {
+        standing = r;
+        break;
+      }
+    }
+    return (standing, form, table);
   }
 
   Future<void> toggleScoutMarker(

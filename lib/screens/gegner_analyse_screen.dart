@@ -44,6 +44,7 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
   List<GameMatch> _duelle = [];
   StandingRow? _standing;
   List<FormMatch> _form = [];
+  List<StandingRow> _table = [];
   bool _loading = true;
 
   @override
@@ -74,8 +75,8 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
     }).toList()
       ..sort((a, b) =>
           (b.kickoff ?? b.createdAt).compareTo(a.kickoff ?? a.createdAt));
-    // Tabellenplatz + Form aus der FuPa-Liga (bestmöglich).
-    final (standing, form) =
+    // Tabelle (komplett) + Platz + Form aus der FuPa-Liga (bestmöglich).
+    final (standing, form, table) =
         await s.opponentAnalysis(widget.ownTeamId, widget.opponentTeamId);
     if (!mounted) return;
     setState(() {
@@ -86,6 +87,7 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
       _duelle = duelle;
       _standing = standing;
       _form = form;
+      _table = table;
       _loading = false;
     });
   }
@@ -187,11 +189,14 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
       subtitle: 'Gegner-Analyse',
       logoPath: widget.opponentLogoPath,
       rows: [
-        if (st != null)
-          _Row.text(
-              'Tabelle: Platz ${st.rank} von ${st.totalTeams} · ${st.points} Punkte'),
-        _Row.text('${_players.length} Spieler im Kader'),
-        _Row.text('${_duelle.length} bisherige Duelle'),
+        _Row.kpis([
+          if (st != null) ('${st.rank}.', 'Platz'),
+          if (st != null) ('${st.points}', 'Punkte'),
+          ('${_players.length}', 'Kader'),
+          ('${_duelle.length}', 'Duelle'),
+        ]),
+        if (_form.isNotEmpty)
+          _Row.text('Form: ${_form.map((f) => f.result).join(' ')}'),
       ],
     ));
 
@@ -203,6 +208,16 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
         title: 'Tabelle',
         subtitle: 'Platz ${st.rank} von ${st.totalTeams}',
         rows: [_Row.standing(st)],
+      ));
+    }
+    // Komplette Tabelle
+    if (_table.isNotEmpty) {
+      cards.add(_CardData(
+        icon: Icons.table_chart,
+        color: const Color(0xFF263238),
+        title: 'Komplette Tabelle',
+        subtitle: '${_table.length} Mannschaften',
+        rows: [_Row.table(_table, st?.teamSlug)],
       ));
     }
 
@@ -438,7 +453,7 @@ class _CardData {
   });
 }
 
-enum _RowKind { text, stat, player, duel, form, scouting, standing }
+enum _RowKind { text, stat, player, duel, form, scouting, standing, table, kpis }
 
 class _Row {
   final _RowKind kind;
@@ -458,6 +473,9 @@ class _Row {
   final String? comment;
   // Tabelle
   final StandingRow? standing;
+  final List<StandingRow>? tableRows;
+  final String? highlightSlug;
+  final List<(String, String)>? kpis;
 
   const _Row._({
     required this.kind,
@@ -474,11 +492,18 @@ class _Row {
     this.markers,
     this.comment,
     this.standing,
+    this.tableRows,
+    this.highlightSlug,
+    this.kpis,
   });
 
   factory _Row.text(String text) => _Row._(kind: _RowKind.text, text: text);
+  factory _Row.kpis(List<(String, String)> kpis) =>
+      _Row._(kind: _RowKind.kpis, kpis: kpis);
   factory _Row.standing(StandingRow s) =>
       _Row._(kind: _RowKind.standing, standing: s);
+  factory _Row.table(List<StandingRow> rows, String? highlightSlug) =>
+      _Row._(kind: _RowKind.table, tableRows: rows, highlightSlug: highlightSlug);
   factory _Row.stat({
     required int rank,
     Player? player,
@@ -696,6 +721,90 @@ class _AnalysisCardView extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.bold, color: c)),
             ],
           ),
+        );
+      case _RowKind.kpis:
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              for (final k in r.kpis!)
+                Column(
+                  children: [
+                    Text(k.$1,
+                        style: TextStyle(
+                            fontSize: 24,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.primary)),
+                    Text(k.$2, style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+            ],
+          ),
+        );
+      case _RowKind.table:
+        final rows = r.tableRows!;
+        Widget cell(String t, double w,
+                {bool header = false, Color? color}) =>
+            SizedBox(
+              width: w,
+              child: Text(t,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.clip,
+                  style: TextStyle(
+                      fontWeight:
+                          header ? FontWeight.bold : FontWeight.w600,
+                      color: color)),
+            );
+        return Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4, right: 4),
+              child: Row(
+                children: [
+                  cell('#', 28, header: true),
+                  const Expanded(
+                      child: Text('Team',
+                          style: TextStyle(fontWeight: FontWeight.bold))),
+                  cell('Sp', 30, header: true),
+                  cell('Diff', 40, header: true),
+                  cell('Pkt', 34, header: true),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            for (final t in rows)
+              Container(
+                color: t.teamSlug == r.highlightSlug
+                    ? Theme.of(context).colorScheme.primary.withValues(alpha: 0.12)
+                    : null,
+                padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 0),
+                child: Row(
+                  children: [
+                    cell('${t.rank}', 28,
+                        color: t.rank <= 2
+                            ? Colors.green.shade700
+                            : (t.rank >= rows.length - 2
+                                ? Colors.red.shade700
+                                : null),
+                        header: true),
+                    Expanded(
+                      child: Text(t.teamName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontWeight: t.teamSlug == r.highlightSlug
+                                  ? FontWeight.bold
+                                  : FontWeight.normal)),
+                    ),
+                    cell('${t.matches}', 30),
+                    cell('${t.goalDiff >= 0 ? '+' : ''}${t.goalDiff}', 40),
+                    cell('${t.points}', 34, header: true),
+                  ],
+                ),
+              ),
+          ],
         );
       case _RowKind.standing:
         final s = r.standing!;

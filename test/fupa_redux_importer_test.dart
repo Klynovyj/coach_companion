@@ -253,6 +253,13 @@ void main() {
       expect(row.goalDiff, 3);
       expect(row.totalTeams, 2);
       expect(row.teamName, 'SV Hösel');
+      expect(row.teamSlug, 'sv-hoesel-m2-2026-27');
+
+      // Komplette Tabelle: beide Zeilen.
+      final table = FupaReduxImporter.parseStanding(html);
+      expect(table, hasLength(2));
+      expect(table.first.rank, 7);
+      expect(table.last.rank, 1);
     });
   });
 
