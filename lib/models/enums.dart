@@ -195,6 +195,7 @@ enum NominationStatus {
   open('open', 'Offen'),
   zugesagt('zugesagt', 'Zugesagt'),
   unsicher('unsicher', 'Unsicher'),
+  unterVorbehalt('unter_vorbehalt', 'Unter Vorbehalt'),
   abgesagt('abgesagt', 'Abgesagt');
 
   const NominationStatus(this.storageKey, this.label);

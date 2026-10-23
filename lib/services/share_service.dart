@@ -137,6 +137,7 @@ String buildNominationText({
 
   group(NominationStatus.zugesagt, 'Zugesagt');
   group(NominationStatus.unsicher, 'Unsicher');
+  group(NominationStatus.unterVorbehalt, 'Unter Vorbehalt');
   group(NominationStatus.abgesagt, 'Abgesagt');
   group(NominationStatus.open, 'Offen');
   return b.toString().trim();
@@ -168,6 +169,7 @@ String buildEventText({
 
   group(NominationStatus.zugesagt, 'Zugesagt');
   group(NominationStatus.unsicher, 'Unsicher');
+  group(NominationStatus.unterVorbehalt, 'Unter Vorbehalt');
   group(NominationStatus.abgesagt, 'Abgesagt');
   return b.toString().trim();
 }

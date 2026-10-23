@@ -484,7 +484,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     final spieltag = (d['spieltag'] ?? '').trim();
     if (spieltag.isNotEmpty) b.writeln('$spieltag. Spieltag');
 
-    // Aufgebot: Zugesagte + Unsichere (als „unter Vorbehalt"), alphabetisch.
+    // Aufgebot: Zugesagte + „Unter Vorbehalt" (markiert), alphabetisch.
     final byId = {for (final p in players) p.id: p};
     final roster = <MapEntry<String, bool>>[];
     noms.forEach((id, status) {
@@ -492,7 +492,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
       if (p == null) return;
       if (status == NominationStatus.zugesagt) {
         roster.add(MapEntry(p.fullName, false));
-      } else if (status == NominationStatus.unsicher) {
+      } else if (status == NominationStatus.unterVorbehalt) {
         roster.add(MapEntry(p.fullName, true));
       }
     });
@@ -628,8 +628,8 @@ class _AnnouncementPageState extends State<_AnnouncementPage> {
           ),
           const SizedBox(height: 10),
           Text(
-            'Anstoßzeit und das Aufgebot (zugesagte Spieler, unsichere als '
-            '„unter Vorbehalt") werden automatisch ergänzt.',
+            'Anstoßzeit und das Aufgebot (zugesagte Spieler + „Unter '
+            'Vorbehalt") werden automatisch ergänzt.',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 20),

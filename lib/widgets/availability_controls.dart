@@ -9,6 +9,8 @@ Color availabilityColor(NominationStatus s) {
       return const Color(0xFF2E7D32);
     case NominationStatus.unsicher:
       return const Color(0xFFF9A825);
+    case NominationStatus.unterVorbehalt:
+      return const Color(0xFFEF6C00);
     case NominationStatus.abgesagt:
       return const Color(0xFFC62828);
     case NominationStatus.open:
@@ -47,6 +49,8 @@ class AvailabilityChoices extends StatelessWidget {
         const SizedBox(width: 4),
         _choice(NominationStatus.unsicher, Icons.help_outline),
         const SizedBox(width: 4),
+        _choice(NominationStatus.unterVorbehalt, Icons.pending_outlined),
+        const SizedBox(width: 4),
         _choice(NominationStatus.abgesagt, Icons.close),
       ],
     );
@@ -59,8 +63,8 @@ class AvailabilityChoices extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
       onTap: () => onChanged(selected ? NominationStatus.open : s),
       child: Container(
-        width: 36,
-        height: 36,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
           color: selected ? c : c.withValues(alpha: 0.12),
           shape: BoxShape.circle,
@@ -106,6 +110,7 @@ class AvailabilitySummary extends StatelessWidget {
       children: [
         chip(NominationStatus.zugesagt, 'zu'),
         chip(NominationStatus.unsicher, 'unsicher'),
+        chip(NominationStatus.unterVorbehalt, 'Vorbehalt'),
         chip(NominationStatus.abgesagt, 'ab'),
         chip(NominationStatus.open, 'offen'),
       ],
