@@ -371,6 +371,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                 _TeamActionBar(
                   label: _ownTeam?.name ?? 'Eigenes Team',
                   color: Theme.of(context).colorScheme.primary,
+                  isOwn: true,
                   // Erst nach Anpfiff (während einer Halbzeit) erfassbar.
                   enabled: _actionsEnabled,
                   onGoal: () => _addGoal(ownSide: true),
@@ -379,7 +380,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                 ),
                 _TeamActionBar(
                   label: match.opponentName,
-                  color: Theme.of(context).colorScheme.tertiary,
+                  color: const Color(0xFFB26A00), // Gegner klar abgesetzt
+                  isOwn: false,
                   enabled: _actionsEnabled,
                   onGoal: () => _addGoal(ownSide: false),
                   // Gegner: nur Tore für den Spielstand – keine Karten/Wechsel.
@@ -890,6 +892,7 @@ class _TeamActionBar extends StatelessWidget {
     this.onCard,
     this.onSub,
     this.enabled = true,
+    this.isOwn = true,
   });
 
   final String label;
@@ -900,6 +903,9 @@ class _TeamActionBar extends StatelessWidget {
 
   /// Nur nach Anpfiff aktiv.
   final bool enabled;
+
+  /// Eigenes Team (true) vs. Gegner (false) – für die Unterscheidung.
+  final bool isOwn;
 
   // Icon über Label – Text bleibt auch auf schmalen Handys lesbar.
   static final _actionStyle = ButtonStyle(
@@ -924,57 +930,87 @@ class _TeamActionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final torStyle = FilledButton.styleFrom(
+      backgroundColor: color,
+      foregroundColor: Colors.white,
+    ).merge(_actionStyle);
+    final outStyle = OutlinedButton.styleFrom(
+      foregroundColor: color,
+      side: BorderSide(color: color.withValues(alpha: 0.5)),
+    ).merge(_actionStyle);
+
     return Card(
-      child: Padding(
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          border: Border(left: BorderSide(color: color, width: 6)),
+        ),
         padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Container(width: 4, height: 18, color: color),
-                const SizedBox(width: 8),
+                Icon(isOwn ? Icons.home : Icons.flag_outlined,
+                    size: 16, color: color),
+                const SizedBox(width: 6),
                 Expanded(
                   child: Text(label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold, color: color)),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(isOwn ? 'MEIN TEAM' : 'GEGNER',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold)),
                 ),
               ],
             ),
             const SizedBox(height: 8),
+            // Immer drei gleich breite Slots – auch wenn Karte/Wechsel fehlen.
             Row(
               children: [
                 Expanded(
                   child: FilledButton(
                     onPressed: enabled ? onGoal : null,
-                    style: _actionStyle,
+                    style: torStyle,
                     child: _actionChild(
                         const Text('⚽', style: TextStyle(fontSize: 18)), 'Tor'),
                   ),
                 ),
-                if (onCard != null) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: enabled ? onCard : null,
-                      style: _actionStyle,
-                      child: _actionChild(
-                          const Icon(Icons.style, size: 20), 'Karte'),
-                    ),
-                  ),
-                ],
-                if (onSub != null) ...[
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: enabled ? onSub : null,
-                      style: _actionStyle,
-                      child: _actionChild(
-                          const Icon(Icons.swap_horiz, size: 20), 'Wechsel'),
-                    ),
-                  ),
-                ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: onCard == null
+                      ? const SizedBox.shrink()
+                      : OutlinedButton(
+                          onPressed: enabled ? onCard : null,
+                          style: outStyle,
+                          child: _actionChild(
+                              const Icon(Icons.style, size: 20), 'Karte'),
+                        ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: onSub == null
+                      ? const SizedBox.shrink()
+                      : OutlinedButton(
+                          onPressed: enabled ? onSub : null,
+                          style: outStyle,
+                          child: _actionChild(
+                              const Icon(Icons.swap_horiz, size: 20), 'Wechsel'),
+                        ),
+                ),
               ],
             ),
           ],
