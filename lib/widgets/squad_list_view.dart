@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/enums.dart';
 import '../models/player.dart';
 import '../screens/paste_import_screen.dart';
+import '../screens/player_detail_screen.dart';
 import '../state/app_state.dart';
 import 'player_avatar.dart';
 import 'player_edit_dialog.dart';
@@ -28,13 +30,14 @@ class SquadListView extends StatelessWidget {
   Widget build(BuildContext context) {
     // Lauscht auf Änderungen, damit nach Add/Edit/Delete neu geladen wird.
     final state = context.watch<AppState>();
-    return FutureBuilder<List<Player>>(
-      future: state.playersOf(teamId),
+    return FutureBuilder<_SquadData>(
+      future: _load(state),
       builder: (context, snap) {
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final players = snap.data!;
+        final players = snap.data!.players;
+        final cards = snap.data!.cardCounts;
         if (players.isEmpty) {
           return _EmptyState(
             hint: emptyHint,
@@ -53,7 +56,13 @@ class SquadListView extends StatelessWidget {
                   return ListTile(
                     leading: PlayerAvatar(player: p),
                     title: Text(p.fullName),
-                    subtitle: p.position == null ? null : Text(p.position!),
+                    subtitle: _subtitle(p, cards[p.id]),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => PlayerDetailScreen(player: p),
+                      ),
+                    ),
                     trailing: PopupMenuButton<String>(
                       onSelected: (v) {
                         if (v == 'edit') _edit(context, p);
@@ -93,6 +102,34 @@ class SquadListView extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+
+  Future<_SquadData> _load(AppState state) async {
+    final players = await state.playersOf(teamId);
+    final cards = await state.cardCountsForTeam(teamId);
+    return _SquadData(players, cards);
+  }
+
+  /// Untertitel mit Position und – falls vorhanden – Karten-Badges.
+  Widget? _subtitle(Player p, Map<CardType, int>? cards) {
+    final parts = <Widget>[];
+    if (p.position != null) parts.add(Text(p.position!));
+    if (cards != null && cards.isNotEmpty) {
+      final badges = <String>[
+        for (final t in CardType.values)
+          if ((cards[t] ?? 0) > 0) '${t.symbol} ${cards[t]}',
+      ];
+      if (badges.isNotEmpty) parts.add(Text(badges.join('  ')));
+    }
+    if (parts.isEmpty) return null;
+    return Row(
+      children: [
+        for (var i = 0; i < parts.length; i++) ...[
+          if (i > 0) const Text('  ·  '),
+          parts[i],
+        ],
+      ],
     );
   }
 
@@ -153,6 +190,12 @@ class SquadListView extends StatelessWidget {
       await context.read<AppState>().deletePlayer(p.id);
     }
   }
+}
+
+class _SquadData {
+  final List<Player> players;
+  final Map<String, Map<CardType, int>> cardCounts;
+  const _SquadData(this.players, this.cardCounts);
 }
 
 class _EmptyState extends StatelessWidget {

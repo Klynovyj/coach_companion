@@ -1,5 +1,6 @@
 import 'package:sqflite/sqflite.dart';
 
+import '../models/card_entry.dart';
 import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/match.dart';
@@ -273,5 +274,50 @@ class CoachRepository {
     final db = await _db;
     await db.delete('match_nominations',
         where: 'match_id = ? AND player_id = ?', whereArgs: [matchId, playerId]);
+  }
+
+  // ------------------------------------------------------------------- Cards
+  Future<List<CardEntry>> getCards(String playerId) async {
+    final db = await _db;
+    final rows = await db.query('card_entries',
+        where: 'player_id = ?', whereArgs: [playerId], orderBy: 'date DESC');
+    return rows.map(CardEntry.fromMap).toList();
+  }
+
+  Future<void> upsertCard(CardEntry card) async {
+    final db = await _db;
+    await db.insert('card_entries', card.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteCard(String id) async {
+    final db = await _db;
+    await db.delete('card_entries', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Löscht die zu einem Live-Ereignis gehörende Karte (falls vorhanden).
+  Future<void> deleteCardByEvent(String matchEventId) async {
+    final db = await _db;
+    await db.delete('card_entries',
+        where: 'match_event_id = ?', whereArgs: [matchEventId]);
+  }
+
+  /// Kartenzahl je Spieler eines Teams, als Map playerId -> {type: count}.
+  Future<Map<String, Map<CardType, int>>> cardCountsForTeam(
+      String teamId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT c.player_id AS pid, c.type AS type, COUNT(*) AS c '
+      'FROM card_entries c JOIN players p ON p.id = c.player_id '
+      'WHERE p.team_id = ? GROUP BY c.player_id, c.type',
+      [teamId],
+    );
+    final out = <String, Map<CardType, int>>{};
+    for (final r in rows) {
+      final pid = r['pid'] as String;
+      final type = CardType.fromKey(r['type'] as String?);
+      out.putIfAbsent(pid, () => {})[type] = r['c'] as int;
+    }
+    return out;
   }
 }

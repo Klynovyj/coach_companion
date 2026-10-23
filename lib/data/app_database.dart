@@ -13,7 +13,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 6;
+  static const _dbVersion = 7;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -68,7 +68,26 @@ class AppDatabase {
       await db.execute(
           'CREATE UNIQUE INDEX idx_nom_match_player ON match_nominations (match_id, player_id)');
     }
+    // v6 -> v7: Karten je Spieler.
+    if (oldV < 7) {
+      await db.execute(_cardEntriesTableSql);
+      await db.execute('CREATE INDEX idx_cards_player ON card_entries (player_id)');
+    }
   }
+
+  static const _cardEntriesTableSql = '''
+      CREATE TABLE card_entries (
+        id TEXT PRIMARY KEY,
+        player_id TEXT NOT NULL,
+        type TEXT NOT NULL,
+        date TEXT NOT NULL,
+        match_id TEXT,
+        match_event_id TEXT,
+        minute INTEGER,
+        note TEXT,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+      )
+  ''';
 
   static const _nominationsTableSql = '''
       CREATE TABLE match_nominations (
@@ -226,6 +245,9 @@ class AppDatabase {
     await db.execute(_nominationsTableSql);
     await db.execute(
         'CREATE UNIQUE INDEX idx_nom_match_player ON match_nominations (match_id, player_id)');
+
+    await db.execute(_cardEntriesTableSql);
+    await db.execute('CREATE INDEX idx_cards_player ON card_entries (player_id)');
 
     await db.execute('''
       CREATE TABLE settings (

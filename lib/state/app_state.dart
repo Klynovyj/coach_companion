@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
 import '../data/coach_repository.dart';
+import '../models/card_entry.dart';
 import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/match.dart';
@@ -374,6 +375,8 @@ class AppState extends ChangeNotifier {
   Future<List<MatchEvent>> eventsOf(String matchId) => _repo.getEvents(matchId);
 
   /// Fügt ein Ereignis hinzu und aktualisiert bei Toren den Spielstand.
+  /// Karten-Ereignisse mit bekanntem Spieler werden zusätzlich in den
+  /// Spieler-Kartenverlauf übernommen (verknüpft über die Ereignis-ID).
   Future<void> addEvent({
     required String matchId,
     required String teamId,
@@ -383,8 +386,9 @@ class AppState extends ChangeNotifier {
     String? assistPlayerId,
     String? note,
   }) async {
+    final eventId = _uuid.v4();
     await _repo.upsertEvent(MatchEvent(
-      id: _uuid.v4(),
+      id: eventId,
       matchId: matchId,
       teamId: teamId,
       minute: minute,
@@ -394,6 +398,22 @@ class AppState extends ChangeNotifier {
       note: note,
       createdAt: DateTime.now(),
     ));
+
+    final cardType = CardType.fromEvent(type);
+    if (cardType != null && playerId != null) {
+      final match = await _repo.getMatch(matchId);
+      await _repo.upsertCard(CardEntry(
+        id: _uuid.v4(),
+        playerId: playerId,
+        type: cardType,
+        date: match?.kickoff ?? DateTime.now(),
+        matchId: matchId,
+        matchEventId: eventId,
+        minute: minute,
+        note: note,
+      ));
+    }
+
     await _recomputeScore(matchId);
     notifyListeners();
   }
@@ -406,7 +426,44 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteEvent(String matchId, String eventId) async {
     await _repo.deleteEvent(eventId);
+    await _repo.deleteCardByEvent(eventId);
     await _recomputeScore(matchId);
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------------------- Cards
+  Future<List<CardEntry>> cardsOf(String playerId) => _repo.getCards(playerId);
+
+  Future<Map<String, Map<CardType, int>>> cardCountsForTeam(String teamId) =>
+      _repo.cardCountsForTeam(teamId);
+
+  Future<void> addCard({
+    required String playerId,
+    required CardType type,
+    required DateTime date,
+    String? matchId,
+    int? minute,
+    String? note,
+  }) async {
+    await _repo.upsertCard(CardEntry(
+      id: _uuid.v4(),
+      playerId: playerId,
+      type: type,
+      date: date,
+      matchId: matchId,
+      minute: minute,
+      note: note,
+    ));
+    notifyListeners();
+  }
+
+  Future<void> updateCard(CardEntry card) async {
+    await _repo.upsertCard(card);
+    notifyListeners();
+  }
+
+  Future<void> deleteCard(String id) async {
+    await _repo.deleteCard(id);
     notifyListeners();
   }
 

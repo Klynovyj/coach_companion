@@ -88,6 +88,35 @@ enum MatchEventType {
           orElse: () => MatchEventType.goal);
 }
 
+/// Kartentyp für den Disziplin-/Kartenverlauf eines Spielers.
+enum CardType {
+  yellow('yellow', 'Gelbe Karte', '🟨'),
+  yellowRed('yellow_red', 'Gelb-Rote Karte', '🟨🟥'),
+  red('red', 'Rote Karte', '🟥');
+
+  const CardType(this.storageKey, this.label, this.symbol);
+  final String storageKey;
+  final String label;
+  final String symbol;
+
+  static CardType fromKey(String? key) => CardType.values
+      .firstWhere((e) => e.storageKey == key, orElse: () => CardType.yellow);
+
+  /// Ableitung aus einem Live-Ereignistyp; null wenn keine Karte.
+  static CardType? fromEvent(MatchEventType type) {
+    switch (type) {
+      case MatchEventType.yellowCard:
+        return CardType.yellow;
+      case MatchEventType.secondYellow:
+        return CardType.yellowRed;
+      case MatchEventType.redCard:
+        return CardType.red;
+      default:
+        return null;
+    }
+  }
+}
+
 /// Nominierungs-/Verfügbarkeitsstatus eines Spielers für ein Spiel.
 enum NominationStatus {
   /// Keine Angabe (Standard – kein Datensatz).
