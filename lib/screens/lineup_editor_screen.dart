@@ -1,9 +1,7 @@
-import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
@@ -230,11 +228,17 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       final image = await boundary.toImage(pixelRatio: 3);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       if (data == null) return;
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/aufstellung.png');
-      await file.writeAsBytes(data.buffer.asUint8List());
-      await shareImageFile(file.path,
-          text: 'Aufstellung – ${widget.teamName}');
+      final savedPath = await shareOrSaveImage(
+        data.buffer.asUint8List(),
+        'Aufstellung_${widget.teamName}',
+        text: 'Aufstellung – ${widget.teamName}',
+      );
+      if (savedPath != null && mounted) {
+        messenger.showSnackBar(SnackBar(
+          content: Text('Als Bild gespeichert und geöffnet:\n$savedPath'),
+          duration: const Duration(seconds: 6),
+        ));
+      }
     } catch (e) {
       messenger.showSnackBar(
           SnackBar(content: Text('Teilen fehlgeschlagen: $e')));

@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -17,10 +21,43 @@ Future<bool> shareViaWhatsApp(String text) async {
   return launchUrl(uri, mode: LaunchMode.externalApplication);
 }
 
-/// Teilt ein Bild (z.B. die Aufstellung) über das System-Teilen-Menü – auf dem
-/// Handy erscheint dort WhatsApp. Optionaler Begleittext.
-Future<void> shareImageFile(String path, {String? text}) async {
-  await SharePlus.instance.share(ShareParams(files: [XFile(path)], text: text));
+/// Teilt ein Bild (z.B. die Aufstellung). Auf dem Handy (Android/iOS) über das
+/// System-Teilen-Menü, in dem WhatsApp & Co. erscheinen. Auf dem Desktop
+/// (Windows) gibt es dafür kein zuverlässiges System-Teilen für Dateien –
+/// dort wird das Bild in den Downloads-Ordner gespeichert und direkt mit dem
+/// Standard-Bildbetrachter geöffnet, sodass es z.B. in WhatsApp angehängt
+/// werden kann. Gibt den Speicherpfad zurück, wenn gespeichert wurde
+/// (Desktop), sonst null (mobil geteilt).
+Future<String?> shareOrSaveImage(
+  Uint8List bytes,
+  String baseName, {
+  String? text,
+}) async {
+  final safe = baseName.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+  if (Platform.isAndroid || Platform.isIOS) {
+    final dir = await getTemporaryDirectory();
+    final file = File('${dir.path}/$safe.png');
+    await file.writeAsBytes(bytes);
+    await SharePlus.instance
+        .share(ShareParams(files: [XFile(file.path)], text: text));
+    return null;
+  }
+  // Desktop: in den Downloads-Ordner speichern und direkt öffnen.
+  final dir =
+      await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
+  final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+  final file = File('${dir.path}/${safe}_$stamp.png');
+  await file.writeAsBytes(bytes);
+  // Öffnen ist optional – die Datei ist gespeichert, auch wenn kein Viewer startet.
+  try {
+    await launchUrl(
+      Uri.file(file.path, windows: Platform.isWindows),
+      mode: LaunchMode.externalApplication,
+    );
+  } catch (_) {
+    // ignorieren – Pfad wird dem Nutzer ohnehin angezeigt.
+  }
+  return file.path;
 }
 
 /// Baut den Spielbericht-Text (Ergebnis, Tore, Karten, Wechsel).
