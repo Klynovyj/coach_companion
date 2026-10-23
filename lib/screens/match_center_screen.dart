@@ -4,8 +4,10 @@ import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
 import '../models/match.dart';
+import '../models/player.dart';
 import '../models/team.dart';
 import '../services/fupa/fupa_dtos.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/squad_list_view.dart';
@@ -115,8 +117,17 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                 if (v == 'sync') _load(force: true);
                 if (v == 'reset') _resetMatch();
                 if (v == 'rate') _openRating();
+                if (v == 'announce') _shareAnnouncement();
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(
+                    value: 'announce',
+                    child: ListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.campaign_outlined),
+                      title: Text('Spieltags-Info teilen'),
+                    )),
                 PopupMenuItem(
                     value: 'sync',
                     child: ListTile(
@@ -397,6 +408,221 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
           opponentName: opp.name,
           opponentLogoPath: opp.logoPath ?? match.opponentLogoPath,
         ),
+      ),
+    );
+  }
+
+  /// Spieltags-Ankündigung: Formular öffnen (Felder je Spiel gemerkt),
+  /// Nachricht bauen und per WhatsApp teilen.
+  Future<void> _shareAnnouncement() async {
+    final match = _match;
+    if (match == null) return;
+    final state = context.read<AppState>();
+    final info = await state.matchAnnouncement(widget.matchId);
+    final players = await state.playersOf(match.ownTeamId);
+    final noms = await state.nominationsOf(widget.matchId);
+    if (!mounted) return;
+    final data = await Navigator.push<Map<String, String>>(
+      context,
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _AnnouncementPage(initial: info),
+      ),
+    );
+    if (data == null || !mounted) return;
+    await state.saveMatchAnnouncement(widget.matchId, data);
+    await shareViaWhatsApp(_buildAnnouncement(data, match, players, noms));
+  }
+
+  String _buildAnnouncement(Map<String, String> d, GameMatch match,
+      List<Player> players, Map<String, NominationStatus> noms) {
+    final tf = DateFormat('HH:mm', 'de_DE');
+    final b = StringBuffer();
+
+    final intro = (d['intro'] ?? '').trim();
+    if (intro.isNotEmpty) {
+      b.writeln(intro);
+      b.writeln('');
+    }
+    final trikot = (d['trikot'] ?? '').trim();
+    if (trikot.isNotEmpty) {
+      b.writeln('Trikot: $trikot');
+      b.writeln('');
+    }
+    final adresse = (d['adresse'] ?? '').trim();
+    if (adresse.isNotEmpty) {
+      b.writeln('Adresse:');
+      b.writeln(adresse);
+      b.writeln('');
+    }
+    final treff = (d['treffpunkte'] ?? '').trim();
+    if (treff.isNotEmpty || match.kickoff != null) {
+      b.writeln('Treffpunkte & Zeiten:');
+      if (treff.isNotEmpty) b.writeln(treff);
+      if (match.kickoff != null) {
+        b.writeln('Anstoß: ${tf.format(match.kickoff!.toLocal())} Uhr');
+      }
+      b.writeln('');
+    }
+    b.writeln(_ownTeam?.name ?? match.opponentName);
+    final spieltag = (d['spieltag'] ?? '').trim();
+    if (spieltag.isNotEmpty) b.writeln('$spieltag. Spieltag');
+
+    // Aufgebot: Zugesagte + Unsichere (als „unter Vorbehalt"), alphabetisch.
+    final byId = {for (final p in players) p.id: p};
+    final roster = <MapEntry<String, bool>>[];
+    noms.forEach((id, status) {
+      final p = byId[id];
+      if (p == null) return;
+      if (status == NominationStatus.zugesagt) {
+        roster.add(MapEntry(p.fullName, false));
+      } else if (status == NominationStatus.unsicher) {
+        roster.add(MapEntry(p.fullName, true));
+      }
+    });
+    roster.sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
+    if (roster.isNotEmpty) {
+      b.writeln('');
+      b.writeln('Aufgebot (${roster.length} Spieler):');
+      for (var i = 0; i < roster.length; i++) {
+        b.writeln('${i + 1}. ${roster[i].key}'
+            '${roster[i].value ? ' (unter Vorbehalt)' : ''}');
+      }
+    }
+    return b.toString().trim();
+  }
+}
+
+/// Vollbild-Formular für die Spieltags-Ankündigung.
+class _AnnouncementPage extends StatefulWidget {
+  const _AnnouncementPage({required this.initial});
+  final Map<String, String> initial;
+
+  @override
+  State<_AnnouncementPage> createState() => _AnnouncementPageState();
+}
+
+class _AnnouncementPageState extends State<_AnnouncementPage> {
+  late final TextEditingController _spieltag;
+  late final TextEditingController _trikot;
+  late final TextEditingController _adresse;
+  late final TextEditingController _treff;
+  late final TextEditingController _intro;
+
+  @override
+  void initState() {
+    super.initState();
+    final i = widget.initial;
+    _spieltag = TextEditingController(text: i['spieltag'] ?? '');
+    _trikot = TextEditingController(text: i['trikot'] ?? '');
+    _adresse = TextEditingController(text: i['adresse'] ?? '');
+    _treff = TextEditingController(text: i['treffpunkte'] ?? '');
+    _intro = TextEditingController(text: i['intro'] ?? '');
+  }
+
+  @override
+  void dispose() {
+    _spieltag.dispose();
+    _trikot.dispose();
+    _adresse.dispose();
+    _treff.dispose();
+    _intro.dispose();
+    super.dispose();
+  }
+
+  void _share() {
+    Navigator.pop(context, {
+      'spieltag': _spieltag.text.trim(),
+      'trikot': _trikot.text.trim(),
+      'adresse': _adresse.text.trim(),
+      'treffpunkte': _treff.text.trim(),
+      'intro': _intro.text.trim(),
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Spieltags-Info'),
+        actions: [
+          TextButton(onPressed: _share, child: const Text('Teilen')),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        children: [
+          TextField(
+            controller: _intro,
+            minLines: 3,
+            maxLines: 10,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Einleitung / Motivationstext (optional)',
+              hintText: 'Nabend zusammen, am Sonntag geht\'s …',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _spieltag,
+            keyboardType: TextInputType.number,
+            decoration: const InputDecoration(
+              labelText: 'Spieltag (Nr.)',
+              hintText: 'z.B. 11',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _trikot,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Trikot-Farbe',
+              hintText: 'z.B. Schwarz',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _adresse,
+            minLines: 1,
+            maxLines: 3,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Adresse / Spielstätte',
+              hintText: 'Sportplatz Post SV, 40625 Düsseldorf',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _treff,
+            minLines: 3,
+            maxLines: 8,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Treffpunkte & Zeiten',
+              hintText: 'Treffpunkt GSV Parkplatz 13:15\nAbfahrt 13:25\n'
+                  'Treffpunkt Post 13:50',
+              border: OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Anstoßzeit und das Aufgebot (zugesagte Spieler, unsichere als '
+            '„unter Vorbehalt") werden automatisch ergänzt.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: _share,
+            icon: const Icon(Icons.share),
+            label: const Text('Per WhatsApp teilen'),
+          ),
+        ],
       ),
     );
   }

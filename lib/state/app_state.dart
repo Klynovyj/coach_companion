@@ -469,6 +469,24 @@ class AppState extends ChangeNotifier {
     await _repo.setSetting('share_info_$matchId', jsonEncode(info));
   }
 
+  /// Spieltags-Ankündigung je Spiel (Spieltag, Trikot, Adresse, Treffpunkte,
+  /// Einleitungstext). Als JSON in den Settings.
+  Future<Map<String, String>> matchAnnouncement(String matchId) async {
+    final s = await _repo.getSetting('announce_$matchId');
+    if (s == null || s.isEmpty) return {};
+    try {
+      final m = jsonDecode(s) as Map<String, Object?>;
+      return m.map((k, v) => MapEntry(k, (v ?? '').toString()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> saveMatchAnnouncement(
+      String matchId, Map<String, String> info) async {
+    await _repo.setSetting('announce_$matchId', jsonEncode(info));
+  }
+
   // ------------------------------------------------------------- Nominations
   /// Status je Spieler für ein Spiel (Spieler ohne Datensatz = offen).
   Future<Map<String, NominationStatus>> nominationsOf(String matchId) async {
