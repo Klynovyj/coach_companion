@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:uuid/uuid.dart';
 
@@ -448,6 +450,24 @@ class AppState extends ChangeNotifier {
   }
 
   Future<GameMatch?> getMatch(String id) => _repo.getMatch(id);
+
+  /// Zusatz-Infos je Spiel für die Mannschafts-Kadernachricht (Spielstätte,
+  /// Adresse, Treffpunkt). Pro Spiel als JSON in den Settings gehalten.
+  Future<Map<String, String>> matchShareInfo(String matchId) async {
+    final s = await _repo.getSetting('share_info_$matchId');
+    if (s == null || s.isEmpty) return {};
+    try {
+      final m = jsonDecode(s) as Map<String, Object?>;
+      return m.map((k, v) => MapEntry(k, (v ?? '').toString()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> saveMatchShareInfo(
+      String matchId, Map<String, String> info) async {
+    await _repo.setSetting('share_info_$matchId', jsonEncode(info));
+  }
 
   // ------------------------------------------------------------- Nominations
   /// Status je Spieler für ein Spiel (Spieler ohne Datensatz = offen).

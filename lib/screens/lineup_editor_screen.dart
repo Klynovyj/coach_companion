@@ -2,10 +2,12 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
 import '../models/lineup.dart';
+import '../models/match.dart';
 import '../models/player.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
@@ -217,7 +219,45 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   /// Kader als Text (Namen alphabetisch) via WhatsApp.
   Future<void> _shareLineup() async {
     if (_listMode) {
-      await shareViaWhatsApp(_squadText());
+      // Zwei Varianten: Trainer (mit Start/Bank) oder Mannschaft (nur Infos).
+      final who = await showModalBottomSheet<String>(
+        context: context,
+        builder: (_) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Kader teilen',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.sports),
+                title: const Text('Für Trainer-Kollegen'),
+                subtitle: const Text('Mit Startelf und Ersatzbank'),
+                onTap: () => Navigator.pop(context, 'trainer'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.groups),
+                title: const Text('Für die Mannschaft'),
+                subtitle:
+                    const Text('Nur Kader & Infos – ohne Start/Bank'),
+                onTap: () => Navigator.pop(context, 'team'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (who == 'trainer') {
+        await shareViaWhatsApp(_squadText());
+      } else if (who == 'team' && mounted) {
+        await _shareForTeam();
+      }
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
@@ -264,6 +304,112 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       b.writeln('\nErsatzbank (${bench.length}):');
       b.writeln(bench.join('\n'));
     }
+    return b.toString().trim();
+  }
+
+  /// Alle Spieler des Kaders (Start + Bank) – alphabetisch, ohne Unterscheidung.
+  List<String> _allSquadNames() {
+    final ids = {..._starters.keys, ..._bench};
+    return ids
+        .where(_byId.containsKey)
+        .map((id) => _byId[id]!.fullName)
+        .toList()
+      ..sort();
+  }
+
+  /// Mannschafts-Variante: fragt Spielstätte/Adresse/Treffpunkt ab (gemerkt je
+  /// Spiel) und teilt NUR allgemeine Infos – ohne Start/Bank.
+  Future<void> _shareForTeam() async {
+    final state = context.read<AppState>();
+    final match = await state.getMatch(widget.matchId);
+    final info = await state.matchShareInfo(widget.matchId);
+    if (!mounted) return;
+    final venueCtrl = TextEditingController(text: info['venue'] ?? '');
+    final addrCtrl = TextEditingController(text: info['address'] ?? '');
+    final treffCtrl = TextEditingController(text: info['treff'] ?? '');
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text('Infos für die Mannschaft',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 4),
+                const Text('Start/Bank wird nicht geteilt.',
+                    style: TextStyle(fontSize: 12.5, color: Colors.grey)),
+                const SizedBox(height: 14),
+                TextField(
+                  controller: venueCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                      labelText: 'Spielstätte', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: addrCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                      labelText: 'Adresse / Anfahrt',
+                      border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: treffCtrl,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                      labelText: 'Treffpunkt (Ort/Zeit)',
+                      border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  icon: const Icon(Icons.share),
+                  label: const Text('An die Mannschaft teilen'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final venue = venueCtrl.text.trim();
+    final addr = addrCtrl.text.trim();
+    final treff = treffCtrl.text.trim();
+    await state.saveMatchShareInfo(
+        widget.matchId, {'venue': venue, 'address': addr, 'treff': treff});
+    await shareViaWhatsApp(_teamShareText(match, venue, addr, treff));
+  }
+
+  String _teamShareText(
+      GameMatch? match, String venue, String addr, String treff) {
+    final df = DateFormat('EEEE, dd.MM.yyyy · HH:mm', 'de_DE');
+    final b = StringBuffer();
+    b.writeln('${widget.teamName} – Infos zum Spiel');
+    if (match != null) {
+      b.writeln([
+        'gegen ${match.opponentName}',
+        match.venue.label,
+        if (match.kickoff != null)
+          'Anpfiff ${df.format(match.kickoff!.toLocal())}',
+      ].join(' · '));
+    }
+    final names = _allSquadNames();
+    if (names.isNotEmpty) {
+      b.writeln('\nKader (${names.length}):');
+      b.writeln(names.join(', '));
+    }
+    if (venue.isNotEmpty) b.writeln('\nSpielstätte: $venue');
+    if (addr.isNotEmpty) b.writeln('Adresse: $addr');
+    if (treff.isNotEmpty) b.writeln('Treffpunkt: $treff');
     return b.toString().trim();
   }
 
