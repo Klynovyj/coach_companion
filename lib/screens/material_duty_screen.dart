@@ -416,7 +416,7 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     final extras = _extrasFor(e.monday);
     if (extras.isNotEmpty) {
       b.writeln('_');
-      b.writeln('ZUSÄTZLICH (Strafe):');
+      b.writeln('ZUSÄTZLICH:');
       for (final p in extras) {
         b.writeln(_nameLastFirst(p));
       }
