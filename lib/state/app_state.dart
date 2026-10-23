@@ -6,6 +6,7 @@ import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/match.dart';
 import '../models/match_event.dart';
+import '../models/nomination.dart';
 import '../models/player.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
@@ -290,6 +291,48 @@ class AppState extends ChangeNotifier {
   }
 
   Future<GameMatch?> getMatch(String id) => _repo.getMatch(id);
+
+  // ------------------------------------------------------------- Nominations
+  /// Status je Spieler für ein Spiel (Spieler ohne Datensatz = offen).
+  Future<Map<String, NominationStatus>> nominationsOf(String matchId) async {
+    final rows = await _repo.getNominations(matchId);
+    return {for (final n in rows) n.playerId: n.status};
+  }
+
+  Future<void> setNomination(
+      String matchId, String playerId, NominationStatus status) async {
+    if (status == NominationStatus.open) {
+      await _repo.deleteNomination(matchId, playerId);
+    } else {
+      await _repo.upsertNomination(Nomination(
+        id: _uuid.v4(),
+        matchId: matchId,
+        playerId: playerId,
+        status: status,
+        updatedAt: DateTime.now(),
+      ));
+    }
+    notifyListeners();
+  }
+
+  /// Setzt für mehrere Spieler denselben Status (Bulk, z.B. „alle zusagen").
+  Future<void> setNominationBulk(
+      String matchId, List<String> playerIds, NominationStatus status) async {
+    for (final id in playerIds) {
+      if (status == NominationStatus.open) {
+        await _repo.deleteNomination(matchId, id);
+      } else {
+        await _repo.upsertNomination(Nomination(
+          id: _uuid.v4(),
+          matchId: matchId,
+          playerId: id,
+          status: status,
+          updatedAt: DateTime.now(),
+        ));
+      }
+    }
+    notifyListeners();
+  }
 
   /// Wird beim Öffnen eines Spiels aufgerufen (Gegner sicherstellen).
   Future<ImportResult> openMatch(GameMatch match, {bool force = false}) async {

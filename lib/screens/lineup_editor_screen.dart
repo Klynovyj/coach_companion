@@ -5,6 +5,7 @@ import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/player.dart';
 import '../state/app_state.dart';
+import 'nomination_screen.dart';
 
 /// Editor für die eigene Aufstellung: Formation, Startelf und Ersatzbank.
 /// Diese Entscheidungen trifft ausschließlich der Trainer.
@@ -33,6 +34,10 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   String _formation = '4-4-2';
   bool _loading = true;
 
+  /// Anzahl zugesagter Spieler; true, wenn die Auswahl auf Zusagen beschränkt ist.
+  int _nominatedCount = 0;
+  bool _restricted = false;
+
   @override
   void initState() {
     super.initState();
@@ -44,20 +49,52 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final lineup = await state.ensureLineup(widget.matchId, widget.teamId);
     final players = await state.playersOf(widget.teamId);
     final entries = await state.lineupEntries(lineup.id);
+    final noms = await state.nominationsOf(widget.matchId);
     final roleMap = {for (final e in entries) e.playerId: e.role};
+
+    // Aufstellung aus den Zusagen ableiten: nur zugesagte Spieler (plus die,
+    // die bereits in einer gespeicherten Aufstellung stehen). Gibt es noch
+    // keine Zusagen, fällt der Editor auf den ganzen Kader zurück.
+    final nominated = players
+        .where((p) => noms[p.id] == NominationStatus.zugesagt)
+        .toList();
+    final pool = nominated.isEmpty
+        ? players
+        : players
+            .where((p) =>
+                noms[p.id] == NominationStatus.zugesagt ||
+                roleMap.containsKey(p.id))
+            .toList();
+
     if (!mounted) return;
     setState(() {
       _lineup = lineup;
       _formation = lineup.formation;
-      _players = players;
+      _players = pool;
+      _nominatedCount = nominated.length;
+      _restricted = nominated.isNotEmpty;
       _roles
         ..clear()
         ..addAll({
-          for (final p in players)
+          for (final p in pool)
             p.id: roleMap[p.id] ?? LineupRole.substitute,
         });
       _loading = false;
     });
+  }
+
+  Future<void> _openNomination() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NominationScreen(
+          matchId: widget.matchId,
+          teamId: widget.teamId,
+          title: widget.teamName,
+        ),
+      ),
+    );
+    await _load();
   }
 
   int get _starterCount =>
@@ -125,6 +162,31 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             )
           : ListView(
               children: [
+                Container(
+                  width: double.infinity,
+                  color: Theme.of(context)
+                      .colorScheme
+                      .primaryContainer
+                      .withValues(alpha: 0.4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  child: Row(
+                    children: [
+                      Icon(Icons.how_to_reg,
+                          size: 18, color: Theme.of(context).colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(_restricted
+                            ? 'Auswahl aus $_nominatedCount zugesagten Spielern'
+                            : 'Noch keine Zusagen – es wird der ganze Kader gezeigt'),
+                      ),
+                      TextButton(
+                        onPressed: _openNomination,
+                        child: const Text('Nominierung'),
+                      ),
+                    ],
+                  ),
+                ),
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: DropdownButtonFormField<String>(

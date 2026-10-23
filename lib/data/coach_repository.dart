@@ -4,6 +4,7 @@ import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/match.dart';
 import '../models/match_event.dart';
+import '../models/nomination.dart';
 import '../models/player.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
@@ -252,5 +253,25 @@ class CoachRepository {
         await txn.insert('player_stats', s.toMap());
       }
     });
+  }
+
+  // ------------------------------------------------------------- Nominations
+  Future<List<Nomination>> getNominations(String matchId) async {
+    final db = await _db;
+    final rows = await db.query('match_nominations',
+        where: 'match_id = ?', whereArgs: [matchId]);
+    return rows.map(Nomination.fromMap).toList();
+  }
+
+  Future<void> upsertNomination(Nomination nomination) async {
+    final db = await _db;
+    await db.insert('match_nominations', nomination.toMap(),
+        conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> deleteNomination(String matchId, String playerId) async {
+    final db = await _db;
+    await db.delete('match_nominations',
+        where: 'match_id = ? AND player_id = ?', whereArgs: [matchId, playerId]);
   }
 }

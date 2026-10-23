@@ -88,6 +88,26 @@ enum MatchEventType {
           orElse: () => MatchEventType.goal);
 }
 
+/// Nominierungs-/Verfügbarkeitsstatus eines Spielers für ein Spiel.
+enum NominationStatus {
+  /// Keine Angabe (Standard – kein Datensatz).
+  open('open', 'Offen'),
+  zugesagt('zugesagt', 'Zugesagt'),
+  unsicher('unsicher', 'Unsicher'),
+  abgesagt('abgesagt', 'Abgesagt');
+
+  const NominationStatus(this.storageKey, this.label);
+  final String storageKey;
+  final String label;
+
+  /// Zählt dieser Status als für die Aufstellung verfügbar?
+  bool get isAvailable => this == NominationStatus.zugesagt;
+
+  static NominationStatus fromKey(String? key) =>
+      NominationStatus.values.firstWhere((e) => e.storageKey == key,
+          orElse: () => NominationStatus.open);
+}
+
 /// Ergebnis-Status eines Imports / einer Synchronisierung.
 enum ImportStatus {
   /// Online-Import über eine genehmigte Quelle erfolgreich.

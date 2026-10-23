@@ -11,6 +11,7 @@ import '../widgets/squad_list_view.dart';
 import '../widgets/team_logo.dart';
 import 'lineup_editor_screen.dart';
 import 'live_match_screen.dart';
+import 'nomination_screen.dart';
 
 class MatchCenterScreen extends StatefulWidget {
   const MatchCenterScreen({super.key, required this.matchId});
@@ -132,24 +133,45 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
               children: [
                 Expanded(
                   child: OutlinedButton.icon(
+                    onPressed: _ownTeam == null ? null : _openNomination,
+                    icon: const Icon(Icons.how_to_reg),
+                    label: const Text('Nominierung'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
                     onPressed: _ownTeam == null ? null : _openLineup,
                     icon: const Icon(Icons.dashboard_customize),
                     label: const Text('Aufstellung'),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 8),
                 Expanded(
                   child: FilledButton.icon(
                     onPressed: _openLive,
                     icon: const Icon(Icons.sports),
                     label: Text(match.status == MatchStatus.finished
-                        ? 'Spielbericht'
-                        : 'Live-Spiel'),
+                        ? 'Bericht'
+                        : 'Live'),
                   ),
                 ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openNomination() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NominationScreen(
+          matchId: widget.matchId,
+          teamId: _ownTeam!.id,
+          title: _match!.opponentName,
         ),
       ),
     );
