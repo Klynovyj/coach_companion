@@ -792,27 +792,15 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                       style: Theme.of(context).textTheme.bodySmall),
                 ],
               );
-          return Column(
+          // Karten stehen im Karten-Reiter; hier nur Tor-/Einsatz-Stats.
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  stat('Spiele', '${s.matches}'),
-                  stat('Tore', '${s.goals}'),
-                  stat('Vorlagen', '${s.assists}'),
-                  stat('Minuten', '${s.minutes}'),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  stat('🟨', '${s.yellowCards}'),
-                  stat('🟨🟥', '${s.yellowRedCards}'),
-                  stat('🟥', '${s.redCards}'),
-                  stat('⭐ Top11', '${s.topEleven}'),
-                ],
-              ),
+              stat('Spiele', '${s.matches}'),
+              stat('Tore', '${s.goals}'),
+              stat('Vorlagen', '${s.assists}'),
+              stat('Minuten', '${s.minutes}'),
+              stat('⭐ Top11', '${s.topEleven}'),
             ],
           );
         },
