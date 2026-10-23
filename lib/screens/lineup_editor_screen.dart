@@ -40,8 +40,23 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   final Set<String> _bench = {};
   bool _loading = true;
   bool _restricted = false;
+  bool _listMode = false; // false = Feld, true = Liste
 
   List<PitchSlot> get _slots => slotsForFormation(_formation);
+
+  /// Setzt einen Spieler als Starter auf den ersten freien Positions-Slot.
+  void _assignFirstFreeSlot(String pid) {
+    final slots = _slots;
+    for (var i = 0; i < slots.length; i++) {
+      if (!_slot.containsKey(i)) {
+        _assignToSlot(pid, i);
+        return;
+      }
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Startelf ist voll (11).')),
+    );
+  }
 
   @override
   void initState() {
@@ -180,6 +195,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       appBar: AppBar(
         title: Text('Aufstellung · ${widget.teamName}'),
         actions: [
+          IconButton(
+            tooltip: _listMode ? 'Feld-Ansicht' : 'Listen-Ansicht',
+            icon: Icon(_listMode ? Icons.grid_view : Icons.view_list),
+            onPressed: () => setState(() => _listMode = !_listMode),
+          ),
           TextButton(
             onPressed: _save,
             child: const Text('Speichern',
@@ -216,15 +236,58 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: _pitch(),
-          ),
-          _benchSection(),
-          _poolSection(),
+          if (_listMode)
+            _listEditor()
+          else ...[
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: _pitch(),
+            ),
+            _benchSection(),
+            _poolSection(),
+          ],
           const SizedBox(height: 24),
         ],
       ),
+    );
+  }
+
+  // ------------------------------------------------------------- Listen-Modus
+  Widget _listEditor() {
+    return Column(
+      children: _nominated.map((p) {
+        final inSlot = _slot.values.contains(p.id);
+        final onBench = _bench.contains(p.id);
+        final role = inSlot ? 'start' : (onBench ? 'bank' : 'raus');
+        return ListTile(
+          leading: PlayerAvatar(player: p, radius: 18),
+          title: Text(p.fullName),
+          subtitle: p.position == null ? null : Text(p.position!),
+          trailing: SegmentedButton<String>(
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            segments: const [
+              ButtonSegment(value: 'start', label: Text('Start')),
+              ButtonSegment(value: 'bank', label: Text('Bank')),
+              ButtonSegment(value: 'raus', label: Text('Raus')),
+            ],
+            selected: {role},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) {
+              final v = s.first;
+              if (v == 'start') {
+                if (!inSlot) _assignFirstFreeSlot(p.id);
+              } else if (v == 'bank') {
+                _toBench(p.id);
+              } else {
+                _toPool(p.id);
+              }
+            },
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -440,15 +503,41 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   }
 
   Widget _listChip(Player p) {
-    final chip = Chip(
-      avatar: PlayerAvatar(player: p, radius: 12),
-      label: Text(p.number != null ? '${p.number} ${p.lastName}' : p.fullName),
-    );
+    final chip = _compactChip(p);
     return Draggable<String>(
       data: p.id,
       feedback: Material(color: Colors.transparent, child: chip),
       childWhenDragging: Opacity(opacity: 0.4, child: chip),
       child: chip,
+    );
+  }
+
+  Widget _compactChip(Player p) {
+    final name = p.lastName.isNotEmpty ? p.lastName : p.firstName;
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 160),
+      padding: const EdgeInsets.fromLTRB(4, 4, 10, 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PlayerAvatar(player: p, radius: 13),
+          const SizedBox(width: 6),
+          if (p.number != null) ...[
+            Text('${p.number}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(width: 4),
+          ],
+          Flexible(
+            child: Text(name,
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
     );
   }
 }
