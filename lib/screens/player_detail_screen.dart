@@ -281,7 +281,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 children: [
                   _tabList([_stammdatenCard(context)]),
                   _tabList([_absencesCard(context, state)]),
-                  _tabList([_cardsCard(context, state, df)]),
+                  _tabList([
+                    _cardsCard(context, state, df),
+                    _fupaCardsCard(context, state),
+                  ]),
                   _tabList([
                     _fupaStatCard(context, state),
                     _goalsCard(context, state, df),
@@ -809,6 +812,63 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   stat('🟥', '${s.redCards}'),
                   stat('⭐ Top11', '${s.topEleven}'),
                 ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  /// FuPa-Saison-Karten im Karten-Reiter – klar als FuPa-Quelle deklariert.
+  Widget _fupaCardsCard(BuildContext context, AppState state) {
+    return _SectionCard(
+      icon: Icons.insights,
+      title: 'Karten – Saison (FuPa)',
+      child: FutureBuilder<PlayerStat?>(
+        future: state.playerSeasonStat(_player.teamId, _player.dedupKey),
+        builder: (context, snap) {
+          if (!snap.hasData && snap.connectionState != ConnectionState.done) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final s = snap.data;
+          if (s == null) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Keine FuPa-Statistik.',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            );
+          }
+          Widget stat(String label, String value) => Column(
+                children: [
+                  Text(value,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text(label, style: Theme.of(context).textTheme.bodySmall),
+                ],
+              );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  stat('🟨 Gelb', '${s.yellowCards}'),
+                  stat('🟨🟥 Gelb-Rot', '${s.yellowRedCards}'),
+                  stat('🟥 Rot', '${s.redCards}'),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Quelle: FuPa-Saisonstatistik',
+                    style: TextStyle(fontSize: 11.5, color: Colors.grey)),
               ),
             ],
           );
