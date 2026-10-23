@@ -22,6 +22,10 @@ class MaterialDutyConfig {
   /// Manuelle Zuteilungen (Spieler → feste Gruppe).
   final List<DutyOverride> overrides;
 
+  /// Zusätzlich für eine bestimmte Woche eingeteilte Spieler (z.B. als Strafe).
+  /// Schlüssel = Montag der Woche als „YYYY-MM-DD", Wert = Spieler-IDs.
+  final Map<String, List<String>> extras;
+
   const MaterialDutyConfig({
     required this.rotationStart,
     required this.printFrom,
@@ -29,6 +33,7 @@ class MaterialDutyConfig {
     this.startGroupIndex = 0,
     this.rules = '',
     this.overrides = const [],
+    this.extras = const {},
   });
 
   factory MaterialDutyConfig.initial() {
@@ -48,6 +53,7 @@ class MaterialDutyConfig {
     int? startGroupIndex,
     String? rules,
     List<DutyOverride>? overrides,
+    Map<String, List<String>>? extras,
   }) =>
       MaterialDutyConfig(
         rotationStart: rotationStart ?? this.rotationStart,
@@ -56,6 +62,7 @@ class MaterialDutyConfig {
         startGroupIndex: startGroupIndex ?? this.startGroupIndex,
         rules: rules ?? this.rules,
         overrides: overrides ?? this.overrides,
+        extras: extras ?? this.extras,
       );
 
   static String _d(DateTime d) =>
@@ -70,6 +77,7 @@ class MaterialDutyConfig {
         'overrides': overrides
             .map((o) => {'playerId': o.playerId, 'groupIndex': o.groupIndex})
             .toList(),
+        'extras': extras,
       };
 
   String encode() => jsonEncode(toJson());
@@ -91,6 +99,13 @@ class MaterialDutyConfig {
             DutyOverride(
                 o['playerId'] as String, (o['groupIndex'] as num).toInt()),
       ],
+      extras: {
+        for (final e in ((m['extras'] as Map?) ?? const {}).entries)
+          e.key.toString(): [
+            for (final v in (e.value as List? ?? const []))
+              v.toString(),
+          ],
+      },
     );
   }
 

@@ -96,6 +96,93 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     _saveConfig(_config!.copyWith(overrides: others));
   }
 
+  // ── Zusätzliche Spieler je Woche (z.B. Strafe) ──────────────────────
+  String _weekKey(DateTime monday) =>
+      '${monday.year.toString().padLeft(4, '0')}-'
+      '${monday.month.toString().padLeft(2, '0')}-'
+      '${monday.day.toString().padLeft(2, '0')}';
+
+  List<Player> _extrasFor(DateTime monday) {
+    final ids = _config!.extras[_weekKey(monday)] ?? const [];
+    return ids.map(_byId).whereType<Player>().toList();
+  }
+
+  /// Auswahl-Dialog: welche Spieler sind in dieser Woche zusätzlich dran.
+  Future<void> _editExtras(DateTime monday) async {
+    final key = _weekKey(monday);
+    final selected = {...(_config!.extras[key] ?? const <String>[])};
+    final all = [..._players]
+      ..sort((a, b) =>
+          a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+    final result = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final maxH = MediaQuery.of(ctx).size.height * 0.82;
+          return SafeArea(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxH),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                    child: Text(
+                        'Zusätzlich (Strafe) · KW ${isoWeek(monday).week}',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                  const Divider(height: 1),
+                  Flexible(
+                    child: ListView(
+                      children: [
+                        for (final p in all)
+                          CheckboxListTile(
+                            value: selected.contains(p.id),
+                            secondary: PlayerAvatar(player: p),
+                            title: Text(p.fullName),
+                            onChanged: (v) => setSheet(() {
+                              if (v == true) {
+                                selected.add(p.id);
+                              } else {
+                                selected.remove(p.id);
+                              }
+                            }),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: FilledButton(
+                        onPressed: () => Navigator.pop(ctx, selected),
+                        child: const Text('Übernehmen'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (result == null) return;
+    final map = {..._config!.extras};
+    if (result.isEmpty) {
+      map.remove(key);
+    } else {
+      map[key] = result.toList();
+    }
+    await _saveConfig(_config!.copyWith(extras: map));
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -210,6 +297,7 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
       vacationingIds: vacationingInWeek(members, mon, sun, _vacations),
     );
     final vac = entry.vacationingIds.toSet();
+    final extras = _extrasFor(mon);
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       color: scheme.primaryContainer.withValues(alpha: 0.45),
@@ -261,14 +349,45 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
                       )),
               ],
             ),
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: () => _sendWeek(entry, members),
-                icon: const Icon(Icons.share),
-                label: const Text('Diese Woche per WhatsApp melden'),
+            if (extras.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('Zusätzlich (Strafe):',
+                  style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade700)),
+              Wrap(
+                spacing: 10,
+                runSpacing: 2,
+                children: [
+                  for (final p in extras)
+                    Text(p.fullName,
+                        style: TextStyle(color: Colors.red.shade700)),
+                ],
               ),
+            ],
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () => _editExtras(mon),
+                    icon: const Icon(Icons.person_add_alt, size: 18),
+                    label: Text(extras.isEmpty
+                        ? 'Zusätzlich'
+                        : 'Zusätzlich (${extras.length})'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: () => _sendWeek(entry, members),
+                    icon: const Icon(Icons.share, size: 18),
+                    label: const Text('Per WhatsApp'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -292,13 +411,23 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     b.writeln('_');
     b.writeln('GRUPPE ${e.groupIdx + 1}');
     for (final p in members) {
-      final last = p.lastName.trim();
-      final first = p.firstName.trim();
-      b.writeln(last.isEmpty
-          ? first
-          : (first.isEmpty ? last : '$last, $first'));
+      b.writeln(_nameLastFirst(p));
+    }
+    final extras = _extrasFor(e.monday);
+    if (extras.isNotEmpty) {
+      b.writeln('_');
+      b.writeln('ZUSÄTZLICH (Strafe):');
+      for (final p in extras) {
+        b.writeln(_nameLastFirst(p));
+      }
     }
     return b.toString().trimRight();
+  }
+
+  String _nameLastFirst(Player p) {
+    final last = p.lastName.trim();
+    final first = p.firstName.trim();
+    return last.isEmpty ? first : (first.isEmpty ? last : '$last, $first');
   }
 
   Future<void> _sendWeek(ScheduleEntry e, List<Player> members) async {
@@ -453,6 +582,12 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
                           fontSize: 12)),
                 ),
                 IconButton(
+                  icon: const Icon(Icons.person_add_alt, size: 18),
+                  tooltip: 'Zusätzlich (Strafe) einteilen',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _editExtras(e.monday),
+                ),
+                IconButton(
                   icon: const Icon(Icons.share, size: 18),
                   tooltip: 'Diese Woche per WhatsApp melden',
                   visualDensity: VisualDensity.compact,
@@ -484,6 +619,18 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
                 child: Text(
                   'Im Urlaub: ${vac.map((id) => _byId(id)?.fullName ?? '?').join(', ')}',
                   style: TextStyle(fontSize: 11.5, color: Colors.red.shade700),
+                ),
+              ),
+            if (_extrasFor(e.monday).isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(
+                  'Zusätzlich (Strafe): '
+                  '${_extrasFor(e.monday).map((p) => p.fullName).join(', ')}',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.red.shade700),
                 ),
               ),
           ],
