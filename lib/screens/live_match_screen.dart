@@ -29,6 +29,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   Team? _opponentTeam;
   List<Player> _ownPlayers = [];
   List<Player> _opponentPlayers = [];
+  Set<String> _nominatedIds = {};
   List<MatchEvent> _events = [];
   bool _loading = true;
 
@@ -71,6 +72,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final oppPlayers =
         opp == null ? <Player>[] : await state.playersOf(opp.id);
     final events = await state.eventsOf(widget.matchId);
+    final noms = await state.nominationsOf(widget.matchId);
     if (!mounted) return;
     setState(() {
       _match = match;
@@ -78,6 +80,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _opponentTeam = opp;
       _ownPlayers = ownPlayers;
       _opponentPlayers = oppPlayers;
+      _nominatedIds = {
+        for (final e in noms.entries)
+          if (e.value == NominationStatus.zugesagt) e.key,
+      };
       _events = events;
       _running = match!.status == MatchStatus.live;
       _loading = false;
@@ -179,8 +185,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   label: match.opponentName,
                   color: Theme.of(context).colorScheme.tertiary,
                   onGoal: () => _addGoal(ownSide: false),
-                  onCard: () => _addCard(ownSide: false),
-                  onSub: () => _addSub(ownSide: false),
+                  // Gegner: nur Tore für den Spielstand – keine Karten/Wechsel.
+                  onCard: null,
+                  onSub: null,
                 ),
                 const SizedBox(height: 8),
                 _EventLog(
@@ -200,8 +207,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   String _teamIdFor(bool ownSide) =>
       ownSide ? _match!.ownTeamId : (_opponentTeam?.id ?? _match!.ownTeamId);
 
-  List<Player> _playersFor(bool ownSide) =>
-      ownSide ? _ownPlayers : _opponentPlayers;
+  List<Player> _playersFor(bool ownSide) {
+    if (!ownSide) return _opponentPlayers;
+    // Eigenes Team: nur zugesagte Spieler (die auch spielen). Ohne Zusagen
+    // Rückfall auf den ganzen Kader, damit die Erfassung nie blockiert.
+    final nominated =
+        _ownPlayers.where((p) => _nominatedIds.contains(p.id)).toList();
+    return nominated.isEmpty ? _ownPlayers : nominated;
+  }
 
   String _playerName(String? playerId) {
     if (playerId == null) return 'Unbekannt';
@@ -487,15 +500,15 @@ class _TeamActionBar extends StatelessWidget {
     required this.label,
     required this.color,
     required this.onGoal,
-    required this.onCard,
-    required this.onSub,
+    this.onCard,
+    this.onSub,
   });
 
   final String label;
   final Color color;
   final VoidCallback onGoal;
-  final VoidCallback onCard;
-  final VoidCallback onSub;
+  final VoidCallback? onCard;
+  final VoidCallback? onSub;
 
   @override
   Widget build(BuildContext context) {
@@ -527,22 +540,26 @@ class _TeamActionBar extends StatelessWidget {
                     label: const Text('Tor'),
                   ),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onCard,
-                    icon: const Icon(Icons.style, size: 18),
-                    label: const Text('Karte'),
+                if (onCard != null) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onCard,
+                      icon: const Icon(Icons.style, size: 18),
+                      label: const Text('Karte'),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: onSub,
-                    icon: const Icon(Icons.swap_horiz, size: 18),
-                    label: const Text('Wechsel'),
+                ],
+                if (onSub != null) ...[
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: onSub,
+                      icon: const Icon(Icons.swap_horiz, size: 18),
+                      label: const Text('Wechsel'),
+                    ),
                   ),
-                ),
+                ],
               ],
             ),
           ],
