@@ -183,7 +183,7 @@ class _MatchCard extends StatelessWidget {
           padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              DateBlock(date: match.kickoff, highlight: live),
+              DateBlock(date: match.kickoff?.toLocal(), highlight: live),
               const SizedBox(width: 12),
               if (match.opponentLogoPath != null) ...[
                 TeamLogo(logoPath: match.opponentLogoPath, size: 32),
@@ -200,7 +200,8 @@ class _MatchCard extends StatelessWidget {
                             fontWeight: FontWeight.w700, fontSize: 15)),
                     const SizedBox(height: 2),
                     Text([
-                      if (match.kickoff != null) df.format(match.kickoff!),
+                      if (match.kickoff != null)
+                        df.format(match.kickoff!.toLocal()),
                       if (match.competition != null) match.competition!,
                     ].join('  ·  '),
                         maxLines: 1,

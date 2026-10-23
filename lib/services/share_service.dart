@@ -29,7 +29,7 @@ String buildMatchReport({
   b.writeln('⚽ Spielbericht');
   b.writeln('$ownName ${match.ownScore}:${match.opponentScore} $oppName');
   b.writeln('${match.venue.label}'
-      '${match.kickoff != null ? ' · ${df.format(match.kickoff!)}' : ''}'
+      '${match.kickoff != null ? ' · ${df.format(match.kickoff!.toLocal())}' : ''}'
       '${match.competition != null ? ' · ${match.competition}' : ''}');
 
   final sorted = [...events]..sort((a, b) => a.minute.compareTo(b.minute));

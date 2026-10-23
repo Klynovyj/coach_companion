@@ -167,6 +167,20 @@ class CoachRepository {
   Future<void> upsertLineup(Lineup lineup) =>
       _upsertById('lineups', lineup.toMap());
 
+  /// Löscht die Aufstellung eines Teams für ein Spiel (inkl. Einträge).
+  Future<void> deleteLineup(String matchId, String teamId) async {
+    final db = await _db;
+    await db.delete('lineups',
+        where: 'match_id = ? AND team_id = ?', whereArgs: [matchId, teamId]);
+  }
+
+  /// Löscht alle Nominierungen eines Spiels.
+  Future<void> deleteNominationsForMatch(String matchId) async {
+    final db = await _db;
+    await db.delete('match_nominations',
+        where: 'match_id = ?', whereArgs: [matchId]);
+  }
+
   Future<List<LineupEntry>> getLineupEntries(String lineupId) async {
     final db = await _db;
     final rows = await db.query('lineup_entries',

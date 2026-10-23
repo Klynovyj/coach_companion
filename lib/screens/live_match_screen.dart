@@ -10,6 +10,8 @@ import '../models/player.dart';
 import '../models/team.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
+import '../widgets/reset_dialog.dart';
+import '../widgets/team_logo.dart';
 
 /// Spielphasen des Live-Modus.
 enum _Phase { notStarted, firstHalf, halftime, secondHalf, finished }
@@ -264,6 +266,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             match: match,
             ownName: _ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim',
             oppName: _opponentTeam?.name ?? match.opponentName,
+            ownLogo: _ownTeam?.logoPath,
+            oppLogo: _opponentTeam?.logoPath ?? match.opponentLogoPath,
             clockText: _clockText,
             minute: _currentMinute,
             extra: _currentExtra,
@@ -493,35 +497,27 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   }
 
   Future<void> _resetMatch() async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Spiel zurücksetzen?'),
-        content: const Text(
-            'Protokoll, Tore, Karten und Wechsel dieses Spiels werden gelöscht '
-            'und der Spielstand auf 0:0 gesetzt. Das kann nicht rückgängig '
-            'gemacht werden.'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Zurücksetzen')),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
+    final match = _match;
+    if (match == null) return;
+    final choice = await showResetMatchDialog(context);
+    if (choice == null || !choice.any || !mounted) return;
     _timer?.cancel();
-    await context.read<AppState>().resetMatch(widget.matchId);
+    await context.read<AppState>().resetMatchParts(
+          widget.matchId,
+          match.ownTeamId,
+          verlauf: choice.verlauf,
+          aufstellung: choice.aufstellung,
+          nominierung: choice.nominierung,
+        );
     if (!mounted) return;
-    setState(() {
-      _phase = _Phase.notStarted;
-      _elapsedSeconds = 0;
-      _running = false;
-    });
-    await _refreshEvents();
+    if (choice.verlauf) {
+      setState(() {
+        _phase = _Phase.notStarted;
+        _elapsedSeconds = 0;
+        _running = false;
+      });
+    }
+    await _load();
   }
 
   Future<void> _shareReport() async {
@@ -576,6 +572,8 @@ class _Scoreboard extends StatelessWidget {
     required this.match,
     required this.ownName,
     required this.oppName,
+    required this.ownLogo,
+    required this.oppLogo,
     required this.clockText,
     required this.minute,
     required this.extra,
@@ -586,6 +584,8 @@ class _Scoreboard extends StatelessWidget {
   final GameMatch match;
   final String ownName;
   final String oppName;
+  final String? ownLogo;
+  final String? oppLogo;
   final String clockText;
   final int minute;
   final int extra;
@@ -651,33 +651,34 @@ class _Scoreboard extends StatelessWidget {
           const SizedBox(height: 6),
           Row(
             children: [
-              Expanded(
-                child: Text(ownName,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: scheme.onPrimary,
-                        fontWeight: FontWeight.bold)),
-              ),
+              Expanded(child: _side(scheme, ownLogo, ownName)),
               Text('${match.ownScore} : ${match.opponentScore}',
                   style: TextStyle(
                       color: scheme.onPrimary,
                       fontSize: 34,
                       fontWeight: FontWeight.bold)),
-              Expanded(
-                child: Text(oppName,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: scheme.onPrimary,
-                        fontWeight: FontWeight.bold)),
-              ),
+              Expanded(child: _side(scheme, oppLogo, oppName)),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _side(ColorScheme scheme, String? logo, String name) {
+    return Column(
+      children: [
+        if (logo != null) ...[
+          TeamLogo(logoPath: logo, size: 40),
+          const SizedBox(height: 4),
+        ],
+        Text(name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                color: scheme.onPrimary, fontWeight: FontWeight.bold)),
+      ],
     );
   }
 }

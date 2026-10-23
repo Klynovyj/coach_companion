@@ -62,7 +62,7 @@ class _NominationScreenState extends State<NominationScreen> {
     final match = await context.read<AppState>().getMatch(widget.matchId);
     final text = buildNominationText(
       title: 'vs ${widget.title}',
-      kickoff: match?.kickoff,
+      kickoff: match?.kickoff?.toLocal(),
       players: _players,
       status: _status,
     );

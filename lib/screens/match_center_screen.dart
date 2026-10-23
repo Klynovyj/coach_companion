@@ -7,6 +7,7 @@ import '../models/match.dart';
 import '../models/team.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../state/app_state.dart';
+import '../widgets/reset_dialog.dart';
 import '../widgets/squad_list_view.dart';
 import '../widgets/team_logo.dart';
 import 'lineup_editor_screen.dart';
@@ -27,7 +28,11 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
   Team? _opponentTeam;
   ImportResult? _syncResult;
   Set<String> _nominatedIds = {};
+  int _starterCount = 0;
   bool _loading = true;
+
+  bool get _hasNominations => _nominatedIds.isNotEmpty;
+  bool get _hasLineup => _starterCount > 0;
 
   @override
   void initState() {
@@ -53,6 +58,13 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         ? null
         : await state.repository.getTeam(match.opponentTeamId!);
     final noms = await state.nominationsOf(widget.matchId);
+    // Aufstellung vorhanden? (Starter gezählt, ohne eine neue Aufstellung anzulegen)
+    var starters = 0;
+    final lineup = await state.repository.getLineup(widget.matchId, match.ownTeamId);
+    if (lineup != null) {
+      final entries = await state.lineupEntries(lineup.id);
+      starters = entries.where((e) => e.role == LineupRole.starter).length;
+    }
     if (!mounted) return;
     setState(() {
       _match = match;
@@ -62,6 +74,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         for (final e in noms.entries)
           if (e.value == NominationStatus.zugesagt) e.key,
       };
+      _starterCount = starters;
       if (result != null) _syncResult = result;
       _loading = false;
     });
@@ -99,6 +112,14 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
               tooltip: 'Gegner neu synchronisieren',
               icon: const Icon(Icons.sync),
               onPressed: () => _load(force: true),
+            ),
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'reset') _resetMatch();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'reset', child: Text('Spiel zurücksetzen')),
+              ],
             ),
           ],
         ),
@@ -139,44 +160,115 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
           ],
         ),
         bottomNavigationBar: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _ownTeam == null ? null : _openNomination,
-                    icon: const Icon(Icons.how_to_reg),
-                    label: const Text('Nominierung'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    // Aufstellung erst möglich, wenn Spieler nominiert sind.
-                    onPressed: (_ownTeam == null || _nominatedIds.isEmpty)
-                        ? null
-                        : _openLineup,
-                    icon: const Icon(Icons.dashboard_customize),
-                    label: const Text('Aufstellung'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _openLive,
-                    icon: const Icon(Icons.sports),
-                    label: Text(match.status == MatchStatus.finished
-                        ? 'Bericht'
-                        : 'Live'),
-                  ),
-                ),
-              ],
-            ),
-          ),
+          child: _stepBar(context, match),
         ),
       ),
     );
+  }
+
+  /// Geführte Schritt-Leiste: Nominierung → Aufstellung → Live.
+  Widget _stepBar(BuildContext context, GameMatch match) {
+    final finished = match.status == MatchStatus.finished;
+    // Aktueller Schritt (1/2/3) für die Hervorhebung.
+    final step = !_hasNominations ? 1 : (!_hasLineup ? 2 : 3);
+
+    Widget stepButton({
+      required int index,
+      required IconData icon,
+      required String label,
+      required VoidCallback onTap,
+    }) {
+      final active = step == index;
+      final child = Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 18),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(label,
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      );
+      return Expanded(
+        child: active
+            ? FilledButton(onPressed: onTap, child: child)
+            : OutlinedButton(onPressed: onTap, child: child),
+      );
+    }
+
+    final hint = switch (step) {
+      1 => 'Schritt 1 von 3: Spieler nominieren',
+      2 => 'Schritt 2 von 3: Aufstellung festlegen',
+      _ => finished ? 'Spiel beendet' : 'Bereit – du kannst live gehen',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline,
+                  size: 15, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 6),
+              Text(hint, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              stepButton(
+                index: 1,
+                icon: Icons.how_to_reg,
+                label: 'Nominierung',
+                onTap: _ownTeam == null ? () {} : _openNomination,
+              ),
+              const SizedBox(width: 8),
+              stepButton(
+                index: 2,
+                icon: Icons.dashboard_customize,
+                label: 'Aufstellung',
+                onTap: _tryOpenLineup,
+              ),
+              const SizedBox(width: 8),
+              stepButton(
+                index: 3,
+                icon: Icons.sports,
+                label: finished ? 'Bericht' : 'Live',
+                onTap: () => _tryOpenLive(finished),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _tryOpenLineup() {
+    if (_ownTeam == null) return;
+    if (!_hasNominations) {
+      _snack('Bitte zuerst Spieler nominieren.');
+      return;
+    }
+    _openLineup();
+  }
+
+  void _tryOpenLive(bool finished) {
+    // Bericht (beendet) ist immer erlaubt; Live braucht eine Aufstellung.
+    if (!finished && !_hasLineup) {
+      _snack(_hasNominations
+          ? 'Bitte zuerst die Aufstellung festlegen.'
+          : 'Bitte zuerst nominieren und aufstellen.');
+      return;
+    }
+    _openLive();
+  }
+
+  void _snack(String msg) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _openNomination() async {
@@ -193,6 +285,21 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     if (mounted) _load(); // Nominierungen neu laden (Kader-Filter + Aufstellung-Gate)
   }
 
+  Future<void> _resetMatch() async {
+    final match = _match;
+    if (match == null) return;
+    final choice = await showResetMatchDialog(context);
+    if (choice == null || !choice.any || !mounted) return;
+    await context.read<AppState>().resetMatchParts(
+          widget.matchId,
+          match.ownTeamId,
+          verlauf: choice.verlauf,
+          aufstellung: choice.aufstellung,
+          nominierung: choice.nominierung,
+        );
+    if (mounted) _load();
+  }
+
   Future<void> _openLineup() async {
     await Navigator.push(
       context,
@@ -204,6 +311,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         ),
       ),
     );
+    if (mounted) _load(); // Aufstellungs-Status neu laden (schaltet „Live" frei)
   }
 
   Future<void> _openLive() async {
@@ -241,7 +349,7 @@ class _Header extends StatelessWidget {
       child: Column(
         children: [
           Text(
-            '${match.venue.label}${match.kickoff != null ? ' • ${df.format(match.kickoff!)}' : ''}',
+            '${match.venue.label}${match.kickoff != null ? ' • ${df.format(match.kickoff!.toLocal())}' : ''}',
             style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.9)),
           ),
           const SizedBox(height: 8),
