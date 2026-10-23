@@ -121,3 +121,53 @@ class ImportResult {
     this.importedPlayers = 0,
   });
 }
+
+/// Eine Tabellenzeile (Liga-Standing) eines Teams.
+class StandingRow {
+  final int rank;
+  final int matches;
+  final int wins;
+  final int draws;
+  final int defeats;
+  final int goalsFor;
+  final int goalsAgainst;
+  final int goalDiff;
+  final int points;
+  final int totalTeams;
+  final String teamName;
+
+  const StandingRow({
+    required this.rank,
+    required this.matches,
+    required this.wins,
+    required this.draws,
+    required this.defeats,
+    required this.goalsFor,
+    required this.goalsAgainst,
+    required this.goalDiff,
+    required this.points,
+    required this.totalTeams,
+    required this.teamName,
+  });
+}
+
+/// Ein (abgeschlossenes) Spiel aus Sicht eines Teams – für die Form (letzte 5).
+class FormMatch {
+  final DateTime? date;
+  final String opponentName;
+  final int ownGoals;
+  final int oppGoals;
+  final bool home;
+
+  const FormMatch({
+    required this.date,
+    required this.opponentName,
+    required this.ownGoals,
+    required this.oppGoals,
+    required this.home,
+  });
+
+  /// 'S' Sieg, 'U' Unentschieden, 'N' Niederlage.
+  String get result =>
+      ownGoals > oppGoals ? 'S' : (ownGoals < oppGoals ? 'N' : 'U');
+}

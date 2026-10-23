@@ -237,4 +237,98 @@ void main() {
           'https://www.fupa.net/team/post-sv-duesseldorf-m1-2026-27');
     });
   });
+
+  group('FupaReduxImporter.parseStandingRow', () {
+    test('findet die Tabellenzeile eines Teams', () {
+      const html = 'window.REDUX_DATA = '
+          '{"dataHistory":[{"LeagueStandingPage":{"total":{"data":{"standings":['
+          '{"rank":7,"matches":10,"wins":6,"draws":0,"defeats":4,"ownGoals":30,"againstGoals":27,"goalDifference":3,"points":18,"team":{"slug":"sv-hoesel-m2-2026-27","name":{"full":"SV Hösel"}}},'
+          '{"rank":1,"matches":10,"wins":8,"draws":1,"defeats":1,"ownGoals":43,"againstGoals":13,"goalDifference":30,"points":25,"team":{"slug":"djk-tusa-06-duesseldorf-m2-2026-27","name":{"full":"DJK Tusa"}}}'
+          ']}}}}]};';
+      final row =
+          FupaReduxImporter.parseStandingRow(html, 'sv-hoesel-m2-2026-27');
+      expect(row, isNotNull);
+      expect(row!.rank, 7);
+      expect(row.points, 18);
+      expect(row.goalDiff, 3);
+      expect(row.totalTeams, 2);
+      expect(row.teamName, 'SV Hösel');
+    });
+  });
+
+  group('FupaReduxImporter.parseTeamForm', () {
+    test('filtert gespielte Spiele, sortiert neueste zuerst', () {
+      final items = [
+        {
+          'kickoff': '2026-09-20T15:00:00+02:00',
+          'homeGoal': 5,
+          'awayGoal': 2,
+          'section': 'POST',
+          'homeTeam': {
+            'slug': 'sv-hoesel-m2-2026-27',
+            'name': {'full': 'SV Hösel'}
+          },
+          'awayTeam': {
+            'slug': 'tsv-urdenbach-m1-2026-27',
+            'name': {'full': 'TSV Urdenbach'}
+          },
+        },
+        {
+          'kickoff': '2026-10-18T13:00:00+02:00',
+          'homeGoal': 2,
+          'awayGoal': 6,
+          'section': 'POST',
+          'homeTeam': {
+            'slug': 'sv-hoesel-m2-2026-27',
+            'name': {'full': 'SV Hösel'}
+          },
+          'awayTeam': {
+            'slug': 'garather-sv-m1-2026-27',
+            'name': {'full': 'Garather SV'}
+          },
+        },
+        {
+          'kickoff': '2026-11-01T13:00:00+01:00',
+          'homeGoal': null,
+          'awayGoal': null,
+          'section': 'PRE',
+          'homeTeam': {
+            'slug': 'sv-hoesel-m2-2026-27',
+            'name': {'full': 'SV Hösel'}
+          },
+          'awayTeam': {
+            'slug': 'x',
+            'name': {'full': 'X'}
+          },
+        },
+        // fremdes Spiel – ignoriert
+        {
+          'kickoff': '2026-09-13T13:00:00+02:00',
+          'homeGoal': 1,
+          'awayGoal': 1,
+          'section': 'POST',
+          'homeTeam': {
+            'slug': 'a',
+            'name': {'full': 'A'}
+          },
+          'awayTeam': {
+            'slug': 'b',
+            'name': {'full': 'B'}
+          },
+        },
+      ];
+      final form =
+          FupaReduxImporter.parseTeamForm(items, 'sv-hoesel-m2-2026-27');
+      expect(form, hasLength(2));
+      // Neuestes zuerst: 18.10. Niederlage 2:6
+      expect(form[0].ownGoals, 2);
+      expect(form[0].oppGoals, 6);
+      expect(form[0].result, 'N');
+      expect(form[0].home, isTrue);
+      expect(form[0].opponentName, 'Garather SV');
+      // 20.09. Sieg 5:2
+      expect(form[1].result, 'S');
+      expect(form[1].opponentName, 'TSV Urdenbach');
+    });
+  });
 }

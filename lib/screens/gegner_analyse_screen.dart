@@ -7,6 +7,7 @@ import '../models/match.dart';
 import '../models/player.dart';
 import '../models/player_stat.dart';
 import '../models/scout_marker.dart';
+import '../services/fupa/fupa_dtos.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/team_logo.dart';
@@ -41,6 +42,8 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
   Map<String, Set<ScoutMarker>> _markers = {};
   Map<String, String> _comments = {};
   List<GameMatch> _duelle = [];
+  StandingRow? _standing;
+  List<FormMatch> _form = [];
   bool _loading = true;
 
   @override
@@ -71,6 +74,9 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
     }).toList()
       ..sort((a, b) =>
           (b.kickoff ?? b.createdAt).compareTo(a.kickoff ?? a.createdAt));
+    // Tabellenplatz + Form aus der FuPa-Liga (bestmöglich).
+    final (standing, form) =
+        await s.opponentAnalysis(widget.ownTeamId, widget.opponentTeamId);
     if (!mounted) return;
     setState(() {
       _players = players;
@@ -78,6 +84,8 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
       _markers = markers;
       _comments = comments;
       _duelle = duelle;
+      _standing = standing;
+      _form = form;
       _loading = false;
     });
   }
@@ -170,8 +178,8 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
   // ------------------------------------------------------------ Karten bauen
   List<_CardData> _buildCards() {
     final cards = <_CardData>[];
+    final st = _standing;
     // Übersicht
-    final withStats = _stats.where((s) => s.matches > 0).length;
     cards.add(_CardData(
       icon: Icons.insights,
       color: const Color(0xFF2E7D4F),
@@ -179,14 +187,52 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
       subtitle: 'Gegner-Analyse',
       logoPath: widget.opponentLogoPath,
       rows: [
+        if (st != null)
+          _Row.text(
+              'Tabelle: Platz ${st.rank} von ${st.totalTeams} · ${st.points} Punkte'),
         _Row.text('${_players.length} Spieler im Kader'),
-        if (_stats.isNotEmpty)
-          _Row.text('$withStats mit Saisoneinsatz')
-        else
-          _Row.text('Noch keine Statistik – oben auf 🔄 neu synchronisieren'),
         _Row.text('${_duelle.length} bisherige Duelle'),
       ],
     ));
+
+    // Tabelle
+    if (st != null) {
+      cards.add(_CardData(
+        icon: Icons.format_list_numbered,
+        color: const Color(0xFF37474F),
+        title: 'Tabelle',
+        subtitle: 'Platz ${st.rank} von ${st.totalTeams}',
+        rows: [
+          _Row.text('Platz ${st.rank} · ${st.points} Punkte'),
+          _Row.text(
+              '${st.matches} Spiele · ${st.wins}S ${st.draws}U ${st.defeats}N'),
+          _Row.text(
+              'Tore ${st.goalsFor}:${st.goalsAgainst} (${st.goalDiff >= 0 ? '+' : ''}${st.goalDiff})'),
+        ],
+      ));
+    }
+
+    // Form (letzte 5 Spiele)
+    if (_form.isNotEmpty) {
+      final df = DateFormat('dd.MM.', 'de_DE');
+      cards.add(_CardData(
+        icon: Icons.timeline,
+        color: const Color(0xFF00695C),
+        title: 'Form – letzte 5 Spiele',
+        subtitle: _form.map((f) => f.result).join(' '),
+        rows: [
+          for (final f in _form)
+            _Row.form(
+              date: f.date != null ? df.format(f.date!.toLocal()) : '—',
+              venue: f.home ? 'H' : 'A',
+              opponent: f.opponentName,
+              result: '${f.ownGoals}:${f.oppGoals}',
+              outcome:
+                  f.result == 'S' ? 1 : (f.result == 'N' ? -1 : 0),
+            ),
+        ],
+      ));
+    }
 
     final playerByKey = {for (final p in _players) p.dedupKey: p};
 
@@ -398,7 +444,7 @@ class _CardData {
   });
 }
 
-enum _RowKind { text, stat, player, duel, scouting }
+enum _RowKind { text, stat, player, duel, form, scouting }
 
 class _Row {
   final _RowKind kind;
@@ -461,6 +507,21 @@ class _Row {
         kind: _RowKind.duel,
         date: date,
         venue: venue,
+        result: result,
+        outcome: outcome,
+      );
+  factory _Row.form({
+    required String date,
+    required String venue,
+    required String opponent,
+    required String result,
+    int? outcome,
+  }) =>
+      _Row._(
+        kind: _RowKind.form,
+        date: date,
+        venue: venue,
+        name: opponent,
         result: result,
         outcome: outcome,
       );
@@ -632,6 +693,45 @@ class _AnalysisCardView extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(child: Text(r.date!)),
+              Text(r.result!,
+                  style: TextStyle(fontWeight: FontWeight.bold, color: c)),
+            ],
+          ),
+        );
+      case _RowKind.form:
+        final c = r.outcome == null
+            ? Colors.grey
+            : (r.outcome! > 0
+                ? Colors.green.shade700
+                : (r.outcome! < 0 ? Colors.red.shade700 : Colors.orange));
+        final letter = r.outcome == null
+            ? '–'
+            : (r.outcome! > 0 ? 'S' : (r.outcome! < 0 ? 'N' : 'U'));
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            children: [
+              Container(
+                width: 24,
+                height: 24,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(color: c, shape: BoxShape.circle),
+                child: Text(letter,
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${r.venue} · ${r.name}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(r.date!,
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
               Text(r.result!,
                   style: TextStyle(fontWeight: FontWeight.bold, color: c)),
             ],

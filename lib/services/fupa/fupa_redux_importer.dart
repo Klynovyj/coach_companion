@@ -213,6 +213,121 @@ class FupaReduxImporter {
     ];
   }
 
+  /// Liga-Slug zu einem Team ermitteln (über dessen Spielplan-Seite).
+  Future<String?> leagueSlugForTeam(String teamUrl) async {
+    final trimmed = teamUrl.trim();
+    if (!isTeamUrl(trimmed)) return null;
+    try {
+      final html = await _fetchHtml(_subPageUrlFor(trimmed, 'matches'));
+      return _leagueInfoFromTeamMatches(html).$1;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Team-Slug aus einer FuPa-Team-URL (…/team/slug).
+  static String? teamSlugFromUrl(String? url) {
+    if (url == null) return null;
+    final m = RegExp(r'/team/([^/?#]+)', caseSensitive: false).firstMatch(url);
+    return m?.group(1)?.toLowerCase();
+  }
+
+  /// Tabellenzeile eines Teams aus der Liga-Tabelle (Standing-Seite der Liga).
+  Future<StandingRow?> fetchStandingRow(
+      String leagueSlug, String teamSlug) async {
+    final html = await _fetchHtml(
+        'https://www.fupa.net/league/$leagueSlug/standing');
+    return parseStandingRow(html, teamSlug);
+  }
+
+  /// Netzwerkfrei testbar: Tabellenzeile aus dem Standing-HTML.
+  static StandingRow? parseStandingRow(String html, String teamSlug) {
+    int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
+    final redux = _extractRedux(html);
+    final dh = redux['dataHistory'];
+    if (dh is! List) return null;
+    for (final entry in dh) {
+      if (entry is! Map) continue;
+      final page = entry['LeagueStandingPage'];
+      if (page is! Map) continue;
+      final total = page['total'];
+      final data = total is Map ? total['data'] : null;
+      final standings = data is Map ? data['standings'] : null;
+      if (standings is! List) continue;
+      for (final s in standings) {
+        if (s is! Map) continue;
+        final team = s['team'];
+        if (team is Map &&
+            (team['slug'] as String?)?.toLowerCase() == teamSlug) {
+          return StandingRow(
+            rank: asInt(s['rank']),
+            matches: asInt(s['matches']),
+            wins: asInt(s['wins']),
+            draws: asInt(s['draws']),
+            defeats: asInt(s['defeats']),
+            goalsFor: asInt(s['ownGoals']),
+            goalsAgainst: asInt(s['againstGoals']),
+            goalDiff: asInt(s['goalDifference']),
+            points: asInt(s['points']),
+            totalTeams: standings.length,
+            teamName: _teamName(team),
+          );
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Die letzten [limit] abgeschlossenen Spiele eines Teams (Form) aus der
+  /// Liga-API.
+  Future<List<FormMatch>> fetchTeamForm(String leagueSlug, String teamSlug,
+      {int limit = 5}) async {
+    final from = _seasonStart(teamSlug);
+    final matches = <Map>[];
+    for (var offset = 0; offset < 600; offset += 100) {
+      final url =
+          'https://api.fupa.net/v1/competitions/$leagueSlug/seasons/current/matches'
+          '?from=$from&fallback=true&limit=100&offset=$offset';
+      final decoded = jsonDecode(await _fetchHtml(url));
+      if (decoded is! List || decoded.isEmpty) break;
+      for (final it in decoded) {
+        if (it is Map) matches.add(it);
+      }
+      if (decoded.length < 100) break;
+    }
+    return parseTeamForm(matches, teamSlug, limit: limit);
+  }
+
+  /// Netzwerkfrei testbar: Form (letzte abgeschlossene Spiele) eines Teams.
+  static List<FormMatch> parseTeamForm(List matches, String teamSlug,
+      {int limit = 5}) {
+    final mine = <FormMatch>[];
+    for (final m in matches) {
+      if (m is! Map) continue;
+      final home = m['homeTeam'];
+      final away = m['awayTeam'];
+      if (home is! Map || away is! Map) continue;
+      final homeIs = (home['slug'] as String?)?.toLowerCase() == teamSlug;
+      final awayIs = (away['slug'] as String?)?.toLowerCase() == teamSlug;
+      if (!homeIs && !awayIs) continue;
+      final hg = m['homeGoal'];
+      final ag = m['awayGoal'];
+      if (hg is! int || ag is! int) continue; // nur gespielte
+      if (m['section'] != 'POST') continue;
+      final opp = homeIs ? away : home;
+      mine.add(FormMatch(
+        date: DateTime.tryParse((m['kickoff'] ?? '').toString()),
+        opponentName: _teamName(opp),
+        ownGoals: homeIs ? hg : ag,
+        oppGoals: homeIs ? ag : hg,
+        home: homeIs,
+      ));
+    }
+    mine.sort((a, b) => (b.date ?? DateTime(1900))
+        .compareTo(a.date ?? DateTime(1900)));
+    return mine.take(limit).toList();
+  }
+
   /// Wandelt eine Liga-API-Match-Liste in [ScheduledMatchData] – nur die
   /// Spiele des eigenen Teams. Netzwerkfrei testbar.
   static List<ScheduledMatchData> parseLeagueMatches(
