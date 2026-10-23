@@ -429,6 +429,10 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         if (n != null) info['spieltag'] = '${n + 1}';
       }
     }
+    // Spieltag-Nr. aus FuPa (round.number) ist maßgeblich, falls bekannt.
+    if ((info['spieltag'] ?? '').trim().isEmpty && match.matchday != null) {
+      info = {...info, 'spieltag': '${match.matchday}'};
+    }
     final players = await state.playersOf(match.ownTeamId);
     final noms = await state.nominationsOf(widget.matchId);
     if (!mounted) return;

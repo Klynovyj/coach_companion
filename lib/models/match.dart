@@ -21,6 +21,9 @@ class GameMatch {
   final Venue venue;
   final String? competition;
 
+  /// Spieltag-Nummer (aus FuPa `round.number`), falls bekannt.
+  final int? matchday;
+
   /// Externer Bezeichner des Spiels aus der Importquelle.
   final String? externalId;
 
@@ -46,6 +49,7 @@ class GameMatch {
     this.kickoff,
     this.venue = Venue.home,
     this.competition,
+    this.matchday,
     this.externalId,
     this.status = MatchStatus.scheduled,
     this.ownScore = 0,
@@ -62,6 +66,7 @@ class GameMatch {
     DateTime? kickoff,
     Venue? venue,
     String? competition,
+    int? matchday,
     String? externalId,
     MatchStatus? status,
     int? ownScore,
@@ -78,6 +83,7 @@ class GameMatch {
       kickoff: kickoff ?? this.kickoff,
       venue: venue ?? this.venue,
       competition: competition ?? this.competition,
+      matchday: matchday ?? this.matchday,
       externalId: externalId ?? this.externalId,
       status: status ?? this.status,
       ownScore: ownScore ?? this.ownScore,
@@ -97,6 +103,7 @@ class GameMatch {
         'kickoff': kickoff?.toIso8601String(),
         'venue': venue.storageKey,
         'competition': competition,
+        'matchday': matchday,
         'external_id': externalId,
         'status': status.storageKey,
         'own_score': ownScore,
@@ -115,6 +122,7 @@ class GameMatch {
         kickoff: DateTime.tryParse(m['kickoff'] as String? ?? ''),
         venue: Venue.fromKey(m['venue'] as String?),
         competition: m['competition'] as String?,
+        matchday: m['matchday'] as int?,
         externalId: m['external_id'] as String?,
         status: MatchStatus.fromKey(m['status'] as String?),
         ownScore: m['own_score'] as int? ?? 0,

@@ -172,6 +172,7 @@ class FupaPersistence {
           kickoff: data.kickoff,
           venue: data.venue,
           competition: data.competition,
+          matchday: data.matchday ?? match.matchday,
           externalId: data.externalId,
           // Live/beendete Spiele nicht zurücksetzen; nur Ergebnis nachtragen.
           status: data.finished && match.status != MatchStatus.live
@@ -190,6 +191,7 @@ class FupaPersistence {
           kickoff: data.kickoff,
           venue: data.venue,
           competition: data.competition,
+          matchday: data.matchday,
           externalId: data.externalId,
           status: status ?? MatchStatus.scheduled,
           ownScore: data.finished ? (data.ownGoals ?? 0) : 0,

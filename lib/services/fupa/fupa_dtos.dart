@@ -48,6 +48,9 @@ class ScheduledMatchData {
   final DateTime? kickoff;
   final Venue venue;
   final String? competition;
+
+  /// Spieltag-Nummer (FuPa `round.number`), falls bekannt.
+  final int? matchday;
   final String? externalId;
 
   /// true = Spiel ist gespielt (Ergebnis vorhanden).
@@ -64,6 +67,7 @@ class ScheduledMatchData {
     this.kickoff,
     this.venue = Venue.home,
     this.competition,
+    this.matchday,
     this.externalId,
     this.finished = false,
     this.ownGoals,
@@ -79,6 +83,7 @@ class ScheduledMatchData {
         kickoff: kickoff,
         venue: venue,
         competition: competition,
+        matchday: matchday,
         externalId: externalId,
         finished: finished,
         ownGoals: ownGoals,

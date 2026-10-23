@@ -399,6 +399,10 @@ class FupaReduxImporter {
     final homeGoal = raw['homeGoal'];
     final awayGoal = raw['awayGoal'];
     final finished = homeGoal is int && awayGoal is int;
+    final round = raw['round'];
+    final matchday = (round is Map && round['number'] is num)
+        ? (round['number'] as num).toInt()
+        : null;
     return ScheduledMatchData(
       opponentName: _teamName(opp),
       opponentRef: (opp['slug'] as String?)?.toLowerCase(),
@@ -407,6 +411,7 @@ class FupaReduxImporter {
       kickoff: DateTime.tryParse((raw['kickoff'] ?? '').toString()),
       venue: ownIsHome ? Venue.home : Venue.away,
       competition: competition ?? _competition(raw),
+      matchday: matchday,
       externalId: raw['id']?.toString(),
       finished: finished,
       ownGoals: finished ? (ownIsHome ? homeGoal : awayGoal) : null,
