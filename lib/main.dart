@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_quill/flutter_quill.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 
@@ -30,6 +32,15 @@ class CoachCompanionApp extends StatelessWidget {
       title: 'Coach Companion',
       debugShowCheckedModeBanner: false,
       theme: buildTheme(),
+      // Lokalisierung (u.a. für den Rich-Text-Editor flutter_quill).
+      locale: const Locale('de'),
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        FlutterQuillLocalizations.delegate,
+      ],
+      supportedLocales: const [Locale('de'), Locale('en')],
       home: const HomeScreen(),
     );
   }

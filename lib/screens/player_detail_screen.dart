@@ -11,6 +11,8 @@ import '../models/player.dart';
 import '../models/player_note.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import '../widgets/rich_note_view.dart';
+import 'note_editor_screen.dart';
 
 class PlayerDetailScreen extends StatelessWidget {
   const PlayerDetailScreen({super.key, required this.player});
@@ -227,10 +229,13 @@ class PlayerDetailScreen extends StatelessWidget {
                             context.read<AppState>().deleteNote(n.id),
                         child: ListTile(
                           leading: const Icon(Icons.sticky_note_2_outlined),
-                          title: Text(n.text),
-                          subtitle: Text(df.format(n.createdAt)),
+                          title: RichNoteView(stored: n.text),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(df.format(n.createdAt)),
+                          ),
                           trailing: const Icon(Icons.edit, size: 18),
-                          onTap: () => _editNote(context, n, cats),
+                          onTap: () => _editNote(context, n),
                         ),
                       ),
                   ],
@@ -245,82 +250,34 @@ class PlayerDetailScreen extends StatelessWidget {
   }
 
   Future<void> _addNote(BuildContext context) async {
-    final cats = await context.read<AppState>().noteCategories();
-    if (!context.mounted) return;
-    final data = await _showNoteDialog(context, cats);
-    if (data == null || data.$1.isEmpty || !context.mounted) return;
-    await context
-        .read<AppState>()
-        .addNote(player.id, data.$1, categoryId: data.$2);
-  }
-
-  Future<void> _editNote(
-      BuildContext context, PlayerNote note, List<NoteCategory> cats) async {
-    final data = await _showNoteDialog(context, cats, existing: note);
-    if (data == null || data.$1.isEmpty || !context.mounted) return;
-    await context.read<AppState>().updateNote(
-          note.copyWith(
-            text: data.$1,
-            categoryId: data.$2,
-            clearCategory: data.$2 == null,
-          ),
-        );
-  }
-
-  /// Dialog für Notiz-Text + Rubrik; Rückgabe (text, categoryId?).
-  Future<(String, String?)?> _showNoteDialog(
-    BuildContext context,
-    List<NoteCategory> cats, {
-    PlayerNote? existing,
-  }) {
-    final ctrl = TextEditingController(text: existing?.text ?? '');
-    var catId = (existing?.categoryId != null &&
-            cats.any((c) => c.id == existing!.categoryId))
-        ? existing!.categoryId
-        : null;
-    return showDialog<(String, String?)>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setState) => AlertDialog(
-          title: Text(existing == null ? 'Notiz hinzufügen' : 'Notiz bearbeiten'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: ctrl,
-                autofocus: true,
-                minLines: 2,
-                maxLines: 5,
-                decoration:
-                    const InputDecoration(hintText: 'Beobachtung, Hinweis …'),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String?>(
-                initialValue: catId,
-                isExpanded: true,
-                decoration: const InputDecoration(labelText: 'Rubrik'),
-                items: [
-                  const DropdownMenuItem<String?>(
-                      value: null, child: Text('Ohne Rubrik')),
-                  ...cats.map((c) => DropdownMenuItem<String?>(
-                      value: c.id, child: Text(c.name))),
-                ],
-                onChanged: (v) => setState(() => catId = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Abbrechen')),
-            FilledButton(
-                onPressed: () =>
-                    Navigator.pop(context, (ctrl.text.trim(), catId)),
-                child: const Text('Speichern')),
-          ],
-        ),
+    final result = await Navigator.push<NoteEditResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NoteEditorScreen(playerName: player.fullName),
       ),
     );
+    if (result == null || !context.mounted) return;
+    await context
+        .read<AppState>()
+        .addNote(player.id, result.stored, categoryId: result.categoryId);
+  }
+
+  Future<void> _editNote(BuildContext context, PlayerNote note) async {
+    final result = await Navigator.push<NoteEditResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            NoteEditorScreen(playerName: player.fullName, existing: note),
+      ),
+    );
+    if (result == null || !context.mounted) return;
+    await context.read<AppState>().updateNote(
+          note.copyWith(
+            text: result.stored,
+            categoryId: result.categoryId,
+            clearCategory: result.categoryId == null,
+          ),
+        );
   }
 
   Future<(List<PlayerNote>, List<NoteCategory>)> _loadNotes(AppState s) async {
