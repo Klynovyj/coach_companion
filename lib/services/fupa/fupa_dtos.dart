@@ -16,6 +16,9 @@ class PlayerData {
   /// Geburtsdatum (von der FuPa-Profilseite), falls verfügbar.
   final DateTime? birthdate;
 
+  /// Rolle im Trainerteam (z.B. „Trainer"); null = Spieler.
+  final String? staffRole;
+
   const PlayerData({
     required this.firstName,
     required this.lastName,
@@ -24,6 +27,7 @@ class PlayerData {
     this.externalId,
     this.photoDataUrl,
     this.birthdate,
+    this.staffRole,
   });
 }
 

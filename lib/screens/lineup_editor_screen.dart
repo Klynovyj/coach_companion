@@ -63,7 +63,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   Future<void> _load() async {
     final state = context.read<AppState>();
     final lineup = await state.ensureLineup(widget.matchId, widget.teamId);
-    final players = await state.playersOf(widget.teamId);
+    // Trainerteam steht nicht in der Aufstellung.
+    final players =
+        (await state.playersOf(widget.teamId)).where((p) => !p.isStaff).toList();
     final noms = await state.nominationsOf(widget.matchId);
     final entries = await state.lineupEntries(lineup.id);
 

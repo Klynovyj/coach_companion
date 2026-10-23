@@ -58,6 +58,7 @@ class FupaPersistence {
           photoPath: data.photoDataUrl,
           // Vorhandenes Geburtsdatum behalten, wenn FuPa keins liefert.
           birthdate: data.birthdate ?? match.birthdate,
+          staffRole: data.staffRole ?? match.staffRole,
         );
         await _repo.upsertPlayer(updated);
       } else {
@@ -71,6 +72,7 @@ class FupaPersistence {
           externalId: data.externalId,
           photoPath: data.photoDataUrl,
           birthdate: data.birthdate,
+          staffRole: data.staffRole,
           source: source,
           createdAt: DateTime.now(),
         ));

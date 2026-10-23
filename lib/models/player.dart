@@ -22,6 +22,12 @@ class Player {
   /// Gehört zur Stammelf (Stamm-11)?
   final bool isStarter;
 
+  /// Rolle im Trainerteam (z.B. „Trainer", „Co-Trainer"); null = Spieler.
+  final String? staffRole;
+
+  /// true = gehört zum Trainerteam (kein Feldspieler).
+  bool get isStaff => staffRole != null && staffRole!.isNotEmpty;
+
   /// Verfügbarkeitsstatus (Fit/Verletzt/Krank/Gesperrt).
   final PlayerStatus status;
 
@@ -54,6 +60,7 @@ class Player {
     this.positions = const [],
     this.wishPosition,
     this.isStarter = false,
+    this.staffRole,
     this.status = PlayerStatus.fit,
     this.captainRole = CaptainRole.none,
     this.birthdate,
@@ -93,6 +100,8 @@ class Player {
     String? wishPosition,
     bool clearWishPosition = false,
     bool? isStarter,
+    String? staffRole,
+    bool clearStaffRole = false,
     PlayerStatus? status,
     CaptainRole? captainRole,
     DateTime? birthdate,
@@ -114,6 +123,7 @@ class Player {
       wishPosition:
           clearWishPosition ? null : (wishPosition ?? this.wishPosition),
       isStarter: isStarter ?? this.isStarter,
+      staffRole: clearStaffRole ? null : (staffRole ?? this.staffRole),
       status: status ?? this.status,
       captainRole: captainRole ?? this.captainRole,
       birthdate: clearBirthdate ? null : (birthdate ?? this.birthdate),
@@ -135,6 +145,7 @@ class Player {
         'positions': positions.join(','),
         'wish_position': wishPosition,
         'is_starter': isStarter ? 1 : 0,
+        'staff_role': staffRole,
         'status': status.storageKey,
         'captain_role': captainRole.storageKey,
         'birthdate': birthdate?.toIso8601String(),
@@ -159,6 +170,7 @@ class Player {
             .toList(),
         wishPosition: m['wish_position'] as String?,
         isStarter: (m['is_starter'] as int? ?? 0) == 1,
+        staffRole: m['staff_role'] as String?,
         status: PlayerStatus.fromKey(m['status'] as String?),
         captainRole: CaptainRole.fromKey(m['captain_role'] as String?),
         birthdate: DateTime.tryParse(m['birthdate'] as String? ?? ''),

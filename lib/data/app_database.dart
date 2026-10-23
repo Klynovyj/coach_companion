@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 19;
+  static const _dbVersion = 20;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -155,6 +155,10 @@ class AppDatabase {
       await db.execute('ALTER TABLE players ADD COLUMN positions TEXT');
       await db.execute(
           'ALTER TABLE players ADD COLUMN is_starter INTEGER NOT NULL DEFAULT 0');
+    }
+    // v19 -> v20: Trainerteam-Rolle am Spieler (null = Spieler).
+    if (oldV < 20) {
+      await db.execute('ALTER TABLE players ADD COLUMN staff_role TEXT');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -323,6 +327,7 @@ class AppDatabase {
         birthdate TEXT,
         positions TEXT,
         is_starter INTEGER NOT NULL DEFAULT 0,
+        staff_role TEXT,
         external_id TEXT,
         photo_path TEXT,
         source TEXT NOT NULL,

@@ -43,9 +43,10 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
 
   Future<void> _load() async {
     final state = context.read<AppState>();
-    // Inaktive Spieler (abgemeldet oder Status „Inaktiv") fliegen raus.
+    // Inaktive Spieler und das Trainerteam fliegen raus.
     final players = (await state.playersOf(widget.teamId))
-        .where((p) => p.active && p.status != PlayerStatus.inaktiv)
+        .where((p) =>
+            p.active && p.status != PlayerStatus.inaktiv && !p.isStaff)
         .toList();
     final config = await state.materialDutyConfig(widget.teamId);
     final vac = await state.materialDutyVacations(widget.teamId);

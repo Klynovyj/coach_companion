@@ -86,6 +86,12 @@ class _SquadListViewState extends State<SquadListView> {
         if (_showSearch) {
           players = _applyFilter(players);
         }
+        // Trainerteam getrennt führen: erscheint nicht in der Spielerliste und
+        // nur im vollen Kader (nicht bei Nominierungs-/Gegneransicht).
+        final staff = (!widget.isOpponent && widget.onlyPlayerIds == null)
+            ? players.where((p) => p.isStaff).toList()
+            : const <Player>[];
+        players = players.where((p) => !p.isStaff).toList();
 
         if (all.isEmpty) {
           if (!widget.showActions) {
@@ -112,7 +118,7 @@ class _SquadListViewState extends State<SquadListView> {
           children: [
             if (_showSearch) _searchAndFilter(context, all),
             Expanded(
-              child: players.isEmpty
+              child: (players.isEmpty && staff.isEmpty)
                   ? const Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
@@ -120,11 +126,39 @@ class _SquadListViewState extends State<SquadListView> {
                             style: TextStyle(color: Colors.grey)),
                       ),
                     )
-                  : ListView.separated(
-                      itemCount: players.length,
-                      separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, i) => _playerTile(context,
-                          players[i], cards, ratings, markers, goals, stats),
+                  : ListView(
+                      children: [
+                        for (var i = 0; i < players.length; i++) ...[
+                          if (i > 0) const Divider(height: 1),
+                          _playerTile(context, players[i], cards, ratings,
+                              markers, goals, stats),
+                        ],
+                        if (staff.isNotEmpty) ...[
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.sports,
+                                    size: 18,
+                                    color:
+                                        Theme.of(context).colorScheme.primary),
+                                const SizedBox(width: 8),
+                                Text('Trainerteam',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .primary)),
+                              ],
+                            ),
+                          ),
+                          const Divider(height: 1),
+                          for (var i = 0; i < staff.length; i++) ...[
+                            if (i > 0) const Divider(height: 1),
+                            _staffTile(context, staff[i]),
+                          ],
+                        ],
+                      ],
                     ),
             ),
             if (widget.showActions)
@@ -209,6 +243,28 @@ class _SquadListViewState extends State<SquadListView> {
     );
     // Inaktive Spieler dezent abgeblendet.
     return inactive ? Opacity(opacity: 0.55, child: tile) : tile;
+  }
+
+  /// Trainerteam-Kachel: Name + Rolle, tippbar ins Profil.
+  Widget _staffTile(BuildContext context, Player p) {
+    return ListTile(
+      leading: PlayerAvatar(player: p),
+      title: Text(p.fullName),
+      subtitle: Text(p.staffRole ?? 'Trainerteam',
+          style: Theme.of(context).textTheme.bodySmall),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PlayerDetailScreen(player: p)),
+      ),
+      trailing: PopupMenuButton<String>(
+        onSelected: (v) {
+          if (v == 'delete') _delete(context, p);
+        },
+        itemBuilder: (_) => const [
+          PopupMenuItem(value: 'delete', child: Text('Löschen')),
+        ],
+      ),
+    );
   }
 
   /// Gegner-Kachel: kein Profil, Tippen öffnet das Scouting-Blatt.

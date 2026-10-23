@@ -136,6 +136,7 @@ class FupaReduxImporter {
           externalId: p.externalId,
           photoDataUrl: p.photoUrl == null ? null : photos[p.photoUrl!],
           birthdate: p.slug == null ? null : births[p.slug!],
+          staffRole: p.staffRole,
         ),
     ];
   }
@@ -576,7 +577,48 @@ class FupaReduxImporter {
         photoUrl: _imagePath(raw['image']),
       ));
     }
+    // Trainerteam (coaches) ergänzen – als Staff mit Rolle. Wer bereits als
+    // Spieler im Kader steht (z.B. „spielender Co-Trainer"), bleibt Spieler.
+    final playerNames = {
+      for (final p in out)
+        '${p.firstName.toLowerCase()}|${p.lastName.toLowerCase()}',
+    };
+    for (final raw in _extractCoaches(redux)) {
+      if (raw is! Map) continue;
+      if (raw['isDeactivated'] == true) continue;
+      final first = (raw['firstName'] as String?)?.trim() ?? '';
+      final last = (raw['lastName'] as String?)?.trim() ?? '';
+      if (first.isEmpty && last.isEmpty) continue;
+      if (playerNames.contains('${first.toLowerCase()}|${last.toLowerCase()}')) {
+        continue;
+      }
+      final role = (raw['role'] as String?)?.trim();
+      out.add(ParsedPlayer(
+        firstName: first,
+        lastName: last,
+        externalId: (raw['id'] ?? raw['slug'])?.toString(),
+        slug: raw['slug']?.toString(),
+        photoUrl: _imagePath(raw['image']),
+        staffRole: (role == null || role.isEmpty) ? 'Trainerteam' : role,
+      ));
+    }
     return out;
+  }
+
+  /// Trainerteam aus `TeamPlayersPage.data.coaches` (leer, falls nicht da).
+  static List<dynamic> _extractCoaches(Map<String, dynamic> redux) {
+    final dh = redux['dataHistory'];
+    if (dh is! List) return const [];
+    for (final entry in dh) {
+      if (entry is! Map) continue;
+      for (final value in entry.values) {
+        if (value is Map && value['data'] is Map) {
+          final coaches = (value['data'] as Map)['coaches'];
+          if (coaches is List) return coaches;
+        }
+      }
+    }
+    return const [];
   }
 
   /// Liest Vereinsname, Kurzname und Logo-Basis-URL aus `data.info.club`.

@@ -20,6 +20,9 @@ class ParsedPlayer {
   /// Basis-URL des Spielerfotos (ohne Größen-Suffix), falls vorhanden.
   final String? photoUrl;
 
+  /// Rolle im Trainerteam (z.B. „Trainer"); null = normaler Spieler.
+  final String? staffRole;
+
   const ParsedPlayer({
     this.number,
     this.firstName = '',
@@ -28,6 +31,7 @@ class ParsedPlayer {
     this.externalId,
     this.slug,
     this.photoUrl,
+    this.staffRole,
   });
 
   bool get needsName => firstName.isEmpty && lastName.isEmpty;
