@@ -12,6 +12,7 @@ import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/team_logo.dart';
+import 'rating_screen.dart';
 
 /// Spielphasen des Live-Modus.
 enum _Phase { notStarted, firstHalf, halftime, secondHalf, finished }
@@ -274,6 +275,34 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         .setMatchStatus(widget.matchId, MatchStatus.finished);
     await _logPhase(MatchEventType.fulltime, min, extra);
     await _refreshEvents();
+    if (mounted) await _promptRating();
+  }
+
+  /// Direkt nach Abpfiff zum Bewerten einladen (jederzeit auch später möglich).
+  Future<void> _promptRating() async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Spiel beendet'),
+        content: const Text('Möchtest du die Spieler jetzt bewerten?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Später')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Jetzt bewerten')),
+        ],
+      ),
+    );
+    if (go == true && mounted) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => RatingScreen(matchId: widget.matchId),
+        ),
+      );
+    }
   }
 
   String get _clockText {

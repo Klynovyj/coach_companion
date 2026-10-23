@@ -664,11 +664,18 @@ class AppState extends ChangeNotifier {
   Future<List<PlayerRating>> ratingsOf(String matchId) =>
       _repo.getRatings(matchId);
 
+  /// Bewertungen eines Spiels als Map spielerId -> Bewertung.
+  Future<Map<String, PlayerRating>> ratingsMapOf(String matchId) async {
+    final list = await _repo.getRatings(matchId);
+    return {for (final r in list) r.playerId: r};
+  }
+
   Future<void> setRating({
     required String matchId,
     required String playerId,
     required double rating,
     String? note,
+    bool keepNote = true,
   }) async {
     final existing = await _repo.getRatings(matchId);
     final prior =
@@ -678,11 +685,27 @@ class AppState extends ChangeNotifier {
       matchId: matchId,
       playerId: playerId,
       rating: rating,
-      note: note,
+      note: note ?? (keepNote ? prior?.note : null),
       createdAt: prior?.createdAt ?? DateTime.now(),
     ));
     notifyListeners();
   }
+
+  /// Entfernt die Bewertung eines Spielers für ein Spiel (falls vorhanden).
+  Future<void> removeRating(String matchId, String playerId) async {
+    final existing = await _repo.getRatings(matchId);
+    for (final r in existing.where((r) => r.playerId == playerId)) {
+      await _repo.deleteRating(r.id);
+    }
+    notifyListeners();
+  }
+
+  /// Gesamtschnitt eines Spielers über alle Spiele: (Durchschnitt, Anzahl).
+  Future<(double?, int)> ratingAverage(String playerId) =>
+      _repo.ratingAverage(playerId);
+
+  Future<Map<String, (double, int)>> ratingAveragesForTeam(String teamId) =>
+      _repo.ratingAveragesForTeam(teamId);
 }
 
 extension _FirstOrNull<E> on Iterable<E> {

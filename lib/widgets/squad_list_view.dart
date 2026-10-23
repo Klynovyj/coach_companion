@@ -46,6 +46,7 @@ class SquadListView extends StatelessWidget {
         }
         var players = snap.data!.players;
         final cards = snap.data!.cardCounts;
+        final ratings = snap.data!.ratings;
         if (onlyPlayerIds != null) {
           players =
               players.where((p) => onlyPlayerIds!.contains(p.id)).toList();
@@ -99,7 +100,7 @@ class SquadListView extends StatelessWidget {
                         ],
                       ],
                     ),
-                    subtitle: _subtitle(p, cards[p.id]),
+                    subtitle: _subtitle(p, cards[p.id], ratings[p.id]),
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
@@ -152,13 +153,25 @@ class SquadListView extends StatelessWidget {
   Future<_SquadData> _load(AppState state) async {
     final players = await state.playersOf(teamId);
     final cards = await state.cardCountsForTeam(teamId);
-    return _SquadData(players, cards);
+    final ratings = await state.ratingAveragesForTeam(teamId);
+    return _SquadData(players, cards, ratings);
   }
 
-  /// Untertitel mit Position und – falls vorhanden – Karten-Badges.
-  Widget? _subtitle(Player p, Map<CardType, int>? cards) {
+  /// Untertitel mit Position, Bewertungsschnitt und – falls vorhanden –
+  /// Karten-Badges.
+  Widget? _subtitle(Player p, Map<CardType, int>? cards, (double, int)? rating) {
     final parts = <Widget>[];
     if (p.position != null) parts.add(Text(p.position!));
+    if (rating != null) {
+      parts.add(Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.star, size: 13, color: Colors.amber.shade700),
+          const SizedBox(width: 2),
+          Text(rating.$1.toStringAsFixed(1)),
+        ],
+      ));
+    }
     if (cards != null && cards.isNotEmpty) {
       final badges = <String>[
         for (final t in CardType.values)
@@ -245,7 +258,8 @@ class SquadListView extends StatelessWidget {
 class _SquadData {
   final List<Player> players;
   final Map<String, Map<CardType, int>> cardCounts;
-  const _SquadData(this.players, this.cardCounts);
+  final Map<String, (double, int)> ratings;
+  const _SquadData(this.players, this.cardCounts, this.ratings);
 }
 
 class _EmptyState extends StatelessWidget {

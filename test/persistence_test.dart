@@ -132,4 +132,32 @@ void main() {
     expect(after.categoryId, isNull, reason: 'Notiz bleibt, Rubrik entkoppelt');
     await db2.close();
   });
+
+  test('Gesamt-Bewertung ist der Durchschnitt über alle Spiele', () async {
+    final s = open();
+    await s.init();
+    final team = await s.ensureOwnTeam();
+    await s.addPlayer(team.id, firstName: 'Tom', lastName: 'Weber');
+    final player = (await s.playersOf(team.id)).first;
+    final m1 = await s.addMatch(opponentName: 'A');
+    final m2 = await s.addMatch(opponentName: 'B');
+
+    await s.setRating(matchId: m1.id, playerId: player.id, rating: 4);
+    await s.setRating(matchId: m2.id, playerId: player.id, rating: 2);
+    var (avg, count) = await s.ratingAverage(player.id);
+    expect(count, 2);
+    expect(avg, closeTo(3.0, 0.001), reason: 'Schnitt (4+2)/2');
+
+    // Bewertung ändern (gleiches Spiel) → zählt nur einmal.
+    await s.setRating(matchId: m1.id, playerId: player.id, rating: 5);
+    (avg, count) = await s.ratingAverage(player.id);
+    expect(count, 2, reason: 'weiterhin zwei Spiele');
+    expect(avg, closeTo(3.5, 0.001), reason: 'Schnitt (5+2)/2');
+
+    // Entfernen → fällt wieder.
+    await s.removeRating(m2.id, player.id);
+    (avg, count) = await s.ratingAverage(player.id);
+    expect(count, 1);
+    expect(avg, closeTo(5.0, 0.001));
+  });
 }

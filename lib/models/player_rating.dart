@@ -1,10 +1,11 @@
-/// Bewertung eines Spielers für ein konkretes Spiel (Schulnoten-Logik 1–6).
+/// Bewertung eines Spielers für ein konkretes Spiel (1–5 Sterne, höher =
+/// besser). Der Gesamtschnitt eines Spielers ergibt sich als Durchschnitt.
 class PlayerRating {
   final String id;
   final String matchId;
   final String playerId;
 
-  /// Note (1.0 = sehr gut … 6.0 = ungenügend). Frei wählbar.
+  /// Sterne (1.0 … 5.0, höher = besser).
   final double rating;
 
   final String? note;

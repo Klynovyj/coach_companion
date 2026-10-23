@@ -13,6 +13,7 @@ import '../widgets/team_logo.dart';
 import 'lineup_editor_screen.dart';
 import 'live_match_screen.dart';
 import 'nomination_screen.dart';
+import 'rating_screen.dart';
 
 class MatchCenterScreen extends StatefulWidget {
   const MatchCenterScreen({super.key, required this.matchId});
@@ -116,8 +117,10 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'reset') _resetMatch();
+                if (v == 'rate') _openRating();
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(value: 'rate', child: Text('Spieler bewerten')),
                 PopupMenuItem(value: 'reset', child: Text('Spiel zurücksetzen')),
               ],
             ),
@@ -319,6 +322,16 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => LiveMatchScreen(matchId: widget.matchId),
+      ),
+    );
+    if (mounted) _load();
+  }
+
+  Future<void> _openRating() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RatingScreen(matchId: widget.matchId),
       ),
     );
     if (mounted) _load();

@@ -280,6 +280,37 @@ class CoachRepository {
     await db.delete('player_ratings', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Gesamt-Bewertung eines Spielers: (Durchschnitt, Anzahl). Durchschnitt
+  /// ist null, wenn noch keine Bewertung vorliegt.
+  Future<(double?, int)> ratingAverage(String playerId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT AVG(rating) AS a, COUNT(*) AS c FROM player_ratings '
+      'WHERE player_id = ?',
+      [playerId],
+    );
+    final c = (rows.first['c'] as int?) ?? 0;
+    final a = (rows.first['a'] as num?)?.toDouble();
+    return (c == 0 ? null : a, c);
+  }
+
+  /// Durchschnittsbewertung aller Spieler eines Teams: pid -> (Schnitt, Anzahl).
+  Future<Map<String, (double, int)>> ratingAveragesForTeam(
+      String teamId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT r.player_id AS pid, AVG(r.rating) AS a, COUNT(*) AS c '
+      'FROM player_ratings r JOIN players p ON p.id = r.player_id '
+      'WHERE p.team_id = ? GROUP BY r.player_id',
+      [teamId],
+    );
+    return {
+      for (final r in rows)
+        r['pid'] as String:
+            ((r['a'] as num).toDouble(), (r['c'] as int?) ?? 0),
+    };
+  }
+
   // ------------------------------------------------------------ Player stats
   Future<List<PlayerStat>> getStats(String teamId) async {
     final db = await _db;

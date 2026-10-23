@@ -405,6 +405,7 @@ class PlayerDetailScreen extends StatelessWidget {
                             '${player.captainRole.badge} ${player.captainRole.label}'),
                         visualDensity: VisualDensity.compact,
                       ),
+                    _ratingChip(context),
                   ],
                 ),
               ],
@@ -412,6 +413,23 @@ class PlayerDetailScreen extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  /// Gesamt-Bewertung (Durchschnitt aller Spielbewertungen) als Chip.
+  Widget _ratingChip(BuildContext context) {
+    return FutureBuilder<(double?, int)>(
+      future: context.read<AppState>().ratingAverage(player.id),
+      builder: (context, snap) {
+        if (!snap.hasData) return const SizedBox.shrink();
+        final (avg, count) = snap.data!;
+        if (avg == null || count == 0) return const SizedBox.shrink();
+        return Chip(
+          avatar: Icon(Icons.star, size: 16, color: Colors.amber.shade700),
+          label: Text('${avg.toStringAsFixed(1)} ($count)'),
+          visualDensity: VisualDensity.compact,
+        );
+      },
     );
   }
 
