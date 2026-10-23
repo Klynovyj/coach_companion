@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/enums.dart';
 import '../models/material_duty_config.dart';
 import '../models/player.dart';
 import '../services/material_duty.dart';
@@ -42,8 +43,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
 
   Future<void> _load() async {
     final state = context.read<AppState>();
+    // Inaktive Spieler (abgemeldet oder Status „Inaktiv") fliegen raus.
     final players = (await state.playersOf(widget.teamId))
-        .where((p) => p.active)
+        .where((p) => p.active && p.status != PlayerStatus.inaktiv)
         .toList();
     final config = await state.materialDutyConfig(widget.teamId);
     final vac = await state.materialDutyVacations(widget.teamId);
@@ -156,38 +158,155 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
 
   // ── Reiter: Gruppen ─────────────────────────────────────────────────
   Widget _groupsTab() {
-    final scheme = Theme.of(context).colorScheme;
     final groups = _groups;
     final missingBirth = _players.where((p) => p.birthdate == null).length;
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
+    return Column(
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-          decoration: BoxDecoration(
-            color: scheme.primary.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            'Diese Woche ist Gruppe ${_currentGroupIdx + 1} dran.',
-            style:
-                TextStyle(fontWeight: FontWeight.bold, color: scheme.primary),
+        // Fixierter Kopf: immer sichtbar, kein Scrollen nötig.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+          child: _currentWeekCard(),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 24),
+            children: [
+              if (missingBirth > 0)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    '$missingBirth Spieler ohne Geburtsdatum stehen hinten – '
+                    'Datum im Spielerprofil nachtragen.',
+                    style:
+                        TextStyle(fontSize: 12.5, color: Colors.orange.shade800),
+                  ),
+                ),
+              for (var g = 0; g < groups.length; g++)
+                _groupCard(g, groups[g], g == _currentGroupIdx),
+            ],
           ),
         ),
-        if (missingBirth > 0)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Text(
-              '$missingBirth Spieler ohne Geburtsdatum stehen hinten – '
-              'Datum im Spielerprofil nachtragen.',
-              style: TextStyle(fontSize: 12.5, color: Colors.orange.shade800),
-            ),
-          ),
-        const SizedBox(height: 8),
-        for (var g = 0; g < groups.length; g++)
-          _groupCard(g, groups[g], g == _currentGroupIdx),
       ],
     );
+  }
+
+  /// Oben fixierte Karte „Diese Woche" (ohne Scrollen sichtbar) inkl.
+  /// WhatsApp-Meldung für die aktuelle Woche.
+  Widget _currentWeekCard() {
+    final scheme = Theme.of(context).colorScheme;
+    final groups = _groups;
+    if (groups.isEmpty) return const SizedBox.shrink();
+    final idx = _currentGroupIdx;
+    final members = groups[idx];
+    final mon = startOfIsoWeek(DateTime.now());
+    final sun = mon.add(const Duration(days: 6));
+    final iw = isoWeek(mon);
+    final entry = ScheduleEntry(
+      monday: mon,
+      sunday: sun,
+      week: iw.week,
+      year: iw.year,
+      groupIdx: idx,
+      vacationingIds: vacationingInWeek(members, mon, sun, _vacations),
+    );
+    final vac = entry.vacationingIds.toSet();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      color: scheme.primaryContainer.withValues(alpha: 0.45),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: scheme.primary, width: 2),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.today, color: scheme.primary, size: 20),
+                const SizedBox(width: 6),
+                Text('Diese Woche · KW ${entry.week}',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: scheme.primary,
+                        fontSize: 15)),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: scheme.primary,
+                      borderRadius: BorderRadius.circular(8)),
+                  child: Text('Gruppe ${idx + 1}',
+                      style: TextStyle(
+                          color: scheme.onPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 10,
+              runSpacing: 2,
+              children: [
+                for (final p in members)
+                  Text(p.fullName,
+                      style: TextStyle(
+                        decoration: vac.contains(p.id)
+                            ? TextDecoration.lineThrough
+                            : null,
+                        color: vac.contains(p.id) ? Colors.red : null,
+                      )),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => _sendWeek(entry, members),
+                icon: const Icon(Icons.share),
+                label: const Text('Diese Woche per WhatsApp melden'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Baut die WhatsApp-Meldung für eine Woche (Format wie vom Nutzer gewünscht:
+  /// Anrede, Einleitung, GRUPPE N, dann „Nachname, Vorname" je Zeile).
+  String _weekMessage(ScheduleEntry e, List<Player> members) {
+    final isCurrent =
+        e.monday.isAtSameMomentAs(startOfIsoWeek(DateTime.now()));
+    final when = isCurrent
+        ? 'diese Woche'
+        : 'KW ${e.week} (${_dShort.format(e.monday)}–${_dShort.format(e.sunday)})';
+    final b = StringBuffer();
+    b.writeln('Guten Morgen zusammen,');
+    b.writeln('');
+    b.writeln('für $when sind die folgenden Spieler für den Ball- und '
+        'Materialdienst eingeteilt:');
+    b.writeln('_');
+    b.writeln('GRUPPE ${e.groupIdx + 1}');
+    for (final p in members) {
+      final last = p.lastName.trim();
+      final first = p.firstName.trim();
+      b.writeln(last.isEmpty
+          ? first
+          : (first.isEmpty ? last : '$last, $first'));
+    }
+    return b.toString().trimRight();
+  }
+
+  Future<void> _sendWeek(ScheduleEntry e, List<Player> members) async {
+    final ok = await shareViaWhatsApp(_weekMessage(e, members));
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Teilen nicht möglich.')));
+    }
   }
 
   Widget _groupCard(int index, List<Player> members, bool onDuty) {
@@ -332,6 +451,12 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
                           color: scheme.primary,
                           fontWeight: FontWeight.bold,
                           fontSize: 12)),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.share, size: 18),
+                  tooltip: 'Diese Woche per WhatsApp melden',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _sendWeek(e, members),
                 ),
               ],
             ),
