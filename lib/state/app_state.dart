@@ -760,6 +760,10 @@ class AppState extends ChangeNotifier {
         pid, keys.map(ScoutMarker.fromKey).whereType<ScoutMarker>().toSet()));
   }
 
+  /// Kommentare je Spieler eines Teams (playerId -> neuester Text).
+  Future<Map<String, String>> scoutCommentsForTeam(String teamId) =>
+      _repo.commentsForTeam(teamId);
+
   Future<void> toggleScoutMarker(
       String playerId, ScoutMarker m, bool on) async {
     if (on) {

@@ -10,6 +10,7 @@ import '../state/app_state.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/squad_list_view.dart';
 import '../widgets/team_logo.dart';
+import 'gegner_analyse_screen.dart';
 import 'lineup_editor_screen.dart';
 import 'live_match_screen.dart';
 import 'nomination_screen.dart';
@@ -151,12 +152,30 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                   _opponentTeam == null
                       ? const Center(
                           child: Text('Gegner wird vorbereitet …'))
-                      : SquadListView(
-                          teamId: _opponentTeam!.id,
-                          teamName: _opponentTeam!.name,
-                          fupaUrl: _opponentTeam!.fupaUrl,
-                          showActions: false,
-                          isOpponent: true,
+                      : Column(
+                          children: [
+                            Padding(
+                              padding:
+                                  const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                              child: SizedBox(
+                                width: double.infinity,
+                                child: FilledButton.tonalIcon(
+                                  onPressed: _openAnalyse,
+                                  icon: const Icon(Icons.insights),
+                                  label: const Text('Gegner-Analyse'),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: SquadListView(
+                                teamId: _opponentTeam!.id,
+                                teamName: _opponentTeam!.name,
+                                fupaUrl: _opponentTeam!.fupaUrl,
+                                showActions: false,
+                                isOpponent: true,
+                              ),
+                            ),
+                          ],
                         ),
                 ],
               ),
@@ -336,6 +355,23 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
       ),
     );
     if (mounted) _load();
+  }
+
+  Future<void> _openAnalyse() async {
+    final opp = _opponentTeam;
+    final match = _match;
+    if (opp == null || match == null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GegnerAnalyseScreen(
+          ownTeamId: match.ownTeamId,
+          opponentTeamId: opp.id,
+          opponentName: opp.name,
+          opponentLogoPath: opp.logoPath ?? match.opponentLogoPath,
+        ),
+      ),
+    );
   }
 }
 

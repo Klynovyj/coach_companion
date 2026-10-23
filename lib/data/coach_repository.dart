@@ -429,6 +429,22 @@ class CoachRepository {
     await db.delete('player_notes', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Neuester Notiz-/Kommentartext je Spieler eines Teams (für Gegner-Scouting).
+  Future<Map<String, String>> commentsForTeam(String teamId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT n.player_id AS pid, n.text AS txt FROM player_notes n '
+      'JOIN players p ON p.id = n.player_id '
+      'WHERE p.team_id = ? ORDER BY n.created_at DESC',
+      [teamId],
+    );
+    final out = <String, String>{};
+    for (final r in rows) {
+      out.putIfAbsent(r['pid'] as String, () => r['txt'] as String);
+    }
+    return out;
+  }
+
   // -------------------------------------------------------- Note categories
   Future<List<NoteCategory>> getNoteCategories() async {
     final db = await _db;
