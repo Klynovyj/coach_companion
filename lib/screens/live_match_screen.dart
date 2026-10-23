@@ -37,6 +37,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   List<Player> _ownPlayers = [];
   List<Player> _opponentPlayers = [];
   Set<String> _nominatedIds = {};
+  Set<String> _starterIds = {}; // Startelf aus der Aufstellung
   List<MatchEvent> _events = [];
   bool _loading = true;
 
@@ -115,6 +116,15 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         opp == null ? <Player>[] : await state.playersOf(opp.id);
     final events = await state.eventsOf(widget.matchId);
     final noms = await state.nominationsOf(widget.matchId);
+    // Startelf aus der Aufstellung (für Wechsel: Feld vs Bank).
+    final starterIds = <String>{};
+    final lineup = await state.repository.getLineup(widget.matchId, match.ownTeamId);
+    if (lineup != null) {
+      final entries = await state.lineupEntries(lineup.id);
+      for (final e in entries) {
+        if (e.role == LineupRole.starter) starterIds.add(e.playerId);
+      }
+    }
     if (!mounted) return;
     setState(() {
       _match = match;
@@ -126,6 +136,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         for (final e in noms.entries)
           if (e.value == NominationStatus.zugesagt) e.key,
       };
+      _starterIds = starterIds;
       _events = events;
       // Spielphase aus den Phasen-Marken rekonstruieren.
       bool has(MatchEventType t) => events.any((e) => e.type == t);
@@ -408,6 +419,22 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     return _ownPlayers.where((p) => _nominatedIds.contains(p.id)).toList();
   }
 
+  /// Wer aktuell auf dem Feld steht: Startelf, fortgeschrieben durch alle
+  /// bisherigen Wechsel (ein Spieler kann hin- und zurückgewechselt werden).
+  Set<String> get _onFieldIds {
+    final onField = _starterIds.isNotEmpty
+        ? {..._starterIds}
+        : {..._nominatedIds}; // Fallback ohne Aufstellung
+    for (final e in _events) {
+      if (e.type != MatchEventType.substitution) continue;
+      final off = e.assistPlayerId; // geht
+      final on = e.playerId; // kommt
+      if (off != null) onField.remove(off);
+      if (on != null) onField.add(on);
+    }
+    return onField;
+  }
+
   String _playerName(String? playerId) {
     if (playerId == null) return 'Unbekannt';
     final all = [..._ownPlayers, ..._opponentPlayers];
@@ -496,15 +523,27 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _snack('Kein Kader vorhanden – Spieler zuerst ergänzen.');
       return;
     }
+    // Raus = aktuell auf dem Feld, Rein = aktuell auf der Bank.
+    final onIds = _onFieldIds;
+    final onField = players.where((p) => onIds.contains(p.id)).toList();
+    final bench = players.where((p) => !onIds.contains(p.id)).toList();
+    if (onField.isEmpty) {
+      _snack('Niemand auf dem Feld – bitte zuerst aufstellen.');
+      return;
+    }
+    if (bench.isEmpty) {
+      _snack('Keine Spieler auf der Bank für einen Wechsel.');
+      return;
+    }
     final off = await _pickPlayer(
-      title: 'Raus',
-      players: players,
+      title: 'Raus (auf dem Feld)',
+      players: onField,
       allowUnknown: false,
     );
-    if (off == _pickCancelled) return;
+    if (off == _pickCancelled || !mounted) return;
     final on = await _pickPlayer(
-      title: 'Rein',
-      players: players.where((p) => p.id != off).toList(),
+      title: 'Rein (von der Bank)',
+      players: bench,
       allowUnknown: false,
     );
     if (on == _pickCancelled) return;

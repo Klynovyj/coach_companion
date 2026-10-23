@@ -16,6 +16,7 @@ import '../models/team_event.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
+import '../models/todo.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_persistence.dart';
 import '../services/fupa/fupa_redux_importer.dart';
@@ -34,6 +35,25 @@ class ConnectSummary {
     required this.matches,
     required this.newMatches,
     required this.stats,
+  });
+}
+
+/// Art eines offenen „Nachholen"-Punkts.
+enum NachholenKind { rating, nomination, lineup }
+
+/// Ein offener Punkt für die „Nachholen"-Liste (verknüpft mit einem Spiel).
+class NachholenItem {
+  final NachholenKind kind;
+  final String matchId;
+  final String title;
+  final String detail;
+  final DateTime? kickoff;
+  const NachholenItem({
+    required this.kind,
+    required this.matchId,
+    required this.title,
+    required this.detail,
+    this.kickoff,
   });
 }
 
@@ -715,6 +735,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bewertungen eines Spielers je Spiel (matchId -> Sterne) – fürs Nachholen
+  /// und Korrigieren im Profil.
+  Future<Map<String, double>> playerRatingsByMatch(String playerId) =>
+      _repo.ratingsByPlayer(playerId);
+
   /// Gesamtschnitt eines Spielers über alle Spiele: (Durchschnitt, Anzahl).
   Future<(double?, int)> ratingAverage(String playerId) =>
       _repo.ratingAverage(playerId);
@@ -785,6 +810,129 @@ class AppState extends ChangeNotifier {
       map[key] = (map[key] ?? 0) + s.goals;
     }
     return map;
+  }
+
+  // --------------------------------------------------------------- Nachholen
+  Future<List<Todo>> todos() => _repo.getTodos();
+
+  Future<void> addTodo(String text) async {
+    final t = text.trim();
+    if (t.isEmpty) return;
+    await _repo.upsertTodo(
+        Todo(id: _uuid.v4(), text: t, createdAt: DateTime.now()));
+    notifyListeners();
+  }
+
+  Future<void> toggleTodo(Todo todo, bool done) async {
+    await _repo.upsertTodo(todo.copyWith(done: done));
+    notifyListeners();
+  }
+
+  Future<void> updateTodoText(Todo todo, String text) async {
+    final t = text.trim();
+    if (t.isEmpty) {
+      await deleteTodo(todo.id);
+      return;
+    }
+    await _repo.upsertTodo(todo.copyWith(text: t));
+    notifyListeners();
+  }
+
+  Future<void> deleteTodo(String id) async {
+    await _repo.deleteTodo(id);
+    notifyListeners();
+  }
+
+  /// Offene Punkte (Bewertungen / Nominierung / Aufstellung) zum Nachholen.
+  Future<List<NachholenItem>> nachholen() async {
+    final team = _ownTeam;
+    if (team == null) return [];
+    final matches = await _repo.getMatches(team.id);
+    final now = DateTime.now();
+    final items = <NachholenItem>[];
+    for (final m in matches) {
+      final finished = m.status == MatchStatus.finished;
+      if (finished) {
+        // Offene Bewertungen: eingesetzte Spieler ohne Bewertung.
+        final roster = await _ratingRoster(m);
+        if (roster.isNotEmpty) {
+          final rated =
+              (await _repo.getRatings(m.id)).map((r) => r.playerId).toSet();
+          final open = roster.where((id) => !rated.contains(id)).length;
+          if (open > 0) {
+            items.add(NachholenItem(
+              kind: NachholenKind.rating,
+              matchId: m.id,
+              title: 'vs ${m.opponentName}',
+              detail: '$open von ${roster.length} Spielern noch zu bewerten',
+              kickoff: m.kickoff,
+            ));
+          }
+        }
+      } else {
+        // Nur aktuelle/kommende Spiele (keine längst vergangenen).
+        final upcoming = m.kickoff == null ||
+            m.kickoff!.isAfter(now.subtract(const Duration(days: 1)));
+        if (!upcoming) continue;
+        final noms = await _repo.getNominations(m.id);
+        if (noms.isEmpty) {
+          items.add(NachholenItem(
+            kind: NachholenKind.nomination,
+            matchId: m.id,
+            title: 'vs ${m.opponentName}',
+            detail: 'Noch keine Nominierung',
+            kickoff: m.kickoff,
+          ));
+        } else {
+          final zugesagt =
+              noms.where((n) => n.status == NominationStatus.zugesagt).length;
+          if (zugesagt > 0) {
+            final lineup = await _repo.getLineup(m.id, team.id);
+            var starters = 0;
+            if (lineup != null) {
+              starters = (await _repo.getLineupEntries(lineup.id))
+                  .where((e) => e.role == LineupRole.starter)
+                  .length;
+            }
+            if (starters == 0) {
+              items.add(NachholenItem(
+                kind: NachholenKind.lineup,
+                matchId: m.id,
+                title: 'vs ${m.opponentName}',
+                detail: 'Aufstellung fehlt',
+                kickoff: m.kickoff,
+              ));
+            }
+          }
+        }
+      }
+    }
+    return items;
+  }
+
+  /// Die „eingesetzten" Spieler eines Spiels (für offene Bewertungen):
+  /// Aufstellung (Start+Bank), ersatzweise die Zugesagten.
+  Future<Set<String>> _ratingRoster(GameMatch m) async {
+    final lineup = await _repo.getLineup(m.id, m.ownTeamId);
+    if (lineup != null) {
+      final ids = (await _repo.getLineupEntries(lineup.id))
+          .where((e) => e.role != LineupRole.unavailable)
+          .map((e) => e.playerId)
+          .toSet();
+      if (ids.isNotEmpty) return ids;
+    }
+    final noms = await _repo.getNominations(m.id);
+    return noms
+        .where((n) => n.status == NominationStatus.zugesagt)
+        .map((n) => n.playerId)
+        .toSet();
+  }
+
+  /// Gesamtzahl offener Punkte (fürs „Nachholen"-Badge).
+  Future<int> nachholenCount() async {
+    final items = await nachholen();
+    final openTodos = await _repo.openTodoCount();
+    return items.length + openTodos;
   }
 }
 

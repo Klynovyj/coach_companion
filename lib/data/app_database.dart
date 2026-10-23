@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 14;
+  static const _dbVersion = 15;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -126,6 +126,10 @@ class AppDatabase {
     if (oldV < 14) {
       await db.execute(_playerMarkersTableSql);
     }
+    // v14 -> v15: Eigene To-Dos für „Nachholen".
+    if (oldV < 15) {
+      await db.execute(_todosTableSql);
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -163,6 +167,15 @@ class AppDatabase {
         marker TEXT NOT NULL,
         PRIMARY KEY (player_id, marker),
         FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+      )
+  ''';
+
+  static const _todosTableSql = '''
+      CREATE TABLE todos (
+        id TEXT PRIMARY KEY,
+        text TEXT NOT NULL,
+        done INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
       )
   ''';
 
@@ -377,6 +390,7 @@ class AppDatabase {
     await db.execute('CREATE INDEX idx_notes_player ON player_notes (player_id)');
     await db.execute(_noteCategoriesTableSql);
     await db.execute(_playerMarkersTableSql);
+    await db.execute(_todosTableSql);
     await db.execute(_teamEventsTableSql);
     await db.execute('CREATE INDEX idx_events_team ON team_events (team_id)');
     await db.execute(_eventAttendanceTableSql);

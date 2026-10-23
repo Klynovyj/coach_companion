@@ -13,6 +13,7 @@ import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/team_event.dart';
+import '../models/todo.dart';
 import 'app_database.dart';
 
 /// Einziger Zugang zur Persistenz. Gruppiert nach Entität; jede Entität
@@ -280,6 +281,19 @@ class CoachRepository {
     await db.delete('player_ratings', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Bewertungen eines Spielers je Spiel: matchId -> Sterne.
+  Future<Map<String, double>> ratingsByPlayer(String playerId) async {
+    final db = await _db;
+    final rows = await db.query('player_ratings',
+        columns: ['match_id', 'rating'],
+        where: 'player_id = ?',
+        whereArgs: [playerId]);
+    return {
+      for (final r in rows)
+        r['match_id'] as String: (r['rating'] as num).toDouble()
+    };
+  }
+
   /// Gesamt-Bewertung eines Spielers: (Durchschnitt, Anzahl). Durchschnitt
   /// ist null, wenn noch keine Bewertung vorliegt.
   Future<(double?, int)> ratingAverage(String playerId) async {
@@ -471,6 +485,28 @@ class CoachRepository {
     final db = await _db;
     await db.delete('player_markers',
         where: 'player_id = ? AND marker = ?', whereArgs: [playerId, marker]);
+  }
+
+  // ----------------------------------------------------------------- To-Dos
+  Future<List<Todo>> getTodos() async {
+    final db = await _db;
+    final rows =
+        await db.query('todos', orderBy: 'done ASC, created_at DESC');
+    return rows.map(Todo.fromMap).toList();
+  }
+
+  Future<int> openTodoCount() async {
+    final db = await _db;
+    final rows =
+        await db.rawQuery('SELECT COUNT(*) AS c FROM todos WHERE done = 0');
+    return (rows.first['c'] as int?) ?? 0;
+  }
+
+  Future<void> upsertTodo(Todo todo) => _upsertById('todos', todo.toMap());
+
+  Future<void> deleteTodo(String id) async {
+    final db = await _db;
+    await db.delete('todos', where: 'id = ?', whereArgs: [id]);
   }
 
   // ------------------------------------------------------------- Team events

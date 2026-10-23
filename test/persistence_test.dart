@@ -188,4 +188,33 @@ void main() {
     expect(await s2.scoutCommentOf(p.id), 'Neu bewertet');
     await db2.close();
   });
+
+  test('Nachholen: To-Dos und offene Bewertungen', () async {
+    final s = open();
+    await s.init();
+    final team = await s.ensureOwnTeam();
+    await s.addPlayer(team.id, firstName: 'Jan', lastName: 'K');
+    final player = (await s.playersOf(team.id)).first;
+
+    // To-Dos: anlegen, abhaken (zählt dann nicht mehr als offen).
+    await s.addTodo('Platz reservieren');
+    expect((await s.todos()), hasLength(1));
+    var count = await s.nachholenCount();
+    expect(count, greaterThanOrEqualTo(1), reason: 'offenes To-Do zählt');
+    final todo = (await s.todos()).first;
+    await s.toggleTodo(todo, true);
+
+    // Beendetes Spiel mit Zusage, aber ohne Bewertung → offene Bewertung.
+    final match = await s.addMatch(opponentName: 'Gegner');
+    await s.setNomination(match.id, player.id, NominationStatus.zugesagt);
+    await s.setMatchStatus(match.id, MatchStatus.finished);
+    final items = await s.nachholen();
+    expect(items.any((i) => i.kind == NachholenKind.rating), isTrue,
+        reason: 'Bewertung offen');
+
+    // Nach Bewertung ist der Punkt weg.
+    await s.setRating(matchId: match.id, playerId: player.id, rating: 4);
+    final after = await s.nachholen();
+    expect(after.any((i) => i.kind == NachholenKind.rating), isFalse);
+  });
 }

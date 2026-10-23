@@ -13,6 +13,7 @@ import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/rich_note_view.dart';
+import '../widgets/star_rating.dart';
 import 'note_editor_screen.dart';
 
 /// Spielerprofil – alles nach Kategorien geordnet und direkt im Profil
@@ -46,33 +47,63 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     final df = DateFormat('dd.MM.yyyy', 'de_DE');
     final p = _player;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
-        actions: [
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'delete') _deletePlayer();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'delete', child: Text('Spieler löschen')),
-            ],
-          ),
-        ],
-      ),
-      body: ListView(
-        padding: const EdgeInsets.only(bottom: 28),
-        children: [
-          _header(context),
-          _stammdatenCard(context),
-          _statusCard(context),
-          _cardsCard(context, state, df),
-          _goalsCard(context, state, df),
-          _notesCard(context, state, df),
-        ],
+    // Karteikarten: weniger auf einen Blick, kein endloses Scrollen.
+    return DefaultTabController(
+      length: 5,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
+          actions: [
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'delete') _deletePlayer();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'delete', child: Text('Spieler löschen')),
+              ],
+            ),
+          ],
+        ),
+        body: Column(
+          children: [
+            _header(context),
+            Material(
+              color: Theme.of(context).colorScheme.surface,
+              child: TabBar(
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
+                tabs: const [
+                  Tab(text: 'Profil'),
+                  Tab(text: 'Karten'),
+                  Tab(text: 'Tore'),
+                  Tab(text: 'Notizen'),
+                  Tab(text: 'Bewertungen'),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _tabList([_stammdatenCard(context), _statusCard(context)]),
+                  _tabList([_cardsCard(context, state, df)]),
+                  _tabList([_goalsCard(context, state, df)]),
+                  _tabList([_notesCard(context, state, df)]),
+                  _tabList([_bewertungenCard(context, state, df)]),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  /// Ein Reiter-Inhalt als scrollbare Liste mit etwas Abstand unten.
+  Widget _tabList(List<Widget> children) => ListView(
+        padding: const EdgeInsets.only(bottom: 28),
+        children: children,
+      );
 
   // ------------------------------------------------------------------ Header
   Widget _header(BuildContext context) {
@@ -472,6 +503,100 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         },
       ),
     );
+  }
+
+  // -------------------------------------------------------------- Bewertungen
+  Widget _bewertungenCard(BuildContext context, AppState state, DateFormat df) {
+    return _SectionCard(
+      icon: Icons.star_border,
+      title: 'Bewertungen',
+      child: FutureBuilder<(List<GameMatch>, Map<String, double>)>(
+        future: _loadRatings(state),
+        builder: (context, snap) {
+          if (!snap.hasData) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final matches = snap.data!.$1;
+          final ratings = snap.data!.$2;
+          if (matches.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Noch keine Spiele.',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            );
+          }
+          return Column(
+            children: [
+              const Padding(
+                padding: EdgeInsets.only(bottom: 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Pro Spiel bewerten – jederzeit nachholbar und korrigierbar.',
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                ),
+              ),
+              for (final m in matches)
+                _ratingRow(context, df, m, ratings[m.id]?.round() ?? 0),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _ratingRow(
+      BuildContext context, DateFormat df, GameMatch m, int stars) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('vs ${m.opponentName}',
+                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text(
+                  m.kickoff != null ? df.format(m.kickoff!.toLocal()) : '—',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+          StarRating(
+            value: stars,
+            size: 22,
+            onTap: (s) => context.read<AppState>().setRating(
+                matchId: m.id, playerId: _player.id, rating: s.toDouble()),
+          ),
+          if (stars > 0)
+            IconButton(
+              tooltip: 'Bewertung entfernen',
+              icon: const Icon(Icons.close, size: 16),
+              onPressed: () =>
+                  context.read<AppState>().removeRating(m.id, _player.id),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<(List<GameMatch>, Map<String, double>)> _loadRatings(
+      AppState s) async {
+    final mm = await s.matchMap(_player.teamId);
+    final list = mm.values.toList()
+      ..sort((a, b) =>
+          (b.kickoff ?? b.createdAt).compareTo(a.kickoff ?? a.createdAt));
+    final ratings = await s.playerRatingsByMatch(_player.id);
+    return (list, ratings);
   }
 
   // --------------------------------------------------------------- Aktionen
