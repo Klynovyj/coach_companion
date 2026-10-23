@@ -338,4 +338,16 @@ void main() {
       expect(form[1].opponentName, 'TSV Urdenbach');
     });
   });
+
+  group('Geburtsdatum', () {
+    test('parseBirthday liest "birthday" aus Profil-HTML', () {
+      const html =
+          '...{"firstName":"Felix","lastName":"Leithold","birthday":"2006-09-28","image":{}}...';
+      expect(FupaReduxImporter.parseBirthday(html), DateTime(2006, 9, 28));
+    });
+
+    test('parseBirthday ohne Feld → null', () {
+      expect(FupaReduxImporter.parseBirthday('{"firstName":"X"}'), isNull);
+    });
+  });
 }

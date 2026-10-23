@@ -13,6 +13,9 @@ class PlayerData {
   /// Spielerfoto als Data-URL (bereits heruntergeladen), falls verfügbar.
   final String? photoDataUrl;
 
+  /// Geburtsdatum (von der FuPa-Profilseite), falls verfügbar.
+  final DateTime? birthdate;
+
   const PlayerData({
     required this.firstName,
     required this.lastName,
@@ -20,6 +23,7 @@ class PlayerData {
     this.position,
     this.externalId,
     this.photoDataUrl,
+    this.birthdate,
   });
 }
 

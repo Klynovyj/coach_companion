@@ -111,9 +111,21 @@ class FupaReduxImporter {
       for (final p in players)
         if (p.photoUrl != null) p.photoUrl!,
     };
-    await Future.wait(urls.map((u) async {
-      photos[u] = await downloadPhoto(u);
-    }));
+    // Fotos und Geburtsdaten nebenläufig laden. Das Geburtsdatum steht nur auf
+    // der Spieler-Profilseite (nicht im Kader), daher ein Abruf je Slug.
+    final births = <String, DateTime?>{};
+    final slugs = <String>{
+      for (final p in players)
+        if (p.slug != null && p.slug!.isNotEmpty) p.slug!,
+    };
+    await Future.wait([
+      ...urls.map((u) async {
+        photos[u] = await downloadPhoto(u);
+      }),
+      ...slugs.map((s) async {
+        births[s] = await _fetchBirthday(s);
+      }),
+    ]);
     return [
       for (final p in players)
         PlayerData(
@@ -123,8 +135,27 @@ class FupaReduxImporter {
           position: p.position,
           externalId: p.externalId,
           photoDataUrl: p.photoUrl == null ? null : photos[p.photoUrl!],
+          birthdate: p.slug == null ? null : births[p.slug!],
         ),
     ];
+  }
+
+  /// Lädt die FuPa-Profilseite eines Spielers und liest das Geburtsdatum.
+  /// Fehler werden geschluckt (dann bleibt das Geburtsdatum leer).
+  Future<DateTime?> _fetchBirthday(String slug) async {
+    try {
+      return parseBirthday(await _fetchHtml('https://www.fupa.net/player/$slug'));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Liest `"birthday":"YYYY-MM-DD"` aus dem Profil-HTML. Netzwerkfrei testbar.
+  static DateTime? parseBirthday(String html) {
+    final m = RegExp(r'"birthday":"(\d{4})-(\d{2})-(\d{2})"').firstMatch(html);
+    if (m == null) return null;
+    return DateTime(
+        int.parse(m.group(1)!), int.parse(m.group(2)!), int.parse(m.group(3)!));
   }
 
   /// Importiert den Spielplan einer Mannschaft. Akzeptiert den Team- oder den
@@ -541,6 +572,7 @@ class FupaReduxImporter {
         lastName: last,
         position: _mapPosition(raw['position']),
         externalId: (raw['id'] ?? raw['slug'])?.toString(),
+        slug: raw['slug']?.toString(),
         photoUrl: _imagePath(raw['image']),
       ));
     }

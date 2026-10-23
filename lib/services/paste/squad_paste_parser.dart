@@ -14,6 +14,9 @@ class ParsedPlayer {
   /// Externe FuPa-ID/Slug (für stabile Duplikaterkennung), falls vorhanden.
   final String? externalId;
 
+  /// FuPa-Spieler-Slug (für die Profil-URL, z.B. Geburtsdatum), falls vorhanden.
+  final String? slug;
+
   /// Basis-URL des Spielerfotos (ohne Größen-Suffix), falls vorhanden.
   final String? photoUrl;
 
@@ -23,6 +26,7 @@ class ParsedPlayer {
     this.lastName = '',
     this.position,
     this.externalId,
+    this.slug,
     this.photoUrl,
   });
 
