@@ -561,6 +561,21 @@ class CoachRepository {
   Future<void> upsertAbsence(PlayerAbsence a) =>
       _upsertById('player_absences', a.toMap());
 
+  /// Alle Abwesenheiten der Spieler eines Teams, optional nach Status.
+  Future<List<PlayerAbsence>> absencesForTeam(String teamId,
+      {PlayerStatus? status}) async {
+    final db = await _db;
+    final args = <Object?>[teamId];
+    var sql = 'SELECT a.* FROM player_absences a '
+        'JOIN players p ON p.id = a.player_id WHERE p.team_id = ?';
+    if (status != null) {
+      sql += ' AND a.status = ?';
+      args.add(status.storageKey);
+    }
+    final rows = await db.rawQuery(sql, args);
+    return rows.map(PlayerAbsence.fromMap).toList();
+  }
+
   Future<void> deleteAbsence(String id) async {
     final db = await _db;
     await db.delete('player_absences', where: 'id = ?', whereArgs: [id]);

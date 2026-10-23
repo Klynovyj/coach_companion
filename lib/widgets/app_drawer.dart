@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../screens/home_screen.dart';
+import '../screens/material_duty_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/todos_screen.dart';
 import '../state/app_state.dart';
@@ -76,6 +77,23 @@ class AppDrawer extends StatelessWidget {
               trailing: _TodoBadge(),
               screen: const TodosScreen(),
             ),
+            if (team != null)
+              ListTile(
+                leading: const Icon(Icons.sports_soccer),
+                title: const Text('Ball-/Materialdienst'),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => MaterialDutyScreen(
+                        teamId: team.id,
+                        teamName: team.name,
+                      ),
+                    ),
+                  );
+                },
+              ),
             _push(
               context,
               icon: Icons.settings_outlined,

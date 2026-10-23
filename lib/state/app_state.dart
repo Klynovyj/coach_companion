@@ -7,6 +7,7 @@ import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/match.dart';
 import '../models/match_event.dart';
+import '../models/material_duty_config.dart';
 import '../models/nomination.dart';
 import '../models/note_category.dart';
 import '../models/player.dart';
@@ -20,6 +21,7 @@ import '../models/team.dart';
 import '../models/todo.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_persistence.dart';
+import '../services/material_duty.dart';
 import '../services/fupa/fupa_redux_importer.dart';
 import '../services/opponent_sync_service.dart';
 
@@ -946,6 +948,27 @@ class AppState extends ChangeNotifier {
       }
     }
     return (ours, table);
+  }
+
+  // ---------------------------------------------------- Ball-/Materialdienst
+  Future<MaterialDutyConfig> materialDutyConfig(String teamId) async {
+    final s = await _repo.getSetting('material_duty_$teamId');
+    return MaterialDutyConfig.decode(s);
+  }
+
+  Future<void> saveMaterialDutyConfig(
+      String teamId, MaterialDutyConfig config) async {
+    await _repo.setSetting('material_duty_$teamId', config.encode());
+    notifyListeners();
+  }
+
+  /// Urlaube der Team-Spieler (aus den „Urlaub"-Abwesenheiten) als Zeiträume.
+  Future<List<DutyVacation>> materialDutyVacations(String teamId) async {
+    final abs =
+        await _repo.absencesForTeam(teamId, status: PlayerStatus.urlaub);
+    return abs
+        .map((a) => DutyVacation(a.playerId, a.from, a.until))
+        .toList();
   }
 
   Future<void> toggleScoutMarker(
