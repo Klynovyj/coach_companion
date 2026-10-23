@@ -7,9 +7,20 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// Zentraler Datenbank-Zugang. SQLite läuft auf Mobile nativ und auf
 /// Windows/Desktop über die FFI-Implementierung.
 class AppDatabase {
-  AppDatabase._();
+  AppDatabase._()
+      : _inMemory = false,
+        _customPath = null;
+
+  /// Nur für Tests: In-Memory, oder (mit [path]) eine echte Datei –
+  /// um Neustart-/Persistenz-Verhalten nachzustellen.
+  AppDatabase.test({String? path})
+      : _inMemory = path == null,
+        _customPath = path;
+
   static final AppDatabase instance = AppDatabase._();
 
+  final bool _inMemory;
+  final String? _customPath;
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
@@ -22,14 +33,20 @@ class AppDatabase {
   }
 
   Future<Database> _open() async {
-    // Desktop (Windows/Linux/macOS) benötigt die FFI-Factory.
-    if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    // Desktop (Windows/Linux/macOS) und Tests benötigen die FFI-Factory.
+    if (_inMemory ||
+        _customPath != null ||
+        Platform.isWindows ||
+        Platform.isLinux ||
+        Platform.isMacOS) {
       sqfliteFfiInit();
       databaseFactory = databaseFactoryFfi;
     }
 
-    final dir = await getApplicationDocumentsDirectory();
-    final path = p.join(dir.path, _dbName);
+    final path = _customPath ??
+        (_inMemory
+            ? inMemoryDatabasePath
+            : p.join((await getApplicationDocumentsDirectory()).path, _dbName));
 
     return databaseFactory.openDatabase(
       path,

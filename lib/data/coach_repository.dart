@@ -23,6 +23,21 @@ class CoachRepository {
 
   Future<Database> get _db async => _appDb.database;
 
+  /// Echtes Upsert per Primärschlüssel OHNE Löschen: erst UPDATE, sonst INSERT.
+  ///
+  /// Wichtig für Eltern-Tabellen (teams/players/matches/lineups/team_events):
+  /// `ConflictAlgorithm.replace` würde die Zeile löschen und neu einfügen und
+  /// dabei via `ON DELETE CASCADE` alle Kinddaten (Events, Nominierungen,
+  /// Karten, Notizen, Aufstellungen …) mitlöschen.
+  Future<void> _upsertById(String table, Map<String, Object?> map) async {
+    final db = await _db;
+    final updated = await db
+        .update(table, map, where: 'id = ?', whereArgs: [map['id']]);
+    if (updated == 0) {
+      await db.insert(table, map);
+    }
+  }
+
   // ---------------------------------------------------------------- Settings
   Future<String?> getSetting(String key) async {
     final db = await _db;
@@ -79,11 +94,7 @@ class CoachRepository {
     return null;
   }
 
-  Future<void> upsertTeam(Team team) async {
-    final db = await _db;
-    await db.insert('teams', team.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
-  }
+  Future<void> upsertTeam(Team team) => _upsertById('teams', team.toMap());
 
   Future<void> deleteTeam(String id) async {
     final db = await _db;
@@ -110,11 +121,8 @@ class CoachRepository {
     return rows.isEmpty ? null : Player.fromMap(rows.first);
   }
 
-  Future<void> upsertPlayer(Player player) async {
-    final db = await _db;
-    await db.insert('players', player.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
-  }
+  Future<void> upsertPlayer(Player player) =>
+      _upsertById('players', player.toMap());
 
   Future<void> deletePlayer(String id) async {
     final db = await _db;
@@ -138,11 +146,8 @@ class CoachRepository {
     return rows.isEmpty ? null : GameMatch.fromMap(rows.first);
   }
 
-  Future<void> upsertMatch(GameMatch match) async {
-    final db = await _db;
-    await db.insert('matches', match.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
-  }
+  Future<void> upsertMatch(GameMatch match) =>
+      _upsertById('matches', match.toMap());
 
   Future<void> deleteMatch(String id) async {
     final db = await _db;
@@ -159,11 +164,8 @@ class CoachRepository {
     return rows.isEmpty ? null : Lineup.fromMap(rows.first);
   }
 
-  Future<void> upsertLineup(Lineup lineup) async {
-    final db = await _db;
-    await db.insert('lineups', lineup.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
-  }
+  Future<void> upsertLineup(Lineup lineup) =>
+      _upsertById('lineups', lineup.toMap());
 
   Future<List<LineupEntry>> getLineupEntries(String lineupId) async {
     final db = await _db;
@@ -357,11 +359,8 @@ class CoachRepository {
     return rows.isEmpty ? null : TeamEvent.fromMap(rows.first);
   }
 
-  Future<void> upsertTeamEvent(TeamEvent event) async {
-    final db = await _db;
-    await db.insert('team_events', event.toMap(),
-        conflictAlgorithm: ConflictAlgorithm.replace);
-  }
+  Future<void> upsertTeamEvent(TeamEvent event) =>
+      _upsertById('team_events', event.toMap());
 
   Future<void> deleteTeamEvent(String id) async {
     final db = await _db;
