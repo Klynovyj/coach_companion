@@ -490,10 +490,14 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     noms.forEach((id, status) {
       final p = byId[id];
       if (p == null) return;
+      // Spitzname bevorzugen (wie im Beispiel-Aufgebot), sonst voller Name.
+      final name = (p.nickname != null && p.nickname!.trim().isNotEmpty)
+          ? p.nickname!.trim()
+          : p.fullName;
       if (status == NominationStatus.zugesagt) {
-        roster.add(MapEntry(p.fullName, false));
+        roster.add(MapEntry(name, false));
       } else if (status == NominationStatus.unterVorbehalt) {
-        roster.add(MapEntry(p.fullName, true));
+        roster.add(MapEntry(name, true));
       }
     });
     roster.sort((a, b) => a.key.toLowerCase().compareTo(b.key.toLowerCase()));
