@@ -70,7 +70,7 @@ String buildMatchReport({
 }) {
   final df = DateFormat('dd.MM.yyyy', 'de_DE');
   final b = StringBuffer();
-  b.writeln('⚽ Spielbericht');
+  b.writeln('Spielbericht');
   b.writeln('$ownName ${match.ownScore}:${match.opponentScore} $oppName');
   b.writeln('${match.venue.label}'
       '${match.kickoff != null ? ' · ${df.format(match.kickoff!.toLocal())}' : ''}'
@@ -93,20 +93,20 @@ String buildMatchReport({
       final assist = e.assistPlayerId != null
           ? ' (Vorlage: ${resolveName(e.assistPlayerId)})'
           : '';
-      b.writeln('${e.minuteLabel} ⚽ ${resolveName(e.playerId)}$assist');
+      b.writeln('${e.minuteLabel}  ${resolveName(e.playerId)}$assist');
     }
   }
   if (cards.isNotEmpty) {
     b.writeln('\nKarten:');
     for (final e in cards) {
-      b.writeln('${e.minuteLabel} ${e.type.symbol} ${resolveName(e.playerId)}');
+      b.writeln('${e.minuteLabel}  ${e.type.label}: ${resolveName(e.playerId)}');
     }
   }
   if (subs.isNotEmpty) {
     b.writeln('\nWechsel:');
     for (final e in subs) {
       b.writeln(
-          '${e.minuteLabel} 🔁 ${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}');
+          '${e.minuteLabel}  ${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}');
     }
   }
   return b.toString().trim();
@@ -121,24 +121,24 @@ String buildNominationText({
 }) {
   final df = DateFormat('dd.MM.yyyy', 'de_DE');
   final b = StringBuffer();
-  b.writeln('📋 Nominierung – $title'
+  b.writeln('Nominierung – $title'
       '${kickoff != null ? ' (${df.format(kickoff)})' : ''}');
 
-  void group(NominationStatus s, String emoji, String label) {
+  void group(NominationStatus s, String label) {
     final names = players
         .where((p) => (status[p.id] ?? NominationStatus.open) == s)
         .map((p) => p.fullName)
         .toList();
     if (names.isNotEmpty) {
-      b.writeln('\n$emoji $label (${names.length}):');
+      b.writeln('\n$label (${names.length}):');
       b.writeln(names.join(', '));
     }
   }
 
-  group(NominationStatus.zugesagt, '✅', 'Zugesagt');
-  group(NominationStatus.unsicher, '❓', 'Unsicher');
-  group(NominationStatus.abgesagt, '❌', 'Abgesagt');
-  group(NominationStatus.open, '⬜', 'Offen');
+  group(NominationStatus.zugesagt, 'Zugesagt');
+  group(NominationStatus.unsicher, 'Unsicher');
+  group(NominationStatus.abgesagt, 'Abgesagt');
+  group(NominationStatus.open, 'Offen');
   return b.toString().trim();
 }
 
@@ -150,25 +150,25 @@ String buildEventText({
 }) {
   final df = DateFormat('EEEE, dd.MM.yyyy • HH:mm', 'de_DE');
   final b = StringBuffer();
-  b.writeln('${event.type.symbol} ${event.title}');
+  b.writeln('${event.type.label} – ${event.title}');
   b.writeln(df.format(event.date));
-  if (event.location != null) b.writeln('📍 ${event.location}');
+  if (event.location != null) b.writeln('Ort: ${event.location}');
   if (event.note != null && event.note!.isNotEmpty) b.writeln(event.note);
 
-  void group(NominationStatus s, String emoji, String label) {
+  void group(NominationStatus s, String label) {
     final names = players
         .where((p) => (status[p.id] ?? NominationStatus.open) == s)
         .map((p) => p.fullName)
         .toList();
     if (names.isNotEmpty) {
-      b.writeln('\n$emoji $label (${names.length}):');
+      b.writeln('\n$label (${names.length}):');
       b.writeln(names.join(', '));
     }
   }
 
-  group(NominationStatus.zugesagt, '✅', 'Zugesagt');
-  group(NominationStatus.unsicher, '❓', 'Unsicher');
-  group(NominationStatus.abgesagt, '❌', 'Abgesagt');
+  group(NominationStatus.zugesagt, 'Zugesagt');
+  group(NominationStatus.unsicher, 'Unsicher');
+  group(NominationStatus.abgesagt, 'Abgesagt');
   return b.toString().trim();
 }
 

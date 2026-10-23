@@ -255,7 +255,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final start = names(_starters.keys);
     final bench = names(_bench);
     final b = StringBuffer();
-    b.writeln('📋 Kader – ${widget.teamName}');
+    b.writeln('Kader – ${widget.teamName}');
     if (start.isNotEmpty) {
       b.writeln('\nStartelf (${start.length}):');
       b.writeln(start.join('\n'));
