@@ -10,6 +10,7 @@ import '../models/note_category.dart';
 import '../models/player.dart';
 import '../models/player_absence.dart';
 import '../models/player_note.dart';
+import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
@@ -779,7 +780,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     return _SectionCard(
       icon: Icons.star_border,
       title: 'Bewertungen',
-      child: FutureBuilder<(List<GameMatch>, Map<String, double>, Set<String>)>(
+      child: FutureBuilder<
+          (List<GameMatch>, Map<String, PlayerRating>, Set<String>)>(
         future: _loadRatings(state),
         builder: (context, snap) {
           if (!snap.hasData) {
@@ -819,7 +821,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 children: [
                   const Expanded(
                     child: Text(
-                      'Pro Spiel bewerten – jederzeit nachholbar.',
+                      'Sterne + Kommentar je Spiel – jederzeit bearbeitbar.',
                       style: TextStyle(color: Colors.grey, fontSize: 12),
                     ),
                   ),
@@ -835,8 +837,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   ),
                 ],
               ),
-              for (final m in sorted)
-                _ratingRow(context, df, m, ratings[m.id]?.round() ?? 0),
+              for (final m in sorted) _ratingRow(context, df, m, ratings[m.id]),
             ],
           );
         },
@@ -845,49 +846,125 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   Widget _ratingRow(
-      BuildContext context, DateFormat df, GameMatch m, int stars) {
+      BuildContext context, DateFormat df, GameMatch m, PlayerRating? rating) {
+    final stars = rating?.rating.round() ?? 0;
+    final note = rating?.note;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('vs ${m.opponentName}',
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-                Text(
-                  m.kickoff != null ? df.format(m.kickoff!.toLocal()) : '—',
-                  style: Theme.of(context).textTheme.bodySmall,
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('vs ${m.opponentName}',
+                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      m.kickoff != null ? df.format(m.kickoff!.toLocal()) : '—',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              StarRating(
+                value: stars,
+                size: 22,
+                onTap: (s) => context.read<AppState>().setRating(
+                    matchId: m.id, playerId: _player.id, rating: s.toDouble()),
+              ),
+              if (stars > 0)
+                IconButton(
+                  tooltip: 'Bewertung entfernen',
+                  icon: const Icon(Icons.close, size: 16),
+                  onPressed: () =>
+                      context.read<AppState>().removeRating(m.id, _player.id),
+                ),
+            ],
           ),
-          StarRating(
-            value: stars,
-            size: 22,
-            onTap: (s) => context.read<AppState>().setRating(
-                matchId: m.id, playerId: _player.id, rating: s.toDouble()),
-          ),
+          // Kommentar – ansehen und bearbeiten (nur wenn bewertet).
           if (stars > 0)
-            IconButton(
-              tooltip: 'Bewertung entfernen',
-              icon: const Icon(Icons.close, size: 16),
-              onPressed: () =>
-                  context.read<AppState>().removeRating(m.id, _player.id),
+            InkWell(
+              onTap: () => _editRatingNote(m, rating!),
+              child: Padding(
+                padding: const EdgeInsets.only(top: 2, bottom: 2),
+                child: Row(
+                  children: [
+                    Icon(Icons.chat_bubble_outline,
+                        size: 14,
+                        color: Theme.of(context).colorScheme.primary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        (note != null && note.isNotEmpty)
+                            ? note
+                            : 'Kommentar hinzufügen …',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontStyle: (note == null || note.isEmpty)
+                              ? FontStyle.italic
+                              : FontStyle.normal,
+                          color: (note == null || note.isEmpty)
+                              ? Colors.grey
+                              : null,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
+          const Divider(height: 10),
         ],
       ),
     );
   }
 
-  Future<(List<GameMatch>, Map<String, double>, Set<String>)> _loadRatings(
-      AppState s) async {
+  Future<void> _editRatingNote(GameMatch m, PlayerRating rating) async {
+    final ctrl = TextEditingController(text: rating.note ?? '');
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Kommentar · vs ${m.opponentName}'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 4,
+          decoration: const InputDecoration(hintText: 'Kurze Bewertung …'),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (text == null || !mounted) return;
+    await context.read<AppState>().setRating(
+          matchId: m.id,
+          playerId: _player.id,
+          rating: rating.rating,
+          note: text.isEmpty ? null : text,
+          keepNote: false,
+        );
+    if (mounted) setState(() {});
+  }
+
+  Future<(List<GameMatch>, Map<String, PlayerRating>, Set<String>)>
+      _loadRatings(AppState s) async {
     final mm = await s.matchMap(_player.teamId);
     final list = mm.values.toList()
       ..sort((a, b) =>
           (b.kickoff ?? b.createdAt).compareTo(a.kickoff ?? a.createdAt));
-    final ratings = await s.playerRatingsByMatch(_player.id);
+    final ratings = await s.playerRatingsFull(_player.id);
     final played = await s.playedMatchIdsForPlayer(_player.id, _player.teamId);
     return (list, ratings, played);
   }

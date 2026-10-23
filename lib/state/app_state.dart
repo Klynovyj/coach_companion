@@ -850,6 +850,10 @@ class AppState extends ChangeNotifier {
   Future<Map<String, double>> playerRatingsByMatch(String playerId) =>
       _repo.ratingsByPlayer(playerId);
 
+  /// Vollständige Bewertungen je Spiel (inkl. Kommentar) – fürs Profil.
+  Future<Map<String, PlayerRating>> playerRatingsFull(String playerId) =>
+      _repo.ratingsFullByPlayer(playerId);
+
   /// Gesamtschnitt eines Spielers über alle Spiele: (Durchschnitt, Anzahl).
   Future<(double?, int)> ratingAverage(String playerId) =>
       _repo.ratingAverage(playerId);

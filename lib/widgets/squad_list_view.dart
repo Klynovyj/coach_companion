@@ -346,6 +346,10 @@ class _SquadListViewState extends State<SquadListView> {
     final markers = widget.isOpponent
         ? await state.scoutMarkersForTeam(widget.teamId)
         : const <String, Set<ScoutMarker>>{};
+    // Beim Gegner die Statistik bei Bedarf automatisch nachladen.
+    if (widget.isOpponent) {
+      await state.ensureOpponentStats(widget.teamId);
+    }
     final goals = widget.isOpponent
         ? await state.scoutGoals(widget.teamId)
         : const <String, int>{};

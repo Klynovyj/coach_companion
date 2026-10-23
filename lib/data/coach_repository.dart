@@ -295,6 +295,17 @@ class CoachRepository {
     };
   }
 
+  /// Vollständige Bewertungen eines Spielers je Spiel (inkl. Kommentar).
+  Future<Map<String, PlayerRating>> ratingsFullByPlayer(
+      String playerId) async {
+    final db = await _db;
+    final rows = await db.query('player_ratings',
+        where: 'player_id = ?', whereArgs: [playerId]);
+    return {
+      for (final r in rows) r['match_id'] as String: PlayerRating.fromMap(r)
+    };
+  }
+
   /// Gesamt-Bewertung eines Spielers: (Durchschnitt, Anzahl). Durchschnitt
   /// ist null, wenn noch keine Bewertung vorliegt.
   Future<(double?, int)> ratingAverage(String playerId) async {
