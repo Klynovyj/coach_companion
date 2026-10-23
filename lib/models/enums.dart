@@ -73,7 +73,12 @@ enum MatchEventType {
   yellowCard('yellow_card', 'Gelbe Karte', '🟨'),
   secondYellow('second_yellow', 'Gelb-Rot', '🟨🟥'),
   redCard('red_card', 'Rote Karte', '🟥'),
-  substitution('substitution', 'Wechsel', '🔁');
+  substitution('substitution', 'Wechsel', '🔁'),
+  // Team-neutrale Spielphasen-Marken (ohne Spieler).
+  kickoff('kickoff', 'Anpfiff', '🟢'),
+  halftime('halftime', 'Halbzeit', '⏸'),
+  secondHalfStart('second_half', 'Anpfiff 2. Halbzeit', '🟢'),
+  fulltime('fulltime', 'Abpfiff', '🔚');
 
   const MatchEventType(this.storageKey, this.label, this.symbol);
   final String storageKey;
@@ -82,6 +87,13 @@ enum MatchEventType {
 
   /// Zählt dieses Ereignis als Tor für das ausführende Team?
   bool get countsAsGoal => this == MatchEventType.goal;
+
+  /// Team-neutrale Phasen-Marke (Anpfiff/Halbzeit/Abpfiff)?
+  bool get isPhaseMarker =>
+      this == MatchEventType.kickoff ||
+      this == MatchEventType.halftime ||
+      this == MatchEventType.secondHalfStart ||
+      this == MatchEventType.fulltime;
 
   static MatchEventType fromKey(String? key) =>
       MatchEventType.values.firstWhere((e) => e.storageKey == key,

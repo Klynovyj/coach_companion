@@ -11,6 +11,9 @@ import '../models/team.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 
+/// Spielphasen des Live-Modus.
+enum _Phase { notStarted, firstHalf, halftime, secondHalf, finished }
+
 /// Live-Spielerfassung für beide Mannschaften.
 ///
 /// Tore, Karten und Wechsel werden mit wenigen Klicks erfasst; jede Aktion
@@ -34,12 +37,31 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   List<MatchEvent> _events = [];
   bool _loading = true;
 
-  // Live-Uhr
+  // Live-Uhr & Spielphase
   Timer? _timer;
-  int _elapsedSeconds = 0;
+  int _elapsedSeconds = 0; // Gesamt-Spielzeit in Sekunden (2. HZ ab 45:00)
   bool _running = false;
+  _Phase _phase = _Phase.notStarted;
 
-  int get _currentMinute => (_elapsedSeconds ~/ 60) + 1;
+  static const _halfSeconds = 45 * 60;
+  static const _fullSeconds = 90 * 60;
+
+  /// Aktuelle Fußball-Minute inkl. Nachspielzeit (z.B. 45 + 2).
+  (int, int) get _footMinute {
+    final sec = _elapsedSeconds;
+    final secondHalf =
+        _phase == _Phase.secondHalf || _phase == _Phase.finished;
+    if (!secondHalf) {
+      if (sec < _halfSeconds) return ((sec ~/ 60) + 1, 0);
+      return (45, (sec ~/ 60) - 45 + 1);
+    } else {
+      if (sec < _fullSeconds) return ((sec ~/ 60) + 1, 0);
+      return (90, (sec ~/ 60) - 90 + 1);
+    }
+  }
+
+  int get _currentMinute => _footMinute.$1;
+  int get _currentExtra => _footMinute.$2;
 
   @override
   void initState() {
@@ -86,10 +108,28 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           if (e.value == NominationStatus.zugesagt) e.key,
       };
       _events = events;
-      _running = match!.status == MatchStatus.live;
+      // Spielphase aus den Phasen-Marken rekonstruieren.
+      bool has(MatchEventType t) => events.any((e) => e.type == t);
+      if (has(MatchEventType.fulltime) ||
+          match!.status == MatchStatus.finished) {
+        _phase = _Phase.finished;
+        _elapsedSeconds = _fullSeconds;
+      } else if (has(MatchEventType.secondHalfStart)) {
+        _phase = _Phase.secondHalf;
+        _elapsedSeconds = _halfSeconds;
+      } else if (has(MatchEventType.halftime)) {
+        _phase = _Phase.halftime;
+        _elapsedSeconds = _halfSeconds;
+      } else if (has(MatchEventType.kickoff)) {
+        _phase = _Phase.firstHalf;
+        _elapsedSeconds = 0;
+      } else {
+        _phase = _Phase.notStarted;
+        _elapsedSeconds = 0;
+      }
+      _running = false; // beim Öffnen pausiert; Trainer setzt fort
       _loading = false;
     });
-    if (_running) _startTimer();
   }
 
   void _startTimer() {
@@ -110,10 +150,52 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     });
   }
 
+  Future<void> _logPhase(MatchEventType type, int minute, int extra) async {
+    final m = _match!;
+    await context.read<AppState>().addEvent(
+          matchId: widget.matchId,
+          teamId: m.ownTeamId,
+          minute: minute,
+          minuteExtra: extra,
+          type: type,
+          note: '${m.ownScore}:${m.opponentScore}',
+        );
+  }
+
+  /// Anpfiff 1. Halbzeit.
   Future<void> _kickoff() async {
     await context.read<AppState>().setMatchStatus(widget.matchId, MatchStatus.live);
-    setState(() => _running = true);
+    setState(() {
+      _phase = _Phase.firstHalf;
+      _elapsedSeconds = 0;
+      _running = true;
+    });
     _startTimer();
+    await _logPhase(MatchEventType.kickoff, 1, 0);
+    await _refreshEvents();
+  }
+
+  /// Halbzeitpfiff: Uhr hält, 1. HZ zu Ende.
+  Future<void> _halftime() async {
+    _timer?.cancel();
+    final (min, extra) = _footMinute;
+    setState(() {
+      _phase = _Phase.halftime;
+      _running = false;
+    });
+    await _logPhase(MatchEventType.halftime, min, extra);
+    await _refreshEvents();
+  }
+
+  /// Anpfiff 2. Halbzeit (ab 45:00).
+  Future<void> _startSecondHalf() async {
+    setState(() {
+      _phase = _Phase.secondHalf;
+      _elapsedSeconds = _halfSeconds;
+      _running = true;
+    });
+    _startTimer();
+    await _logPhase(MatchEventType.secondHalfStart, 46, 0);
     await _refreshEvents();
   }
 
@@ -126,12 +208,18 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     }
   }
 
+  /// Abpfiff: Spielende.
   Future<void> _finish() async {
     _timer?.cancel();
-    setState(() => _running = false);
+    final (min, extra) = _footMinute;
+    setState(() {
+      _phase = _Phase.finished;
+      _running = false;
+    });
     await context
         .read<AppState>()
         .setMatchStatus(widget.matchId, MatchStatus.finished);
+    await _logPhase(MatchEventType.fulltime, min, extra);
     await _refreshEvents();
   }
 
@@ -170,13 +258,16 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             oppName: _opponentTeam?.name ?? match.opponentName,
             clockText: _clockText,
             minute: _currentMinute,
+            extra: _currentExtra,
+            phase: _phase,
             running: _running,
-            status: match.status,
           ),
           _Controls(
-            status: match.status,
+            phase: _phase,
             running: _running,
             onKickoff: _kickoff,
+            onHalftime: _halftime,
+            onSecondHalf: _startSecondHalf,
             onPause: _togglePause,
             onFinish: _finish,
           ),
@@ -259,6 +350,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       matchId: widget.matchId,
       teamId: _teamIdFor(ownSide),
       minute: _currentMinute,
+      minuteExtra: _currentExtra,
       type: MatchEventType.goal,
       playerId: scorer == _pickUnknown ? null : scorer,
       assistPlayerId: assistId,
@@ -284,6 +376,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       matchId: widget.matchId,
       teamId: _teamIdFor(ownSide),
       minute: _currentMinute,
+      minuteExtra: _currentExtra,
       type: type,
       playerId: player == _pickUnknown ? null : player,
     );
@@ -313,6 +406,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       matchId: widget.matchId,
       teamId: _teamIdFor(ownSide),
       minute: _currentMinute,
+      minuteExtra: _currentExtra,
       type: MatchEventType.substitution,
       playerId: on, // kommt
       assistPlayerId: off, // geht
@@ -444,8 +538,9 @@ class _Scoreboard extends StatelessWidget {
     required this.oppName,
     required this.clockText,
     required this.minute,
+    required this.extra,
+    required this.phase,
     required this.running,
-    required this.status,
   });
 
   final GameMatch match;
@@ -453,12 +548,27 @@ class _Scoreboard extends StatelessWidget {
   final String oppName;
   final String clockText;
   final int minute;
+  final int extra;
+  final _Phase phase;
   final bool running;
-  final MatchStatus status;
+
+  String get _minuteLabel {
+    switch (phase) {
+      case _Phase.notStarted:
+        return 'Anpfiff ausstehend';
+      case _Phase.halftime:
+        return 'Halbzeit';
+      case _Phase.finished:
+        return 'Spielende';
+      default:
+        return extra > 0 ? "$minute+$extra'" : "$minute'";
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final live = phase == _Phase.firstHalf || phase == _Phase.secondHalf;
     return Container(
       width: double.infinity,
       color: scheme.primary,
@@ -468,7 +578,7 @@ class _Scoreboard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              if (status == MatchStatus.live)
+              if (live && running)
                 Container(
                   margin: const EdgeInsets.only(right: 8),
                   width: 10,
@@ -477,27 +587,25 @@ class _Scoreboard extends StatelessWidget {
                       color: Colors.red, shape: BoxShape.circle),
                 ),
               Text(
-                status == MatchStatus.finished ? 'Beendet' : clockText,
+                phase == _Phase.finished ? 'Beendet' : clockText,
                 style: TextStyle(
                     color: scheme.onPrimary,
                     fontSize: 18,
                     fontWeight: FontWeight.w600),
               ),
-              if (status != MatchStatus.finished) ...[
-                const SizedBox(width: 10),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: scheme.onPrimary.withValues(alpha: 0.18),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text("$minute'",
-                      style: TextStyle(
-                          color: scheme.onPrimary,
-                          fontWeight: FontWeight.bold)),
+              const SizedBox(width: 10),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: scheme.onPrimary.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              ],
+                child: Text(_minuteLabel,
+                    style: TextStyle(
+                        color: scheme.onPrimary,
+                        fontWeight: FontWeight.bold)),
+              ),
             ],
           ),
           const SizedBox(height: 6),
@@ -536,61 +644,89 @@ class _Scoreboard extends StatelessWidget {
 
 class _Controls extends StatelessWidget {
   const _Controls({
-    required this.status,
+    required this.phase,
     required this.running,
     required this.onKickoff,
+    required this.onHalftime,
+    required this.onSecondHalf,
     required this.onPause,
     required this.onFinish,
   });
 
-  final MatchStatus status;
+  final _Phase phase;
   final bool running;
   final VoidCallback onKickoff;
+  final VoidCallback onHalftime;
+  final VoidCallback onSecondHalf;
   final VoidCallback onPause;
   final VoidCallback onFinish;
 
   @override
   Widget build(BuildContext context) {
+    Widget pause() => Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onPause,
+            icon: Icon(running ? Icons.pause : Icons.play_arrow),
+            label: Text(running ? 'Pause' : 'Weiter'),
+          ),
+        );
+
+    final children = <Widget>[];
+    switch (phase) {
+      case _Phase.notStarted:
+        children.add(Expanded(
+          child: FilledButton.icon(
+            onPressed: onKickoff,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Anpfiff'),
+          ),
+        ));
+      case _Phase.firstHalf:
+        children.addAll([
+          pause(),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FilledButton.icon(
+              onPressed: onHalftime,
+              icon: const Icon(Icons.timer),
+              label: const Text('Halbzeit'),
+            ),
+          ),
+        ]);
+      case _Phase.halftime:
+        children.add(Expanded(
+          child: FilledButton.icon(
+            onPressed: onSecondHalf,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Anpfiff 2. Halbzeit'),
+          ),
+        ));
+      case _Phase.secondHalf:
+        children.addAll([
+          pause(),
+          const SizedBox(width: 8),
+          Expanded(
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: onFinish,
+              icon: const Icon(Icons.stop),
+              label: const Text('Abpfiff'),
+            ),
+          ),
+        ]);
+      case _Phase.finished:
+        children.add(Expanded(
+          child: OutlinedButton.icon(
+            onPressed: onKickoff,
+            icon: const Icon(Icons.replay),
+            label: const Text('Neues Spiel starten'),
+          ),
+        ));
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
-        children: [
-          if (status == MatchStatus.scheduled)
-            Expanded(
-              child: FilledButton.icon(
-                onPressed: onKickoff,
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Anpfiff'),
-              ),
-            ),
-          if (status == MatchStatus.live) ...[
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: onPause,
-                icon: Icon(running ? Icons.pause : Icons.play_arrow),
-                label: Text(running ? 'Pause' : 'Weiter'),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton.icon(
-                style: FilledButton.styleFrom(backgroundColor: Colors.red),
-                onPressed: onFinish,
-                icon: const Icon(Icons.stop),
-                label: const Text('Abpfiff'),
-              ),
-            ),
-          ],
-          if (status == MatchStatus.finished)
-            Expanded(
-              child: OutlinedButton.icon(
-                onPressed: onKickoff,
-                icon: const Icon(Icons.replay),
-                label: const Text('Erneut starten'),
-              ),
-            ),
-        ],
-      ),
+      child: Row(children: children),
     );
   }
 }
@@ -706,6 +842,7 @@ class _EventLog extends StatelessWidget {
           ),
         ),
         ...reversed.map((e) {
+          if (e.type.isPhaseMarker) return _phaseRow(context, e);
           final own = e.teamId == ownTeamId;
           return Dismissible(
             key: ValueKey(e.id),
@@ -724,8 +861,11 @@ class _EventLog extends StatelessWidget {
                 backgroundColor: own
                     ? Theme.of(context).colorScheme.primaryContainer
                     : Theme.of(context).colorScheme.tertiaryContainer,
-                child: Text("${e.minute}'",
-                    style: const TextStyle(fontSize: 11)),
+                child: Text(
+                    e.minuteExtra > 0
+                        ? '${e.minute}+${e.minuteExtra}'
+                        : "${e.minute}'",
+                    style: const TextStyle(fontSize: 10)),
               ),
               title: Text('${e.type.symbol} ${_describe(e)}'),
               subtitle: Text(own ? 'Eigenes Team' : 'Gegner'),
@@ -739,6 +879,30 @@ class _EventLog extends StatelessWidget {
           );
         }),
       ],
+    );
+  }
+
+  Widget _phaseRow(BuildContext context, MatchEvent e) {
+    final score = e.note ?? '';
+    final label = '${e.type.label}${score.isNotEmpty ? '  ·  $score' : ''}';
+    return InkWell(
+      onTap: () => onEdit(e),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Expanded(child: Divider()),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(label,
+                  style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).colorScheme.outline)),
+            ),
+            const Expanded(child: Divider()),
+          ],
+        ),
+      ),
     );
   }
 
@@ -760,6 +924,11 @@ class _EventLog extends StatelessWidget {
         return 'Gelb-Rot – ${resolveName(e.playerId)}';
       case MatchEventType.redCard:
         return 'Rote Karte – ${resolveName(e.playerId)}';
+      case MatchEventType.kickoff:
+      case MatchEventType.halftime:
+      case MatchEventType.secondHalfStart:
+      case MatchEventType.fulltime:
+        return e.type.label;
     }
   }
 }

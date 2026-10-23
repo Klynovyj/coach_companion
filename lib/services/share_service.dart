@@ -49,20 +49,20 @@ String buildMatchReport({
       final assist = e.assistPlayerId != null
           ? ' (Vorlage: ${resolveName(e.assistPlayerId)})'
           : '';
-      b.writeln("${e.minute}' ⚽ ${resolveName(e.playerId)}$assist");
+      b.writeln('${e.minuteLabel} ⚽ ${resolveName(e.playerId)}$assist');
     }
   }
   if (cards.isNotEmpty) {
     b.writeln('\nKarten:');
     for (final e in cards) {
-      b.writeln("${e.minute}' ${e.type.symbol} ${resolveName(e.playerId)}");
+      b.writeln('${e.minuteLabel} ${e.type.symbol} ${resolveName(e.playerId)}');
     }
   }
   if (subs.isNotEmpty) {
     b.writeln('\nWechsel:');
     for (final e in subs) {
       b.writeln(
-          "${e.minute}' 🔁 ${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}");
+          '${e.minuteLabel} 🔁 ${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}');
     }
   }
   return b.toString().trim();

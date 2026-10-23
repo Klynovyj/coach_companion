@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 8;
+  static const _dbVersion = 9;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -89,6 +89,11 @@ class AppDatabase {
     if (oldV < 7) {
       await db.execute(_cardEntriesTableSql);
       await db.execute('CREATE INDEX idx_cards_player ON card_entries (player_id)');
+    }
+    // v8 -> v9: Nachspielzeit am Live-Ereignis.
+    if (oldV < 9) {
+      await db.execute(
+          'ALTER TABLE match_events ADD COLUMN minute_extra INTEGER NOT NULL DEFAULT 0');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -275,6 +280,7 @@ class AppDatabase {
         match_id TEXT NOT NULL,
         team_id TEXT NOT NULL,
         minute INTEGER NOT NULL,
+        minute_extra INTEGER NOT NULL DEFAULT 0,
         type TEXT NOT NULL,
         player_id TEXT,
         assist_player_id TEXT,
