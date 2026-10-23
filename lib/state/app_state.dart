@@ -186,6 +186,23 @@ class AppState extends ChangeNotifier {
     return n;
   }
 
+  /// Stellt sicher, dass für ein (Gegner-)Team eine Statistik vorliegt: fehlt
+  /// sie und ist ein FuPa-Link hinterlegt, wird sie nachgeladen. So zeigt die
+  /// Gegner-Analyse Torjäger & Co. auch ohne manuelles Neu-Synchronisieren.
+  Future<void> ensureOpponentStats(String teamId) async {
+    final existing = await _repo.getStats(teamId);
+    if (existing.isNotEmpty) return;
+    final team = await _repo.getTeam(teamId);
+    final url = team?.fupaUrl;
+    if (url == null || url.isEmpty) return;
+    try {
+      await _importStatsInto(teamId, url);
+      notifyListeners();
+    } catch (_) {
+      // Statistik ist optional.
+    }
+  }
+
   Future<int> _importStatsInto(String teamId, String url) async {
     final data = await _importer.importStats(url);
     final stats = data

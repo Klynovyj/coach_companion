@@ -49,6 +49,7 @@ class _SquadListViewState extends State<SquadListView> {
   final _searchCtrl = TextEditingController();
   String _query = '';
   PlayerStatus? _statusFilter;
+  bool _filterVisible = false; // Status-Filter nur bei Bedarf einblenden
 
   /// Suche/Filter nur im echten Kader (nicht in der gefilterten Spielansicht).
   bool get _showSearch => widget.showActions && widget.onlyPlayerIds == null;
@@ -127,24 +128,13 @@ class _SquadListViewState extends State<SquadListView> {
             if (widget.showActions)
               Padding(
                 padding: const EdgeInsets.all(12),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _add(context),
-                        icon: const Icon(Icons.person_add),
-                        label: const Text('Hinzufügen'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: FilledButton.tonalIcon(
-                        onPressed: () => _pasteImport(context),
-                        icon: const Icon(Icons.content_paste),
-                        label: const Text('Einfügen'),
-                      ),
-                    ),
-                  ],
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: () => _addSheet(context),
+                    icon: const Icon(Icons.person_add),
+                    label: const Text('Spieler hinzufügen'),
+                  ),
                 ),
               ),
           ],
@@ -254,54 +244,74 @@ class _SquadListViewState extends State<SquadListView> {
     );
   }
 
-  /// Such- und Filterleiste über der Kaderliste.
+  /// Suchleiste mit Filter-Icon; der Status-Filter erscheint nur bei Bedarf.
   Widget _searchAndFilter(BuildContext context, List<Player> all) {
     int countOf(PlayerStatus s) => all.where((p) => p.status == s).length;
+    final filterActive = _statusFilter != null;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
       child: Column(
         children: [
-          TextField(
-            controller: _searchCtrl,
-            onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-            decoration: InputDecoration(
-              hintText: 'Spieler suchen (Name, Nr., Position)',
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-              border: const OutlineInputBorder(),
-              suffixIcon: _query.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () {
-                        _searchCtrl.clear();
-                        setState(() => _query = '');
-                      },
-                    ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          // Umbrechend, damit alle Filter auch auf schmalen Displays erreichbar
-          // sind (kein horizontales Scrollen nötig).
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
+          Row(
             children: [
-              ChoiceChip(
-                label: const Text('Alle'),
-                selected: _statusFilter == null,
-                onSelected: (_) => setState(() => _statusFilter = null),
-              ),
-              for (final s in PlayerStatus.values)
-                ChoiceChip(
-                  avatar: Text(s.symbol, style: const TextStyle(fontSize: 12)),
-                  label: Text('${s.label} (${countOf(s)})'),
-                  selected: _statusFilter == s,
-                  onSelected: (_) => setState(
-                      () => _statusFilter = _statusFilter == s ? null : s),
+              Expanded(
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: (v) =>
+                      setState(() => _query = v.trim().toLowerCase()),
+                  decoration: InputDecoration(
+                    hintText: 'Spieler suchen (Name, Nr., Position)',
+                    prefixIcon: const Icon(Icons.search),
+                    isDense: true,
+                    border: const OutlineInputBorder(),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() => _query = '');
+                            },
+                          ),
+                  ),
                 ),
+              ),
+              const SizedBox(width: 6),
+              IconButton.filledTonal(
+                tooltip: 'Status-Filter',
+                isSelected: _filterVisible || filterActive,
+                icon: Badge(
+                  isLabelVisible: filterActive,
+                  child: const Icon(Icons.filter_list),
+                ),
+                onPressed: () =>
+                    setState(() => _filterVisible = !_filterVisible),
+              ),
             ],
           ),
+          if (_filterVisible) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                ChoiceChip(
+                  label: const Text('Alle'),
+                  selected: _statusFilter == null,
+                  onSelected: (_) => setState(() => _statusFilter = null),
+                ),
+                for (final s in PlayerStatus.values)
+                  ChoiceChip(
+                    avatar:
+                        Text(s.symbol, style: const TextStyle(fontSize: 12)),
+                    label: Text('${s.label} (${countOf(s)})'),
+                    selected: _statusFilter == s,
+                    onSelected: (_) => setState(
+                        () => _statusFilter = _statusFilter == s ? null : s),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -378,6 +388,39 @@ class _SquadListViewState extends State<SquadListView> {
         ),
       ),
     );
+  }
+
+  /// Ein Button für beides: einzeln anlegen oder Liste einfügen.
+  Future<void> _addSheet(BuildContext context) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.person_add),
+              title: const Text('Einzeln hinzufügen'),
+              subtitle: const Text('Einen Spieler manuell anlegen'),
+              onTap: () => Navigator.pop(context, 'add'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.content_paste),
+              title: const Text('Liste einfügen'),
+              subtitle: const Text('Mehrere Spieler aus Text/FuPa übernehmen'),
+              onTap: () => Navigator.pop(context, 'paste'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!context.mounted) return;
+    if (choice == 'add') {
+      await _add(context);
+    } else if (choice == 'paste') {
+      await _pasteImport(context);
+    }
   }
 
   Future<void> _add(BuildContext context) async {
