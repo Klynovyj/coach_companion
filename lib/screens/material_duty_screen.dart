@@ -368,27 +368,24 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
               ),
             ],
             const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => _editExtras(mon),
-                    icon: const Icon(Icons.person_add_alt, size: 18),
-                    label: Text(extras.isEmpty
-                        ? 'Zusätzlich'
-                        : 'Zusätzlich (${extras.length})'),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: FilledButton.icon(
-                    onPressed: () => _sendWeek(entry, members),
-                    icon: const Icon(Icons.share, size: 18),
-                    label: const Text('Per WhatsApp'),
-                  ),
-                ),
-              ],
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: () => _editExtras(mon),
+                icon: const Icon(Icons.person_add_alt, size: 18),
+                label: Text(extras.isEmpty
+                    ? 'Zusätzlich einteilen'
+                    : 'Zusätzlich einteilen (${extras.length})'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => _sendWeek(entry, members),
+                icon: const Icon(Icons.share, size: 18),
+                label: const Text('Diese Woche per WhatsApp melden'),
+              ),
             ),
           ],
         ),
