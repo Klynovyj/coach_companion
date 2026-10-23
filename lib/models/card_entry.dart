@@ -15,6 +15,7 @@ class CardEntry {
   final String? matchEventId;
 
   final int? minute;
+  final int minuteExtra;
   final String? note;
 
   const CardEntry({
@@ -25,10 +26,17 @@ class CardEntry {
     this.matchId,
     this.matchEventId,
     this.minute,
+    this.minuteExtra = 0,
     this.note,
   });
 
-  CardEntry copyWith({CardType? type, DateTime? date, String? note, int? minute}) =>
+  /// Minuten-Anzeige inkl. Nachspielzeit, z.B. "45+2'"; leer wenn keine Minute.
+  String get minuteLabel => minute == null
+      ? ''
+      : (minuteExtra > 0 ? "$minute+$minuteExtra'" : "$minute'");
+
+  CardEntry copyWith(
+          {CardType? type, DateTime? date, String? note, int? minute}) =>
       CardEntry(
         id: id,
         playerId: playerId,
@@ -37,6 +45,7 @@ class CardEntry {
         matchId: matchId,
         matchEventId: matchEventId,
         minute: minute ?? this.minute,
+        minuteExtra: minuteExtra,
         note: note ?? this.note,
       );
 
@@ -48,6 +57,7 @@ class CardEntry {
         'match_id': matchId,
         'match_event_id': matchEventId,
         'minute': minute,
+        'minute_extra': minuteExtra,
         'note': note,
       };
 
@@ -59,6 +69,7 @@ class CardEntry {
         matchId: m['match_id'] as String?,
         matchEventId: m['match_event_id'] as String?,
         minute: m['minute'] as int?,
+        minuteExtra: m['minute_extra'] as int? ?? 0,
         note: m['note'] as String?,
       );
 }

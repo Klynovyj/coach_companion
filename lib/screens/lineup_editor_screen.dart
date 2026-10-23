@@ -195,6 +195,33 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     Navigator.pop(context);
   }
 
+  Future<void> _resetLineup() async {
+    final state = context.read<AppState>();
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Aufstellung zurücksetzen?'),
+        content: const Text(
+            'Alle Spieler werden vom Feld und der Bank entfernt.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Zurücksetzen')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    setState(() {
+      _starters.clear();
+      _bench.clear();
+    });
+    // Leere Aufstellung speichern, damit der Reset auch persistent ist.
+    await state.saveLineup(_lineup!.copyWith(formation: _formation), const []);
+  }
+
   Future<void> _openNomination() async {
     await Navigator.push(
       context,
@@ -219,6 +246,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       appBar: AppBar(
         title: Text('Aufstellung · ${widget.teamName}'),
         actions: [
+          IconButton(
+            tooltip: 'Aufstellung zurücksetzen',
+            icon: const Icon(Icons.restart_alt),
+            onPressed: _resetLineup,
+          ),
           IconButton(
             tooltip: _listMode ? 'Feld-Ansicht' : 'Listen-Ansicht',
             icon: Icon(_listMode ? Icons.grid_view : Icons.view_list),

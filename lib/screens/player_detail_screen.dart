@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 
 import '../models/card_entry.dart';
 import '../models/enums.dart';
+import '../models/match.dart';
+import '../models/match_event.dart';
 import '../models/player.dart';
 import '../models/player_note.dart';
 import '../state/app_state.dart';
@@ -42,8 +44,8 @@ class PlayerDetailScreen extends StatelessWidget {
               ],
             ),
           ),
-          FutureBuilder<List<CardEntry>>(
-            future: state.cardsOf(player.id),
+          FutureBuilder<(List<CardEntry>, Map<String, GameMatch>)>(
+            future: _loadCards(state),
             builder: (context, snap) {
               if (!snap.hasData) {
                 return const Padding(
@@ -51,7 +53,8 @@ class PlayerDetailScreen extends StatelessWidget {
                   child: LinearProgressIndicator(),
                 );
               }
-              final cards = snap.data!;
+              final cards = snap.data!.$1;
+              final matches = snap.data!.$2;
               return Column(
                 children: [
                   _cardSummary(context, cards),
@@ -77,16 +80,67 @@ class PlayerDetailScreen extends StatelessWidget {
                             leading: Text(c.type.symbol,
                                 style: const TextStyle(fontSize: 22)),
                             title: Text(c.type.label),
-                            subtitle: Text([
-                              df.format(c.date),
-                              if (c.minute != null) "${c.minute}'",
-                              if (c.note != null && c.note!.isNotEmpty) c.note!,
-                            ].join('  ·  ')),
+                            subtitle: Text(_context(
+                              df: df,
+                              date: c.date,
+                              match: c.matchId == null ? null : matches[c.matchId],
+                              minuteLabel: c.minuteLabel,
+                              note: c.note,
+                            )),
                             onTap: () => _editCard(context, c),
                           ),
                         )),
                   const SizedBox(height: 8),
                 ],
+              );
+            },
+          ),
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+            child: Text('Tore & Vorlagen',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleMedium
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+          ),
+          FutureBuilder<(List<MatchEvent>, Map<String, GameMatch>)>(
+            future: _loadEvents(state),
+            builder: (context, snap) {
+              if (!snap.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: LinearProgressIndicator(),
+                );
+              }
+              final events = snap.data!.$1
+                  .where((e) => e.type == MatchEventType.goal)
+                  .toList();
+              if (events.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Noch keine Tore/Vorlagen erfasst.',
+                      style: TextStyle(color: Colors.grey)),
+                );
+              }
+              final matches = snap.data!.$2;
+              return Column(
+                children: events.map((e) {
+                  final isScorer = e.playerId == player.id;
+                  final m = matches[e.matchId];
+                  return ListTile(
+                    leading: Text(isScorer ? '⚽' : '🅰️',
+                        style: const TextStyle(fontSize: 20)),
+                    title: Text(isScorer ? 'Tor' : 'Vorlage'),
+                    subtitle: Text(_context(
+                      df: df,
+                      date: m?.kickoff,
+                      match: m,
+                      minuteLabel: e.minuteLabel,
+                      note: null,
+                    )),
+                  );
+                }).toList(),
               );
             },
           ),
@@ -182,6 +236,37 @@ class PlayerDetailScreen extends StatelessWidget {
     if (text != null && text.isNotEmpty && context.mounted) {
       await context.read<AppState>().addNote(player.id, text);
     }
+  }
+
+  Future<(List<CardEntry>, Map<String, GameMatch>)> _loadCards(
+      AppState s) async {
+    final cards = await s.cardsOf(player.id);
+    final mm = await s.matchMap(player.teamId);
+    return (cards, mm);
+  }
+
+  Future<(List<MatchEvent>, Map<String, GameMatch>)> _loadEvents(
+      AppState s) async {
+    final events = await s.playerMatchEvents(player.id);
+    final mm = await s.matchMap(player.teamId);
+    return (events, mm);
+  }
+
+  /// Baut die Kontextzeile: Datum · vs Gegner · Minute · Notiz.
+  String _context({
+    required DateFormat df,
+    DateTime? date,
+    GameMatch? match,
+    required String minuteLabel,
+    String? note,
+  }) {
+    final parts = <String>[
+      if (date != null) df.format(date.toLocal()),
+      if (match != null) 'vs ${match.opponentName}',
+      if (minuteLabel.isNotEmpty) minuteLabel,
+      if (note != null && note.isNotEmpty) note,
+    ];
+    return parts.join('  ·  ');
   }
 
   Widget _header(BuildContext context) {

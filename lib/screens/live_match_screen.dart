@@ -704,71 +704,79 @@ class _Controls extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget pause() => Expanded(
-          child: OutlinedButton.icon(
-            onPressed: onPause,
-            icon: Icon(running ? Icons.pause : Icons.play_arrow),
-            label: Text(running ? 'Pause' : 'Weiter'),
-          ),
+    Widget wrap(List<Widget> children) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(children: children),
         );
 
-    final children = <Widget>[];
-    switch (phase) {
-      case _Phase.notStarted:
-        children.add(Expanded(
-          child: FilledButton.icon(
-            onPressed: onKickoff,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Anpfiff'),
-          ),
-        ));
-      case _Phase.firstHalf:
-        children.addAll([
-          pause(),
-          const SizedBox(width: 8),
-          Expanded(
-            child: FilledButton.icon(
-              onPressed: onHalftime,
-              icon: const Icon(Icons.timer),
-              label: const Text('Halbzeit'),
-            ),
-          ),
-        ]);
-      case _Phase.halftime:
-        children.add(Expanded(
-          child: FilledButton.icon(
-            onPressed: onSecondHalf,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Anpfiff 2. Halbzeit'),
-          ),
-        ));
-      case _Phase.secondHalf:
-        children.addAll([
-          pause(),
-          const SizedBox(width: 8),
-          Expanded(
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
-              onPressed: onFinish,
-              icon: const Icon(Icons.stop),
-              label: const Text('Abpfiff'),
-            ),
-          ),
-        ]);
-      case _Phase.finished:
-        children.add(Expanded(
+    if (phase == _Phase.finished) {
+      return wrap([
+        Expanded(
           child: OutlinedButton.icon(
             onPressed: onKickoff,
             icon: const Icon(Icons.replay),
             label: const Text('Neues Spiel starten'),
           ),
-        ));
+        ),
+      ]);
     }
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(children: children),
+    // Primärer Button vereint Anpfiff / Pause / Weiter / Anpfiff 2. Halbzeit.
+    final VoidCallback onPrimary;
+    final IconData icon;
+    final String label;
+    if (running) {
+      onPrimary = onPause;
+      icon = Icons.pause;
+      label = 'Pause';
+    } else {
+      switch (phase) {
+        case _Phase.notStarted:
+          onPrimary = onKickoff;
+          label = 'Anpfiff';
+        case _Phase.halftime:
+          onPrimary = onSecondHalf;
+          label = 'Anpfiff 2. Halbzeit';
+        default: // firstHalf/secondHalf pausiert
+          onPrimary = onPause;
+          label = 'Weiter';
+      }
+      icon = Icons.play_arrow;
+    }
+
+    final primary = Expanded(
+      child: FilledButton.icon(
+        onPressed: onPrimary,
+        icon: Icon(icon),
+        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      ),
     );
+
+    // Sekundärer Button: Halbzeit (1. HZ) bzw. Abpfiff (2. HZ).
+    Widget? secondary;
+    if (phase == _Phase.firstHalf) {
+      secondary = Expanded(
+        child: OutlinedButton.icon(
+          onPressed: onHalftime,
+          icon: const Icon(Icons.timer),
+          label: const Text('Halbzeit'),
+        ),
+      );
+    } else if (phase == _Phase.secondHalf) {
+      secondary = Expanded(
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.red),
+          onPressed: onFinish,
+          icon: const Icon(Icons.stop),
+          label: const Text('Abpfiff'),
+        ),
+      );
+    }
+
+    return wrap([
+      primary,
+      if (secondary != null) ...[const SizedBox(width: 8), secondary],
+    ]);
   }
 }
 

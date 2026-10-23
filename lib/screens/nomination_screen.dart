@@ -74,6 +74,25 @@ class _NominationScreenState extends State<NominationScreen> {
     }
   }
 
+  Future<void> _resetNomination() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Nominierung zurücksetzen?'),
+        content: const Text('Alle Spieler werden auf „offen" gesetzt.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Zurücksetzen')),
+        ],
+      ),
+    );
+    if (ok == true) _bulk(NominationStatus.open);
+  }
+
   Future<void> _bulk(NominationStatus s) async {
     setState(() {
       for (final p in _players) {
@@ -101,11 +120,12 @@ class _NominationScreenState extends State<NominationScreen> {
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'all_in') _bulk(NominationStatus.zugesagt);
-              if (v == 'all_open') _bulk(NominationStatus.open);
+              if (v == 'reset') _resetNomination();
             },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'all_in', child: Text('Alle zusagen')),
-              PopupMenuItem(value: 'all_open', child: Text('Alle auf offen')),
+              PopupMenuItem(
+                  value: 'reset', child: Text('Nominierung zurücksetzen')),
             ],
           ),
         ],

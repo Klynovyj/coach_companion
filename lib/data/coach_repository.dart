@@ -238,6 +238,17 @@ class CoachRepository {
     });
   }
 
+  /// Alle Spiel-Ereignisse eines Spielers (als Schütze oder Vorlagengeber),
+  /// über alle Spiele hinweg.
+  Future<List<MatchEvent>> getPlayerMatchEvents(String playerId) async {
+    final db = await _db;
+    final rows = await db.query('match_events',
+        where: 'player_id = ? OR assist_player_id = ?',
+        whereArgs: [playerId, playerId],
+        orderBy: 'created_at DESC');
+    return rows.map(MatchEvent.fromMap).toList();
+  }
+
   /// Zählt die Tore je Team für ein Spiel (Grundlage des Spielstands).
   Future<Map<String, int>> goalCountByTeam(String matchId) async {
     final db = await _db;

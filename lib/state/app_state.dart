@@ -414,6 +414,7 @@ class AppState extends ChangeNotifier {
         matchId: matchId,
         matchEventId: eventId,
         minute: minute,
+        minuteExtra: minuteExtra,
         note: note,
       ));
     }
@@ -440,6 +441,15 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, Map<CardType, int>>> cardCountsForTeam(String teamId) =>
       _repo.cardCountsForTeam(teamId);
+
+  Future<List<MatchEvent>> playerMatchEvents(String playerId) =>
+      _repo.getPlayerMatchEvents(playerId);
+
+  /// Spiele eines Teams als Map (matchId -> Spiel), zum Auflösen von Gegner/Datum.
+  Future<Map<String, GameMatch>> matchMap(String teamId) async {
+    final list = await _repo.getMatches(teamId);
+    return {for (final m in list) m.id: m};
+  }
 
   Future<void> addCard({
     required String playerId,
