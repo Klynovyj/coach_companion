@@ -29,9 +29,9 @@ class LineupEditorScreen extends StatefulWidget {
 }
 
 class _LineupEditorScreenState extends State<LineupEditorScreen> {
-  static const _formations = [
-    '4-4-2', '4-3-3', '3-5-2', '4-2-3-1', '3-4-3', '5-3-2', '4-1-4-1'
-  ];
+  // Interne Standard-Formation nur für die Default-Position beim Einteilen
+  // über die Liste (kein UI-Auswahlfeld mehr – es wird frei platziert).
+  static const _defaultFormation = '4-4-2';
 
   final GlobalKey _pitchKey = GlobalKey();
 
@@ -132,25 +132,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     return Offset(local.dx / box.size.width, local.dy / box.size.height);
   }
 
-  /// Ordnet die Startelf anhand der Formation vor (Startanordnung).
-  void _applyFormation(String f) {
-    final slots = slotsForFormation(f);
-    final candidates = <String>[
-      ..._starters.keys,
-      ..._pool.map((p) => p.id),
-    ];
-    setState(() {
-      _formation = f;
-      _starters.clear();
-      for (var i = 0; i < slots.length && i < candidates.length; i++) {
-        _starters[candidates[i]] = Offset(slots[i].x, slots[i].y);
-      }
-    });
-  }
-
   /// Fügt einen Spieler (aus der Liste) als Starter an einer freien Position ein.
   void _addStarterDefault(String pid) {
-    final slots = slotsForFormation(_formation);
+    final slots = slotsForFormation(_defaultFormation);
     final idx = _starters.length;
     final pos = idx < slots.length
         ? Offset(slots[idx].x, slots[idx].y)
@@ -269,22 +253,14 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue:
-                        _formations.contains(_formation) ? _formation : null,
-                    decoration:
-                        const InputDecoration(labelText: 'Formation (Startanordnung)'),
-                    items: _formations
-                        .map((f) =>
-                            DropdownMenuItem(value: f, child: Text(f)))
-                        .toList(),
-                    onChanged: (v) => _applyFormation(v ?? _formation),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Text('Startelf $starters/11',
+                Text('Startelf',
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium
+                        ?.copyWith(fontWeight: FontWeight.bold)),
+                Text('$starters/11',
                     style: TextStyle(
                         fontWeight: FontWeight.bold,
                         color: starters == 11
@@ -331,9 +307,13 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
 
   // --------------------------------------------------------------- Feld-Modus
   Widget _pitch() {
-    return AspectRatio(
-      aspectRatio: 0.66,
-      child: ClipRRect(
+    // Höhe begrenzen, damit das ganze Feld sichtbar bleibt (nicht zu hoch).
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 460),
+        child: AspectRatio(
+          aspectRatio: 0.66,
+          child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: LayoutBuilder(
           builder: (context, c) {
@@ -378,6 +358,8 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
               ],
             );
           },
+            ),
+          ),
         ),
       ),
     );

@@ -65,16 +65,32 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   int get _currentMinute => _footMinute.$1;
   int get _currentExtra => _footMinute.$2;
 
+  late final AppState _state;
+
   @override
   void initState() {
     super.initState();
+    _state = context.read<AppState>();
     _load();
   }
 
   @override
   void dispose() {
     _timer?.cancel();
+    _saveClock();
     super.dispose();
+  }
+
+  String get _clockKey => 'liveclock_${widget.matchId}';
+
+  /// Sichert Spielphase + Uhr, damit die Zeit bei Rückkehr korrekt ist.
+  void _saveClock() {
+    _state.repository.setSetting(_clockKey,
+        '${_phase.index}|$_elapsedSeconds|${_running ? 1 : 0}|${DateTime.now().millisecondsSinceEpoch}');
+  }
+
+  void _clearClock() {
+    _state.repository.setSetting(_clockKey, null);
   }
 
   Future<void> _load() async {
@@ -132,12 +148,42 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _running = false; // beim Öffnen pausiert; Trainer setzt fort
       _loading = false;
     });
+
+    // Gesicherte Uhr wiederherstellen (hat Vorrang vor der groben Rekonstruktion).
+    final saved = await state.repository.getSetting(_clockKey);
+    if (saved != null && mounted) {
+      final parts = saved.split('|');
+      if (parts.length == 4) {
+        final phaseIdx = int.tryParse(parts[0]);
+        final elapsed = int.tryParse(parts[1]);
+        final wasRunning = parts[2] == '1';
+        final ts = int.tryParse(parts[3]);
+        if (phaseIdx != null &&
+            elapsed != null &&
+            ts != null &&
+            phaseIdx >= 0 &&
+            phaseIdx < _Phase.values.length) {
+          var e = elapsed;
+          if (wasRunning) {
+            e += ((DateTime.now().millisecondsSinceEpoch - ts) / 1000).floor();
+          }
+          setState(() {
+            _phase = _Phase.values[phaseIdx];
+            _elapsedSeconds = e;
+            _running = wasRunning;
+          });
+          if (wasRunning) _startTimer();
+        }
+      }
+    }
   }
 
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
       setState(() => _elapsedSeconds++);
+      // Alle 10 Sekunden sichern (für korrekte Zeit bei Rückkehr).
+      if (_elapsedSeconds % 10 == 0) _saveClock();
     });
   }
 
@@ -173,6 +219,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _running = true;
     });
     _startTimer();
+    _saveClock();
     await _logPhase(MatchEventType.kickoff, 1, 0);
     await _refreshEvents();
   }
@@ -185,6 +232,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _phase = _Phase.halftime;
       _running = false;
     });
+    _saveClock();
     await _logPhase(MatchEventType.halftime, min, extra);
     await _refreshEvents();
   }
@@ -197,6 +245,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _running = true;
     });
     _startTimer();
+    _saveClock();
     await _logPhase(MatchEventType.secondHalfStart, 46, 0);
     await _refreshEvents();
   }
@@ -208,6 +257,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     } else {
       _timer?.cancel();
     }
+    _saveClock();
   }
 
   /// Abpfiff: Spielende.
@@ -218,6 +268,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _phase = _Phase.finished;
       _running = false;
     });
+    _saveClock();
     await context
         .read<AppState>()
         .setMatchStatus(widget.matchId, MatchStatus.finished);
@@ -338,8 +389,22 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   // ------------------------------------------------- Ereignis-Erfassung
   Future<void> _addGoal({required bool ownSide}) async {
     final state = context.read<AppState>();
+
+    // Gegner-Tor: einfach ein Tor (nur für den Spielstand) – ohne Torschütze/Vorlage.
+    if (!ownSide) {
+      await state.addEvent(
+        matchId: widget.matchId,
+        teamId: _teamIdFor(false),
+        minute: _currentMinute,
+        minuteExtra: _currentExtra,
+        type: MatchEventType.goal,
+      );
+      await _refreshEvents();
+      return;
+    }
+
     final players = _playersFor(ownSide);
-    // Wenige Klicks: Torschütze direkt wählen (oder "Unbekannt").
+    // Eigenes Tor: Torschütze direkt wählen (oder "Unbekannt").
     final scorer = await _pickPlayer(
       title: 'Torschütze',
       players: players,
@@ -511,6 +576,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         );
     if (!mounted) return;
     if (choice.verlauf) {
+      _clearClock();
       setState(() {
         _phase = _Phase.notStarted;
         _elapsedSeconds = 0;
@@ -958,11 +1024,11 @@ class _EventLog extends StatelessWidget {
   String _describe(MatchEvent e) {
     switch (e.type) {
       case MatchEventType.goal:
-        final scorer = resolveName(e.playerId);
+        if (e.playerId == null) return 'Tor'; // z.B. Gegner-Tor
         final assist = e.assistPlayerId == null
             ? ''
             : ' (Vorlage: ${resolveName(e.assistPlayerId)})';
-        return 'Tor – $scorer$assist';
+        return 'Tor – ${resolveName(e.playerId)}$assist';
       case MatchEventType.ownGoal:
         return 'Eigentor – ${resolveName(e.playerId)}';
       case MatchEventType.substitution:
