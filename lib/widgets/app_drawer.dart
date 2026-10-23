@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../screens/home_screen.dart';
@@ -37,9 +40,10 @@ class AppDrawer extends StatelessWidget {
                 color: Theme.of(context).colorScheme.primary,
               ),
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  const _HeaderClock(),
+                  const Spacer(),
                   if (team?.logoPath != null)
                     TeamLogo(logoPath: team!.logoPath, size: 44),
                   const SizedBox(height: 8),
@@ -121,6 +125,54 @@ class AppDrawer extends StatelessWidget {
         Navigator.pop(context); // Drawer schließen
         Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
       },
+    );
+  }
+}
+
+/// Live-Uhr + Datum oben im Menükopf.
+class _HeaderClock extends StatefulWidget {
+  const _HeaderClock();
+
+  @override
+  State<_HeaderClock> createState() => _HeaderClockState();
+}
+
+class _HeaderClockState extends State<_HeaderClock> {
+  Timer? _timer;
+  DateTime _now = DateTime.now();
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final onP = Theme.of(context).colorScheme.onPrimary;
+    final time = DateFormat("HH:mm:ss 'Uhr'", 'de_DE').format(_now);
+    final date = DateFormat('EEEE, dd.MM.yyyy', 'de_DE').format(_now);
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(time,
+              style: TextStyle(
+                  color: onP, fontSize: 22, fontWeight: FontWeight.bold)),
+          Text(date,
+              style: TextStyle(
+                  color: onP.withValues(alpha: 0.85), fontSize: 13)),
+        ],
+      ),
     );
   }
 }
