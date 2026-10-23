@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
 import '../models/player.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
@@ -57,6 +58,22 @@ class _NominationScreenState extends State<NominationScreen> {
   int _count(NominationStatus s) =>
       _players.where((p) => _statusOf(p) == s).length;
 
+  Future<void> _share() async {
+    final match = await context.read<AppState>().getMatch(widget.matchId);
+    final text = buildNominationText(
+      title: 'vs ${widget.title}',
+      kickoff: match?.kickoff,
+      players: _players,
+      status: _status,
+    );
+    final ok = await shareViaWhatsApp(text);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('WhatsApp konnte nicht geöffnet werden.')),
+      );
+    }
+  }
+
   Future<void> _bulk(NominationStatus s) async {
     setState(() {
       for (final p in _players) {
@@ -76,6 +93,11 @@ class _NominationScreenState extends State<NominationScreen> {
       appBar: AppBar(
         title: Text('Nominierung · ${widget.title}'),
         actions: [
+          IconButton(
+            tooltip: 'Nominierung teilen (WhatsApp)',
+            icon: const Icon(Icons.share),
+            onPressed: _share,
+          ),
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'all_in') _bulk(NominationStatus.zugesagt);

@@ -19,12 +19,20 @@ class SquadListView extends StatelessWidget {
     this.teamName = 'Team',
     this.fupaUrl,
     this.emptyHint = 'Noch keine Spieler. Jetzt welche hinzufügen oder einfügen.',
+    this.showActions = true,
+    this.onlyPlayerIds,
   });
 
   final String teamId;
   final String teamName;
   final String? fupaUrl;
   final String emptyHint;
+
+  /// Zeigt die Buttons „Hinzufügen"/„Einfügen" (im Spielcenter ausgeblendet).
+  final bool showActions;
+
+  /// Wenn gesetzt, werden nur diese Spieler angezeigt (z.B. nur Nominierte).
+  final Set<String>? onlyPlayerIds;
 
   @override
   Widget build(BuildContext context) {
@@ -36,9 +44,26 @@ class SquadListView extends StatelessWidget {
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());
         }
-        final players = snap.data!.players;
+        var players = snap.data!.players;
         final cards = snap.data!.cardCounts;
+        if (onlyPlayerIds != null) {
+          players =
+              players.where((p) => onlyPlayerIds!.contains(p.id)).toList();
+        }
         if (players.isEmpty) {
+          if (!showActions) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  onlyPlayerIds != null
+                      ? 'Noch keine Spieler nominiert.\nÜber „Nominierung" zusagen.'
+                      : emptyHint,
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            );
+          }
           return _EmptyState(
             hint: emptyHint,
             onAdd: () => _add(context),
@@ -77,28 +102,29 @@ class SquadListView extends StatelessWidget {
                 },
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(12),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _add(context),
-                      icon: const Icon(Icons.person_add),
-                      label: const Text('Hinzufügen'),
+            if (showActions)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _add(context),
+                        icon: const Icon(Icons.person_add),
+                        label: const Text('Hinzufügen'),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      onPressed: () => _pasteImport(context),
-                      icon: const Icon(Icons.content_paste),
-                      label: const Text('Einfügen'),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton.tonalIcon(
+                        onPressed: () => _pasteImport(context),
+                        icon: const Icon(Icons.content_paste),
+                        label: const Text('Einfügen'),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
           ],
         );
       },

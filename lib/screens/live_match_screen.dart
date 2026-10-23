@@ -8,6 +8,7 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/player.dart';
 import '../models/team.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 
 /// Live-Spielerfassung für beide Mannschaften.
@@ -151,7 +152,16 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Live-Spiel')),
+      appBar: AppBar(
+        title: const Text('Live-Spiel'),
+        actions: [
+          IconButton(
+            tooltip: 'Bericht teilen (WhatsApp)',
+            icon: const Icon(Icons.share),
+            onPressed: _shareReport,
+          ),
+        ],
+      ),
       body: Column(
         children: [
           _Scoreboard(
@@ -159,6 +169,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             ownName: _ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim',
             oppName: _opponentTeam?.name ?? match.opponentName,
             clockText: _clockText,
+            minute: _currentMinute,
             running: _running,
             status: match.status,
           ),
@@ -195,6 +206,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   ownTeamId: match.ownTeamId,
                   resolveName: _playerName,
                   onDelete: _deleteEvent,
+                  onEdit: _editEvent,
                 ),
               ],
             ),
@@ -209,11 +221,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   List<Player> _playersFor(bool ownSide) {
     if (!ownSide) return _opponentPlayers;
-    // Eigenes Team: nur zugesagte Spieler (die auch spielen). Ohne Zusagen
-    // Rückfall auf den ganzen Kader, damit die Erfassung nie blockiert.
-    final nominated =
-        _ownPlayers.where((p) => _nominatedIds.contains(p.id)).toList();
-    return nominated.isEmpty ? _ownPlayers : nominated;
+    // Eigenes Team: ausschließlich nominierte (zugesagte) Spieler.
+    return _ownPlayers.where((p) => _nominatedIds.contains(p.id)).toList();
   }
 
   String _playerName(String? playerId) {
@@ -316,9 +325,83 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     await _refreshEvents();
   }
 
+  /// Ereignis korrigieren: Minute ändern oder löschen.
+  Future<void> _editEvent(MatchEvent e) async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text('${e.type.symbol} ${e.type.label} · ${e.minute}\''),
+              subtitle: Text(_playerName(e.playerId)),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.timer),
+              title: const Text('Minute ändern'),
+              onTap: () => Navigator.pop(context, 'minute'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Löschen'),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'delete') {
+      await _deleteEvent(e);
+    } else if (action == 'minute') {
+      final ctrl = TextEditingController(text: '${e.minute}');
+      final newMin = await showDialog<int>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Minute'),
+          content: TextField(
+            controller: ctrl,
+            keyboardType: TextInputType.number,
+            autofocus: true,
+            decoration: const InputDecoration(labelText: 'Spielminute'),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Abbrechen')),
+            FilledButton(
+                onPressed: () =>
+                    Navigator.pop(context, int.tryParse(ctrl.text.trim())),
+                child: const Text('Speichern')),
+          ],
+        ),
+      );
+      if (newMin != null && mounted) {
+        await context.read<AppState>().updateEvent(e.copyWith(minute: newMin));
+        await _refreshEvents();
+      }
+    }
+  }
+
   void _snack(String msg) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _shareReport() async {
+    final match = _match;
+    if (match == null) return;
+    final text = buildMatchReport(
+      match: match,
+      ownName: teamDisplay(_ownTeam, 'Heim'),
+      oppName: _opponentTeam?.name ?? match.opponentName,
+      events: _events,
+      resolveName: _playerName,
+    );
+    final ok = await shareViaWhatsApp(text);
+    if (!ok) _snack('WhatsApp konnte nicht geöffnet werden.');
   }
 
   // Spieler-Picker; Rückgabe: playerId, _pickUnknown, _pickNone oder _pickCancelled.
@@ -360,6 +443,7 @@ class _Scoreboard extends StatelessWidget {
     required this.ownName,
     required this.oppName,
     required this.clockText,
+    required this.minute,
     required this.running,
     required this.status,
   });
@@ -368,6 +452,7 @@ class _Scoreboard extends StatelessWidget {
   final String ownName;
   final String oppName;
   final String clockText;
+  final int minute;
   final bool running;
   final MatchStatus status;
 
@@ -398,6 +483,21 @@ class _Scoreboard extends StatelessWidget {
                     fontSize: 18,
                     fontWeight: FontWeight.w600),
               ),
+              if (status != MatchStatus.finished) ...[
+                const SizedBox(width: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: scheme.onPrimary.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text("$minute'",
+                      style: TextStyle(
+                          color: scheme.onPrimary,
+                          fontWeight: FontWeight.bold)),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 6),
@@ -575,12 +675,14 @@ class _EventLog extends StatelessWidget {
     required this.ownTeamId,
     required this.resolveName,
     required this.onDelete,
+    required this.onEdit,
   });
 
   final List<MatchEvent> events;
   final String ownTeamId;
   final String Function(String?) resolveName;
   final Future<void> Function(MatchEvent) onDelete;
+  final void Function(MatchEvent) onEdit;
 
   @override
   Widget build(BuildContext context) {
@@ -627,6 +729,12 @@ class _EventLog extends StatelessWidget {
               ),
               title: Text('${e.type.symbol} ${_describe(e)}'),
               subtitle: Text(own ? 'Eigenes Team' : 'Gegner'),
+              trailing: IconButton(
+                tooltip: 'Korrigieren',
+                icon: const Icon(Icons.more_vert),
+                onPressed: () => onEdit(e),
+              ),
+              onTap: () => onEdit(e),
             ),
           );
         }),

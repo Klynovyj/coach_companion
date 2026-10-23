@@ -26,6 +26,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
   Team? _ownTeam;
   Team? _opponentTeam;
   ImportResult? _syncResult;
+  Set<String> _nominatedIds = {};
   bool _loading = true;
 
   @override
@@ -51,11 +52,16 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     final opp = match.opponentTeamId == null
         ? null
         : await state.repository.getTeam(match.opponentTeamId!);
+    final noms = await state.nominationsOf(widget.matchId);
     if (!mounted) return;
     setState(() {
       _match = match;
       _ownTeam = own;
       _opponentTeam = opp;
+      _nominatedIds = {
+        for (final e in noms.entries)
+          if (e.value == NominationStatus.zugesagt) e.key,
+      };
       if (result != null) _syncResult = result;
       _loading = false;
     });
@@ -77,8 +83,13 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
       child: Scaffold(
         appBar: AppBar(
           title: Text('vs ${match.opponentName}'),
-          bottom: const TabBar(
-            tabs: [
+          bottom: TabBar(
+            labelColor: Theme.of(context).colorScheme.onPrimary,
+            unselectedLabelColor:
+                Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
+            indicatorColor: Theme.of(context).colorScheme.onPrimary,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold),
+            tabs: const [
               Tab(text: 'Eigenes Team'),
               Tab(text: 'Gegner'),
             ],
@@ -110,6 +121,8 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                           teamId: _ownTeam!.id,
                           teamName: _ownTeam!.name,
                           fupaUrl: _ownTeam!.fupaUrl,
+                          showActions: false,
+                          onlyPlayerIds: _nominatedIds,
                         ),
                   _opponentTeam == null
                       ? const Center(
@@ -118,8 +131,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                           teamId: _opponentTeam!.id,
                           teamName: _opponentTeam!.name,
                           fupaUrl: _opponentTeam!.fupaUrl,
-                          emptyHint:
-                              'Kein Gegnerkader importiert. Liste einfügen oder Spieler manuell ergänzen.',
+                          showActions: false,
                         ),
                 ],
               ),
@@ -141,7 +153,10 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: _ownTeam == null ? null : _openLineup,
+                    // Aufstellung erst möglich, wenn Spieler nominiert sind.
+                    onPressed: (_ownTeam == null || _nominatedIds.isEmpty)
+                        ? null
+                        : _openLineup,
                     icon: const Icon(Icons.dashboard_customize),
                     label: const Text('Aufstellung'),
                   ),
@@ -175,6 +190,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         ),
       ),
     );
+    if (mounted) _load(); // Nominierungen neu laden (Kader-Filter + Aufstellung-Gate)
   }
 
   Future<void> _openLineup() async {

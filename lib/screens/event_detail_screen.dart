@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/player.dart';
 import '../models/team_event.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
@@ -69,6 +70,18 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     await _load();
   }
 
+  Future<void> _share() async {
+    final e = _event;
+    if (e == null) return;
+    final text = buildEventText(event: e, players: _players, status: _status);
+    final ok = await shareViaWhatsApp(text);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('WhatsApp konnte nicht geöffnet werden.')),
+      );
+    }
+  }
+
   Future<void> _delete() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -106,6 +119,10 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
       appBar: AppBar(
         title: Text(e.title),
         actions: [
+          IconButton(
+              tooltip: 'Termin teilen (WhatsApp)',
+              onPressed: _share,
+              icon: const Icon(Icons.share)),
           IconButton(
               onPressed: _edit, icon: const Icon(Icons.edit)),
           IconButton(
