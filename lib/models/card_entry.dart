@@ -35,14 +35,20 @@ class CardEntry {
       ? ''
       : (minuteExtra > 0 ? "$minute+$minuteExtra'" : "$minute'");
 
-  CardEntry copyWith(
-          {CardType? type, DateTime? date, String? note, int? minute}) =>
+  CardEntry copyWith({
+    CardType? type,
+    DateTime? date,
+    String? note,
+    int? minute,
+    String? matchId,
+    bool clearMatchId = false,
+  }) =>
       CardEntry(
         id: id,
         playerId: playerId,
         type: type ?? this.type,
         date: date ?? this.date,
-        matchId: matchId,
+        matchId: clearMatchId ? null : (matchId ?? this.matchId),
         matchEventId: matchEventId,
         minute: minute ?? this.minute,
         minuteExtra: minuteExtra,

@@ -362,76 +362,136 @@ class PlayerDetailScreen extends StatelessWidget {
   }
 
   Future<void> _addCard(BuildContext context) async {
-    final data = await showCardDialog(context);
+    final matches = await _matchesFor(context);
+    if (!context.mounted) return;
+    final data = await showCardDialog(context, matches: matches);
     if (data == null || !context.mounted) return;
     await context.read<AppState>().addCard(
           playerId: player.id,
           type: data.type,
           date: data.date,
+          matchId: data.matchId,
           note: data.note,
         );
   }
 
   Future<void> _editCard(BuildContext context, CardEntry card) async {
-    final data = await showCardDialog(context, existing: card);
+    final matches = await _matchesFor(context);
+    if (!context.mounted) return;
+    final data = await showCardDialog(context, existing: card, matches: matches);
     if (data == null || !context.mounted) return;
     await context.read<AppState>().updateCard(
-          card.copyWith(type: data.type, date: data.date, note: data.note),
+          card.copyWith(
+            type: data.type,
+            date: data.date,
+            note: data.note,
+            matchId: data.matchId,
+            clearMatchId: data.matchId == null,
+          ),
         );
+  }
+
+  /// Spiele des Teams, neueste zuerst – für die Spielauswahl im Kartendialog.
+  Future<List<GameMatch>> _matchesFor(BuildContext context) async {
+    final mm = await context.read<AppState>().matchMap(player.teamId);
+    final list = mm.values.toList()
+      ..sort((a, b) => (b.kickoff ?? b.createdAt)
+          .compareTo(a.kickoff ?? a.createdAt));
+    return list;
   }
 }
 
 class CardDialogData {
   final CardType type;
   final DateTime date;
+  final String? matchId;
   final String? note;
-  const CardDialogData(this.type, this.date, this.note);
+  const CardDialogData(this.type, this.date, this.matchId, this.note);
 }
 
-Future<CardDialogData?> showCardDialog(BuildContext context,
-    {CardEntry? existing}) {
+Future<CardDialogData?> showCardDialog(
+  BuildContext context, {
+  CardEntry? existing,
+  List<GameMatch> matches = const [],
+}) {
   var type = existing?.type ?? CardType.yellow;
   var date = existing?.date ?? DateTime.now();
+  // Vorauswahl nur gültig, wenn das Spiel noch existiert.
+  var matchId = (existing?.matchId != null &&
+          matches.any((m) => m.id == existing!.matchId))
+      ? existing!.matchId
+      : null;
   final noteCtrl = TextEditingController(text: existing?.note ?? '');
   final df = DateFormat('dd.MM.yyyy', 'de_DE');
+
+  String matchLabel(GameMatch m) {
+    final d = m.kickoff == null ? '' : '${df.format(m.kickoff!.toLocal())} · ';
+    return '$d${m.venue == Venue.home ? 'H' : 'A'} vs ${m.opponentName}';
+  }
 
   return showDialog<CardDialogData>(
     context: context,
     builder: (context) => StatefulBuilder(
       builder: (context, setState) => AlertDialog(
         title: Text(existing == null ? 'Karte hinzufügen' : 'Karte bearbeiten'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SegmentedButton<CardType>(
-              segments: const [
-                ButtonSegment(value: CardType.yellow, label: Text('🟨')),
-                ButtonSegment(value: CardType.yellowRed, label: Text('🟨🟥')),
-                ButtonSegment(value: CardType.red, label: Text('🟥')),
-              ],
-              selected: {type},
-              onSelectionChanged: (s) => setState(() => type = s.first),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: date,
-                  firstDate: DateTime(date.year - 2),
-                  lastDate: DateTime(date.year + 1),
-                );
-                if (picked != null) setState(() => date = picked);
-              },
-              icon: const Icon(Icons.event),
-              label: Text(df.format(date)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: noteCtrl,
-              decoration: const InputDecoration(labelText: 'Grund / Notiz'),
-            ),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<CardType>(
+                segments: const [
+                  ButtonSegment(value: CardType.yellow, label: Text('🟨')),
+                  ButtonSegment(value: CardType.yellowRed, label: Text('🟨🟥')),
+                  ButtonSegment(value: CardType.red, label: Text('🟥')),
+                ],
+                selected: {type},
+                onSelectionChanged: (s) => setState(() => type = s.first),
+              ),
+              const SizedBox(height: 12),
+              if (matches.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue: matchId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Spiel'),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                        value: null, child: Text('Kein Spiel')),
+                    ...matches.map((m) => DropdownMenuItem<String?>(
+                          value: m.id,
+                          child: Text(matchLabel(m),
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                        )),
+                  ],
+                  onChanged: (v) => setState(() {
+                    matchId = v;
+                    // Datum aus dem gewählten Spiel übernehmen.
+                    if (v != null) {
+                      final m = matches.firstWhere((e) => e.id == v);
+                      if (m.kickoff != null) date = m.kickoff!.toLocal();
+                    }
+                  }),
+                ),
+              if (matches.isNotEmpty) const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: date,
+                    firstDate: DateTime(date.year - 2),
+                    lastDate: DateTime(date.year + 1),
+                  );
+                  if (picked != null) setState(() => date = picked);
+                },
+                icon: const Icon(Icons.event),
+                label: Text(df.format(date)),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteCtrl,
+                decoration: const InputDecoration(labelText: 'Grund / Notiz'),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -440,7 +500,7 @@ Future<CardDialogData?> showCardDialog(BuildContext context,
           FilledButton(
             onPressed: () => Navigator.pop(
               context,
-              CardDialogData(type, date,
+              CardDialogData(type, date, matchId,
                   noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim()),
             ),
             child: const Text('Speichern'),
