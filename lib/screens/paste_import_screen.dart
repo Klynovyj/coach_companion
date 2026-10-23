@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../services/fupa/fupa_dtos.dart';
+import '../services/fupa/fupa_redux_importer.dart';
 import '../services/paste/squad_paste_parser.dart';
 import '../state/app_state.dart';
 
@@ -60,6 +61,8 @@ class PasteImportScreen extends StatefulWidget {
 class _PasteImportScreenState extends State<PasteImportScreen> {
   final _textController = TextEditingController();
   List<_EditableRow>? _rows;
+  bool _loading = false;
+  String _progress = '';
 
   @override
   void dispose() {
@@ -70,19 +73,61 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
     super.dispose();
   }
 
-  void _analyze() {
-    final parsed = SquadPasteParser.parse(_textController.text);
+  /// Verarbeitet den eingefügten Text: FuPa-Spieler-Links werden abgerufen
+  /// (REDUX_DATA → Stammdaten), normale Textzeilen werden erkannt.
+  Future<void> _analyze() async {
+    final lines = _textController.text
+        .split(RegExp(r'[\r\n]+'))
+        .map((l) => l.trim())
+        .where((l) => l.isNotEmpty)
+        .toList();
+    final urlLines = lines.where(FupaReduxImporter.isPlayerUrl).toList();
+    final textLines =
+        lines.where((l) => !FupaReduxImporter.isPlayerUrl(l)).toList();
+
+    final parsedText = SquadPasteParser.parse(textLines.join('\n'));
+
+    final fetched = <ParsedPlayer>[];
+    var failed = 0;
+    if (urlLines.isNotEmpty) {
+      setState(() {
+        _loading = true;
+        _progress = '';
+      });
+      final importer = FupaReduxImporter();
+      for (var i = 0; i < urlLines.length; i++) {
+        setState(() => _progress = 'Lade FuPa-Profil ${i + 1}/${urlLines.length} …');
+        try {
+          fetched.add(await importer.importPlayer(urlLines[i]));
+        } catch (_) {
+          failed++;
+          fetched.add(const ParsedPlayer()); // leere Zeile zum Ausfüllen
+        }
+      }
+    }
+
+    final all = [...fetched, ...parsedText];
     for (final r in _rows ?? const <_EditableRow>[]) {
       r.dispose();
     }
+    if (!mounted) return;
     setState(() {
-      _rows = parsed.map(_EditableRow.new).toList();
+      _rows = all.map(_EditableRow.new).toList();
+      _loading = false;
+      _progress = '';
     });
-    if (parsed.isEmpty) {
+
+    if (all.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text(
-                'Keine Spieler erkannt. Tipp: eine Zeile pro Spieler einfügen.')),
+                'Keine Spieler erkannt. Tipp: eine Zeile pro Spieler oder einen FuPa-Spielerlink einfügen.')),
+      );
+    } else if (failed > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(
+                '$failed von ${urlLines.length} FuPa-Links konnten nicht geladen werden – bitte manuell ergänzen.')),
       );
     }
   }
@@ -146,16 +191,16 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
       padding: const EdgeInsets.all(16),
       children: [
         Text(
-          'Kopiere die Spielerliste (z.B. von der öffentlichen FuPa-Seite) '
-          'und füge sie hier ein – eine Zeile pro Spieler. Erkannt werden '
-          'Nummer, Name und Position. Du kannst danach alles prüfen und '
-          'korrigieren.',
+          'Zwei Wege, beliebig mischbar (eine Zeile pro Spieler):\n'
+          '• FuPa-Spielerlinks (…/player/…) – werden abgerufen und automatisch '
+          'mit Name, Position und Trikotnummer befüllt.\n'
+          '• oder Klartext wie „7 Max Mustermann Sturm“.',
           style: Theme.of(context).textTheme.bodyMedium,
         ),
         const SizedBox(height: 8),
         Text(
-          'Hinweis: Die App ruft nichts von FuPa ab – sie liest nur deinen '
-          'eingefügten Text.',
+          'Hinweis: FuPa-Links lädt die App von der öffentlichen Spielerseite. '
+          'Ändert FuPa das Layout, muss der Import angepasst werden.',
           style: Theme.of(context)
               .textTheme
               .bodySmall
@@ -177,15 +222,27 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
           minLines: 8,
           maxLines: 20,
           decoration: const InputDecoration(
-            labelText: 'Spielerliste einfügen',
+            labelText: 'Spielerliste oder FuPa-Links einfügen',
             alignLabelWithHint: true,
-            hintText: '7 Max Mustermann Sturm\n1 Jonas Keller Tor\n...',
+            hintText:
+                'https://www.fupa.net/player/...\n7 Max Mustermann Sturm\n1 Jonas Keller Tor',
           ),
         ),
         const SizedBox(height: 16),
+        if (_loading) ...[
+          const LinearProgressIndicator(),
+          const SizedBox(height: 8),
+          Text(_progress, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 8),
+        ],
         FilledButton.icon(
-          onPressed: _analyze,
-          icon: const Icon(Icons.auto_fix_high),
+          onPressed: _loading ? null : _analyze,
+          icon: _loading
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2))
+              : const Icon(Icons.auto_fix_high),
           label: const Text('Erkennen'),
         ),
       ],

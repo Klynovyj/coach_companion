@@ -22,19 +22,31 @@ optionalem FuPa-Import, automatischem Gegner-Sync und Live-Spielerfassung für
   Torschütze + Vorlage), Karten und Wechsel für beide Teams mit wenigen Klicks;
   der Spielstand aktualisiert sich bei Toren automatisch.
 
-## Umgang mit FuPa-Daten (wichtig)
+## FuPa-Import
 
-Es werden **ausschließlich offiziell erlaubte Datenzugänge** verwendet. Die
-FuPa-Widgets werden **nicht** als versteckte Daten-API missbraucht.
+Spielerstammdaten lassen sich über **FuPa-Spielerlinks** importieren – gleicher
+Ansatz wie im Schwesterprojekt *Coach Studio*:
 
-Die Datenbeschaffung läuft über austauschbare Quellen
-(`FupaDataSource`), geordnet nach Priorität:
+- Im Einfügen-Import (Kader bzw. Gegner) fügst du einen oder mehrere
+  FuPa-Spielerlinks (`…/player/…`) ein – beliebig gemischt mit Klartextzeilen.
+- Für jeden Link lädt die App die öffentliche Spielerseite, extrahiert den
+  eingebetteten `window.REDUX_DATA`-Block (`FupaReduxImporter`) und übernimmt
+  **Name, Position und Trikotnummer**. Kein HTML-Scraping – es wird das von
+  FuPa selbst gelieferte JSON gelesen.
+- **Abhängigkeit:** Ändert FuPa das Seitenlayout, muss die Extraktion
+  angepasst werden (wie bei Coach Studio auch).
 
-1. `ApprovedApiFupaDataSource` – nur aktiv, wenn in den Einstellungen eine
-   genehmigte Schnittstelle (Basis-URL + Token) hinterlegt ist.
-2. `ManualFupaDataSource` – immer vorhanden, ruft nichts ab. Ohne genehmigten
-   Zugang bleibt die App voll nutzbar: ein klarer Importstatus wird angezeigt,
-   die Datenpflege erfolgt manuell.
+Daneben gibt es weiterhin:
+
+- den **Textparser** (`SquadPasteParser`) für kopierte Klartext-Listen
+  (`7 Max Mustermann Sturm`),
+- eine optionale **genehmigte Schnittstelle** (`ApprovedApiFupaDataSource`,
+  Basis-URL + Token in den Einstellungen) für Team-/Spielplan-Importe,
+- und reine **manuelle Pflege** – die App bleibt ohne jeden Online-Zugriff
+  voll nutzbar.
+
+Alle Importe laufen durch dieselbe **Duplikaterkennung** (`FupaPersistence`):
+Abgleich über externe ID bzw. normalisierten Namen, kein Doppel-Import.
 
 ## Architektur
 

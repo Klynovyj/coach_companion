@@ -1,4 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Für FuPa-Import und das Öffnen von Links benötigt. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="coach_companion"
         android:name="${applicationName}"
