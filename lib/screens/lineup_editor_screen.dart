@@ -5,10 +5,12 @@ import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/player.dart';
 import '../state/app_state.dart';
+import '../widgets/pitch_field.dart';
+import '../widgets/player_avatar.dart';
 import 'nomination_screen.dart';
 
-/// Editor für die eigene Aufstellung: Formation, Startelf und Ersatzbank.
-/// Diese Entscheidungen trifft ausschließlich der Trainer.
+/// Aufstellungs-Editor mit Spielfeld (Drag & Drop) im SpielerPlus-Stil.
+/// Die Spielerauswahl kommt aus den zugesagten Spielern (Nominierung).
 class LineupEditorScreen extends StatefulWidget {
   const LineupEditorScreen({
     super.key,
@@ -26,17 +28,20 @@ class LineupEditorScreen extends StatefulWidget {
 }
 
 class _LineupEditorScreenState extends State<LineupEditorScreen> {
-  static const _formations = ['4-4-2', '4-3-3', '3-5-2', '4-2-3-1', '3-4-3', '5-3-2'];
+  static const _formations = [
+    '4-4-2', '4-3-3', '3-5-2', '4-2-3-1', '3-4-3', '5-3-2', '4-1-4-1'
+  ];
 
   Lineup? _lineup;
-  List<Player> _players = [];
-  final Map<String, LineupRole> _roles = {};
   String _formation = '4-4-2';
+  final Map<String, Player> _byId = {};
+  List<Player> _nominated = [];
+  final Map<int, String> _slot = {}; // slotIndex -> playerId
+  final Set<String> _bench = {};
   bool _loading = true;
-
-  /// Anzahl zugesagter Spieler; true, wenn die Auswahl auf Zusagen beschränkt ist.
-  int _nominatedCount = 0;
   bool _restricted = false;
+
+  List<PitchSlot> get _slots => slotsForFormation(_formation);
 
   @override
   void initState() {
@@ -48,39 +53,107 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final state = context.read<AppState>();
     final lineup = await state.ensureLineup(widget.matchId, widget.teamId);
     final players = await state.playersOf(widget.teamId);
-    final entries = await state.lineupEntries(lineup.id);
     final noms = await state.nominationsOf(widget.matchId);
-    final roleMap = {for (final e in entries) e.playerId: e.role};
+    final entries = await state.lineupEntries(lineup.id);
 
-    // Aufstellung aus den Zusagen ableiten: nur zugesagte Spieler (plus die,
-    // die bereits in einer gespeicherten Aufstellung stehen). Gibt es noch
-    // keine Zusagen, fällt der Editor auf den ganzen Kader zurück.
     final nominated = players
         .where((p) => noms[p.id] == NominationStatus.zugesagt)
         .toList();
-    final pool = nominated.isEmpty
-        ? players
-        : players
-            .where((p) =>
-                noms[p.id] == NominationStatus.zugesagt ||
-                roleMap.containsKey(p.id))
-            .toList();
+    final pool = nominated.isEmpty ? players : nominated;
 
     if (!mounted) return;
     setState(() {
       _lineup = lineup;
       _formation = lineup.formation;
-      _players = pool;
-      _nominatedCount = nominated.length;
-      _restricted = nominated.isNotEmpty;
-      _roles
+      _byId
         ..clear()
-        ..addAll({
-          for (final p in pool)
-            p.id: roleMap[p.id] ?? LineupRole.substitute,
-        });
+        ..addEntries(players.map((p) => MapEntry(p.id, p)));
+      _nominated = pool;
+      _restricted = nominated.isNotEmpty;
+      _slot.clear();
+      _bench.clear();
+      final slotCount = _slots.length;
+      for (final e in entries) {
+        if (!_byId.containsKey(e.playerId)) continue;
+        if (e.role == LineupRole.starter &&
+            e.orderIndex >= 0 &&
+            e.orderIndex < slotCount) {
+          _slot[e.orderIndex] = e.playerId;
+        } else if (e.role == LineupRole.substitute) {
+          _bench.add(e.playerId);
+        }
+      }
       _loading = false;
     });
+  }
+
+  Set<String> get _placed => {..._slot.values, ..._bench};
+  List<Player> get _pool =>
+      _nominated.where((p) => !_placed.contains(p.id)).toList();
+
+  void _removeEverywhere(String pid) {
+    _slot.removeWhere((k, v) => v == pid);
+    _bench.remove(pid);
+  }
+
+  void _assignToSlot(String pid, int slotIndex) {
+    setState(() {
+      _removeEverywhere(pid);
+      _slot[slotIndex] = pid; // ggf. vorhandener Spieler wandert zurück in den Pool
+    });
+  }
+
+  void _toBench(String pid) {
+    setState(() {
+      _removeEverywhere(pid);
+      _bench.add(pid);
+    });
+  }
+
+  void _toPool(String pid) {
+    setState(() => _removeEverywhere(pid));
+  }
+
+  void _changeFormation(String f) {
+    setState(() {
+      _formation = f;
+      final count = slotsForFormation(f).length;
+      _slot.removeWhere((k, v) => k >= count); // ungültige Slots -> Pool
+    });
+  }
+
+  Future<void> _save() async {
+    final lineup = _lineup!;
+    final slots = _slots;
+    final entries = <LineupEntry>[];
+    _slot.forEach((slotIndex, pid) {
+      entries.add(LineupEntry(
+        id: context.read<AppState>().newEntryId(),
+        lineupId: lineup.id,
+        playerId: pid,
+        role: LineupRole.starter,
+        positionLabel: slotIndex < slots.length ? slots[slotIndex].label : null,
+        orderIndex: slotIndex,
+      ));
+    });
+    var i = 0;
+    for (final pid in _bench) {
+      entries.add(LineupEntry(
+        id: context.read<AppState>().newEntryId(),
+        lineupId: lineup.id,
+        playerId: pid,
+        role: LineupRole.substitute,
+        orderIndex: 100 + i++,
+      ));
+    }
+    await context
+        .read<AppState>()
+        .saveLineup(lineup.copyWith(formation: _formation), entries);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Aufstellung gespeichert.')),
+    );
+    Navigator.pop(context);
   }
 
   Future<void> _openNomination() async {
@@ -97,48 +170,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     await _load();
   }
 
-  int get _starterCount =>
-      _roles.values.where((r) => r == LineupRole.starter).length;
-
-  Future<void> _save() async {
-    final lineup = _lineup!;
-    final entries = <LineupEntry>[];
-    var idx = 0;
-    for (final p in _players) {
-      final role = _roles[p.id] ?? LineupRole.substitute;
-      entries.add(LineupEntry(
-        id: context.read<AppState>().newEntryId(),
-        lineupId: lineup.id,
-        playerId: p.id,
-        role: role,
-        orderIndex: idx++,
-      ));
-    }
-    await context
-        .read<AppState>()
-        .saveLineup(lineup.copyWith(formation: _formation), entries);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Aufstellung gespeichert.')),
-    );
-    Navigator.pop(context);
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final starters = _players
-        .where((p) => _roles[p.id] == LineupRole.starter)
-        .toList();
-    final bench = _players
-        .where((p) => _roles[p.id] == LineupRole.substitute)
-        .toList();
-    final out = _players
-        .where((p) => _roles[p.id] == LineupRole.unavailable)
-        .toList();
-
+    final starters = _slot.length;
     return Scaffold(
       appBar: AppBar(
         title: Text('Aufstellung · ${widget.teamName}'),
@@ -150,133 +187,268 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           ),
         ],
       ),
-      body: _players.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Noch keine Spieler im Kader. Lege im Kader-Tab Spieler an.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            )
-          : ListView(
+      body: ListView(
+        children: [
+          _banner(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Row(
               children: [
-                Container(
-                  width: double.infinity,
-                  color: Theme.of(context)
-                      .colorScheme
-                      .primaryContainer
-                      .withValues(alpha: 0.4),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  child: Row(
-                    children: [
-                      Icon(Icons.how_to_reg,
-                          size: 18, color: Theme.of(context).colorScheme.primary),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(_restricted
-                            ? 'Auswahl aus $_nominatedCount zugesagten Spielern'
-                            : 'Noch keine Zusagen – es wird der ganze Kader gezeigt'),
-                      ),
-                      TextButton(
-                        onPressed: _openNomination,
-                        child: const Text('Nominierung'),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
+                Expanded(
                   child: DropdownButtonFormField<String>(
-                    initialValue: _formation,
+                    initialValue:
+                        _formations.contains(_formation) ? _formation : null,
                     decoration: const InputDecoration(labelText: 'Formation'),
                     items: _formations
                         .map((f) =>
                             DropdownMenuItem(value: f, child: Text(f)))
                         .toList(),
-                    onChanged: (v) => setState(() => _formation = v ?? _formation),
+                    onChanged: (v) => _changeFormation(v ?? _formation),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text('Startelf: $_starterCount / 11',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: _starterCount == 11
-                                  ? Colors.green.shade700
-                                  : Colors.orange.shade800)),
-                      Text('Bank: ${bench.length}'),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                ..._group('Startelf', starters, LineupRole.starter),
-                ..._group('Ersatzbank', bench, LineupRole.substitute),
-                ..._group('Nicht dabei', out, LineupRole.unavailable),
-                const SizedBox(height: 24),
+                const SizedBox(width: 12),
+                Text('Startelf $starters/11',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: starters == 11
+                            ? Colors.green.shade700
+                            : Colors.orange.shade800)),
               ],
             ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: _pitch(),
+          ),
+          _benchSection(),
+          _poolSection(),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 
-  List<Widget> _group(String title, List<Player> players, LineupRole role) {
-    return [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-        child: Text(title,
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(color: Theme.of(context).colorScheme.primary)),
+  Widget _banner() {
+    return Container(
+      width: double.infinity,
+      color:
+          Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.4),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        children: [
+          Icon(Icons.how_to_reg,
+              size: 18, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(_restricted
+                ? 'Ziehe zugesagte Spieler auf das Feld'
+                : 'Noch keine Zusagen – es wird der ganze Kader gezeigt'),
+          ),
+          TextButton(
+              onPressed: _openNomination, child: const Text('Nominierung')),
+        ],
       ),
-      if (players.isEmpty)
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Text('—', style: TextStyle(color: Colors.grey)),
-        ),
-      ...players.map((p) => ListTile(
-            dense: true,
-            leading: CircleAvatar(
-              radius: 16,
-              child: Text(p.number?.toString() ?? '?',
-                  style: const TextStyle(fontSize: 12)),
-            ),
-            title: Text(p.fullName),
-            subtitle: p.position == null ? null : Text(p.position!),
-            trailing: _RoleSelector(
-              value: role,
-              onChanged: (r) => setState(() => _roles[p.id] = r),
-            ),
-          )),
-    ];
+    );
   }
-}
 
-class _RoleSelector extends StatelessWidget {
-  const _RoleSelector({required this.value, required this.onChanged});
-  final LineupRole value;
-  final ValueChanged<LineupRole> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return SegmentedButton<LineupRole>(
-      style: const ButtonStyle(
-        visualDensity: VisualDensity.compact,
-        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  Widget _pitch() {
+    final scheme = Theme.of(context).colorScheme;
+    return AspectRatio(
+      aspectRatio: 0.66,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final w = c.maxWidth;
+            final h = c.maxHeight;
+            const chip = 52.0;
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: PitchFieldPainter(
+                      Colors.white.withValues(alpha: 0.85),
+                      const Color(0xFF2E7D4F),
+                      const Color(0xFF2A744A),
+                    ),
+                  ),
+                ),
+                for (final s in _slots)
+                  Positioned(
+                    left: s.x * w - chip / 2,
+                    top: s.y * h - chip / 2,
+                    width: chip,
+                    height: chip + 14,
+                    child: _slotTarget(s, scheme),
+                  ),
+              ],
+            );
+          },
+        ),
       ),
-      segments: const [
-        ButtonSegment(value: LineupRole.starter, label: Text('Start')),
-        ButtonSegment(value: LineupRole.substitute, label: Text('Bank')),
-        ButtonSegment(value: LineupRole.unavailable, label: Text('Raus')),
+    );
+  }
+
+  Widget _slotTarget(PitchSlot s, ColorScheme scheme) {
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (d) => _assignToSlot(d.data, s.index),
+      builder: (context, cand, rej) {
+        final pid = _slot[s.index];
+        final highlight = cand.isNotEmpty;
+        if (pid == null || !_byId.containsKey(pid)) {
+          return _emptySlot(s.label, highlight);
+        }
+        return Draggable<String>(
+          data: pid,
+          feedback: _chip(_byId[pid]!, dragging: true),
+          childWhenDragging: _emptySlot(s.label, false),
+          child: _chip(_byId[pid]!),
+        );
+      },
+    );
+  }
+
+  Widget _emptySlot(String label, bool highlight) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 44,
+          height: 44,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: highlight ? 0.35 : 0.18),
+            shape: BoxShape.circle,
+            border: Border.all(
+                color: Colors.white.withValues(alpha: 0.7),
+                width: highlight ? 2 : 1),
+          ),
+          child: const Icon(Icons.add, color: Colors.white70, size: 20),
+        ),
+        Text(label,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600)),
       ],
-      selected: {value},
-      showSelectedIcon: false,
-      onSelectionChanged: (s) => onChanged(s.first),
+    );
+  }
+
+  Widget _chip(Player p, {bool dragging = false}) {
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        PlayerAvatar(player: p, radius: 20),
+        Container(
+          margin: const EdgeInsets.only(top: 2),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Text(
+            p.lastName.isNotEmpty ? p.lastName : p.firstName,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
+    if (dragging) {
+      return Material(color: Colors.transparent, child: content);
+    }
+    return content;
+  }
+
+  Widget _benchSection() {
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (d) => _toBench(d.data),
+      builder: (context, cand, rej) {
+        final bench = _bench
+            .where(_byId.containsKey)
+            .map((id) => _byId[id]!)
+            .toList();
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: cand.isNotEmpty
+                ? Theme.of(context).colorScheme.secondaryContainer
+                : Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Ersatzbank (${bench.length})',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (bench.isEmpty)
+                const Text('Spieler hierher ziehen',
+                    style: TextStyle(color: Colors.grey))
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: bench.map(_listChip).toList(),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _poolSection() {
+    final pool = _pool;
+    return DragTarget<String>(
+      onWillAcceptWithDetails: (_) => true,
+      onAcceptWithDetails: (d) => _toPool(d.data),
+      builder: (context, cand, rej) {
+        return Container(
+          margin: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: cand.isNotEmpty
+                ? Theme.of(context).colorScheme.surfaceContainerHighest
+                : Theme.of(context).colorScheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Verfügbar (${pool.length})',
+                  style: const TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              if (pool.isEmpty)
+                const Text('Alle zugesagten Spieler sind eingeteilt.',
+                    style: TextStyle(color: Colors.grey))
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: pool.map(_listChip).toList(),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _listChip(Player p) {
+    final chip = Chip(
+      avatar: PlayerAvatar(player: p, radius: 12),
+      label: Text(p.number != null ? '${p.number} ${p.lastName}' : p.fullName),
+    );
+    return Draggable<String>(
+      data: p.id,
+      feedback: Material(color: Colors.transparent, child: chip),
+      childWhenDragging: Opacity(opacity: 0.4, child: chip),
+      child: chip,
     );
   }
 }
