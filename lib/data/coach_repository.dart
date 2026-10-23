@@ -210,6 +210,20 @@ class CoachRepository {
     await db.delete('match_events', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Löscht alle Ereignisse eines Spiels und die daran verknüpften Karten.
+  Future<void> resetMatchEvents(String matchId) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      await txn.rawDelete(
+        'DELETE FROM card_entries WHERE match_event_id IN '
+        '(SELECT id FROM match_events WHERE match_id = ?)',
+        [matchId],
+      );
+      await txn
+          .delete('match_events', where: 'match_id = ?', whereArgs: [matchId]);
+    });
+  }
+
   /// Zählt die Tore je Team für ein Spiel (Grundlage des Spielstands).
   Future<Map<String, int>> goalCountByTeam(String matchId) async {
     final db = await _db;

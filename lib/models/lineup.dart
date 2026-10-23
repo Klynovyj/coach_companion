@@ -62,6 +62,10 @@ class LineupEntry {
   /// Sortier-/Platzierungsindex innerhalb der Rolle.
   final int orderIndex;
 
+  /// Freie Position auf dem Feld, relativ 0..1 (nur für Starter).
+  final double? posX;
+  final double? posY;
+
   const LineupEntry({
     required this.id,
     required this.lineupId,
@@ -69,9 +73,16 @@ class LineupEntry {
     required this.role,
     this.positionLabel,
     this.orderIndex = 0,
+    this.posX,
+    this.posY,
   });
 
-  LineupEntry copyWith({LineupRole? role, String? positionLabel, int? orderIndex}) =>
+  LineupEntry copyWith(
+          {LineupRole? role,
+          String? positionLabel,
+          int? orderIndex,
+          double? posX,
+          double? posY}) =>
       LineupEntry(
         id: id,
         lineupId: lineupId,
@@ -79,6 +90,8 @@ class LineupEntry {
         role: role ?? this.role,
         positionLabel: positionLabel ?? this.positionLabel,
         orderIndex: orderIndex ?? this.orderIndex,
+        posX: posX ?? this.posX,
+        posY: posY ?? this.posY,
       );
 
   Map<String, Object?> toMap() => {
@@ -88,6 +101,8 @@ class LineupEntry {
         'role': role.storageKey,
         'position_label': positionLabel,
         'order_index': orderIndex,
+        'pos_x': posX,
+        'pos_y': posY,
       };
 
   factory LineupEntry.fromMap(Map<String, Object?> m) => LineupEntry(
@@ -97,5 +112,7 @@ class LineupEntry {
         role: LineupRole.fromKey(m['role'] as String?),
         positionLabel: m['position_label'] as String?,
         orderIndex: m['order_index'] as int? ?? 0,
+        posX: (m['pos_x'] as num?)?.toDouble(),
+        posY: (m['pos_y'] as num?)?.toDouble(),
       );
 }

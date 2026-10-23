@@ -248,6 +248,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             icon: const Icon(Icons.share),
             onPressed: _shareReport,
           ),
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'reset') _resetMatch();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'reset', child: Text('Spiel zurücksetzen')),
+            ],
+          ),
         ],
       ),
       body: Column(
@@ -482,6 +490,38 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   void _snack(String msg) {
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(msg)));
+  }
+
+  Future<void> _resetMatch() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Spiel zurücksetzen?'),
+        content: const Text(
+            'Protokoll, Tore, Karten und Wechsel dieses Spiels werden gelöscht '
+            'und der Spielstand auf 0:0 gesetzt. Das kann nicht rückgängig '
+            'gemacht werden.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Zurücksetzen')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    _timer?.cancel();
+    await context.read<AppState>().resetMatch(widget.matchId);
+    if (!mounted) return;
+    setState(() {
+      _phase = _Phase.notStarted;
+      _elapsedSeconds = 0;
+      _running = false;
+    });
+    await _refreshEvents();
   }
 
   Future<void> _shareReport() async {

@@ -566,6 +566,22 @@ class AppState extends ChangeNotifier {
     await _reload();
   }
 
+  /// Setzt ein Spiel vollständig zurück: löscht Protokoll/Ereignisse (und
+  /// verknüpfte Karten), Spielstand 0:0, Status „geplant".
+  Future<void> resetMatch(String matchId) async {
+    await _repo.resetMatchEvents(matchId);
+    final match = await _repo.getMatch(matchId);
+    if (match != null) {
+      await _repo.upsertMatch(match.copyWith(
+        status: MatchStatus.scheduled,
+        ownScore: 0,
+        opponentScore: 0,
+      ));
+    }
+    await _reload();
+    notifyListeners();
+  }
+
   Future<void> setMatchStatus(String matchId, MatchStatus status) async {
     final match = await _repo.getMatch(matchId);
     if (match == null) return;
