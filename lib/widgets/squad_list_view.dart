@@ -281,27 +281,26 @@ class _SquadListViewState extends State<SquadListView> {
             ),
           ),
           const SizedBox(height: 8),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
+          // Umbrechend, damit alle Filter auch auf schmalen Displays erreichbar
+          // sind (kein horizontales Scrollen nötig).
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              ChoiceChip(
+                label: const Text('Alle'),
+                selected: _statusFilter == null,
+                onSelected: (_) => setState(() => _statusFilter = null),
+              ),
+              for (final s in PlayerStatus.values)
                 ChoiceChip(
-                  label: const Text('Alle'),
-                  selected: _statusFilter == null,
-                  onSelected: (_) => setState(() => _statusFilter = null),
+                  avatar: Text(s.symbol, style: const TextStyle(fontSize: 12)),
+                  label: Text('${s.label} (${countOf(s)})'),
+                  selected: _statusFilter == s,
+                  onSelected: (_) => setState(
+                      () => _statusFilter = _statusFilter == s ? null : s),
                 ),
-                for (final s in PlayerStatus.values) ...[
-                  const SizedBox(width: 6),
-                  ChoiceChip(
-                    avatar: Text(s.symbol, style: const TextStyle(fontSize: 12)),
-                    label: Text('${s.label} (${countOf(s)})'),
-                    selected: _statusFilter == s,
-                    onSelected: (_) => setState(
-                        () => _statusFilter = _statusFilter == s ? null : s),
-                  ),
-                ],
-              ],
-            ),
+            ],
           ),
         ],
       ),

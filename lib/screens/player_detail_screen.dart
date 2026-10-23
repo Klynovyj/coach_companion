@@ -29,6 +29,9 @@ class PlayerDetailScreen extends StatefulWidget {
 class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   late Player _player;
 
+  /// Sortierrichtung der Bewertungen nach Datum (false = neueste zuerst).
+  bool _ratingsSortAsc = false;
+
   @override
   void initState() {
     super.initState();
@@ -531,19 +534,35 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               ),
             );
           }
+          // Nach Datum sortieren – Richtung umschaltbar.
+          final sorted = [...matches]..sort((a, b) {
+              final cmp = (a.kickoff ?? a.createdAt)
+                  .compareTo(b.kickoff ?? b.createdAt);
+              return _ratingsSortAsc ? cmp : -cmp;
+            });
           return Column(
             children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 4),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Pro Spiel bewerten – jederzeit nachholbar und korrigierbar.',
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Pro Spiel bewerten – jederzeit nachholbar.',
+                      style: TextStyle(color: Colors.grey, fontSize: 12),
+                    ),
                   ),
-                ),
+                  TextButton.icon(
+                    onPressed: () =>
+                        setState(() => _ratingsSortAsc = !_ratingsSortAsc),
+                    icon: Icon(
+                        _ratingsSortAsc
+                            ? Icons.arrow_upward
+                            : Icons.arrow_downward,
+                        size: 16),
+                    label: Text(_ratingsSortAsc ? 'Älteste' : 'Neueste'),
+                  ),
+                ],
               ),
-              for (final m in matches)
+              for (final m in sorted)
                 _ratingRow(context, df, m, ratings[m.id]?.round() ?? 0),
             ],
           );
