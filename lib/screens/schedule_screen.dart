@@ -10,20 +10,82 @@ import '../widgets/team_logo.dart';
 import '../widgets/ui_bits.dart';
 import 'match_center_screen.dart';
 
-class ScheduleScreen extends StatelessWidget {
+class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
+
+  @override
+  State<ScheduleScreen> createState() => _ScheduleScreenState();
+}
+
+class _ScheduleScreenState extends State<ScheduleScreen> {
+  final _scrollCtrl = ScrollController();
+  final _nextKey = GlobalKey();
+  bool _didInitialScroll = false;
+
+  @override
+  void dispose() {
+    _scrollCtrl.dispose();
+    super.dispose();
+  }
+
+  /// Index des nächsten (bevorstehenden) Spiels; alles vergangen -> letztes.
+  int _nextIndex(List<GameMatch> matches) {
+    final now = DateTime.now();
+    final idx = matches.indexWhere((m) =>
+        m.status == MatchStatus.live ||
+        m.kickoff == null ||
+        m.kickoff!.isAfter(now));
+    return idx < 0 ? matches.length - 1 : idx;
+  }
+
+  /// Beim ersten Aufbau an das nächste Spiel springen: Vergangenes liegt
+  /// darüber (nach oben wischen), Künftiges darunter (nach unten wischen).
+  void _scheduleInitialScroll(int idx, int count) {
+    if (_didInitialScroll || count == 0) return;
+    _didInitialScroll = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_scrollCtrl.hasClients) return;
+      final rough =
+          (idx * 88.0).clamp(0.0, _scrollCtrl.position.maxScrollExtent);
+      _scrollCtrl.jumpTo(rough);
+      // Nach dem groben Sprung präzise oben ausrichten.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final ctx = _nextKey.currentContext;
+        if (ctx != null) {
+          Scrollable.ensureVisible(ctx,
+              alignment: 0.0, duration: Duration.zero);
+        }
+      });
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final matches = state.matches;
     final df = DateFormat("HH:mm 'Uhr'", 'de_DE');
+    final nextIdx = matches.isEmpty ? 0 : _nextIndex(matches);
+    _scheduleInitialScroll(nextIdx, matches.length);
 
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
         title: const Text('Spielplan'),
         actions: [
+          IconButton(
+            tooltip: 'Zum nächsten Spiel',
+            icon: const Icon(Icons.today),
+            onPressed: matches.isEmpty
+                ? null
+                : () {
+                    final ctx = _nextKey.currentContext;
+                    if (ctx != null) {
+                      Scrollable.ensureVisible(ctx,
+                          alignment: 0.0,
+                          duration: const Duration(milliseconds: 300));
+                    }
+                  },
+          ),
           IconButton(
             tooltip: 'FuPa-Spielplan importieren',
             icon: const Icon(Icons.cloud_download),
@@ -39,10 +101,15 @@ class ScheduleScreen extends StatelessWidget {
       body: matches.isEmpty
           ? const _EmptySchedule()
           : ListView.builder(
+              controller: _scrollCtrl,
               padding: const EdgeInsets.only(bottom: 88),
               itemCount: matches.length,
-              itemBuilder: (context, i) =>
-                  _MatchCard(match: matches[i], df: df, onTap: () => _open(context, matches[i])),
+              itemBuilder: (context, i) => _MatchCard(
+                key: i == nextIdx ? _nextKey : null,
+                match: matches[i],
+                df: df,
+                onTap: () => _open(context, matches[i]),
+              ),
             ),
     );
   }
@@ -140,7 +207,8 @@ class ScheduleScreen extends StatelessWidget {
 }
 
 class _MatchCard extends StatelessWidget {
-  const _MatchCard({required this.match, required this.df, required this.onTap});
+  const _MatchCard(
+      {super.key, required this.match, required this.df, required this.onTap});
   final GameMatch match;
   final DateFormat df;
   final VoidCallback onTap;

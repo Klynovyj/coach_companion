@@ -947,6 +947,12 @@ class AppState extends ChangeNotifier {
     if (team == null) return [];
     final matches = await _repo.getMatches(team.id);
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    // Ende der aktuellen Woche (kommender Sonntag, 23:59). Nominierung/
+    // Aufstellung nur bis dahin anzeigen – nicht für weit entfernte Spiele.
+    final endOfWeek = today
+        .add(Duration(days: 7 - now.weekday))
+        .add(const Duration(hours: 23, minutes: 59, seconds: 59));
     final items = <NachholenItem>[];
     for (final m in matches) {
       final finished = m.status == MatchStatus.finished;
@@ -968,10 +974,9 @@ class AppState extends ChangeNotifier {
           }
         }
       } else {
-        // Nur aktuelle/kommende Spiele (keine längst vergangenen).
-        final upcoming = m.kickoff == null ||
-            m.kickoff!.isAfter(now.subtract(const Duration(days: 1)));
-        if (!upcoming) continue;
+        // Nur die aktuelle Woche und Vergangenes – keine weit entfernten Spiele.
+        final relevant = m.kickoff == null || !m.kickoff!.isAfter(endOfWeek);
+        if (!relevant) continue;
         final noms = await _repo.getNominations(m.id);
         if (noms.isEmpty) {
           items.add(NachholenItem(
