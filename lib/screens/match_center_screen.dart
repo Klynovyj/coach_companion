@@ -156,6 +156,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                           teamName: _opponentTeam!.name,
                           fupaUrl: _opponentTeam!.fupaUrl,
                           showActions: false,
+                          isOpponent: true,
                         ),
                 ],
               ),

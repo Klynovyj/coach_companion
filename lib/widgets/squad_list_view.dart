@@ -3,9 +3,11 @@ import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
 import '../models/player.dart';
+import '../models/scout_marker.dart';
 import '../screens/paste_import_screen.dart';
 import '../screens/player_detail_screen.dart';
 import '../state/app_state.dart';
+import 'opponent_scout_sheet.dart';
 import 'player_avatar.dart';
 import 'player_edit_dialog.dart';
 
@@ -21,6 +23,7 @@ class SquadListView extends StatefulWidget {
     this.emptyHint = 'Noch keine Spieler. Jetzt welche hinzufügen oder einfügen.',
     this.showActions = true,
     this.onlyPlayerIds,
+    this.isOpponent = false,
   });
 
   final String teamId;
@@ -33,6 +36,10 @@ class SquadListView extends StatefulWidget {
 
   /// Wenn gesetzt, werden nur diese Spieler angezeigt (z.B. nur Nominierte).
   final Set<String>? onlyPlayerIds;
+
+  /// Gegner-Modus: kein Spielerprofil, stattdessen Scouting (Marker/Kommentar)
+  /// und Toranzahl aus der Statistik.
+  final bool isOpponent;
 
   @override
   State<SquadListView> createState() => _SquadListViewState();
@@ -65,6 +72,8 @@ class _SquadListViewState extends State<SquadListView> {
         final all = snap.data!.players;
         final cards = snap.data!.cardCounts;
         final ratings = snap.data!.ratings;
+        final markers = snap.data!.markers;
+        final goals = snap.data!.goals;
 
         var players = all;
         if (widget.onlyPlayerIds != null) {
@@ -111,8 +120,8 @@ class _SquadListViewState extends State<SquadListView> {
                   : ListView.separated(
                       itemCount: players.length,
                       separatorBuilder: (_, _) => const Divider(height: 1),
-                      itemBuilder: (context, i) =>
-                          _playerTile(context, players[i], cards, ratings),
+                      itemBuilder: (context, i) => _playerTile(
+                          context, players[i], cards, ratings, markers, goals),
                     ),
             ),
             if (widget.showActions)
@@ -149,7 +158,11 @@ class _SquadListViewState extends State<SquadListView> {
     Player p,
     Map<String, Map<CardType, int>> cards,
     Map<String, (double, int)> ratings,
+    Map<String, Set<ScoutMarker>> markers,
+    Map<String, int> goals,
   ) {
+    if (widget.isOpponent) return _opponentTile(context, p, markers, goals);
+
     final inactive = p.status == PlayerStatus.inaktiv;
     final tile = ListTile(
       leading: PlayerAvatar(player: p),
@@ -185,6 +198,60 @@ class _SquadListViewState extends State<SquadListView> {
     );
     // Inaktive Spieler dezent abgeblendet.
     return inactive ? Opacity(opacity: 0.55, child: tile) : tile;
+  }
+
+  /// Gegner-Kachel: kein Profil, Tippen öffnet das Scouting-Blatt.
+  /// Zeigt Scout-Marker und – falls vorhanden – die Toranzahl.
+  Widget _opponentTile(
+    BuildContext context,
+    Player p,
+    Map<String, Set<ScoutMarker>> markers,
+    Map<String, int> goals,
+  ) {
+    final ms = (markers[p.id] ?? const <ScoutMarker>{}).toList();
+    final g = goals[p.dedupKey] ?? 0;
+    final scheme = Theme.of(context).colorScheme;
+    return ListTile(
+      leading: PlayerAvatar(player: p),
+      title: Row(
+        children: [
+          Flexible(
+              child: Text(p.fullName,
+                  maxLines: 1, overflow: TextOverflow.ellipsis)),
+          if (g >= 5) ...[
+            const SizedBox(width: 6),
+            Icon(Icons.local_fire_department,
+                size: 15, color: Colors.red.shade700),
+          ],
+        ],
+      ),
+      subtitle: Row(
+        children: [
+          if (p.position != null)
+            Flexible(
+                child: Text(p.position!,
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+          if (g > 0) ...[
+            if (p.position != null) const Text('  ·  '),
+            const Text('⚽ ', style: TextStyle(fontSize: 12)),
+            Text('$g',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: g >= 5 ? Colors.red.shade700 : null)),
+          ],
+        ],
+      ),
+      trailing: ms.isEmpty
+          ? const Icon(Icons.chevron_right)
+          : Wrap(
+              spacing: 2,
+              children: [
+                for (final m in ms.take(4))
+                  Icon(m.icon, size: 16, color: scheme.primary),
+              ],
+            ),
+      onTap: () => showOpponentScoutSheet(context, p, goals: g),
+    );
   }
 
   /// Such- und Filterleiste über der Kaderliste.
@@ -258,7 +325,14 @@ class _SquadListViewState extends State<SquadListView> {
     final players = await state.playersOf(widget.teamId);
     final cards = await state.cardCountsForTeam(widget.teamId);
     final ratings = await state.ratingAveragesForTeam(widget.teamId);
-    return _SquadData(players, cards, ratings);
+    // Scouting-Daten nur für den Gegner laden.
+    final markers = widget.isOpponent
+        ? await state.scoutMarkersForTeam(widget.teamId)
+        : const <String, Set<ScoutMarker>>{};
+    final goals = widget.isOpponent
+        ? await state.scoutGoals(widget.teamId)
+        : const <String, int>{};
+    return _SquadData(players, cards, ratings, markers, goals);
   }
 
   /// Untertitel mit Position, Bewertungsschnitt und – falls vorhanden –
@@ -348,7 +422,10 @@ class _SquadData {
   final List<Player> players;
   final Map<String, Map<CardType, int>> cardCounts;
   final Map<String, (double, int)> ratings;
-  const _SquadData(this.players, this.cardCounts, this.ratings);
+  final Map<String, Set<ScoutMarker>> markers;
+  final Map<String, int> goals;
+  const _SquadData(
+      this.players, this.cardCounts, this.ratings, this.markers, this.goals);
 }
 
 class _EmptyState extends StatelessWidget {

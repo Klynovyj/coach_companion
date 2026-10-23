@@ -437,6 +437,42 @@ class CoachRepository {
     });
   }
 
+  // ---------------------------------------------------------- Scout markers
+  Future<Set<String>> getMarkers(String playerId) async {
+    final db = await _db;
+    final rows = await db.query('player_markers',
+        columns: ['marker'], where: 'player_id = ?', whereArgs: [playerId]);
+    return {for (final r in rows) r['marker'] as String};
+  }
+
+  /// Marker aller Spieler eines Teams: playerId -> Menge der Marker-Keys.
+  Future<Map<String, Set<String>>> markersForTeam(String teamId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT m.player_id AS pid, m.marker AS marker '
+      'FROM player_markers m JOIN players p ON p.id = m.player_id '
+      'WHERE p.team_id = ?',
+      [teamId],
+    );
+    final out = <String, Set<String>>{};
+    for (final r in rows) {
+      out.putIfAbsent(r['pid'] as String, () => {}).add(r['marker'] as String);
+    }
+    return out;
+  }
+
+  Future<void> setMarker(String playerId, String marker) async {
+    final db = await _db;
+    await db.insert('player_markers', {'player_id': playerId, 'marker': marker},
+        conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<void> removeMarker(String playerId, String marker) async {
+    final db = await _db;
+    await db.delete('player_markers',
+        where: 'player_id = ? AND marker = ?', whereArgs: [playerId, marker]);
+  }
+
   // ------------------------------------------------------------- Team events
   Future<List<TeamEvent>> getTeamEvents(String teamId) async {
     final db = await _db;

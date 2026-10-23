@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:coach_companion/data/app_database.dart';
 import 'package:coach_companion/data/coach_repository.dart';
 import 'package:coach_companion/models/enums.dart';
+import 'package:coach_companion/models/scout_marker.dart';
 import 'package:coach_companion/state/app_state.dart';
 
 void main() {
@@ -159,5 +160,32 @@ void main() {
     (avg, count) = await s.ratingAverage(player.id);
     expect(count, 1);
     expect(avg, closeTo(5.0, 0.001));
+  });
+
+  test('Scouting: Marker und Einzel-Kommentar überleben einen Neustart',
+      () async {
+    final db1 = AppDatabase.test(path: dbPath);
+    final s1 = AppState(repository: CoachRepository(db: db1));
+    await s1.init();
+    final team = await s1.ensureOwnTeam();
+    await s1.addPlayer(team.id, firstName: 'Gegner', lastName: 'Star');
+    final p = (await s1.playersOf(team.id)).first;
+    await s1.toggleScoutMarker(p.id, ScoutMarker.verletzt, true);
+    await s1.toggleScoutMarker(p.id, ScoutMarker.schnell, true);
+    await s1.toggleScoutMarker(p.id, ScoutMarker.schnell, false); // wieder weg
+    await s1.setScoutComment(p.id, 'Standards gefährlich');
+    await db1.close();
+
+    final db2 = AppDatabase.test(path: dbPath);
+    final s2 = AppState(repository: CoachRepository(db: db2));
+    await s2.init();
+    expect(await s2.scoutMarkersOf(p.id), {ScoutMarker.verletzt},
+        reason: 'nur gesetzte Marker');
+    expect(await s2.scoutCommentOf(p.id), 'Standards gefährlich');
+
+    // Einzel-Kommentar: erneut setzen überschreibt (nicht anhängen).
+    await s2.setScoutComment(p.id, 'Neu bewertet');
+    expect(await s2.scoutCommentOf(p.id), 'Neu bewertet');
+    await db2.close();
   });
 }

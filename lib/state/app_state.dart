@@ -11,6 +11,7 @@ import '../models/nomination.dart';
 import '../models/note_category.dart';
 import '../models/player.dart';
 import '../models/player_note.dart';
+import '../models/scout_marker.dart';
 import '../models/team_event.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
@@ -362,6 +363,20 @@ class AppState extends ChangeNotifier {
   Future<ImportResult> openMatch(GameMatch match, {bool force = false}) async {
     final result =
         await opponentSync.ensureOpponentForMatch(match, force: force);
+    // Bei frischem Gegner-Import auch die Torschützen-Statistik laden,
+    // damit das Scouting die Toranzahl zeigen und Torjäger markieren kann.
+    if (result.status == ImportStatus.success) {
+      final updated = await _repo.getMatch(match.id);
+      final url = updated?.opponentFupaUrl;
+      final oppId = updated?.opponentTeamId;
+      if (url != null && url.isNotEmpty && oppId != null) {
+        try {
+          await _importStatsInto(oppId, url);
+        } catch (_) {
+          // Statistik ist optional.
+        }
+      }
+    }
     await _reload();
     notifyListeners();
     return result;
@@ -706,6 +721,71 @@ class AppState extends ChangeNotifier {
 
   Future<Map<String, (double, int)>> ratingAveragesForTeam(String teamId) =>
       _repo.ratingAveragesForTeam(teamId);
+
+  // --------------------------------------------------------------- Scouting
+  Future<Set<ScoutMarker>> scoutMarkersOf(String playerId) async {
+    final keys = await _repo.getMarkers(playerId);
+    return keys.map(ScoutMarker.fromKey).whereType<ScoutMarker>().toSet();
+  }
+
+  Future<Map<String, Set<ScoutMarker>>> scoutMarkersForTeam(
+      String teamId) async {
+    final raw = await _repo.markersForTeam(teamId);
+    return raw.map((pid, keys) => MapEntry(
+        pid, keys.map(ScoutMarker.fromKey).whereType<ScoutMarker>().toSet()));
+  }
+
+  Future<void> toggleScoutMarker(
+      String playerId, ScoutMarker m, bool on) async {
+    if (on) {
+      await _repo.setMarker(playerId, m.storageKey);
+    } else {
+      await _repo.removeMarker(playerId, m.storageKey);
+    }
+    notifyListeners();
+  }
+
+  /// Einzelner Scouting-Kommentar (Klartext) zu einem Gegner-Spieler.
+  Future<String> scoutCommentOf(String playerId) async {
+    final notes = await _repo.getNotes(playerId);
+    return notes.isEmpty ? '' : notes.first.text;
+  }
+
+  Future<void> setScoutComment(String playerId, String text) async {
+    final existing = await _repo.getNotes(playerId);
+    final t = text.trim();
+    if (t.isEmpty) {
+      for (final n in existing) {
+        await _repo.deleteNote(n.id);
+      }
+    } else {
+      final id = existing.isNotEmpty ? existing.first.id : _uuid.v4();
+      await _repo.upsertNote(PlayerNote(
+        id: id,
+        playerId: playerId,
+        text: t,
+        createdAt:
+            existing.isNotEmpty ? existing.first.createdAt : DateTime.now(),
+      ));
+      // Nur ein Kommentar behalten – ältere Einträge entfernen.
+      for (final n in existing.skip(1)) {
+        await _repo.deleteNote(n.id);
+      }
+    }
+    notifyListeners();
+  }
+
+  /// Tore je Spieler (dedupKey „vorname|nachname" -> Tore) aus der Statistik.
+  Future<Map<String, int>> scoutGoals(String teamId) async {
+    final stats = await _repo.getStats(teamId);
+    final map = <String, int>{};
+    for (final s in stats) {
+      final key =
+          '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}';
+      map[key] = (map[key] ?? 0) + s.goals;
+    }
+    return map;
+  }
 }
 
 extension _FirstOrNull<E> on Iterable<E> {
