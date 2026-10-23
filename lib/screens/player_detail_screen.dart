@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -45,6 +49,62 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   Future<void> _apply(Player updated) async {
     setState(() => _player = updated);
     await context.read<AppState>().updatePlayer(updated);
+  }
+
+  /// Spielerfoto wählen: Datei/Galerie (Desktop & Handy), Kamera (nur Handy),
+  /// oder vorhandenes Foto entfernen. Wird als Data-URL am Spieler gespeichert.
+  Future<void> _changePhoto() async {
+    final isMobile = Platform.isAndroid || Platform.isIOS;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (isMobile)
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Kamera'),
+                onTap: () => Navigator.pop(context, 'camera'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: Text(isMobile ? 'Galerie' : 'Bild auswählen'),
+              onTap: () => Navigator.pop(context, 'gallery'),
+            ),
+            if (_player.photoPath != null)
+              ListTile(
+                leading:
+                    const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Foto entfernen'),
+                onTap: () => Navigator.pop(context, 'remove'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'remove') {
+      await _apply(_player.copyWith(clearPhotoPath: true));
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final file = await ImagePicker().pickImage(
+        source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        maxWidth: 800,
+        maxHeight: 800,
+        imageQuality: 80,
+      );
+      if (file == null) return;
+      final bytes = await file.readAsBytes();
+      final dataUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      if (!mounted) return;
+      await _apply(_player.copyWith(photoPath: dataUrl));
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('Foto konnte nicht geladen werden: $e')));
+    }
   }
 
   /// Statuswechsel: Abwesenheiten (Verletzt/Krank/Gesperrt/Urlaub) fragen den
@@ -252,7 +312,28 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       child: Row(
         children: [
-          PlayerAvatar(player: p, radius: 34),
+          GestureDetector(
+            onTap: _changePhoto,
+            child: Stack(
+              children: [
+                PlayerAvatar(player: p, radius: 34),
+                Positioned(
+                  right: 0,
+                  bottom: 0,
+                  child: Container(
+                    padding: const EdgeInsets.all(3),
+                    decoration: BoxDecoration(
+                      color: scheme.primary,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: scheme.surface, width: 1.5),
+                    ),
+                    child: Icon(Icons.photo_camera,
+                        size: 13, color: scheme.onPrimary),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const SizedBox(width: 16),
           Expanded(
             child: Column(

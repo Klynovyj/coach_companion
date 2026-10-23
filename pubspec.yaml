@@ -35,6 +35,9 @@ dependencies:
   flutter_quill: 11.4.0
   share_plus: ^12.0.2
 
+  # Spielerfoto wählen (Galerie/Datei; am Handy auch Kamera)
+  image_picker: ^1.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

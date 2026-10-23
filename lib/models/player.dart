@@ -99,6 +99,7 @@ class Player {
     bool clearBirthdate = false,
     String? externalId,
     String? photoPath,
+    bool clearPhotoPath = false,
     DataSource? source,
     bool? active,
   }) {
@@ -117,7 +118,7 @@ class Player {
       captainRole: captainRole ?? this.captainRole,
       birthdate: clearBirthdate ? null : (birthdate ?? this.birthdate),
       externalId: externalId ?? this.externalId,
-      photoPath: photoPath ?? this.photoPath,
+      photoPath: clearPhotoPath ? null : (photoPath ?? this.photoPath),
       source: source ?? this.source,
       active: active ?? this.active,
       createdAt: createdAt,
