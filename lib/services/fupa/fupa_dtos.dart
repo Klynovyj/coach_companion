@@ -19,6 +19,9 @@ class PlayerData {
   /// Rolle im Trainerteam (z.B. „Trainer"); null = Spieler.
   final String? staffRole;
 
+  /// Spitzname (von der FuPa-Profilseite), falls gepflegt.
+  final String? nickname;
+
   const PlayerData({
     required this.firstName,
     required this.lastName,
@@ -28,6 +31,7 @@ class PlayerData {
     this.photoDataUrl,
     this.birthdate,
     this.staffRole,
+    this.nickname,
   });
 }
 

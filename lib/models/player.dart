@@ -7,6 +7,9 @@ class Player {
   final String firstName;
   final String lastName;
 
+  /// Spitzname (optional) – z.B. für die Mannschaftsnachricht.
+  final String? nickname;
+
   /// Rückennummer (optional).
   final int? number;
 
@@ -61,6 +64,7 @@ class Player {
     required this.teamId,
     required this.firstName,
     required this.lastName,
+    this.nickname,
     this.number,
     this.position,
     this.positions = const [],
@@ -98,6 +102,8 @@ class Player {
     String? teamId,
     String? firstName,
     String? lastName,
+    String? nickname,
+    bool clearNickname = false,
     int? number,
     bool clearNumber = false,
     String? position,
@@ -123,6 +129,7 @@ class Player {
       teamId: teamId ?? this.teamId,
       firstName: firstName ?? this.firstName,
       lastName: lastName ?? this.lastName,
+      nickname: clearNickname ? null : (nickname ?? this.nickname),
       number: clearNumber ? null : (number ?? this.number),
       position: clearPosition ? null : (position ?? this.position),
       positions: positions ?? this.positions,
@@ -146,6 +153,7 @@ class Player {
         'team_id': teamId,
         'first_name': firstName,
         'last_name': lastName,
+        'nickname': nickname,
         'number': number,
         'position': position,
         'positions': positions.join(','),
@@ -167,6 +175,7 @@ class Player {
         teamId: m['team_id'] as String,
         firstName: m['first_name'] as String? ?? '',
         lastName: m['last_name'] as String? ?? '',
+        nickname: m['nickname'] as String?,
         number: m['number'] as int?,
         position: m['position'] as String?,
         positions: ((m['positions'] as String?) ?? '')

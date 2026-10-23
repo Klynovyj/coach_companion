@@ -59,6 +59,10 @@ class FupaPersistence {
           // Vorhandenes Geburtsdatum behalten, wenn FuPa keins liefert.
           birthdate: data.birthdate ?? match.birthdate,
           staffRole: data.staffRole ?? match.staffRole,
+          // Spitzname nur übernehmen, wenn FuPa einen liefert (sonst behalten).
+          nickname: (data.nickname != null && data.nickname!.isNotEmpty)
+              ? data.nickname
+              : match.nickname,
         );
         await _repo.upsertPlayer(updated);
       } else {
@@ -73,6 +77,7 @@ class FupaPersistence {
           photoPath: data.photoDataUrl,
           birthdate: data.birthdate,
           staffRole: data.staffRole,
+          nickname: data.nickname,
           source: source,
           createdAt: DateTime.now(),
         ));

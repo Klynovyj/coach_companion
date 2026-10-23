@@ -479,6 +479,17 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             onSave: (v) => _apply(p.copyWith(lastName: v.trim())),
           ),
           const SizedBox(height: 10),
+          _EditableField(
+            label: 'Spitzname',
+            initial: p.nickname ?? '',
+            onSave: (v) {
+              final t = v.trim();
+              _apply(t.isEmpty
+                  ? p.copyWith(clearNickname: true)
+                  : p.copyWith(nickname: t));
+            },
+          ),
+          const SizedBox(height: 10),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

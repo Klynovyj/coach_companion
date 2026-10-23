@@ -111,9 +111,9 @@ class FupaReduxImporter {
       for (final p in players)
         if (p.photoUrl != null) p.photoUrl!,
     };
-    // Fotos und Geburtsdaten nebenläufig laden. Das Geburtsdatum steht nur auf
-    // der Spieler-Profilseite (nicht im Kader), daher ein Abruf je Slug.
-    final births = <String, DateTime?>{};
+    // Fotos und Profildaten (Geburtsdatum + Spitzname) nebenläufig laden.
+    // Beides steht nur auf der Spieler-Profilseite, daher ein Abruf je Slug.
+    final profiles = <String, ({DateTime? birthday, String? nickname})>{};
     final slugs = <String>{
       for (final p in players)
         if (p.slug != null && p.slug!.isNotEmpty) p.slug!,
@@ -123,7 +123,7 @@ class FupaReduxImporter {
         photos[u] = await downloadPhoto(u);
       }),
       ...slugs.map((s) async {
-        births[s] = await _fetchBirthday(s);
+        profiles[s] = await _fetchProfile(s);
       }),
     ]);
     return [
@@ -135,19 +135,22 @@ class FupaReduxImporter {
           position: p.position,
           externalId: p.externalId,
           photoDataUrl: p.photoUrl == null ? null : photos[p.photoUrl!],
-          birthdate: p.slug == null ? null : births[p.slug!],
+          birthdate: p.slug == null ? null : profiles[p.slug!]?.birthday,
+          nickname: p.slug == null ? null : profiles[p.slug!]?.nickname,
           staffRole: p.staffRole,
         ),
     ];
   }
 
-  /// Lädt die FuPa-Profilseite eines Spielers und liest das Geburtsdatum.
-  /// Fehler werden geschluckt (dann bleibt das Geburtsdatum leer).
-  Future<DateTime?> _fetchBirthday(String slug) async {
+  /// Lädt die FuPa-Profilseite und liest Geburtsdatum + Spitzname.
+  /// Fehler werden geschluckt (dann bleiben beide leer).
+  Future<({DateTime? birthday, String? nickname})> _fetchProfile(
+      String slug) async {
     try {
-      return parseBirthday(await _fetchHtml('https://www.fupa.net/player/$slug'));
+      final html = await _fetchHtml('https://www.fupa.net/player/$slug');
+      return (birthday: parseBirthday(html), nickname: parseNickname(html));
     } catch (_) {
-      return null;
+      return (birthday: null, nickname: null);
     }
   }
 
@@ -157,6 +160,13 @@ class FupaReduxImporter {
     if (m == null) return null;
     return DateTime(
         int.parse(m.group(1)!), int.parse(m.group(2)!), int.parse(m.group(3)!));
+  }
+
+  /// Liest `"nickname":"..."` aus dem Profil-HTML (leer → null). Testbar.
+  static String? parseNickname(String html) {
+    final m = RegExp(r'"nickname":"([^"]*)"').firstMatch(html);
+    final n = m?.group(1)?.trim();
+    return (n == null || n.isEmpty) ? null : n;
   }
 
   /// Importiert den Spielplan einer Mannschaft. Akzeptiert den Team- oder den
