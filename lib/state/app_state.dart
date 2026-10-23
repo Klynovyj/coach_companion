@@ -113,8 +113,8 @@ class AppState extends ChangeNotifier {
         await _importer.toPlayerDataWithPhotos(teamImport.players);
     await _persist.syncPlayers(team.id, playerData, DataSource.fupaApproved);
 
-    onProgress?.call('Spielplan wird geladen …');
-    final matches = await _importer.importSchedule(url);
+    onProgress?.call('Spielplan wird geladen (ganze Saison) …');
+    final matches = await _fullSchedule(url);
     final newMatches = await _persist.syncSchedule(team.id, matches);
 
     onProgress?.call('Statistik wird geladen …');
@@ -149,11 +149,33 @@ class AppState extends ChangeNotifier {
   /// einem FuPa-Team-/Matches-Link. Gibt die Anzahl NEUER Spiele zurück.
   Future<int> importSchedule(String url) async {
     final team = await ensureOwnTeam();
-    final matches = await _importer.importSchedule(url);
+    final matches = await _fullSchedule(url);
     final added = await _persist.syncSchedule(team.id, matches);
     await _reload();
     notifyListeners();
     return added;
+  }
+
+  /// Team-Spielplan (ab aktuellem Spieltag) + ganze Saison aus der Liga-API
+  /// (inkl. vergangener Spieltage), dedupliziert pro Gegner und Spieltag.
+  Future<List<ScheduledMatchData>> _fullSchedule(String url) async {
+    final teamMatches = await _importer.importSchedule(url);
+    var leagueMatches = const <ScheduledMatchData>[];
+    try {
+      leagueMatches = await _importer.importLeagueScheduleForTeam(url);
+    } catch (_) {
+      // Liga-Nachladen ist optional (z.B. ohne Liga-Kontext).
+    }
+    final seen = <String>{};
+    final out = <ScheduledMatchData>[];
+    for (final m in [...teamMatches, ...leagueMatches]) {
+      final day = m.kickoff?.toIso8601String().substring(0, 10) ??
+          m.externalId ??
+          '';
+      final key = '${m.opponentName.trim().toLowerCase()}|$day';
+      if (seen.add(key)) out.add(m);
+    }
+    return out;
   }
 
   /// Importiert die Spieler-Saison-Statistik aus einem FuPa-Link und ersetzt

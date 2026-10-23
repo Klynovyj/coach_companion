@@ -159,6 +159,139 @@ class FupaReduxImporter {
     ];
   }
 
+  /// Lädt den kompletten Saison-Spielplan eines Teams über die Liga-API –
+  /// auch die bereits gespielten frühen Spieltage, die die Team-Seite (die
+  /// nur ab dem aktuellen Spieltag liefert) weglässt. Liefert nur die Spiele
+  /// des eigenen Teams (per Slug erkannt).
+  Future<List<ScheduledMatchData>> importLeagueScheduleForTeam(
+      String teamUrl) async {
+    final trimmed = teamUrl.trim();
+    if (!isTeamUrl(trimmed)) {
+      throw FupaImportException(
+          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+    }
+    final ownSlug = _teamSlug(trimmed);
+    // Liga-Slug + Wettbewerbsname aus der Team-Spielplan-Seite ermitteln.
+    final matchesHtml = await _fetchHtml(_subPageUrlFor(trimmed, 'matches'));
+    final (leagueSlug, competition) = _leagueInfoFromTeamMatches(matchesHtml);
+    if (leagueSlug == null) return const [];
+
+    final from = _seasonStart(ownSlug);
+    final out = <ScheduledMatchData>[];
+    final seen = <String>{};
+    for (var offset = 0; offset < 600; offset += 100) {
+      final url =
+          'https://api.fupa.net/v1/competitions/$leagueSlug/seasons/current/matches'
+          '?from=$from&fallback=true&limit=100&offset=$offset';
+      final body = await _fetchHtml(url);
+      final decoded = jsonDecode(body);
+      if (decoded is! List || decoded.isEmpty) break;
+      for (final it in decoded) {
+        if (it is! Map) continue;
+        final data = _leagueMatchToData(it, ownSlug, competition);
+        if (data == null) continue;
+        final key = data.externalId?.isNotEmpty == true
+            ? 'id:${data.externalId}'
+            : 'k:${data.opponentName.toLowerCase()}|${data.kickoff}';
+        if (seen.add(key)) out.add(data);
+      }
+      if (decoded.length < 100) break;
+    }
+
+    // Gegner-Logos nebenläufig laden.
+    final uniqueLogos = <String>{
+      for (final m in out)
+        if (m.opponentLogoUrl != null) m.opponentLogoUrl!,
+    };
+    final logoCache = <String, String?>{};
+    await Future.wait(uniqueLogos.map((u) async {
+      logoCache[u] = await downloadLogo(u);
+    }));
+    return [
+      for (final m in out)
+        m.opponentLogoUrl == null ? m : m.withLogo(logoCache[m.opponentLogoUrl!]),
+    ];
+  }
+
+  /// Wandelt eine Liga-API-Match-Liste in [ScheduledMatchData] – nur die
+  /// Spiele des eigenen Teams. Netzwerkfrei testbar.
+  static List<ScheduledMatchData> parseLeagueMatches(
+      List items, String ownSlug,
+      {String? competition}) {
+    final out = <ScheduledMatchData>[];
+    for (final it in items) {
+      if (it is! Map) continue;
+      final d = _leagueMatchToData(it, ownSlug, competition);
+      if (d != null) out.add(d);
+    }
+    return out;
+  }
+
+  /// Wandelt ein Liga-API-Match in [ScheduledMatchData] – nur wenn das eigene
+  /// Team (per Slug) beteiligt ist.
+  static ScheduledMatchData? _leagueMatchToData(
+      Map raw, String ownSlug, String? competition) {
+    final home = raw['homeTeam'];
+    final away = raw['awayTeam'];
+    if (home is! Map || away is! Map) return null;
+    final homeSlug = (home['slug'] as String?)?.toLowerCase();
+    final awaySlug = (away['slug'] as String?)?.toLowerCase();
+    final ownIsHome = homeSlug == ownSlug;
+    final ownIsAway = awaySlug == ownSlug;
+    if (!ownIsHome && !ownIsAway) return null;
+    final opp = ownIsHome ? away : home;
+    final homeGoal = raw['homeGoal'];
+    final awayGoal = raw['awayGoal'];
+    final finished = homeGoal is int && awayGoal is int;
+    return ScheduledMatchData(
+      opponentName: _teamName(opp),
+      opponentRef: (opp['slug'] as String?)?.toLowerCase(),
+      opponentFupaUrl: _teamLink(opp),
+      opponentLogoUrl: _teamLogo(opp),
+      kickoff: DateTime.tryParse((raw['kickoff'] ?? '').toString()),
+      venue: ownIsHome ? Venue.home : Venue.away,
+      competition: competition ?? _competition(raw),
+      externalId: raw['id']?.toString(),
+      finished: finished,
+      ownGoals: finished ? (ownIsHome ? homeGoal : awayGoal) : null,
+      opponentGoals: finished ? (ownIsHome ? awayGoal : homeGoal) : null,
+    );
+  }
+
+  /// Ermittelt Liga-Slug + Wettbewerbsname aus der Team-Spielplan-Seite.
+  static (String?, String?) _leagueInfoFromTeamMatches(String html) {
+    try {
+      final redux = _extractRedux(html);
+      final items = _extractMatchItems(redux);
+      for (final it in items) {
+        if (it is! Map) continue;
+        final round = it['round'];
+        if (round is Map && round['competitionSeason'] is Map) {
+          final cs = round['competitionSeason'] as Map;
+          final isLeague = round['type'] == 'league' ||
+              (cs['category'] is Map &&
+                  (cs['category'] as Map)['name'] == 'Liga');
+          if (isLeague) {
+            final slug = cs['slug'] as String?;
+            final comp = (cs['shortName'] ?? cs['name']) as String?;
+            if (slug != null && slug.isNotEmpty) return (slug, comp);
+          }
+        }
+      }
+    } catch (_) {
+      // Ohne Liga-Kontext einfach nichts nachladen.
+    }
+    return (null, null);
+  }
+
+  /// Saisonbeginn (grob) aus dem Team-Slug „…-2026-27" -> „2026-07-01".
+  static String _seasonStart(String ownSlug) {
+    final m = RegExp(r'-(\d{4})-\d{2}$').firstMatch(ownSlug);
+    final year = m != null ? int.tryParse(m.group(1)!) : null;
+    final y = year ?? (DateTime.now().year - 1);
+    return '$y-07-01';
+  }
+
   /// Importiert die Spieler-Saison-Statistik (aus `/playerstats`).
   Future<List<PlayerStatData>> importStats(String url) async {
     final trimmed = url.trim();

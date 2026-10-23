@@ -147,4 +147,94 @@ void main() {
       expect(stats[1].goals, 0);
     });
   });
+
+  group('FupaReduxImporter.parseLeagueMatches', () {
+    final items = [
+      {
+        'id': 1,
+        'kickoff': '2026-08-16T13:00:00+02:00',
+        'homeGoal': 8,
+        'awayGoal': 1,
+        'homeTeam': {
+          'slug': 'tsv-urdenbach-m1-2026-27',
+          'name': {'full': 'TSV Urdenbach'}
+        },
+        'awayTeam': {
+          'slug': 'garather-sv-m1-2026-27',
+          'name': {'full': 'Garather SV'}
+        },
+      },
+      {
+        'id': 2,
+        'kickoff': '2026-09-20T15:00:00+02:00',
+        'homeGoal': 3,
+        'awayGoal': 0,
+        'homeTeam': {
+          'slug': 'garather-sv-m1-2026-27',
+          'name': {'full': 'Garather SV'}
+        },
+        'awayTeam': {
+          'slug': 'vfl-benrath-m2-2026-27',
+          'name': {'full': 'VfL Benrath'}
+        },
+      },
+      {
+        'id': 3,
+        'kickoff': '2026-10-25T13:00:00+01:00',
+        'homeGoal': null,
+        'awayGoal': null,
+        'homeTeam': {
+          'slug': 'post-sv-duesseldorf-m1-2026-27',
+          'name': {'full': 'Post SV Düsseldorf'}
+        },
+        'awayTeam': {
+          'slug': 'garather-sv-m1-2026-27',
+          'name': {'full': 'Garather SV'}
+        },
+      },
+      // Fremdes Spiel – muss ignoriert werden.
+      {
+        'id': 4,
+        'kickoff': '2026-08-16T13:00:00+02:00',
+        'homeGoal': 1,
+        'awayGoal': 1,
+        'homeTeam': {
+          'slug': 'a-m1-2026-27',
+          'name': {'full': 'A'}
+        },
+        'awayTeam': {
+          'slug': 'b-m1-2026-27',
+          'name': {'full': 'B'}
+        },
+      },
+    ];
+
+    test('filtert eigene Spiele und ordnet Heim/Auswärts + Ergebnis zu', () {
+      final res = FupaReduxImporter.parseLeagueMatches(
+          items, 'garather-sv-m1-2026-27',
+          competition: 'Kreisliga B2');
+      expect(res, hasLength(3), reason: 'nur eigene Spiele');
+
+      // Auswärts verloren 1:8
+      expect(res[0].venue, Venue.away);
+      expect(res[0].finished, isTrue);
+      expect(res[0].ownGoals, 1);
+      expect(res[0].opponentGoals, 8);
+      expect(res[0].opponentName, 'TSV Urdenbach');
+      expect(res[0].competition, 'Kreisliga B2');
+
+      // Heim gewonnen 3:0
+      expect(res[1].venue, Venue.home);
+      expect(res[1].ownGoals, 3);
+      expect(res[1].opponentGoals, 0);
+      expect(res[1].opponentName, 'VfL Benrath');
+
+      // Noch nicht gespielt
+      expect(res[2].venue, Venue.away);
+      expect(res[2].finished, isFalse);
+      expect(res[2].ownGoals, isNull);
+      expect(res[2].opponentFupaUrl,
+          'https://www.fupa.net/team/post-sv-duesseldorf-m1-2026-27');
+    });
+  });
 }
