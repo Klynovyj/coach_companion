@@ -32,7 +32,7 @@ dependencies:
 
   # FuPa-Link im Browser öffnen
   url_launcher: ^6.3.0
-  flutter_quill: 11.0.0
+  flutter_quill: 11.4.0
 
 dev_dependencies:
   flutter_test:

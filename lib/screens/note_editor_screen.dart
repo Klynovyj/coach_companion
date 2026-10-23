@@ -156,19 +156,24 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
             ),
           ),
           const Divider(height: 1),
-          // Editor
+          // Editor – füllt die Höhe; Tippen irgendwo im Bereich fokussiert.
           Expanded(
-            child: Container(
-              color: Theme.of(context).colorScheme.surface,
-              padding: const EdgeInsets.all(16),
-              child: QuillEditor.basic(
-                controller: _controller,
-                focusNode: _focusNode,
-                scrollController: _scrollController,
-                config: const QuillEditorConfig(
-                  placeholder: 'Beobachtung, Hinweis, Checkliste …',
-                  padding: EdgeInsets.zero,
-                  autoFocus: true,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _focusNode.requestFocus(),
+              child: Container(
+                color: Theme.of(context).colorScheme.surface,
+                padding: const EdgeInsets.all(16),
+                child: QuillEditor.basic(
+                  controller: _controller,
+                  focusNode: _focusNode,
+                  scrollController: _scrollController,
+                  config: const QuillEditorConfig(
+                    placeholder: 'Beobachtung, Hinweis, Checkliste …',
+                    padding: EdgeInsets.zero,
+                    autoFocus: true,
+                    expands: true,
+                  ),
                 ),
               ),
             ),
