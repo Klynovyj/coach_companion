@@ -7,6 +7,7 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/nomination.dart';
 import '../models/player.dart';
+import '../models/note_category.dart';
 import '../models/player_note.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
@@ -381,6 +382,28 @@ class CoachRepository {
   Future<void> deleteNote(String id) async {
     final db = await _db;
     await db.delete('player_notes', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // -------------------------------------------------------- Note categories
+  Future<List<NoteCategory>> getNoteCategories() async {
+    final db = await _db;
+    final rows =
+        await db.query('note_categories', orderBy: 'sort_order ASC, name ASC');
+    return rows.map(NoteCategory.fromMap).toList();
+  }
+
+  Future<void> upsertNoteCategory(NoteCategory cat) =>
+      _upsertById('note_categories', cat.toMap());
+
+  /// Löscht eine Rubrik und entkoppelt alle Notizen, die sie nutzen
+  /// (Notizen bleiben erhalten, landen aber unter „Ohne Rubrik").
+  Future<void> deleteNoteCategory(String id) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      await txn.update('player_notes', {'category_id': null},
+          where: 'category_id = ?', whereArgs: [id]);
+      await txn.delete('note_categories', where: 'id = ?', whereArgs: [id]);
+    });
   }
 
   // ------------------------------------------------------------- Team events

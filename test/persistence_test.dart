@@ -105,4 +105,31 @@ void main() {
         title: 'Grillen', type: TeamEventType.grillen, date: DateTime.now());
     expect(await s.teamEvents(), hasLength(1));
   });
+
+  test('Rubriken und zugeordnete Notizen überleben einen Neustart', () async {
+    final db1 = AppDatabase.test(path: dbPath);
+    final s1 = AppState(repository: CoachRepository(db: db1));
+    await s1.init();
+    final team = await s1.ensureOwnTeam();
+    await s1.addPlayer(team.id, firstName: 'Nina', lastName: 'Keller');
+    final player = (await s1.playersOf(team.id)).first;
+    await s1.addNoteCategory('Taktik');
+    final cat = (await s1.noteCategories()).single;
+    await s1.addNote(player.id, 'Steht gut', categoryId: cat.id);
+    await db1.close();
+
+    final db2 = AppDatabase.test(path: dbPath);
+    final s2 = AppState(repository: CoachRepository(db: db2));
+    await s2.init();
+    expect(await s2.noteCategories(), hasLength(1), reason: 'Rubrik');
+    final note = (await s2.notesOf(player.id)).single;
+    expect(note.categoryId, cat.id, reason: 'Notiz behält Rubrik');
+
+    // Rubrik löschen: Notiz bleibt, aber ohne Rubrik.
+    await s2.deleteNoteCategory(cat.id);
+    expect(await s2.noteCategories(), isEmpty);
+    final after = (await s2.notesOf(player.id)).single;
+    expect(after.categoryId, isNull, reason: 'Notiz bleibt, Rubrik entkoppelt');
+    await db2.close();
+  });
 }

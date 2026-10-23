@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 12;
+  static const _dbVersion = 13;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -113,6 +113,15 @@ class AppDatabase {
           "ALTER TABLE players ADD COLUMN captain_role TEXT NOT NULL DEFAULT 'none'");
       await db.execute('ALTER TABLE players ADD COLUMN wish_position TEXT');
     }
+    // v12 -> v13: Notiz-Rubriken (zentral) + Rubrik an der Notiz.
+    if (oldV < 13) {
+      await db.execute(_noteCategoriesTableSql);
+      // Notizen vor < v8 bekommen die Spalte bereits beim Anlegen der Tabelle
+      // im v8-Block; ältere Bestände (v8..v12) brauchen das ALTER.
+      if (oldV >= 8) {
+        await db.execute('ALTER TABLE player_notes ADD COLUMN category_id TEXT');
+      }
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -131,7 +140,16 @@ class AppDatabase {
         player_id TEXT NOT NULL,
         text TEXT NOT NULL,
         created_at TEXT NOT NULL,
+        category_id TEXT,
         FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+      )
+  ''';
+
+  static const _noteCategoriesTableSql = '''
+      CREATE TABLE note_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0
       )
   ''';
 
@@ -344,6 +362,7 @@ class AppDatabase {
 
     await db.execute(_playerNotesTableSql);
     await db.execute('CREATE INDEX idx_notes_player ON player_notes (player_id)');
+    await db.execute(_noteCategoriesTableSql);
     await db.execute(_teamEventsTableSql);
     await db.execute('CREATE INDEX idx_events_team ON team_events (team_id)');
     await db.execute(_eventAttendanceTableSql);

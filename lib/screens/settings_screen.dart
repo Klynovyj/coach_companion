@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/note_category.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
 
@@ -183,6 +184,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
               ),
             ),
+          _sectionTitle(context, 'Notiz-Rubriken'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Text(
+              'Rubriken ordnen die Spieler-Notizen (z.B. „Taktik", „Fitness", '
+              '„Verhalten"). Beim Erstellen einer Notiz wählst du eine Rubrik.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
+          _RubrikenCard(state: state),
         ],
       ),
     );
@@ -203,6 +214,136 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 .titleSmall
                 ?.copyWith(color: Theme.of(context).colorScheme.primary)),
       );
+}
+
+/// Verwaltung der Notiz-Rubriken (zentral): anlegen, umbenennen, löschen.
+class _RubrikenCard extends StatelessWidget {
+  const _RubrikenCard({required this.state});
+  final AppState state;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: FutureBuilder<List<NoteCategory>>(
+          future: state.noteCategories(),
+          builder: (context, snap) {
+            if (!snap.hasData) {
+              return const Padding(
+                padding: EdgeInsets.all(12),
+                child: LinearProgressIndicator(),
+              );
+            }
+            final cats = snap.data!;
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (cats.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: Text('Noch keine Rubriken.',
+                        style: TextStyle(color: Colors.grey)),
+                  )
+                else
+                  for (final c in cats)
+                    ListTile(
+                      dense: true,
+                      leading: const Icon(Icons.label_outline),
+                      title: Text(c.name),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Umbenennen',
+                            icon: const Icon(Icons.edit, size: 20),
+                            onPressed: () => _rename(context, c),
+                          ),
+                          IconButton(
+                            tooltip: 'Löschen',
+                            icon: const Icon(Icons.delete_outline, size: 20),
+                            onPressed: () => _delete(context, c),
+                          ),
+                        ],
+                      ),
+                    ),
+                const SizedBox(height: 4),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => _add(context),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Rubrik hinzufügen'),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Future<void> _add(BuildContext context) async {
+    final name = await _promptName(context, title: 'Rubrik hinzufügen');
+    if (name == null || name.isEmpty || !context.mounted) return;
+    await state.addNoteCategory(name);
+  }
+
+  Future<void> _rename(BuildContext context, NoteCategory c) async {
+    final name =
+        await _promptName(context, title: 'Rubrik umbenennen', initial: c.name);
+    if (name == null || name.isEmpty || !context.mounted) return;
+    await state.updateNoteCategory(c.copyWith(name: name));
+  }
+
+  Future<void> _delete(BuildContext context, NoteCategory c) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rubrik löschen?'),
+        content: Text(
+            '„${c.name}" wird entfernt. Vorhandene Notizen bleiben erhalten, '
+            'landen aber unter „Ohne Rubrik".'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Löschen')),
+        ],
+      ),
+    );
+    if (ok == true && context.mounted) {
+      await state.deleteNoteCategory(c.id);
+    }
+  }
+
+  Future<String?> _promptName(BuildContext context,
+      {required String title, String? initial}) {
+    final ctrl = TextEditingController(text: initial ?? '');
+    return showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Name der Rubrik'),
+          onSubmitted: (v) => Navigator.pop(context, v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+  }
 }
 
 class _SummaryCard extends StatelessWidget {

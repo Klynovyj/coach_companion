@@ -8,6 +8,7 @@ import '../models/lineup.dart';
 import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/nomination.dart';
+import '../models/note_category.dart';
 import '../models/player.dart';
 import '../models/player_note.dart';
 import '../models/team_event.dart';
@@ -504,18 +505,48 @@ class AppState extends ChangeNotifier {
   // ------------------------------------------------------------- Player notes
   Future<List<PlayerNote>> notesOf(String playerId) => _repo.getNotes(playerId);
 
-  Future<void> addNote(String playerId, String text) async {
+  Future<void> addNote(String playerId, String text,
+      {String? categoryId}) async {
     await _repo.upsertNote(PlayerNote(
       id: _uuid.v4(),
       playerId: playerId,
       text: text.trim(),
       createdAt: DateTime.now(),
+      categoryId: categoryId,
     ));
+    notifyListeners();
+  }
+
+  Future<void> updateNote(PlayerNote note) async {
+    await _repo.upsertNote(note);
     notifyListeners();
   }
 
   Future<void> deleteNote(String id) async {
     await _repo.deleteNote(id);
+    notifyListeners();
+  }
+
+  // --------------------------------------------------------- Note categories
+  Future<List<NoteCategory>> noteCategories() => _repo.getNoteCategories();
+
+  Future<void> addNoteCategory(String name) async {
+    final existing = await _repo.getNoteCategories();
+    await _repo.upsertNoteCategory(NoteCategory(
+      id: _uuid.v4(),
+      name: name.trim(),
+      sortOrder: existing.length,
+    ));
+    notifyListeners();
+  }
+
+  Future<void> updateNoteCategory(NoteCategory cat) async {
+    await _repo.upsertNoteCategory(cat);
+    notifyListeners();
+  }
+
+  Future<void> deleteNoteCategory(String id) async {
+    await _repo.deleteNoteCategory(id);
     notifyListeners();
   }
 

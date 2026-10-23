@@ -6,6 +6,7 @@ import '../models/card_entry.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
 import '../models/match_event.dart';
+import '../models/note_category.dart';
 import '../models/player.dart';
 import '../models/player_note.dart';
 import '../state/app_state.dart';
@@ -163,8 +164,8 @@ class PlayerDetailScreen extends StatelessWidget {
               ],
             ),
           ),
-          FutureBuilder<List<PlayerNote>>(
-            future: state.notesOf(player.id),
+          FutureBuilder<(List<PlayerNote>, List<NoteCategory>)>(
+            future: _loadNotes(state),
             builder: (context, snap) {
               if (!snap.hasData) {
                 return const Padding(
@@ -172,7 +173,8 @@ class PlayerDetailScreen extends StatelessWidget {
                   child: LinearProgressIndicator(),
                 );
               }
-              final notes = snap.data!;
+              final notes = snap.data!.$1;
+              final cats = snap.data!.$2;
               if (notes.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.all(16),
@@ -180,26 +182,58 @@ class PlayerDetailScreen extends StatelessWidget {
                       style: TextStyle(color: Colors.grey)),
                 );
               }
+              // Notizen nach Rubrik gruppieren – Reihenfolge wie in den
+              // Einstellungen, „Ohne Rubrik" ganz unten.
+              final byCat = <String?, List<PlayerNote>>{};
+              final known = {for (final c in cats) c.id};
+              for (final n in notes) {
+                final key = (n.categoryId != null && known.contains(n.categoryId))
+                    ? n.categoryId
+                    : null;
+                byCat.putIfAbsent(key, () => []).add(n);
+              }
+              final groups = <(String, List<PlayerNote>)>[
+                for (final c in cats)
+                  if (byCat[c.id] != null) (c.name, byCat[c.id]!),
+                if (byCat[null] != null) ('Ohne Rubrik', byCat[null]!),
+              ];
               return Column(
                 children: [
-                  for (final n in notes)
-                    Dismissible(
-                      key: ValueKey(n.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        child: const Icon(Icons.delete, color: Colors.white),
-                      ),
-                      onDismissed: (_) =>
-                          context.read<AppState>().deleteNote(n.id),
-                      child: ListTile(
-                        leading: const Icon(Icons.sticky_note_2_outlined),
-                        title: Text(n.text),
-                        subtitle: Text(df.format(n.createdAt)),
+                  for (final g in groups) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(g.$1,
+                            style: Theme.of(context)
+                                .textTheme
+                                .labelLarge
+                                ?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.primary)),
                       ),
                     ),
+                    for (final n in g.$2)
+                      Dismissible(
+                        key: ValueKey(n.id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        onDismissed: (_) =>
+                            context.read<AppState>().deleteNote(n.id),
+                        child: ListTile(
+                          leading: const Icon(Icons.sticky_note_2_outlined),
+                          title: Text(n.text),
+                          subtitle: Text(df.format(n.createdAt)),
+                          trailing: const Icon(Icons.edit, size: 18),
+                          onTap: () => _editNote(context, n, cats),
+                        ),
+                      ),
+                  ],
                 ],
               );
             },
@@ -211,31 +245,88 @@ class PlayerDetailScreen extends StatelessWidget {
   }
 
   Future<void> _addNote(BuildContext context) async {
-    final ctrl = TextEditingController();
-    final text = await showDialog<String>(
+    final cats = await context.read<AppState>().noteCategories();
+    if (!context.mounted) return;
+    final data = await _showNoteDialog(context, cats);
+    if (data == null || data.$1.isEmpty || !context.mounted) return;
+    await context
+        .read<AppState>()
+        .addNote(player.id, data.$1, categoryId: data.$2);
+  }
+
+  Future<void> _editNote(
+      BuildContext context, PlayerNote note, List<NoteCategory> cats) async {
+    final data = await _showNoteDialog(context, cats, existing: note);
+    if (data == null || data.$1.isEmpty || !context.mounted) return;
+    await context.read<AppState>().updateNote(
+          note.copyWith(
+            text: data.$1,
+            categoryId: data.$2,
+            clearCategory: data.$2 == null,
+          ),
+        );
+  }
+
+  /// Dialog für Notiz-Text + Rubrik; Rückgabe (text, categoryId?).
+  Future<(String, String?)?> _showNoteDialog(
+    BuildContext context,
+    List<NoteCategory> cats, {
+    PlayerNote? existing,
+  }) {
+    final ctrl = TextEditingController(text: existing?.text ?? '');
+    var catId = (existing?.categoryId != null &&
+            cats.any((c) => c.id == existing!.categoryId))
+        ? existing!.categoryId
+        : null;
+    return showDialog<(String, String?)>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Notiz hinzufügen'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          minLines: 2,
-          maxLines: 5,
-          decoration: const InputDecoration(hintText: 'Beobachtung, Hinweis …'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: Text(existing == null ? 'Notiz hinzufügen' : 'Notiz bearbeiten'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                minLines: 2,
+                maxLines: 5,
+                decoration:
+                    const InputDecoration(hintText: 'Beobachtung, Hinweis …'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String?>(
+                initialValue: catId,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'Rubrik'),
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null, child: Text('Ohne Rubrik')),
+                  ...cats.map((c) => DropdownMenuItem<String?>(
+                      value: c.id, child: Text(c.name))),
+                ],
+                onChanged: (v) => setState(() => catId = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Abbrechen')),
+            FilledButton(
+                onPressed: () =>
+                    Navigator.pop(context, (ctrl.text.trim(), catId)),
+                child: const Text('Speichern')),
+          ],
         ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-              child: const Text('Speichern')),
-        ],
       ),
     );
-    if (text != null && text.isNotEmpty && context.mounted) {
-      await context.read<AppState>().addNote(player.id, text);
-    }
+  }
+
+  Future<(List<PlayerNote>, List<NoteCategory>)> _loadNotes(AppState s) async {
+    final notes = await s.notesOf(player.id);
+    final cats = await s.noteCategories();
+    return (notes, cats);
   }
 
   Future<(List<CardEntry>, Map<String, GameMatch>)> _loadCards(

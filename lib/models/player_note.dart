@@ -5,18 +5,36 @@ class PlayerNote {
   final String text;
   final DateTime createdAt;
 
+  /// Zugeordnete Rubrik (optional). Null = „Ohne Rubrik".
+  final String? categoryId;
+
   const PlayerNote({
     required this.id,
     required this.playerId,
     required this.text,
     required this.createdAt,
+    this.categoryId,
   });
+
+  PlayerNote copyWith({
+    String? text,
+    String? categoryId,
+    bool clearCategory = false,
+  }) =>
+      PlayerNote(
+        id: id,
+        playerId: playerId,
+        text: text ?? this.text,
+        createdAt: createdAt,
+        categoryId: clearCategory ? null : (categoryId ?? this.categoryId),
+      );
 
   Map<String, Object?> toMap() => {
         'id': id,
         'player_id': playerId,
         'text': text,
         'created_at': createdAt.toIso8601String(),
+        'category_id': categoryId,
       };
 
   factory PlayerNote.fromMap(Map<String, Object?> m) => PlayerNote(
@@ -26,5 +44,6 @@ class PlayerNote {
         createdAt:
             DateTime.tryParse(m['created_at'] as String? ?? '') ??
                 DateTime.now(),
+        categoryId: m['category_id'] as String?,
       );
 }
