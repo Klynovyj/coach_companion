@@ -220,21 +220,30 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
       required VoidCallback onTap,
     }) {
       final active = step == index;
-      final child = Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      // Icon über Label – so bleibt der Text auch auf schmalen Handys lesbar.
+      final child = Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 18),
-          const SizedBox(width: 6),
-          Flexible(
-            child: Text(label,
-                maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
+          Icon(icon, size: 20),
+          const SizedBox(height: 3),
+          Text(label,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.visible,
+              softWrap: false,
+              style: const TextStyle(
+                  fontSize: 12.5, fontWeight: FontWeight.w600)),
         ],
+      );
+      final style = ButtonStyle(
+        padding: WidgetStateProperty.all(
+            const EdgeInsets.symmetric(horizontal: 4, vertical: 8)),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       );
       return Expanded(
         child: active
-            ? FilledButton(onPressed: onTap, child: child)
-            : OutlinedButton(onPressed: onTap, child: child),
+            ? FilledButton(onPressed: onTap, style: style, child: child)
+            : OutlinedButton(onPressed: onTap, style: style, child: child),
       );
     }
 

@@ -10,6 +10,7 @@ import '../models/player.dart';
 import '../models/team.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
+import '../widgets/player_avatar.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/team_logo.dart';
 import 'rating_screen.dart';
@@ -419,6 +420,13 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     return _ownPlayers.where((p) => _nominatedIds.contains(p.id)).toList();
   }
 
+  /// Eigene Spieler, die aktuell auf dem Feld stehen (für Tor/Karte).
+  List<Player> _onFieldPlayers(bool ownSide) {
+    if (!ownSide) return _opponentPlayers;
+    final ids = _onFieldIds;
+    return _ownPlayers.where((p) => ids.contains(p.id)).toList();
+  }
+
   /// Wer aktuell auf dem Feld steht: Startelf, fortgeschrieben durch alle
   /// bisherigen Wechsel (ein Spieler kann hin- und zurückgewechselt werden).
   Set<String> get _onFieldIds {
@@ -459,7 +467,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       return;
     }
 
-    final players = _playersFor(ownSide);
+    // Nur Spieler, die aktuell auf dem Feld sind (Bank kann nicht treffen).
+    final players = _onFieldPlayers(ownSide);
     // Eigenes Tor: Torschütze direkt wählen (oder "Unbekannt").
     final scorer = await _pickPlayer(
       title: 'Torschütze',
@@ -493,7 +502,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   Future<void> _addCard({required bool ownSide}) async {
     final state = context.read<AppState>();
-    final players = _playersFor(ownSide);
+    // Karte nur für Spieler auf dem Feld.
+    final players = _onFieldPlayers(ownSide);
     final player = await _pickPlayer(
       title: 'Spieler',
       players: players,
@@ -682,6 +692,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final result = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
+      showDragHandle: true,
       builder: (_) => _PlayerPickSheet(
         title: title,
         players: players,
@@ -1164,53 +1175,57 @@ class _PlayerPickSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final maxH = MediaQuery.of(context).size.height * 0.7;
     return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.all(8),
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
               child: Text(title,
-                  style: Theme.of(context).textTheme.titleMedium),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold)),
             ),
+            const Divider(height: 1),
             if (players.isEmpty)
               const Padding(
-                padding: EdgeInsets.all(12),
-                child: Text('Kein Kader vorhanden.'),
+                padding: EdgeInsets.all(16),
+                child: Text('Keine Spieler auf dem Feld.'),
               ),
             Flexible(
-              child: SingleChildScrollView(
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final p in players)
-                      ActionChip(
-                        avatar: CircleAvatar(
-                          radius: 12,
-                          child: Text(p.number?.toString() ?? '?',
-                              style: const TextStyle(fontSize: 10)),
-                        ),
-                        label: Text(p.fullName),
-                        onPressed: () => Navigator.pop(context, p.id),
-                      ),
-                    if (allowUnknown)
-                      ActionChip(
-                        avatar: const Icon(Icons.help_outline, size: 16),
-                        label: const Text('Unbekannt'),
-                        onPressed: () => Navigator.pop(context, unknownValue),
-                      ),
-                    if (allowNone)
-                      ActionChip(
-                        avatar: const Icon(Icons.block, size: 16),
-                        label: const Text('Keine'),
-                        onPressed: () => Navigator.pop(context, noneValue),
-                      ),
-                  ],
-                ),
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  for (final p in players)
+                    ListTile(
+                      leading: PlayerAvatar(player: p),
+                      title: Text(p.fullName),
+                      subtitle: Text([
+                        if (p.number != null) 'Nr. ${p.number}',
+                        if (p.position != null) p.position!,
+                      ].join('  ·  ')),
+                      onTap: () => Navigator.pop(context, p.id),
+                    ),
+                  if (allowUnknown)
+                    ListTile(
+                      leading: const CircleAvatar(
+                          child: Icon(Icons.help_outline)),
+                      title: const Text('Unbekannt'),
+                      onTap: () => Navigator.pop(context, unknownValue),
+                    ),
+                  if (allowNone)
+                    ListTile(
+                      leading:
+                          const CircleAvatar(child: Icon(Icons.block)),
+                      title: const Text('Keine (ohne Vorlage)'),
+                      onTap: () => Navigator.pop(context, noneValue),
+                    ),
+                ],
               ),
             ),
           ],

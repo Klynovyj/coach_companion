@@ -202,13 +202,7 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
         color: const Color(0xFF37474F),
         title: 'Tabelle',
         subtitle: 'Platz ${st.rank} von ${st.totalTeams}',
-        rows: [
-          _Row.text('Platz ${st.rank} · ${st.points} Punkte'),
-          _Row.text(
-              '${st.matches} Spiele · ${st.wins}S ${st.draws}U ${st.defeats}N'),
-          _Row.text(
-              'Tore ${st.goalsFor}:${st.goalsAgainst} (${st.goalDiff >= 0 ? '+' : ''}${st.goalDiff})'),
-        ],
+        rows: [_Row.standing(st)],
       ));
     }
 
@@ -444,7 +438,7 @@ class _CardData {
   });
 }
 
-enum _RowKind { text, stat, player, duel, form, scouting }
+enum _RowKind { text, stat, player, duel, form, scouting, standing }
 
 class _Row {
   final _RowKind kind;
@@ -462,6 +456,8 @@ class _Row {
   // Scouting
   final List<ScoutMarker>? markers;
   final String? comment;
+  // Tabelle
+  final StandingRow? standing;
 
   const _Row._({
     required this.kind,
@@ -477,9 +473,12 @@ class _Row {
     this.outcome,
     this.markers,
     this.comment,
+    this.standing,
   });
 
   factory _Row.text(String text) => _Row._(kind: _RowKind.text, text: text);
+  factory _Row.standing(StandingRow s) =>
+      _Row._(kind: _RowKind.standing, standing: s);
   factory _Row.stat({
     required int rank,
     Player? player,
@@ -697,6 +696,97 @@ class _AnalysisCardView extends StatelessWidget {
                   style: TextStyle(fontWeight: FontWeight.bold, color: c)),
             ],
           ),
+        );
+      case _RowKind.standing:
+        final s = r.standing!;
+        final scheme = Theme.of(context).colorScheme;
+        Widget seg(int n, Color col, String label) => Expanded(
+              flex: n == 0 ? 1 : n,
+              child: Container(
+                height: 26,
+                alignment: Alignment.center,
+                color: col,
+                child: n == 0
+                    ? null
+                    : Text('$label $n',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12)),
+              ),
+            );
+        Widget kpi(String value, String label) => Column(
+              children: [
+                Text(value,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(label, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            );
+        return Column(
+          children: [
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('${s.rank}.',
+                          style: TextStyle(
+                              color: scheme.onPrimary,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold)),
+                      Text('von ${s.totalTeams}',
+                          style: TextStyle(
+                              color: scheme.onPrimary.withValues(alpha: 0.85),
+                              fontSize: 10)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      kpi('${s.points}', 'Punkte'),
+                      kpi('${s.matches}', 'Spiele'),
+                      kpi('${s.goalDiff >= 0 ? '+' : ''}${s.goalDiff}', 'Diff'),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            // Sieg/Unentschieden/Niederlage als farbiger Balken.
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Row(
+                children: [
+                  seg(s.wins, Colors.green.shade600, 'S'),
+                  seg(s.draws, Colors.orange.shade600, 'U'),
+                  seg(s.defeats, Colors.red.shade600, 'N'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.sports_soccer, size: 16),
+                const SizedBox(width: 6),
+                Text('Tore ${s.goalsFor} : ${s.goalsAgainst}',
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ],
         );
       case _RowKind.form:
         final c = r.outcome == null
