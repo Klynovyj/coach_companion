@@ -516,17 +516,30 @@ class CoachRepository {
   }
 
   // ----------------------------------------------------------------- To-Dos
+  /// Aktive To-Dos (nicht archiviert): offene zuerst, dann nach Fälligkeit
+  /// (frühestes zuerst, ohne Datum zuletzt), sonst nach Anlagedatum.
   Future<List<Todo>> getTodos() async {
     final db = await _db;
-    final rows =
-        await db.query('todos', orderBy: 'done ASC, created_at DESC');
+    final rows = await db.query('todos',
+        where: 'archived = 0',
+        orderBy:
+            'done ASC, (due_date IS NULL) ASC, due_date ASC, created_at DESC');
+    return rows.map(Todo.fromMap).toList();
+  }
+
+  /// Archivierte To-Dos (zuletzt erledigte/angelegte zuerst).
+  Future<List<Todo>> getArchivedTodos() async {
+    final db = await _db;
+    final rows = await db.query('todos',
+        where: 'archived = 1',
+        orderBy: 'completed_at DESC, created_at DESC');
     return rows.map(Todo.fromMap).toList();
   }
 
   Future<int> openTodoCount() async {
     final db = await _db;
-    final rows =
-        await db.rawQuery('SELECT COUNT(*) AS c FROM todos WHERE done = 0');
+    final rows = await db.rawQuery(
+        'SELECT COUNT(*) AS c FROM todos WHERE done = 0 AND archived = 0');
     return (rows.first['c'] as int?) ?? 0;
   }
 

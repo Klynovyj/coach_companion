@@ -205,6 +205,27 @@ void main() {
     await s.toggleTodo(todo, true);
     expect(await s.openTodoCount(), 0, reason: 'erledigt zählt nicht mehr');
 
+    // Erledigt-Zeitpunkt wird beim Abhaken festgehalten.
+    expect((await s.todos()).first.completedAt, isNotNull,
+        reason: 'Erledigt-Zeit gesetzt');
+
+    // Fälligkeit setzen und wieder entfernen.
+    final due = DateTime.now().add(const Duration(days: 3));
+    await s.setTodoDueDate((await s.todos()).first, due);
+    expect((await s.todos()).first.dueDate, isNotNull);
+    await s.setTodoDueDate((await s.todos()).first, null);
+    expect((await s.todos()).first.dueDate, isNull);
+
+    // Zweites, offenes To-Do archivieren → raus aus Liste & openTodoCount.
+    await s.addTodo('Bälle besorgen');
+    expect(await s.openTodoCount(), 1);
+    final open2 =
+        (await s.todos()).firstWhere((t) => t.text == 'Bälle besorgen');
+    await s.setTodoArchived(open2, true);
+    expect(await s.openTodoCount(), 0, reason: 'archiviert zählt nicht');
+    expect(await s.todos(), hasLength(1), reason: 'nur das erledigte aktiv');
+    expect(await s.archivedTodos(), hasLength(1));
+
     // Beendetes Spiel mit Zusage, aber ohne Bewertung → offene Bewertung.
     final match = await s.addMatch(opponentName: 'Gegner');
     await s.setNomination(match.id, player.id, NominationStatus.zugesagt);

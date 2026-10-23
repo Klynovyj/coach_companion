@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 16;
+  static const _dbVersion = 17;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -136,6 +136,16 @@ class AppDatabase {
       await db.execute(
           'CREATE INDEX idx_absences_player ON player_absences (player_id)');
     }
+    // v16 -> v17: Fälligkeit, Erledigt-Zeitpunkt und Archiv an To-Dos.
+    // Nur für Bestände, deren todos-Tabelle ohne diese Spalten angelegt wurde
+    // (v15/v16). Ältere Bestände (< v15) bekommen die Tabelle im v15-Block
+    // bereits mit den neuen Spalten über _todosTableSql.
+    if (oldV < 17 && oldV >= 15) {
+      await db.execute('ALTER TABLE todos ADD COLUMN due_date TEXT');
+      await db.execute('ALTER TABLE todos ADD COLUMN completed_at TEXT');
+      await db.execute(
+          'ALTER TABLE todos ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -181,7 +191,10 @@ class AppDatabase {
         id TEXT PRIMARY KEY,
         text TEXT NOT NULL,
         done INTEGER NOT NULL DEFAULT 0,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        due_date TEXT,
+        completed_at TEXT,
+        archived INTEGER NOT NULL DEFAULT 0
       )
   ''';
 

@@ -1003,16 +1003,38 @@ class AppState extends ChangeNotifier {
   // --------------------------------------------------------------- Nachholen
   Future<List<Todo>> todos() => _repo.getTodos();
 
-  Future<void> addTodo(String text) async {
+  Future<List<Todo>> archivedTodos() => _repo.getArchivedTodos();
+
+  Future<void> addTodo(String text, {DateTime? dueDate}) async {
     final t = text.trim();
     if (t.isEmpty) return;
-    await _repo.upsertTodo(
-        Todo(id: _uuid.v4(), text: t, createdAt: DateTime.now()));
+    await _repo.upsertTodo(Todo(
+      id: _uuid.v4(),
+      text: t,
+      createdAt: DateTime.now(),
+      dueDate: dueDate,
+    ));
     notifyListeners();
   }
 
+  /// Abhaken/aufmachen – beim Abhaken wird der Zeitpunkt festgehalten.
   Future<void> toggleTodo(Todo todo, bool done) async {
-    await _repo.upsertTodo(todo.copyWith(done: done));
+    await _repo.upsertTodo(done
+        ? todo.copyWith(done: true, completedAt: DateTime.now())
+        : todo.copyWith(done: false, clearCompletedAt: true));
+    notifyListeners();
+  }
+
+  /// Fälligkeitsdatum setzen (null entfernt es).
+  Future<void> setTodoDueDate(Todo todo, DateTime? dueDate) async {
+    await _repo.upsertTodo(dueDate == null
+        ? todo.copyWith(clearDueDate: true)
+        : todo.copyWith(dueDate: dueDate));
+    notifyListeners();
+  }
+
+  Future<void> setTodoArchived(Todo todo, bool archived) async {
+    await _repo.upsertTodo(todo.copyWith(archived: archived));
     notifyListeners();
   }
 
