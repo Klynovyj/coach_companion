@@ -428,7 +428,47 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   : p.copyWith(wishPosition: t));
             },
           ),
+          const SizedBox(height: 10),
+          _birthdateField(context, p),
         ],
+      ),
+    );
+  }
+
+  Widget _birthdateField(BuildContext context, Player p) {
+    final df = DateFormat('dd.MM.yyyy', 'de_DE');
+    return InkWell(
+      onTap: () async {
+        final now = DateTime.now();
+        final d = await showDatePicker(
+          context: context,
+          initialDate: p.birthdate ?? DateTime(now.year - 18),
+          firstDate: DateTime(1950),
+          lastDate: now,
+          helpText: 'Geburtsdatum wählen',
+        );
+        if (d != null) await _apply(p.copyWith(birthdate: d));
+      },
+      borderRadius: BorderRadius.circular(4),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: 'Geburtsdatum',
+          border: const OutlineInputBorder(),
+          prefixIcon: const Icon(Icons.cake_outlined),
+          suffixIcon: p.birthdate == null
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.clear, size: 18),
+                  tooltip: 'Entfernen',
+                  onPressed: () => _apply(p.copyWith(clearBirthdate: true)),
+                ),
+        ),
+        child: Text(
+          p.birthdate == null ? 'Nicht gesetzt' : df.format(p.birthdate!),
+          style: p.birthdate == null
+              ? TextStyle(color: Theme.of(context).hintColor)
+              : null,
+        ),
       ),
     );
   }

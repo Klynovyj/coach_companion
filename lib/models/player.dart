@@ -22,6 +22,9 @@ class Player {
   /// Kapitäns-Rolle (je eine pro Mannschaft).
   final CaptainRole captainRole;
 
+  /// Geburtsdatum (optional) – u.a. für die Gruppen im Ball-/Materialdienst.
+  final DateTime? birthdate;
+
   /// Externer Bezeichner aus der Importquelle – für Duplikaterkennung.
   final String? externalId;
 
@@ -45,6 +48,7 @@ class Player {
     this.wishPosition,
     this.status = PlayerStatus.fit,
     this.captainRole = CaptainRole.none,
+    this.birthdate,
     this.externalId,
     this.photoPath,
     this.source = DataSource.manual,
@@ -81,6 +85,8 @@ class Player {
     bool clearWishPosition = false,
     PlayerStatus? status,
     CaptainRole? captainRole,
+    DateTime? birthdate,
+    bool clearBirthdate = false,
     String? externalId,
     String? photoPath,
     DataSource? source,
@@ -97,6 +103,7 @@ class Player {
           clearWishPosition ? null : (wishPosition ?? this.wishPosition),
       status: status ?? this.status,
       captainRole: captainRole ?? this.captainRole,
+      birthdate: clearBirthdate ? null : (birthdate ?? this.birthdate),
       externalId: externalId ?? this.externalId,
       photoPath: photoPath ?? this.photoPath,
       source: source ?? this.source,
@@ -115,6 +122,7 @@ class Player {
         'wish_position': wishPosition,
         'status': status.storageKey,
         'captain_role': captainRole.storageKey,
+        'birthdate': birthdate?.toIso8601String(),
         'external_id': externalId,
         'photo_path': photoPath,
         'source': source.storageKey,
@@ -132,6 +140,7 @@ class Player {
         wishPosition: m['wish_position'] as String?,
         status: PlayerStatus.fromKey(m['status'] as String?),
         captainRole: CaptainRole.fromKey(m['captain_role'] as String?),
+        birthdate: DateTime.tryParse(m['birthdate'] as String? ?? ''),
         externalId: m['external_id'] as String?,
         photoPath: m['photo_path'] as String?,
         source: DataSource.fromKey(m['source'] as String?),
