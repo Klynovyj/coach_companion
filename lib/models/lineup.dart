@@ -1,0 +1,101 @@
+import 'enums.dart';
+
+/// Aufstellung eines Teams für ein Spiel.
+///
+/// Eigene Startelf/Formation/Bank bestimmt der Trainer – FuPa liefert hierfür
+/// bewusst keine Daten (nur Stammdaten der Spieler).
+class Lineup {
+  final String id;
+  final String matchId;
+  final String teamId;
+
+  /// Formation als Freitext, z.B. "4-4-2", "3-5-2".
+  final String formation;
+
+  final DateTime createdAt;
+
+  const Lineup({
+    required this.id,
+    required this.matchId,
+    required this.teamId,
+    this.formation = '4-4-2',
+    required this.createdAt,
+  });
+
+  Lineup copyWith({String? formation}) => Lineup(
+        id: id,
+        matchId: matchId,
+        teamId: teamId,
+        formation: formation ?? this.formation,
+        createdAt: createdAt,
+      );
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'match_id': matchId,
+        'team_id': teamId,
+        'formation': formation,
+        'created_at': createdAt.toIso8601String(),
+      };
+
+  factory Lineup.fromMap(Map<String, Object?> m) => Lineup(
+        id: m['id'] as String,
+        matchId: m['match_id'] as String,
+        teamId: m['team_id'] as String,
+        formation: m['formation'] as String? ?? '4-4-2',
+        createdAt:
+            DateTime.tryParse(m['created_at'] as String? ?? '') ??
+                DateTime.now(),
+      );
+}
+
+/// Eintrag einer Aufstellung: ordnet einen Spieler einer Rolle zu.
+class LineupEntry {
+  final String id;
+  final String lineupId;
+  final String playerId;
+  final LineupRole role;
+
+  /// Positionsbezeichnung (z.B. "ST", "LV") – optional.
+  final String? positionLabel;
+
+  /// Sortier-/Platzierungsindex innerhalb der Rolle.
+  final int orderIndex;
+
+  const LineupEntry({
+    required this.id,
+    required this.lineupId,
+    required this.playerId,
+    required this.role,
+    this.positionLabel,
+    this.orderIndex = 0,
+  });
+
+  LineupEntry copyWith({LineupRole? role, String? positionLabel, int? orderIndex}) =>
+      LineupEntry(
+        id: id,
+        lineupId: lineupId,
+        playerId: playerId,
+        role: role ?? this.role,
+        positionLabel: positionLabel ?? this.positionLabel,
+        orderIndex: orderIndex ?? this.orderIndex,
+      );
+
+  Map<String, Object?> toMap() => {
+        'id': id,
+        'lineup_id': lineupId,
+        'player_id': playerId,
+        'role': role.storageKey,
+        'position_label': positionLabel,
+        'order_index': orderIndex,
+      };
+
+  factory LineupEntry.fromMap(Map<String, Object?> m) => LineupEntry(
+        id: m['id'] as String,
+        lineupId: m['lineup_id'] as String,
+        playerId: m['player_id'] as String,
+        role: LineupRole.fromKey(m['role'] as String?),
+        positionLabel: m['position_label'] as String?,
+        orderIndex: m['order_index'] as int? ?? 0,
+      );
+}
