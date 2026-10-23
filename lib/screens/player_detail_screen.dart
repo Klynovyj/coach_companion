@@ -8,6 +8,7 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/note_category.dart';
 import '../models/player.dart';
+import '../models/player_absence.dart';
 import '../models/player_note.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
@@ -42,6 +43,113 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   Future<void> _apply(Player updated) async {
     setState(() => _player = updated);
     await context.read<AppState>().updatePlayer(updated);
+  }
+
+  /// Statuswechsel: Abwesenheiten (Verletzt/Krank/Gesperrt/Urlaub) fragen den
+  /// Zeitraum + Grund ab und werden protokolliert; sonst direkt setzen.
+  Future<void> _setStatus(PlayerStatus s) async {
+    if (!s.isAbsence) {
+      await _apply(_player.copyWith(status: s));
+      return;
+    }
+    final res = await _showAbsenceDialog(s);
+    if (res == null || !mounted) return;
+    await context.read<AppState>().addAbsence(
+          player: _player,
+          status: s,
+          from: res.$1,
+          until: res.$2,
+          note: res.$3,
+        );
+    if (mounted) setState(() => _player = _player.copyWith(status: s));
+  }
+
+  /// Dialog für Zeitraum (von–bis) + optionalen Grund einer Abwesenheit.
+  Future<(DateTime, DateTime, String?)?> _showAbsenceDialog(
+      PlayerStatus s) async {
+    final df = DateFormat('dd.MM.yyyy', 'de_DE');
+    var from = DateTime.now();
+    var until = DateTime.now().add(const Duration(days: 7));
+    final noteCtrl = TextEditingController();
+    return showDialog<(DateTime, DateTime, String?)>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: Text('${s.symbol} ${s.label}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.event, size: 18),
+                      label: Text('Von: ${df.format(from)}'),
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: from,
+                          firstDate: DateTime(from.year - 1),
+                          lastDate: DateTime(from.year + 2),
+                        );
+                        if (d != null) {
+                          setLocal(() {
+                            from = d;
+                            if (until.isBefore(from)) until = from;
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.event_available, size: 18),
+                      label: Text('Bis: ${df.format(until)}'),
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: context,
+                          initialDate: until,
+                          firstDate: from,
+                          lastDate: DateTime(from.year + 2),
+                        );
+                        if (d != null) setLocal(() => until = d);
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: noteCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Grund (optional)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Abbrechen')),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, (
+                from,
+                until,
+                noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim()
+              )),
+              child: const Text('Speichern'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -88,7 +196,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  _tabList([_stammdatenCard(context)]),
+                  _tabList(
+                      [_stammdatenCard(context), _absencesCard(context, state)]),
                   _tabList([_cardsCard(context, state, df)]),
                   _tabList([_goalsCard(context, state, df)]),
                   _tabList([_notesCard(context, state, df)]),
@@ -170,7 +279,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   Widget _statusMenu(BuildContext context, Player p) {
     return PopupMenuButton<PlayerStatus>(
       tooltip: 'Status ändern',
-      onSelected: (s) => _apply(p.copyWith(status: s)),
+      onSelected: _setStatus,
       itemBuilder: (_) => [
         for (final s in PlayerStatus.values)
           PopupMenuItem(value: s, child: Text('${s.symbol} ${s.label}')),
@@ -295,6 +404,74 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             },
           ),
         ],
+      ),
+    );
+  }
+
+  // ------------------------------------------------------- Abwesenheiten
+  Widget _absencesCard(BuildContext context, AppState state) {
+    final df = DateFormat('dd.MM.yyyy', 'de_DE');
+    return _SectionCard(
+      icon: Icons.event_busy,
+      title: 'Abwesenheiten',
+      child: FutureBuilder<List<PlayerAbsence>>(
+        future: state.absencesOf(_player.id),
+        builder: (context, snap) {
+          if (!snap.hasData) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final list = snap.data!;
+          if (list.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                    'Keine Einträge. Status Verletzt/Krank/Gesperrt/Urlaub '
+                    'oben setzen – mit Zeitraum.',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            );
+          }
+          final now = DateTime.now();
+          final today = DateTime(now.year, now.month, now.day);
+          return Column(
+            children: [
+              for (final a in list)
+                Dismissible(
+                  key: ValueKey(a.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    color: Colors.red,
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.only(right: 20),
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  onDismissed: (_) => state.deleteAbsence(a.id),
+                  child: ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: Text(a.status.symbol,
+                        style: const TextStyle(fontSize: 20)),
+                    title: Text(
+                        '${a.status.label} · ${df.format(a.from)} – ${df.format(a.until)}'),
+                    subtitle: a.note == null
+                        ? null
+                        : Text(a.note!,
+                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                    trailing: a.until.isBefore(today)
+                        ? const Text('abgelaufen',
+                            style:
+                                TextStyle(color: Colors.grey, fontSize: 12))
+                        : Icon(Icons.circle,
+                            size: 10, color: playerStatusColor(a.status)),
+                  ),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -513,7 +690,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     return _SectionCard(
       icon: Icons.star_border,
       title: 'Bewertungen',
-      child: FutureBuilder<(List<GameMatch>, Map<String, double>)>(
+      child: FutureBuilder<(List<GameMatch>, Map<String, double>, Set<String>)>(
         future: _loadRatings(state),
         builder: (context, snap) {
           if (!snap.hasData) {
@@ -522,14 +699,21 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               child: LinearProgressIndicator(),
             );
           }
-          final matches = snap.data!.$1;
+          final allMatches = snap.data!.$1;
           final ratings = snap.data!.$2;
+          final played = snap.data!.$3;
+          // Nur Spiele, in denen der Spieler gespielt hat (oder bereits bewertet).
+          final matches = allMatches
+              .where((m) => played.contains(m.id) || ratings.containsKey(m.id))
+              .toList();
           if (matches.isEmpty) {
             return const Padding(
               padding: EdgeInsets.all(8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Noch keine Spiele.',
+                child: Text(
+                    'Noch keine Einsätze. Bewertbar sind nur Spiele, in denen '
+                    'der Spieler gespielt hat.',
                     style: TextStyle(color: Colors.grey)),
               ),
             );
@@ -608,14 +792,15 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     );
   }
 
-  Future<(List<GameMatch>, Map<String, double>)> _loadRatings(
+  Future<(List<GameMatch>, Map<String, double>, Set<String>)> _loadRatings(
       AppState s) async {
     final mm = await s.matchMap(_player.teamId);
     final list = mm.values.toList()
       ..sort((a, b) =>
           (b.kickoff ?? b.createdAt).compareTo(a.kickoff ?? a.createdAt));
     final ratings = await s.playerRatingsByMatch(_player.id);
-    return (list, ratings);
+    final played = await s.playedMatchIdsForPlayer(_player.id, _player.teamId);
+    return (list, ratings, played);
   }
 
   // --------------------------------------------------------------- Aktionen

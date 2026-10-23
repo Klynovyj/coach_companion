@@ -106,12 +106,21 @@ enum PlayerStatus {
   verletzt('verletzt', 'Verletzt', '🤕'),
   krank('krank', 'Krank', '🤒'),
   gesperrt('gesperrt', 'Gesperrt', '⛔'),
+  urlaub('urlaub', 'Urlaub', '🌴'),
   inaktiv('inaktiv', 'Inaktiv', '⚪');
 
   const PlayerStatus(this.storageKey, this.label, this.symbol);
   final String storageKey;
   final String label;
   final String symbol;
+
+  /// Zeitlich befristete Abwesenheit (braucht einen Zeitraum von–bis und wird
+  /// nach Ablauf automatisch wieder auf „Fit" gesetzt).
+  bool get isAbsence =>
+      this == PlayerStatus.verletzt ||
+      this == PlayerStatus.krank ||
+      this == PlayerStatus.gesperrt ||
+      this == PlayerStatus.urlaub;
 
   static PlayerStatus fromKey(String? key) => PlayerStatus.values
       .firstWhere((e) => e.storageKey == key, orElse: () => PlayerStatus.fit);

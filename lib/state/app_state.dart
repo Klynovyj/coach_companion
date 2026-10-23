@@ -10,6 +10,7 @@ import '../models/match_event.dart';
 import '../models/nomination.dart';
 import '../models/note_category.dart';
 import '../models/player.dart';
+import '../models/player_absence.dart';
 import '../models/player_note.dart';
 import '../models/scout_marker.dart';
 import '../models/team_event.dart';
@@ -85,6 +86,7 @@ class AppState extends ChangeNotifier {
   // ------------------------------------------------------------- Lifecycle
   Future<void> init() async {
     await _reload();
+    await _autoRevertAbsences();
     _loading = false;
     notifyListeners();
   }
@@ -307,6 +309,59 @@ class AppState extends ChangeNotifier {
     await _repo.upsertPlayer(player);
     await _enforceCaptainUniqueness(player);
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------- Abwesenheiten
+  Future<List<PlayerAbsence>> absencesOf(String playerId) =>
+      _repo.getAbsences(playerId);
+
+  /// Legt eine Abwesenheit an (Zeitraum + Grund) und setzt den Spielerstatus.
+  Future<void> addAbsence({
+    required Player player,
+    required PlayerStatus status,
+    required DateTime from,
+    required DateTime until,
+    String? note,
+  }) async {
+    await _repo.upsertAbsence(PlayerAbsence(
+      id: _uuid.v4(),
+      playerId: player.id,
+      status: status,
+      from: from,
+      until: until,
+      note: note,
+      createdAt: DateTime.now(),
+    ));
+    await updatePlayer(player.copyWith(status: status));
+  }
+
+  Future<void> deleteAbsence(String id) async {
+    await _repo.deleteAbsence(id);
+    notifyListeners();
+  }
+
+  /// Setzt Spieler, deren Abwesenheit abgelaufen ist, automatisch auf „Fit".
+  Future<void> _autoRevertAbsences() async {
+    final team = _ownTeam;
+    if (team == null) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final players = await _repo.getPlayers(team.id);
+    for (final p in players) {
+      if (!p.status.isAbsence) continue;
+      final abs = await _repo.getAbsences(p.id);
+      PlayerAbsence? current;
+      for (final a in abs) {
+        if (a.status == p.status) {
+          current = a;
+          break;
+        }
+      }
+      // Abgelaufen (letzter Tag liegt vor heute) -> wieder Fit.
+      if (current != null && current.until.isBefore(today)) {
+        await _repo.upsertPlayer(p.copyWith(status: PlayerStatus.fit));
+      }
+    }
   }
 
   /// Sorgt dafür, dass jede Kapitäns-Rolle pro Team nur einmal vergeben ist.
@@ -953,22 +1008,43 @@ class AppState extends ChangeNotifier {
     return items;
   }
 
-  /// Die „eingesetzten" Spieler eines Spiels (für offene Bewertungen):
-  /// Aufstellung (Start+Bank), ersatzweise die Zugesagten.
-  Future<Set<String>> _ratingRoster(GameMatch m) async {
-    final lineup = await _repo.getLineup(m.id, m.ownTeamId);
+  Future<Set<String>> _ratingRoster(GameMatch m) =>
+      playedPlayerIds(m.id, m.ownTeamId);
+
+  /// Spieler, die im Spiel tatsächlich gespielt haben: Startelf + Eingewechselte
+  /// (aus den Wechsel-Ereignissen). Ohne Aufstellung ersatzweise die Zugesagten
+  /// – nur diese Spieler lassen sich für das Spiel bewerten.
+  Future<Set<String>> playedPlayerIds(String matchId, String ownTeamId) async {
+    final lineup = await _repo.getLineup(matchId, ownTeamId);
     if (lineup != null) {
-      final ids = (await _repo.getLineupEntries(lineup.id))
-          .where((e) => e.role != LineupRole.unavailable)
-          .map((e) => e.playerId)
-          .toSet();
-      if (ids.isNotEmpty) return ids;
+      final played = <String>{
+        for (final e in await _repo.getLineupEntries(lineup.id))
+          if (e.role == LineupRole.starter) e.playerId,
+      };
+      for (final e in await _repo.getEvents(matchId)) {
+        if (e.type == MatchEventType.substitution && e.playerId != null) {
+          played.add(e.playerId!); // eingewechselt
+        }
+      }
+      if (played.isNotEmpty) return played;
     }
-    final noms = await _repo.getNominations(m.id);
+    final noms = await _repo.getNominations(matchId);
     return noms
         .where((n) => n.status == NominationStatus.zugesagt)
         .map((n) => n.playerId)
         .toSet();
+  }
+
+  /// Spiele, in denen ein Spieler tatsächlich gespielt hat (für die Bewertung).
+  Future<Set<String>> playedMatchIdsForPlayer(
+      String playerId, String teamId) async {
+    final matches = await _repo.getMatches(teamId);
+    final out = <String>{};
+    for (final m in matches) {
+      final played = await playedPlayerIds(m.id, teamId);
+      if (played.contains(playerId)) out.add(m.id);
+    }
+    return out;
   }
 
   /// Anzahl offener Nachhol-Punkte (Bewertungen/Nominierung/Aufstellung) –

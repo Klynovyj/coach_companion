@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/enums.dart';
 import '../models/match.dart';
 import '../models/player.dart';
 import '../models/player_rating.dart';
@@ -42,33 +41,16 @@ class _RatingScreenState extends State<RatingScreen> {
     final players = await state.playersOf(match.ownTeamId);
     final byId = {for (final p in players) p.id: p};
 
-    // Zu bewerten sind die Spieler der Aufstellung (Startelf + Bank);
-    // ohne Aufstellung ersatzweise die zugesagten Nominierten.
-    final roster = <Player>[];
-    final lineup =
-        await state.repository.getLineup(widget.matchId, match.ownTeamId);
-    if (lineup != null) {
-      final entries = await state.lineupEntries(lineup.id);
-      entries.sort((a, b) {
-        int rank(LineupRole r) => r == LineupRole.starter ? 0 : 1;
-        final byRole = rank(a.role).compareTo(rank(b.role));
-        return byRole != 0 ? byRole : a.orderIndex.compareTo(b.orderIndex);
+    // Zu bewerten sind nur Spieler, die gespielt haben (Startelf + Einge-
+    // wechselte); ohne Aufstellung ersatzweise die zugesagten Nominierten.
+    final playedIds = await state.playedPlayerIds(widget.matchId, match.ownTeamId);
+    final roster = <Player>[
+      for (final id in playedIds)
+        if (byId[id] != null) byId[id]!,
+    ]..sort((a, b) {
+        final an = a.number ?? 9999, bn = b.number ?? 9999;
+        return an != bn ? an.compareTo(bn) : a.lastName.compareTo(b.lastName);
       });
-      for (final e in entries) {
-        if (e.role == LineupRole.unavailable) continue;
-        final p = byId[e.playerId];
-        if (p != null) roster.add(p);
-      }
-    }
-    if (roster.isEmpty) {
-      final noms = await state.nominationsOf(widget.matchId);
-      for (final entry in noms.entries) {
-        if (entry.value == NominationStatus.zugesagt) {
-          final p = byId[entry.key];
-          if (p != null) roster.add(p);
-        }
-      }
-    }
 
     final ratings = await state.ratingsMapOf(widget.matchId);
     if (!mounted) return;

@@ -22,6 +22,7 @@ Color playerStatusColor(PlayerStatus s) => switch (s) {
       PlayerStatus.verletzt => const Color(0xFFEF6C00),
       PlayerStatus.krank => const Color(0xFFFF8F00),
       PlayerStatus.gesperrt => const Color(0xFFC62828),
+      PlayerStatus.urlaub => const Color(0xFF1565C0),
       PlayerStatus.inaktiv => const Color(0xFF9E9E9E),
     };
 

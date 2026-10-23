@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 15;
+  static const _dbVersion = 16;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -130,6 +130,12 @@ class AppDatabase {
     if (oldV < 15) {
       await db.execute(_todosTableSql);
     }
+    // v15 -> v16: Abwesenheiten (Verletzt/Krank/Gesperrt/Urlaub) mit Zeitraum.
+    if (oldV < 16) {
+      await db.execute(_playerAbsencesTableSql);
+      await db.execute(
+          'CREATE INDEX idx_absences_player ON player_absences (player_id)');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -176,6 +182,19 @@ class AppDatabase {
         text TEXT NOT NULL,
         done INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL
+      )
+  ''';
+
+  static const _playerAbsencesTableSql = '''
+      CREATE TABLE player_absences (
+        id TEXT PRIMARY KEY,
+        player_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        from_date TEXT NOT NULL,
+        until_date TEXT NOT NULL,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
       )
   ''';
 
@@ -391,6 +410,9 @@ class AppDatabase {
     await db.execute(_noteCategoriesTableSql);
     await db.execute(_playerMarkersTableSql);
     await db.execute(_todosTableSql);
+    await db.execute(_playerAbsencesTableSql);
+    await db.execute(
+        'CREATE INDEX idx_absences_player ON player_absences (player_id)');
     await db.execute(_teamEventsTableSql);
     await db.execute('CREATE INDEX idx_events_team ON team_events (team_id)');
     await db.execute(_eventAttendanceTableSql);

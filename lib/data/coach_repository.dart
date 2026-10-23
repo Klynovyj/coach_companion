@@ -8,6 +8,7 @@ import '../models/match_event.dart';
 import '../models/nomination.dart';
 import '../models/player.dart';
 import '../models/note_category.dart';
+import '../models/player_absence.dart';
 import '../models/player_note.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
@@ -523,6 +524,22 @@ class CoachRepository {
   Future<void> deleteTodo(String id) async {
     final db = await _db;
     await db.delete('todos', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ------------------------------------------------------------ Absences
+  Future<List<PlayerAbsence>> getAbsences(String playerId) async {
+    final db = await _db;
+    final rows = await db.query('player_absences',
+        where: 'player_id = ?', whereArgs: [playerId], orderBy: 'from_date DESC');
+    return rows.map(PlayerAbsence.fromMap).toList();
+  }
+
+  Future<void> upsertAbsence(PlayerAbsence a) =>
+      _upsertById('player_absences', a.toMap());
+
+  Future<void> deleteAbsence(String id) async {
+    final db = await _db;
+    await db.delete('player_absences', where: 'id = ?', whereArgs: [id]);
   }
 
   // ------------------------------------------------------------- Team events

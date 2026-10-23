@@ -6,6 +6,7 @@ import 'package:path/path.dart' as p;
 import 'package:coach_companion/data/app_database.dart';
 import 'package:coach_companion/data/coach_repository.dart';
 import 'package:coach_companion/models/enums.dart';
+import 'package:coach_companion/models/lineup.dart';
 import 'package:coach_companion/models/scout_marker.dart';
 import 'package:coach_companion/state/app_state.dart';
 
@@ -216,5 +217,77 @@ void main() {
     await s.setRating(matchId: match.id, playerId: player.id, rating: 4);
     final after = await s.nachholen();
     expect(after.any((i) => i.kind == NachholenKind.rating), isFalse);
+  });
+
+  test('Abwesenheit: Zeitraum speichern; abgelaufen → wieder Fit', () async {
+    final db1 = AppDatabase.test(path: dbPath);
+    final s1 = AppState(repository: CoachRepository(db: db1));
+    await s1.init();
+    final team = await s1.ensureOwnTeam();
+    await s1.addPlayer(team.id, firstName: 'Tim', lastName: 'Bauer');
+    final p = (await s1.playersOf(team.id)).first;
+    await s1.addAbsence(
+      player: p,
+      status: PlayerStatus.verletzt,
+      from: DateTime.now().subtract(const Duration(days: 10)),
+      until: DateTime.now().subtract(const Duration(days: 2)),
+      note: 'Muskel',
+    );
+    expect((await s1.playersOf(team.id)).first.status, PlayerStatus.verletzt);
+    expect(await s1.absencesOf(p.id), hasLength(1));
+    await db1.close();
+
+    // Neustart: init() setzt abgelaufene Abwesenheit auf Fit zurück.
+    final db2 = AppDatabase.test(path: dbPath);
+    final s2 = AppState(repository: CoachRepository(db: db2));
+    await s2.init();
+    expect((await s2.playersOf(team.id)).first.status, PlayerStatus.fit,
+        reason: 'abgelaufen → Fit');
+    expect(await s2.absencesOf(p.id), hasLength(1), reason: 'Protokoll bleibt');
+    await db2.close();
+  });
+
+  test('playedPlayerIds: Startelf + Eingewechselte zählen', () async {
+    final s = open();
+    await s.init();
+    final team = await s.ensureOwnTeam();
+    for (final n in ['A', 'B', 'C']) {
+      await s.addPlayer(team.id, firstName: n, lastName: 'X');
+    }
+    final players = await s.playersOf(team.id);
+    final a = players[0], b = players[1], c = players[2];
+    final match = await s.addMatch(opponentName: 'G');
+    final lineup = await s.ensureLineup(match.id, team.id);
+    await s.saveLineup(lineup, [
+      LineupEntry(
+        id: s.newEntryId(),
+        lineupId: lineup.id,
+        playerId: a.id,
+        role: LineupRole.starter,
+        orderIndex: 0,
+        posX: 0.5,
+        posY: 0.5,
+      ),
+      LineupEntry(
+        id: s.newEntryId(),
+        lineupId: lineup.id,
+        playerId: b.id,
+        role: LineupRole.substitute,
+        orderIndex: 1,
+      ),
+    ]);
+    // B wird für A eingewechselt.
+    await s.addEvent(
+      matchId: match.id,
+      teamId: team.id,
+      minute: 60,
+      type: MatchEventType.substitution,
+      playerId: b.id,
+      assistPlayerId: a.id,
+    );
+    final played = await s.playedPlayerIds(match.id, team.id);
+    expect(played.contains(a.id), isTrue, reason: 'Startelf');
+    expect(played.contains(b.id), isTrue, reason: 'eingewechselt');
+    expect(played.contains(c.id), isFalse, reason: 'nicht im Kader');
   });
 }
