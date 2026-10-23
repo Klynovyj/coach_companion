@@ -65,13 +65,15 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
         groups: _groups,
         rotationStart: _config!.rotationStart,
         vacations: _vacations,
+        startGroup: _config!.startGroupIndex,
       );
 
   int get _currentGroupIdx {
     final groups = _groups;
     if (groups.isEmpty) return 0;
     return groupIndexForWeek(
-        startOfIsoWeek(DateTime.now()), _config!.rotationStart, groups.length);
+        startOfIsoWeek(DateTime.now()), _config!.rotationStart, groups.length,
+        startGroup: _config!.startGroupIndex);
   }
 
   Player? _byId(String id) =>
@@ -128,8 +130,13 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
               onPressed: _share,
             ),
           ],
-          bottom: const TabBar(
-            tabs: [
+          bottom: TabBar(
+            labelColor: Theme.of(context).colorScheme.onPrimary,
+            unselectedLabelColor:
+                Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
+            indicatorColor: Theme.of(context).colorScheme.onPrimary,
+            indicatorWeight: 3,
+            tabs: const [
               Tab(text: 'Gruppen'),
               Tab(text: 'Wochenplan'),
               Tab(text: 'Einstellungen'),
@@ -368,7 +375,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
       children: [
         _dateRow('Rotations-Start', c.rotationStart, (d) {
           _saveConfig(c.copyWith(rotationStart: d));
-        }, help: 'Die Woche, in der Gruppe 1 beginnt.'),
+        }, help: 'Bezugswoche, ab der gezählt wird.'),
+        const SizedBox(height: 16),
+        _startGroupRow(),
         const SizedBox(height: 16),
         _dateRow('Plan von', c.printFrom, (d) {
           _saveConfig(c.copyWith(printFrom: d));
@@ -389,6 +398,46 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
             icon: const Icon(Icons.restart_alt),
             label: Text('Feste Zuteilungen zurücksetzen (${c.overrides.length})'),
           ),
+      ],
+    );
+  }
+
+  /// Dropdown „Diese Woche ist dran: Gruppe X" – damit sich eine bereits
+  /// laufende Rotation deklarieren lässt (Rotations-Start bleibt unberührt).
+  Widget _startGroupRow() {
+    final n = _groups.length;
+    if (n <= 0) return const SizedBox.shrink();
+    final current = _currentGroupIdx.clamp(0, n - 1);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        DropdownButtonFormField<int>(
+          initialValue: current,
+          decoration: const InputDecoration(
+            labelText: 'Diese Woche ist dran',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.flag_outlined),
+          ),
+          items: [
+            for (var g = 0; g < n; g++)
+              DropdownMenuItem(value: g, child: Text('Gruppe ${g + 1}')),
+          ],
+          onChanged: (v) {
+            if (v == null) return;
+            final thisMonday = startOfIsoWeek(DateTime.now());
+            final off = weekOffset(_config!.rotationStart, thisMonday);
+            final newStart = (((v - off) % n) + n) % n;
+            _saveConfig(_config!.copyWith(startGroupIndex: newStart));
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.only(top: 4, left: 4),
+          child: Text(
+            'Stelle ein, welche Gruppe aktuell dran ist – die Rotation läuft '
+            'von hier aus weiter.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ),
       ],
     );
   }

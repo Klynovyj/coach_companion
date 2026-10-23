@@ -12,6 +12,10 @@ class MaterialDutyConfig {
   final DateTime printFrom;
   final DateTime printTo;
 
+  /// Gruppe (0-basiert), die in der Start-Woche (rotationStart) dran ist –
+  /// damit sich eine bereits laufende Rotation deklarieren lässt.
+  final int startGroupIndex;
+
   /// Regeln/Zuständigkeiten als Freitext.
   final String rules;
 
@@ -22,6 +26,7 @@ class MaterialDutyConfig {
     required this.rotationStart,
     required this.printFrom,
     required this.printTo,
+    this.startGroupIndex = 0,
     this.rules = '',
     this.overrides = const [],
   });
@@ -40,6 +45,7 @@ class MaterialDutyConfig {
     DateTime? rotationStart,
     DateTime? printFrom,
     DateTime? printTo,
+    int? startGroupIndex,
     String? rules,
     List<DutyOverride>? overrides,
   }) =>
@@ -47,6 +53,7 @@ class MaterialDutyConfig {
         rotationStart: rotationStart ?? this.rotationStart,
         printFrom: printFrom ?? this.printFrom,
         printTo: printTo ?? this.printTo,
+        startGroupIndex: startGroupIndex ?? this.startGroupIndex,
         rules: rules ?? this.rules,
         overrides: overrides ?? this.overrides,
       );
@@ -58,6 +65,7 @@ class MaterialDutyConfig {
         'rotationStart': _d(rotationStart),
         'printFrom': _d(printFrom),
         'printTo': _d(printTo),
+        'startGroupIndex': startGroupIndex,
         'rules': rules,
         'overrides': overrides
             .map((o) => {'playerId': o.playerId, 'groupIndex': o.groupIndex})
@@ -75,6 +83,7 @@ class MaterialDutyConfig {
       rotationStart: parse(m['rotationStart'], init.rotationStart),
       printFrom: parse(m['printFrom'], init.printFrom),
       printTo: parse(m['printTo'], init.printTo),
+      startGroupIndex: (m['startGroupIndex'] as num?)?.toInt() ?? 0,
       rules: m['rules'] as String? ?? '',
       overrides: [
         for (final o in rawOv)

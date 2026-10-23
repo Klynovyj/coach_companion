@@ -86,6 +86,10 @@ void main() {
       expect(groupIndexForWeek(DateTime(2026, 1, 5), start, 3), 0);
       expect(groupIndexForWeek(DateTime(2026, 1, 12), start, 3), 1);
       expect(groupIndexForWeek(DateTime(2026, 1, 26), start, 3), 0);
+      // Startgruppe verschiebt den Index: Startwoche = Gruppe 3 (Index 2).
+      expect(groupIndexForWeek(DateTime(2026, 1, 5), start, 3, startGroup: 2), 2);
+      expect(
+          groupIndexForWeek(DateTime(2026, 1, 12), start, 3, startGroup: 2), 0);
     });
 
     test('listWeeks: Mo–So-Spanne inklusive', () {

@@ -182,10 +182,11 @@ List<DutyWeek> listWeeks(DateTime from, DateTime to) {
 }
 
 /// Gruppen-Index für eine Woche – zyklische Rotation ab [rotationStart].
-int groupIndexForWeek(
-    DateTime weekMonday, DateTime rotationStart, int groupCount) {
+/// [startGroup] = Gruppe (0-basiert), die in der Start-Woche dran ist.
+int groupIndexForWeek(DateTime weekMonday, DateTime rotationStart, int groupCount,
+    {int startGroup = 0}) {
   if (groupCount <= 0) return 0;
-  final off = weekOffset(rotationStart, weekMonday);
+  final off = weekOffset(rotationStart, weekMonday) + startGroup;
   return ((off % groupCount) + groupCount) % groupCount;
 }
 
@@ -221,10 +222,12 @@ List<ScheduleEntry> buildSchedule({
   required List<List<Player>> groups,
   required DateTime rotationStart,
   required List<DutyVacation> vacations,
+  int startGroup = 0,
 }) {
   if (groups.isEmpty || weeks.isEmpty) return const [];
   return weeks.map((w) {
-    final idx = groupIndexForWeek(w.monday, rotationStart, groups.length);
+    final idx = groupIndexForWeek(w.monday, rotationStart, groups.length,
+        startGroup: startGroup);
     return ScheduleEntry(
       monday: w.monday,
       sunday: w.sunday,
