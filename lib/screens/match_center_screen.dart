@@ -99,14 +99,20 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                 children: [
                   _ownTeam == null
                       ? const Center(child: Text('Kein eigenes Team.'))
-                      : SquadListView(teamId: _ownTeam!.id),
+                      : SquadListView(
+                          teamId: _ownTeam!.id,
+                          teamName: _ownTeam!.name,
+                          fupaUrl: _ownTeam!.fupaUrl,
+                        ),
                   _opponentTeam == null
                       ? const Center(
                           child: Text('Gegner wird vorbereitet …'))
                       : SquadListView(
                           teamId: _opponentTeam!.id,
+                          teamName: _opponentTeam!.name,
+                          fupaUrl: _opponentTeam!.fupaUrl,
                           emptyHint:
-                              'Kein Gegnerkader importiert. Spieler manuell ergänzen.',
+                              'Kein Gegnerkader importiert. Liste einfügen oder Spieler manuell ergänzen.',
                         ),
                 ],
               ),

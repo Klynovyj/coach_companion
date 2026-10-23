@@ -12,6 +12,7 @@ import '../models/team.dart';
 import '../services/fupa/approved_api_fupa_data_source.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_import_service.dart';
+import '../services/fupa/fupa_persistence.dart';
 import '../services/fupa/fupa_source_registry.dart';
 import '../services/fupa/manual_fupa_data_source.dart';
 import '../services/opponent_sync_service.dart';
@@ -171,6 +172,20 @@ class AppState extends ChangeNotifier {
   Future<void> deletePlayer(String id) async {
     await _repo.deletePlayer(id);
     notifyListeners();
+  }
+
+  /// Übernimmt per Einfügen erkannte Spieler mit Duplikatschutz
+  /// (gleiche Dedup-Regeln wie der FuPa-Import). Gibt die Anzahl NEU
+  /// angelegter Spieler zurück.
+  Future<int> importPastedPlayers(
+      String teamId, List<PlayerData> players) async {
+    if (players.isEmpty) return 0;
+    final persist = FupaPersistence(_repo);
+    final added =
+        await persist.syncPlayers(teamId, players, DataSource.manual);
+    await _reload();
+    notifyListeners();
+    return added;
   }
 
   // ---------------------------------------------------------------- Matches

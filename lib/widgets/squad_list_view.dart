@@ -2,19 +2,25 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/player.dart';
+import '../screens/paste_import_screen.dart';
 import '../state/app_state.dart';
 import 'player_edit_dialog.dart';
 
-/// Zeigt den Kader eines Teams und erlaubt Hinzufügen/Bearbeiten/Löschen.
-/// Wird für das eigene Team und (zur manuellen Ergänzung) für den Gegner genutzt.
+/// Zeigt den Kader eines Teams und erlaubt Hinzufügen/Bearbeiten/Löschen
+/// sowie den Einfügen-Import. Wird für das eigene Team und (zur manuellen
+/// Ergänzung) für den Gegner genutzt.
 class SquadListView extends StatelessWidget {
   const SquadListView({
     super.key,
     required this.teamId,
-    this.emptyHint = 'Noch keine Spieler. Jetzt welche hinzufügen.',
+    this.teamName = 'Team',
+    this.fupaUrl,
+    this.emptyHint = 'Noch keine Spieler. Jetzt welche hinzufügen oder einfügen.',
   });
 
   final String teamId;
+  final String teamName;
+  final String? fupaUrl;
   final String emptyHint;
 
   @override
@@ -29,7 +35,11 @@ class SquadListView extends StatelessWidget {
         }
         final players = snap.data!;
         if (players.isEmpty) {
-          return _EmptyState(hint: emptyHint, onAdd: () => _add(context));
+          return _EmptyState(
+            hint: emptyHint,
+            onAdd: () => _add(context),
+            onPaste: () => _pasteImport(context),
+          );
         }
         return Column(
           children: [
@@ -62,18 +72,42 @@ class SquadListView extends StatelessWidget {
             ),
             Padding(
               padding: const EdgeInsets.all(12),
-              child: SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: () => _add(context),
-                  icon: const Icon(Icons.person_add),
-                  label: const Text('Spieler hinzufügen'),
-                ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => _add(context),
+                      icon: const Icon(Icons.person_add),
+                      label: const Text('Hinzufügen'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      onPressed: () => _pasteImport(context),
+                      icon: const Icon(Icons.content_paste),
+                      label: const Text('Einfügen'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
         );
       },
+    );
+  }
+
+  Future<void> _pasteImport(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PasteImportScreen(
+          teamId: teamId,
+          teamName: teamName,
+          fupaUrl: fupaUrl,
+        ),
+      ),
     );
   }
 
@@ -124,9 +158,14 @@ class SquadListView extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.hint, required this.onAdd});
+  const _EmptyState({
+    required this.hint,
+    required this.onAdd,
+    required this.onPaste,
+  });
   final String hint;
   final VoidCallback onAdd;
+  final VoidCallback onPaste;
 
   @override
   Widget build(BuildContext context) {
@@ -141,9 +180,15 @@ class _EmptyState extends StatelessWidget {
             Text(hint, textAlign: TextAlign.center),
             const SizedBox(height: 16),
             FilledButton.icon(
+              onPressed: onPaste,
+              icon: const Icon(Icons.content_paste),
+              label: const Text('Liste einfügen'),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
               onPressed: onAdd,
               icon: const Icon(Icons.person_add),
-              label: const Text('Spieler hinzufügen'),
+              label: const Text('Einzeln hinzufügen'),
             ),
           ],
         ),

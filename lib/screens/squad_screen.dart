@@ -28,7 +28,11 @@ class SquadScreen extends StatelessWidget {
       ),
       body: team == null
           ? _NoTeam(onCreate: () => context.read<AppState>().ensureOwnTeam())
-          : SquadListView(teamId: team.id),
+          : SquadListView(
+              teamId: team.id,
+              teamName: team.name,
+              fupaUrl: team.fupaUrl,
+            ),
     );
   }
 
