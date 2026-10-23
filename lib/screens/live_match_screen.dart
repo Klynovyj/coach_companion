@@ -263,16 +263,6 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     await _refreshEvents();
   }
 
-  void _togglePause() {
-    setState(() => _running = !_running);
-    if (_running) {
-      _startTimer();
-    } else {
-      _timer?.cancel();
-    }
-    _saveClock();
-  }
-
   /// Abpfiff: Spielende.
   Future<void> _finish() async {
     _timer?.cancel();
@@ -368,11 +358,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           ),
           _Controls(
             phase: _phase,
-            running: _running,
             onKickoff: _kickoff,
             onHalftime: _halftime,
             onSecondHalf: _startSecondHalf,
-            onPause: _togglePause,
             onFinish: _finish,
           ),
           const Divider(height: 1),
@@ -831,97 +819,59 @@ class _Scoreboard extends StatelessWidget {
 class _Controls extends StatelessWidget {
   const _Controls({
     required this.phase,
-    required this.running,
     required this.onKickoff,
     required this.onHalftime,
     required this.onSecondHalf,
-    required this.onPause,
     required this.onFinish,
   });
 
   final _Phase phase;
-  final bool running;
   final VoidCallback onKickoff;
   final VoidCallback onHalftime;
   final VoidCallback onSecondHalf;
-  final VoidCallback onPause;
   final VoidCallback onFinish;
 
   @override
   Widget build(BuildContext context) {
-    Widget wrap(List<Widget> children) => Padding(
+    // Keine Pause – die Uhr läuft durch. Nur ein Button je Spielphase.
+    Widget full(Widget button) => Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(children: children),
+          child: SizedBox(width: double.infinity, child: button),
         );
 
-    if (phase == _Phase.finished) {
-      return wrap([
-        Expanded(
-          child: OutlinedButton.icon(
-            onPressed: onKickoff,
-            icon: const Icon(Icons.replay),
-            label: const Text('Neues Spiel starten'),
-          ),
-        ),
-      ]);
-    }
-
-    // Primärer Button vereint Anpfiff / Pause / Weiter / Anpfiff 2. Halbzeit.
-    final VoidCallback onPrimary;
-    final IconData icon;
-    final String label;
-    if (running) {
-      onPrimary = onPause;
-      icon = Icons.pause;
-      label = 'Pause';
-    } else {
-      switch (phase) {
-        case _Phase.notStarted:
-          onPrimary = onKickoff;
-          label = 'Anpfiff';
-        case _Phase.halftime:
-          onPrimary = onSecondHalf;
-          label = 'Anpfiff 2. Halbzeit';
-        default: // firstHalf/secondHalf pausiert
-          onPrimary = onPause;
-          label = 'Weiter';
-      }
-      icon = Icons.play_arrow;
-    }
-
-    final primary = Expanded(
-      child: FilledButton.icon(
-        onPressed: onPrimary,
-        icon: Icon(icon),
-        label: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-      ),
-    );
-
-    // Sekundärer Button: Halbzeit (1. HZ) bzw. Abpfiff (2. HZ).
-    Widget? secondary;
-    if (phase == _Phase.firstHalf) {
-      secondary = Expanded(
-        child: OutlinedButton.icon(
+    switch (phase) {
+      case _Phase.finished:
+        return full(OutlinedButton.icon(
+          onPressed: onKickoff,
+          icon: const Icon(Icons.replay),
+          label: const Text('Neues Spiel starten'),
+        ));
+      case _Phase.notStarted:
+        return full(FilledButton.icon(
+          onPressed: onKickoff,
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Anpfiff'),
+        ));
+      case _Phase.firstHalf:
+        return full(FilledButton.icon(
           onPressed: onHalftime,
           icon: const Icon(Icons.timer),
           label: const Text('Halbzeit'),
-        ),
-      );
-    } else if (phase == _Phase.secondHalf) {
-      secondary = Expanded(
-        child: FilledButton.icon(
+        ));
+      case _Phase.halftime:
+        return full(FilledButton.icon(
+          onPressed: onSecondHalf,
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Anpfiff 2. Halbzeit'),
+        ));
+      case _Phase.secondHalf:
+        return full(FilledButton.icon(
           style: FilledButton.styleFrom(backgroundColor: Colors.red),
           onPressed: onFinish,
           icon: const Icon(Icons.stop),
           label: const Text('Abpfiff'),
-        ),
-      );
+        ));
     }
-
-    return wrap([
-      primary,
-      if (secondary != null) ...[const SizedBox(width: 8), secondary],
-    ]);
   }
 }
 
@@ -939,6 +889,27 @@ class _TeamActionBar extends StatelessWidget {
   final VoidCallback onGoal;
   final VoidCallback? onCard;
   final VoidCallback? onSub;
+
+  // Icon über Label – Text bleibt auch auf schmalen Handys lesbar.
+  static final _actionStyle = ButtonStyle(
+    padding: WidgetStateProperty.all(
+        const EdgeInsets.symmetric(horizontal: 4, vertical: 8)),
+    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  );
+
+  Widget _actionChild(Widget icon, String text) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon,
+          const SizedBox(height: 2),
+          Text(text,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.visible,
+              style:
+                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
+        ],
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -964,29 +935,32 @@ class _TeamActionBar extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: FilledButton.icon(
+                  child: FilledButton(
                     onPressed: onGoal,
-                    icon: const Text('⚽', style: TextStyle(fontSize: 16)),
-                    label: const Text('Tor'),
+                    style: _actionStyle,
+                    child: _actionChild(
+                        const Text('⚽', style: TextStyle(fontSize: 18)), 'Tor'),
                   ),
                 ),
                 if (onCard != null) ...[
                   const SizedBox(width: 8),
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: OutlinedButton(
                       onPressed: onCard,
-                      icon: const Icon(Icons.style, size: 18),
-                      label: const Text('Karte'),
+                      style: _actionStyle,
+                      child: _actionChild(
+                          const Icon(Icons.style, size: 20), 'Karte'),
                     ),
                   ),
                 ],
                 if (onSub != null) ...[
                   const SizedBox(width: 8),
                   Expanded(
-                    child: OutlinedButton.icon(
+                    child: OutlinedButton(
                       onPressed: onSub,
-                      icon: const Icon(Icons.swap_horiz, size: 18),
-                      label: const Text('Wechsel'),
+                      style: _actionStyle,
+                      child: _actionChild(
+                          const Icon(Icons.swap_horiz, size: 20), 'Wechsel'),
                     ),
                   ),
                 ],

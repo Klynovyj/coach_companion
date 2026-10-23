@@ -1,9 +1,15 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/player.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/pitch_field.dart';
 import '../widgets/player_avatar.dart';
@@ -34,6 +40,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   static const _defaultFormation = '4-4-2';
 
   final GlobalKey _pitchKey = GlobalKey();
+  final GlobalKey _boundaryKey = GlobalKey(); // Feld-Grafik zum Teilen
 
   Lineup? _lineup;
   String _formation = '4-4-2';
@@ -208,6 +215,54 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     await state.saveLineup(_lineup!.copyWith(formation: _formation), const []);
   }
 
+  /// Teilt – in der Feld-Ansicht die Aufstellungs-Grafik, in der Liste den
+  /// Kader als Text (Namen alphabetisch) via WhatsApp.
+  Future<void> _shareLineup() async {
+    if (_listMode) {
+      await shareViaWhatsApp(_squadText());
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final boundary = _boundaryKey.currentContext?.findRenderObject()
+          as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 3);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return;
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/aufstellung.png');
+      await file.writeAsBytes(data.buffer.asUint8List());
+      await shareImageFile(file.path,
+          text: 'Aufstellung – ${widget.teamName}');
+    } catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('Teilen fehlgeschlagen: $e')));
+    }
+  }
+
+  /// Kader als Text: Startelf + Ersatzbank, Namen alphabetisch sortiert.
+  String _squadText() {
+    List<String> names(Iterable<String> ids) => ids
+        .where(_byId.containsKey)
+        .map((id) => _byId[id]!.fullName)
+        .toList()
+      ..sort();
+    final start = names(_starters.keys);
+    final bench = names(_bench);
+    final b = StringBuffer();
+    b.writeln('📋 Kader – ${widget.teamName}');
+    if (start.isNotEmpty) {
+      b.writeln('\nStartelf (${start.length}):');
+      b.writeln(start.join('\n'));
+    }
+    if (bench.isNotEmpty) {
+      b.writeln('\nErsatzbank (${bench.length}):');
+      b.writeln(bench.join('\n'));
+    }
+    return b.toString().trim();
+  }
+
   Future<void> _openNomination() async {
     await Navigator.push(
       context,
@@ -232,6 +287,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       appBar: AppBar(
         title: Text('Aufstellung · ${widget.teamName}'),
         actions: [
+          IconButton(
+            tooltip: _listMode ? 'Kader teilen (WhatsApp)' : 'Aufstellung teilen',
+            icon: const Icon(Icons.share),
+            onPressed: _shareLineup,
+          ),
           IconButton(
             tooltip: 'Aufstellung zurücksetzen',
             icon: const Icon(Icons.restart_alt),
@@ -274,7 +334,10 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                 ],
               ),
             ),
-            Padding(padding: const EdgeInsets.all(12), child: _pitch()),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: RepaintBoundary(key: _boundaryKey, child: _pitch()),
+            ),
             _benchSection(),
             _poolSection(),
           ],

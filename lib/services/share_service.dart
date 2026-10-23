@@ -1,3 +1,4 @@
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/enums.dart';
@@ -14,6 +15,12 @@ import 'package:intl/intl.dart';
 Future<bool> shareViaWhatsApp(String text) async {
   final uri = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(text)}');
   return launchUrl(uri, mode: LaunchMode.externalApplication);
+}
+
+/// Teilt ein Bild (z.B. die Aufstellung) über das System-Teilen-Menü – auf dem
+/// Handy erscheint dort WhatsApp. Optionaler Begleittext.
+Future<void> shareImageFile(String path, {String? text}) async {
+  await SharePlus.instance.share(ShareParams(files: [XFile(path)], text: text));
 }
 
 /// Baut den Spielbericht-Text (Ergebnis, Tore, Karten, Wechsel).
