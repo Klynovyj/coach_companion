@@ -182,7 +182,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
     // Karteikarten: weniger auf einen Blick, kein endloses Scrollen.
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
@@ -207,6 +207,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 tabAlignment: TabAlignment.start,
                 tabs: const [
                   Tab(text: 'Profil'),
+                  Tab(text: 'Abwesenheit'),
                   Tab(text: 'Karten'),
                   Tab(text: 'Tore'),
                   Tab(text: 'Notizen'),
@@ -218,8 +219,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  _tabList(
-                      [_stammdatenCard(context), _absencesCard(context, state)]),
+                  _tabList([_stammdatenCard(context)]),
+                  _tabList([_absencesCard(context, state)]),
                   _tabList([_cardsCard(context, state, df)]),
                   _tabList([
                     _fupaStatCard(context, state),
@@ -273,6 +274,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   children: [
                     _statusMenu(context, p),
                     _captainMenu(context, p),
+                    _starterChip(context, p),
                     _ratingChip(context),
                   ],
                 ),
@@ -281,6 +283,17 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
           ),
         ],
       ),
+    );
+  }
+
+  /// Stamm-11-Schalter direkt im Kopf (antippen = an/aus).
+  Widget _starterChip(BuildContext context, Player p) {
+    return FilterChip(
+      label: const Text('Stamm 11'),
+      selected: p.isStarter,
+      showCheckmark: true,
+      visualDensity: VisualDensity.compact,
+      onSelected: (v) => _apply(p.copyWith(isStarter: v)),
     );
   }
 
@@ -428,15 +441,63 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   : p.copyWith(wishPosition: t));
             },
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
+          _positionsField(context, p),
+          const SizedBox(height: 14),
           _birthdateField(context, p),
         ],
       ),
     );
   }
 
+  /// Aktuelle Position(en) als Mehrfachauswahl (zusätzlich zum Freitext oben).
+  Widget _positionsField(BuildContext context, Player p) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          child: Text('Aktuelle Position(en)',
+              style:
+                  TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+        ),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final pos in kPositionOptions)
+              FilterChip(
+                label: Text(pos),
+                selected: p.positions.contains(pos),
+                showCheckmark: true,
+                visualDensity: VisualDensity.compact,
+                onSelected: (sel) {
+                  final next = [...p.positions];
+                  if (sel) {
+                    if (!next.contains(pos)) next.add(pos);
+                  } else {
+                    next.remove(pos);
+                  }
+                  _apply(p.copyWith(positions: next));
+                },
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  int? _ageOf(DateTime? b) {
+    if (b == null) return null;
+    final n = DateTime.now();
+    var a = n.year - b.year;
+    if (n.month < b.month || (n.month == b.month && n.day < b.day)) a--;
+    return a;
+  }
+
   Widget _birthdateField(BuildContext context, Player p) {
     final df = DateFormat('dd.MM.yyyy', 'de_DE');
+    final age = _ageOf(p.birthdate);
     return InkWell(
       onTap: () async {
         final now = DateTime.now();
@@ -452,7 +513,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       borderRadius: BorderRadius.circular(4),
       child: InputDecorator(
         decoration: InputDecoration(
-          labelText: 'Geburtsdatum',
+          labelText: 'Geburtstag & Alter',
           border: const OutlineInputBorder(),
           prefixIcon: const Icon(Icons.cake_outlined),
           suffixIcon: p.birthdate == null
@@ -464,7 +525,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 ),
         ),
         child: Text(
-          p.birthdate == null ? 'Nicht gesetzt' : df.format(p.birthdate!),
+          p.birthdate == null
+              ? 'Nicht gesetzt'
+              : '${df.format(p.birthdate!)}  ·  $age Jahre',
           style: p.birthdate == null
               ? TextStyle(color: Theme.of(context).hintColor)
               : null,

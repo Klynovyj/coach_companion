@@ -13,8 +13,14 @@ class Player {
   /// Position/Spielort als Freitext (z.B. "Sturm", "IV").
   final String? position;
 
+  /// Aktuelle Positionen aus der vordefinierten Liste (mehrere möglich).
+  final List<String> positions;
+
   /// Wunschposition (Freitext).
   final String? wishPosition;
+
+  /// Gehört zur Stammelf (Stamm-11)?
+  final bool isStarter;
 
   /// Verfügbarkeitsstatus (Fit/Verletzt/Krank/Gesperrt).
   final PlayerStatus status;
@@ -45,7 +51,9 @@ class Player {
     required this.lastName,
     this.number,
     this.position,
+    this.positions = const [],
     this.wishPosition,
+    this.isStarter = false,
     this.status = PlayerStatus.fit,
     this.captainRole = CaptainRole.none,
     this.birthdate,
@@ -81,8 +89,10 @@ class Player {
     bool clearNumber = false,
     String? position,
     bool clearPosition = false,
+    List<String>? positions,
     String? wishPosition,
     bool clearWishPosition = false,
+    bool? isStarter,
     PlayerStatus? status,
     CaptainRole? captainRole,
     DateTime? birthdate,
@@ -99,8 +109,10 @@ class Player {
       lastName: lastName ?? this.lastName,
       number: clearNumber ? null : (number ?? this.number),
       position: clearPosition ? null : (position ?? this.position),
+      positions: positions ?? this.positions,
       wishPosition:
           clearWishPosition ? null : (wishPosition ?? this.wishPosition),
+      isStarter: isStarter ?? this.isStarter,
       status: status ?? this.status,
       captainRole: captainRole ?? this.captainRole,
       birthdate: clearBirthdate ? null : (birthdate ?? this.birthdate),
@@ -119,7 +131,9 @@ class Player {
         'last_name': lastName,
         'number': number,
         'position': position,
+        'positions': positions.join(','),
         'wish_position': wishPosition,
+        'is_starter': isStarter ? 1 : 0,
         'status': status.storageKey,
         'captain_role': captainRole.storageKey,
         'birthdate': birthdate?.toIso8601String(),
@@ -137,7 +151,13 @@ class Player {
         lastName: m['last_name'] as String? ?? '',
         number: m['number'] as int?,
         position: m['position'] as String?,
+        positions: ((m['positions'] as String?) ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList(),
         wishPosition: m['wish_position'] as String?,
+        isStarter: (m['is_starter'] as int? ?? 0) == 1,
         status: PlayerStatus.fromKey(m['status'] as String?),
         captainRole: CaptainRole.fromKey(m['captain_role'] as String?),
         birthdate: DateTime.tryParse(m['birthdate'] as String? ?? ''),
@@ -150,3 +170,19 @@ class Player {
                 DateTime.now(),
       );
 }
+
+/// Vordefinierte Positionen für die Mehrfachauswahl im Spielerprofil.
+const List<String> kPositionOptions = [
+  'TW',
+  'IV',
+  'LV',
+  'RV',
+  'DM',
+  'ZM',
+  'OM',
+  'LM',
+  'RM',
+  'LA',
+  'RA',
+  'ST',
+];

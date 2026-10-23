@@ -175,6 +175,22 @@ class _SquadListViewState extends State<SquadListView> {
             const SizedBox(width: 6),
             Text(p.status.symbol, style: const TextStyle(fontSize: 13)),
           ],
+          if (p.isStarter) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color:
+                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text('S11',
+                  style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary)),
+            ),
+          ],
         ],
       ),
       subtitle: _subtitle(p, cards[p.id], ratings[p.id], stats[p.dedupKey]),
