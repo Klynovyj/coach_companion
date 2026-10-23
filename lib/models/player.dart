@@ -186,4 +186,7 @@ const List<String> kPositionOptions = [
   'LA',
   'RA',
   'ST',
+  '6',
+  '8',
+  '10',
 ];
