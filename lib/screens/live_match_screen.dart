@@ -13,7 +13,6 @@ import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/team_logo.dart';
-import 'rating_screen.dart';
 
 /// Spielphasen des Live-Modus.
 enum _Phase { notStarted, firstHalf, halftime, secondHalf, finished }
@@ -277,34 +276,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         .setMatchStatus(widget.matchId, MatchStatus.finished);
     await _logPhase(MatchEventType.fulltime, min, extra);
     await _refreshEvents();
-    if (mounted) await _promptRating();
-  }
-
-  /// Direkt nach Abpfiff zum Bewerten einladen (jederzeit auch später möglich).
-  Future<void> _promptRating() async {
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Spiel beendet'),
-        content: const Text('Möchtest du die Spieler jetzt bewerten?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Später')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Jetzt bewerten')),
-        ],
-      ),
-    );
-    if (go == true && mounted) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => RatingScreen(matchId: widget.matchId),
-        ),
-      );
-    }
+    // Kein automatischer Bewerten-Dialog nach dem Abpfiff – das Bewerten
+    // ist jederzeit über das 3-Punkte-Menü („Spieler bewerten") erreichbar.
   }
 
   String get _clockText {
@@ -542,27 +515,27 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _snack('Keine Spieler auf der Bank für einen Wechsel.');
       return;
     }
-    final off = await _pickPlayer(
-      title: 'Raus (auf dem Feld)',
-      players: onField,
-      allowUnknown: false,
+    // Doppel-/Mehrfachwechsel: mehrere Paare (Raus → Rein) in einem Fenster
+    // sammeln und auf einmal bestätigen. Jedes Paar wird als eigenes
+    // Wechsel-Ereignis (zur aktuellen Minute) gespeichert.
+    final pairs = await showModalBottomSheet<List<({String off, String on})>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _SubstitutionSheet(onField: onField, bench: bench),
     );
-    if (off == _pickCancelled || !mounted) return;
-    final on = await _pickPlayer(
-      title: 'Rein (von der Bank)',
-      players: bench,
-      allowUnknown: false,
-    );
-    if (on == _pickCancelled) return;
-    await state.addEvent(
-      matchId: widget.matchId,
-      teamId: _teamIdFor(ownSide),
-      minute: _currentMinute,
-      minuteExtra: _currentExtra,
-      type: MatchEventType.substitution,
-      playerId: on, // kommt
-      assistPlayerId: off, // geht
-    );
+    if (pairs == null || pairs.isEmpty || !mounted) return;
+    for (final pair in pairs) {
+      await state.addEvent(
+        matchId: widget.matchId,
+        teamId: _teamIdFor(ownSide),
+        minute: _currentMinute,
+        minuteExtra: _currentExtra,
+        type: MatchEventType.substitution,
+        playerId: pair.on, // kommt
+        assistPlayerId: pair.off, // geht
+      );
+    }
     await _refreshEvents();
   }
 
@@ -1258,6 +1231,197 @@ class _PlayerPickSheet extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Wechsel-Fenster für Doppel-/Mehrfachwechsel: Paare (Raus → Rein) sammeln
+/// und am Ende gemeinsam bestätigen. Jedes Paar wird als eigener Wechsel
+/// gespeichert. Gibt die Liste der Paare zurück (oder null bei Abbruch).
+class _SubstitutionSheet extends StatefulWidget {
+  const _SubstitutionSheet({required this.onField, required this.bench});
+
+  final List<Player> onField;
+  final List<Player> bench;
+
+  @override
+  State<_SubstitutionSheet> createState() => _SubstitutionSheetState();
+}
+
+class _SubstitutionSheetState extends State<_SubstitutionSheet> {
+  final List<({String off, String on})> _pairs = [];
+  String? _pendingOff; // Spieler, der raus geht und auf einen Rein wartet.
+
+  Player _byId(String id) =>
+      [...widget.onField, ...widget.bench].firstWhere((p) => p.id == id);
+
+  void _onTap(String id, bool selectingIn) {
+    setState(() {
+      if (selectingIn) {
+        _pairs.add((off: _pendingOff!, on: id));
+        _pendingOff = null;
+      } else {
+        _pendingOff = id;
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final usedOff = _pairs.map((e) => e.off).toSet();
+    final usedOn = _pairs.map((e) => e.on).toSet();
+    final availOff =
+        widget.onField.where((p) => !usedOff.contains(p.id)).toList();
+    final availOn = widget.bench.where((p) => !usedOn.contains(p.id)).toList();
+    final selectingIn = _pendingOff != null;
+    final candidates = selectingIn ? availOn : availOff;
+
+    final maxH = MediaQuery.of(context).size.height * 0.82;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Kopf
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.swap_horiz),
+                  const SizedBox(width: 8),
+                  Text('Wechsel',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleLarge
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  const Spacer(),
+                  if (_pairs.isNotEmpty)
+                    Text('${_pairs.length} geplant',
+                        style: TextStyle(
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+            // Geplante Paare
+            if (_pairs.isNotEmpty) ...[
+              const Divider(height: 1),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [for (final pair in _pairs) _plannedPairRow(pair)],
+                ),
+              ),
+            ],
+            const Divider(height: 1),
+            // Hinweiszeile
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+              child: selectingIn
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Wer kommt für ${_byId(_pendingOff!).displayName} rein?',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: () =>
+                              setState(() => _pendingOff = null),
+                          child: const Text('Zurück'),
+                        ),
+                      ],
+                    )
+                  : const Text('Wer geht raus? (Feldspieler antippen)',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+            ),
+            // Auswahlliste
+            Flexible(
+              child: candidates.isEmpty
+                  ? Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Text(selectingIn
+                          ? 'Keine Spieler mehr auf der Bank.'
+                          : 'Keine Feldspieler mehr verfügbar.'),
+                    )
+                  : ListView(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      children: [
+                        for (final p in candidates)
+                          ListTile(
+                            leading: PlayerAvatar(player: p),
+                            title: Text(p.fullName),
+                            subtitle: Text([
+                              if (p.number != null) 'Nr. ${p.number}',
+                              if (p.position != null) p.position!,
+                            ].join('  ·  ')),
+                            trailing: Icon(
+                              selectingIn ? Icons.login : Icons.logout,
+                              color: selectingIn
+                                  ? scheme.primary
+                                  : Colors.redAccent,
+                            ),
+                            onTap: () => _onTap(p.id, selectingIn),
+                          ),
+                      ],
+                    ),
+            ),
+            const Divider(height: 1),
+            // Bestätigen
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _pairs.isEmpty
+                      ? null
+                      : () => Navigator.pop(context, _pairs),
+                  icon: const Icon(Icons.check),
+                  label: Text(_pairs.length <= 1
+                      ? 'Wechsel bestätigen'
+                      : '${_pairs.length} Wechsel bestätigen'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _plannedPairRow(({String off, String on}) pair) {
+    final off = _byId(pair.off);
+    final on = _byId(pair.on);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          const Icon(Icons.logout, size: 16, color: Colors.redAccent),
+          const SizedBox(width: 4),
+          Expanded(
+              child: Text(off.displayName, overflow: TextOverflow.ellipsis)),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 4),
+            child: Icon(Icons.arrow_forward, size: 16),
+          ),
+          const Icon(Icons.login, size: 16, color: Colors.green),
+          const SizedBox(width: 4),
+          Expanded(
+              child: Text(on.displayName, overflow: TextOverflow.ellipsis)),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            visualDensity: VisualDensity.compact,
+            tooltip: 'Wechsel entfernen',
+            onPressed: () => setState(() => _pairs.remove(pair)),
+          ),
+        ],
       ),
     );
   }
