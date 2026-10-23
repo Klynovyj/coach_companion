@@ -43,7 +43,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   final Set<String> _bench = {};
   bool _loading = true;
   bool _restricted = false;
-  bool _listMode = false;
+  // Start immer in der Listen-Ansicht (wie SpielerPlus): erst Start/Bank
+  // einteilen, danach im Feld frei anordnen.
+  bool _listMode = true;
 
   @override
   void initState() {
@@ -250,28 +252,28 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       body: ListView(
         children: [
           _banner(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text('Startelf',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-                Text('$starters/11',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: starters == 11
-                            ? Colors.green.shade700
-                            : Colors.orange.shade800)),
-              ],
-            ),
-          ),
           if (_listMode)
             _listEditor()
           else ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Startelf',
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  Text('$starters/11',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: starters == 11
+                              ? Colors.green.shade700
+                              : Colors.orange.shade800)),
+                ],
+              ),
+            ),
             Padding(padding: const EdgeInsets.all(12), child: _pitch()),
             _benchSection(),
             _poolSection(),
@@ -294,9 +296,13 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
               size: 18, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(_restricted
-                ? 'Ziehe zugesagte Spieler frei auf das Feld'
-                : 'Noch keine Zusagen – es wird der ganze Kader gezeigt'),
+            child: Text(
+              !_restricted
+                  ? 'Noch keine Zusagen – es wird der ganze Kader gezeigt'
+                  : _listMode
+                      ? 'Erst Start/Bank einteilen – dann im Feld anordnen'
+                      : 'Ziehe die Spieler frei auf das Feld',
+            ),
           ),
           TextButton(
               onPressed: _openNomination, child: const Text('Nominierung')),
@@ -307,69 +313,81 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
 
   // --------------------------------------------------------------- Feld-Modus
   Widget _pitch() {
-    // Höhe begrenzen, damit das ganze Feld sichtbar bleibt (nicht zu hoch).
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: 460),
-        child: AspectRatio(
-          aspectRatio: 0.66,
-          child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: LayoutBuilder(
-          builder: (context, c) {
-            final w = c.maxWidth;
-            final h = c.maxHeight;
-            const chip = 52.0;
-            return Stack(
-              key: _pitchKey,
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: PitchFieldPainter(
-                      Colors.white.withValues(alpha: 0.85),
-                      const Color(0xFF2E7D4F),
-                      const Color(0xFF2A744A),
-                    ),
-                  ),
-                ),
-                // Ganzflächiges Drop-Ziel: Spieler landen dort, wo du loslässt.
-                Positioned.fill(
-                  child: DragTarget<String>(
-                    onWillAcceptWithDetails: (_) => true,
-                    onAcceptWithDetails: (d) {
-                      final rel = _relFromGlobal(d.offset);
-                      if (rel != null) _placeAt(d.data, rel);
-                    },
-                    builder: (context, cand, rej) => const SizedBox.expand(),
-                  ),
-                ),
-                for (final entry in _starters.entries)
-                  if (_byId.containsKey(entry.key))
-                    Positioned(
-                      left: entry.value.dx * w - chip / 2,
-                      top: entry.value.dy * h - (chip + 14) / 2,
-                      width: chip,
-                      height: chip + 14,
-                      child: _draggable(
-                        _byId[entry.key]!,
-                        _pitchChip(_byId[entry.key]!),
+    // Responsiv: Feld füllt die verfügbare Breite, Höhe folgt dem
+    // Seitenverhältnis – aber gedeckelt an die Viewport-Höhe, damit das ganze
+    // Feld auf Mobilgeräten sichtbar bleibt. Spieler-Chips skalieren mit.
+    return LayoutBuilder(
+      builder: (context, outer) {
+        final media = MediaQuery.of(context);
+        final maxW = outer.maxWidth.isFinite
+            ? outer.maxWidth
+            : media.size.width - 24;
+        final maxH = media.size.height * 0.60;
+        const ratio = 0.66; // Breite / Höhe
+        var w = maxW;
+        var h = w / ratio;
+        if (h > maxH) {
+          h = maxH;
+          w = h * ratio;
+        }
+        final chip = (w * 0.145).clamp(40.0, 58.0);
+        final chipH = chip + chip * 0.32;
+        return Center(
+          child: SizedBox(
+            width: w,
+            height: h,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Stack(
+                key: _pitchKey,
+                children: [
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: PitchFieldPainter(
+                        Colors.white.withValues(alpha: 0.85),
+                        const Color(0xFF2E7D4F),
+                        const Color(0xFF2A744A),
                       ),
                     ),
-              ],
-            );
-          },
+                  ),
+                  // Ganzflächiges Drop-Ziel: Spieler landen dort, wo du loslässt.
+                  Positioned.fill(
+                    child: DragTarget<String>(
+                      onWillAcceptWithDetails: (_) => true,
+                      onAcceptWithDetails: (d) {
+                        final rel = _relFromGlobal(d.offset);
+                        if (rel != null) _placeAt(d.data, rel);
+                      },
+                      builder: (context, cand, rej) => const SizedBox.expand(),
+                    ),
+                  ),
+                  for (final entry in _starters.entries)
+                    if (_byId.containsKey(entry.key))
+                      Positioned(
+                        left: entry.value.dx * w - chip / 2,
+                        top: entry.value.dy * h - chipH / 2,
+                        width: chip,
+                        height: chipH,
+                        child: _draggable(
+                          _byId[entry.key]!,
+                          _pitchChip(_byId[entry.key]!, chip),
+                          anchor: chip / 2,
+                        ),
+                      ),
+                ],
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  Widget _pitchChip(Player p) {
+  Widget _pitchChip(Player p, double chip) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        PlayerAvatar(player: p, radius: 20),
+        PlayerAvatar(player: p, radius: chip * 0.38),
         Container(
           margin: const EdgeInsets.only(top: 2),
           padding: const EdgeInsets.symmetric(horizontal: 4),
@@ -381,8 +399,10 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             p.lastName.isNotEmpty ? p.lastName : p.firstName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                color: Colors.white, fontSize: 9, fontWeight: FontWeight.w600),
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: (chip * 0.19).clamp(8.0, 12.0),
+                fontWeight: FontWeight.w600),
           ),
         ),
       ],
@@ -390,12 +410,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   }
 
   /// Draggable mit pointer-Anker: Drop-Punkt = Zeigerposition.
-  Widget _draggable(Player p, Widget child) {
+  Widget _draggable(Player p, Widget child, {double anchor = 26}) {
     return Draggable<String>(
       data: p.id,
       dragAnchorStrategy: pointerDragAnchorStrategy,
       feedback: Transform.translate(
-        offset: const Offset(-26, -26),
+        offset: Offset(-anchor, -anchor),
         child: Material(color: Colors.transparent, child: child),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: child),
@@ -489,40 +509,86 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
 
   // ------------------------------------------------------------- Listen-Modus
   Widget _listEditor() {
+    // Gruppiert wie bei SpielerPlus: Startelf, Ersatzbank, Verfügbar.
+    final starters =
+        _nominated.where((p) => _starters.containsKey(p.id)).toList();
+    final bench = _nominated.where((p) => _bench.contains(p.id)).toList();
+    final available = _pool;
     return Column(
-      children: _nominated.map((p) {
-        final isStarter = _starters.containsKey(p.id);
-        final onBench = _bench.contains(p.id);
-        final role = isStarter ? 'start' : (onBench ? 'bank' : 'raus');
-        return ListTile(
-          leading: PlayerAvatar(player: p, radius: 18),
-          title: Text(p.fullName),
-          subtitle: p.position == null ? null : Text(p.position!),
-          trailing: SegmentedButton<String>(
-            style: const ButtonStyle(
-              visualDensity: VisualDensity.compact,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-            segments: const [
-              ButtonSegment(value: 'start', label: Text('Start')),
-              ButtonSegment(value: 'bank', label: Text('Bank')),
-              ButtonSegment(value: 'raus', label: Text('Raus')),
+      children: [
+        _listGroup('Startelf', starters, countLabel: '${starters.length}/11'),
+        _listGroup('Ersatzbank', bench),
+        _listGroup('Verfügbar', available,
+            emptyHint: 'Alle Spieler sind eingeteilt.'),
+      ],
+    );
+  }
+
+  Widget _listGroup(String title, List<Player> players,
+      {String? countLabel, String? emptyHint}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
+          child: Row(
+            children: [
+              Text(title,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelLarge
+                      ?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                          fontWeight: FontWeight.bold)),
+              const SizedBox(width: 8),
+              Text(countLabel ?? '${players.length}',
+                  style: Theme.of(context).textTheme.bodySmall),
             ],
-            selected: {role},
-            showSelectedIcon: false,
-            onSelectionChanged: (s) {
-              final v = s.first;
-              if (v == 'start') {
-                if (!isStarter) _addStarterDefault(p.id);
-              } else if (v == 'bank') {
-                _toBench(p.id);
-              } else {
-                _toPool(p.id);
-              }
-            },
           ),
-        );
-      }).toList(),
+        ),
+        if (players.isEmpty && emptyHint != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
+            child: Text(emptyHint,
+                style: const TextStyle(color: Colors.grey)),
+          )
+        else
+          for (final p in players) _listRow(p),
+      ],
+    );
+  }
+
+  Widget _listRow(Player p) {
+    final isStarter = _starters.containsKey(p.id);
+    final onBench = _bench.contains(p.id);
+    final role = isStarter ? 'start' : (onBench ? 'bank' : 'raus');
+    return ListTile(
+      leading: PlayerAvatar(player: p, radius: 18),
+      title: Text(p.fullName),
+      subtitle: p.position == null ? null : Text(p.position!),
+      trailing: SegmentedButton<String>(
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        segments: const [
+          ButtonSegment(value: 'start', label: Text('Start')),
+          ButtonSegment(value: 'bank', label: Text('Bank')),
+          ButtonSegment(value: 'raus', label: Text('Raus')),
+        ],
+        selected: {role},
+        showSelectedIcon: false,
+        onSelectionChanged: (s) {
+          final v = s.first;
+          if (v == 'start') {
+            if (!isStarter) _addStarterDefault(p.id);
+          } else if (v == 'bank') {
+            _toBench(p.id);
+          } else {
+            _toPool(p.id);
+          }
+        },
+      ),
     );
   }
 }
