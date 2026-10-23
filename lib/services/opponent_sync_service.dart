@@ -53,14 +53,7 @@ class OpponentSyncService {
           fupaUrl: url,
           lastSyncedAt: DateTime.now(),
         ));
-        final players = data.players
-            .map((p) => PlayerData(
-                  firstName: p.firstName,
-                  lastName: p.lastName,
-                  number: p.number,
-                  position: p.position,
-                ))
-            .toList();
+        final players = await _importer.toPlayerDataWithPhotos(data.players);
         final added = await _persist.syncPlayers(
             team.id, players, DataSource.fupaApproved);
         await _repo.upsertMatch(match.copyWith(

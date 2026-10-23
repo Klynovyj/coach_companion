@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/player.dart';
 import '../screens/paste_import_screen.dart';
 import '../state/app_state.dart';
+import 'player_avatar.dart';
 import 'player_edit_dialog.dart';
 
 /// Zeigt den Kader eines Teams und erlaubt Hinzufügen/Bearbeiten/Löschen
@@ -50,10 +51,7 @@ class SquadListView extends StatelessWidget {
                 itemBuilder: (context, i) {
                   final p = players[i];
                   return ListTile(
-                    leading: CircleAvatar(
-                      child: Text(p.number?.toString() ??
-                          (p.lastName.isNotEmpty ? p.lastName[0] : '?')),
-                    ),
+                    leading: PlayerAvatar(player: p),
                     title: Text(p.fullName),
                     subtitle: p.position == null ? null : Text(p.position!),
                     trailing: PopupMenuButton<String>(

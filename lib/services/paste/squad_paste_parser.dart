@@ -4,18 +4,26 @@
 // FuPa-Mannschaftsseite) in Spieler-Vorschläge. Die App ruft dabei nichts von
 // FuPa ab – sie interpretiert ausschließlich den Text, den der Nutzer einfügt.
 
-/// Ein aus einer Textzeile erkannter Spieler-Vorschlag.
+/// Ein aus einer Textzeile oder FuPa-Seite erkannter Spieler-Vorschlag.
 class ParsedPlayer {
   final int? number;
   final String firstName;
   final String lastName;
   final String? position;
 
+  /// Externe FuPa-ID/Slug (für stabile Duplikaterkennung), falls vorhanden.
+  final String? externalId;
+
+  /// Basis-URL des Spielerfotos (ohne Größen-Suffix), falls vorhanden.
+  final String? photoUrl;
+
   const ParsedPlayer({
     this.number,
     this.firstName = '',
     this.lastName = '',
     this.position,
+    this.externalId,
+    this.photoUrl,
   });
 
   bool get needsName => firstName.isEmpty && lastName.isEmpty;

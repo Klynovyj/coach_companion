@@ -78,19 +78,53 @@ class FupaReduxImporter {
   }
 
   /// Lädt das Vereinslogo als Data-URL (PNG). FuPa erlaubt nur feste Größen –
-  /// 128×128 ist für Avatare ausreichend. Fehler werden still verschluckt.
-  Future<String?> downloadLogo(String baseUrl) async {
-    final url = baseUrl.endsWith('/') ? '${baseUrl}128x128.png' : baseUrl;
+  /// 128×128 ist für Avatare ausreichend.
+  Future<String?> downloadLogo(String baseUrl) =>
+      _downloadImage(baseUrl, '128x128.png');
+
+  /// Lädt ein Spielerfoto als Data-URL (JPEG, 128×128).
+  Future<String?> downloadPhoto(String baseUrl) =>
+      _downloadImage(baseUrl, '128x128.jpeg');
+
+  /// Lädt ein FuPa-Bild (Basis-URL + Größen-Suffix) als Data-URL. Fehler
+  /// werden still verschluckt (Bild ist optional).
+  Future<String?> _downloadImage(String baseUrl, String suffix) async {
+    final url = baseUrl.endsWith('/') ? '$baseUrl$suffix' : baseUrl;
     try {
       final resp = await _client.get(Uri.parse(url),
           headers: const {'User-Agent': 'Mozilla/5.0 CoachCompanion/1.0'});
       if (resp.statusCode != 200) return null;
-      final ct = resp.headers['content-type'] ?? 'image/png';
+      final ct = resp.headers['content-type'] ?? 'image/jpeg';
       if (!ct.startsWith('image/')) return null;
       return 'data:$ct;base64,${base64Encode(resp.bodyBytes)}';
     } catch (_) {
       return null;
     }
+  }
+
+  /// Wandelt erkannte Spieler in [PlayerData] um und lädt dabei – sofern eine
+  /// Foto-URL vorliegt – die Spielerfotos nebenläufig als Data-URL.
+  Future<List<PlayerData>> toPlayerDataWithPhotos(
+      List<ParsedPlayer> players) async {
+    final photos = <String, String?>{};
+    final urls = <String>{
+      for (final p in players)
+        if (p.photoUrl != null) p.photoUrl!,
+    };
+    await Future.wait(urls.map((u) async {
+      photos[u] = await downloadPhoto(u);
+    }));
+    return [
+      for (final p in players)
+        PlayerData(
+          firstName: p.firstName,
+          lastName: p.lastName,
+          number: p.number,
+          position: p.position,
+          externalId: p.externalId,
+          photoDataUrl: p.photoUrl == null ? null : photos[p.photoUrl!],
+        ),
+    ];
   }
 
   /// Importiert den Spielplan einer Mannschaft. Akzeptiert den Team- oder den
@@ -249,6 +283,8 @@ class FupaReduxImporter {
         firstName: first,
         lastName: last,
         position: _mapPosition(raw['position']),
+        externalId: (raw['id'] ?? raw['slug'])?.toString(),
+        photoUrl: _imagePath(raw['image']),
       ));
     }
     return out;
@@ -504,7 +540,17 @@ class FupaReduxImporter {
       firstName: first,
       lastName: last,
       position: position,
+      externalId: (data['id'] ?? data['slug'])?.toString(),
+      photoUrl: _imagePath(data['image']),
     );
+  }
+
+  static String? _imagePath(Object? image) {
+    if (image is Map && image['path'] is String) {
+      final p = image['path'] as String;
+      if (p.startsWith('http')) return p;
+    }
+    return null;
   }
 
   /// FuPa nutzt grobe deutsche Bezeichnungen – auf unsere Kategorien mappen.

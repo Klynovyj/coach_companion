@@ -13,7 +13,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 4;
+  static const _dbVersion = 5;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -57,6 +57,10 @@ class AppDatabase {
     // v3 -> v4: Spieler-Saison-Statistik.
     if (oldV < 4) {
       await db.execute(_playerStatsTableSql);
+    }
+    // v4 -> v5: Spielerfoto.
+    if (oldV < 5) {
+      await db.execute('ALTER TABLE players ADD COLUMN photo_path TEXT');
     }
   }
 
@@ -104,6 +108,7 @@ class AppDatabase {
         number INTEGER,
         position TEXT,
         external_id TEXT,
+        photo_path TEXT,
         source TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1,
         created_at TEXT NOT NULL,

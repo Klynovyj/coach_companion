@@ -16,6 +16,9 @@ class Player {
   /// Externer Bezeichner aus der Importquelle – für Duplikaterkennung.
   final String? externalId;
 
+  /// Spielerfoto als Data-URL (image/jpeg), falls synchronisiert.
+  final String? photoPath;
+
   final DataSource source;
 
   /// false = gilt aktuell als nicht im Kader (z.B. abgemeldet).
@@ -31,6 +34,7 @@ class Player {
     this.number,
     this.position,
     this.externalId,
+    this.photoPath,
     this.source = DataSource.manual,
     this.active = true,
     required this.createdAt,
@@ -61,6 +65,7 @@ class Player {
     bool clearNumber = false,
     String? position,
     String? externalId,
+    String? photoPath,
     DataSource? source,
     bool? active,
   }) {
@@ -72,6 +77,7 @@ class Player {
       number: clearNumber ? null : (number ?? this.number),
       position: position ?? this.position,
       externalId: externalId ?? this.externalId,
+      photoPath: photoPath ?? this.photoPath,
       source: source ?? this.source,
       active: active ?? this.active,
       createdAt: createdAt,
@@ -86,6 +92,7 @@ class Player {
         'number': number,
         'position': position,
         'external_id': externalId,
+        'photo_path': photoPath,
         'source': source.storageKey,
         'active': active ? 1 : 0,
         'created_at': createdAt.toIso8601String(),
@@ -99,6 +106,7 @@ class Player {
         number: m['number'] as int?,
         position: m['position'] as String?,
         externalId: m['external_id'] as String?,
+        photoPath: m['photo_path'] as String?,
         source: DataSource.fromKey(m['source'] as String?),
         active: (m['active'] as int? ?? 1) == 1,
         createdAt:

@@ -8,8 +8,8 @@ enum DataSource {
   /// Manuell im App-UI angelegt.
   manual('manual', 'Manuell'),
 
-  /// Über eine genehmigte FuPa-Datenschnittstelle importiert.
-  fupaApproved('fupa_approved', 'FuPa (genehmigt)'),
+  /// Aus FuPa importiert.
+  fupaApproved('fupa_approved', 'FuPa'),
 
   /// Platzhalter aus dem Spielplan (Gegnername bekannt, Kader noch nicht).
   schedulePlaceholder('schedule_placeholder', 'Spielplan');

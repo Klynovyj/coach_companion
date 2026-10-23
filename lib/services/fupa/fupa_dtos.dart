@@ -1,23 +1,5 @@
 import '../../models/enums.dart';
 
-/// Referenz auf eine FuPa-Mannschaft, aus einem Link ermittelt.
-class FupaTeamRef {
-  /// Ursprünglicher Link, wie eingegeben.
-  final String url;
-
-  /// Stabiler Bezeichner (Slug) aus dem Link – Basis für Identifikation/Dedup.
-  final String ref;
-
-  /// Aus dem Link abgeleiteter, lesbarer Anzeigename (best effort).
-  final String displayName;
-
-  const FupaTeamRef({
-    required this.url,
-    required this.ref,
-    required this.displayName,
-  });
-}
-
 /// Importierte Stammdaten eines Spielers (quellneutral).
 class PlayerData {
   final String firstName;
@@ -28,27 +10,16 @@ class PlayerData {
   /// Externe ID aus der Quelle (für Duplikaterkennung), falls vorhanden.
   final String? externalId;
 
+  /// Spielerfoto als Data-URL (bereits heruntergeladen), falls verfügbar.
+  final String? photoDataUrl;
+
   const PlayerData({
     required this.firstName,
     required this.lastName,
     this.number,
     this.position,
     this.externalId,
-  });
-}
-
-/// Importierte Stammdaten einer Mannschaft inkl. Kader.
-class TeamData {
-  final String name;
-  final String? shortName;
-  final String? fupaRef;
-  final List<PlayerData> players;
-
-  const TeamData({
-    required this.name,
-    this.shortName,
-    this.fupaRef,
-    this.players = const [],
+    this.photoDataUrl,
   });
 }
 
@@ -136,45 +107,17 @@ class PlayerStatData {
   });
 }
 
-/// Verfügbarkeit einer Datenquelle zum aktuellen Zeitpunkt.
-class SourceAvailability {
-  /// true = kann jetzt automatisch (online) importieren.
-  final bool canAutoImport;
-
-  /// Kurzer, klar verständlicher Status für die UI.
-  final String message;
-
-  const SourceAvailability(this.canAutoImport, this.message);
-
-  const SourceAvailability.unavailable(String message)
-      : this(false, message);
-  const SourceAvailability.ready(String message) : this(true, message);
-}
-
-/// Ergebnis eines Import-/Sync-Vorgangs.
+/// Ergebnis eines Gegner-Sync-Vorgangs (für Statusmeldungen in der UI).
 class ImportResult {
   final ImportStatus status;
   final String message;
 
-  /// Ermittelte Team-Referenz (auch bei manualRequired gesetzt, damit die
-  /// UI direkt mit der manuellen Pflege fortfahren kann).
-  final FupaTeamRef? teamRef;
-
-  final TeamData? team;
-  final List<ScheduledMatchData> schedule;
-
-  /// Anzahl neu übernommener Spieler (0 bei reinem Dedup).
+  /// Anzahl übernommener Spieler.
   final int importedPlayers;
 
   const ImportResult({
     required this.status,
     required this.message,
-    this.teamRef,
-    this.team,
-    this.schedule = const [],
     this.importedPlayers = 0,
   });
-
-  bool get isSuccess => status == ImportStatus.success;
-  bool get needsManual => status == ImportStatus.manualRequired;
 }

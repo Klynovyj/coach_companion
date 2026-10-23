@@ -24,8 +24,15 @@ optionalem FuPa-Import, automatischem Gegner-Sync und Live-Spielerfassung für
 
 ## FuPa-Import
 
-Spielerstammdaten lassen sich über **FuPa-Links** importieren – gleicher
-Ansatz wie im Schwesterprojekt *Coach Studio*:
+**Zentral in den Einstellungen:** Du fügst einen **FuPa-Teamlink** ein und
+tippst „Verbinden & alles laden" – die App zieht daraus automatisch
+Teamname & Logo, den **Kader inklusive Spielerfotos**, den **Spielplan**
+(mit Ergebnissen und Gegner-Wappen) und die **Spieler-Statistik**.
+„Neu synchronisieren" wiederholt das. Zusätzlich gibt es pro Bereich
+(Kader/Spielplan/Statistik) weiterhin Einzel-Import-Buttons zum gezielten
+Nachladen.
+
+Technisch identischer Ansatz wie im Schwesterprojekt *Coach Studio*:
 
 - Im Einfügen-Import (Kader bzw. Gegner) fügst du ein, beliebig gemischt:
   - einen **FuPa-Teamlink** (`…/team/…`) → holt den **ganzen Kader** auf einmal

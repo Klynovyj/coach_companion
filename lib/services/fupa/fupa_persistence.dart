@@ -6,6 +6,7 @@ import '../../models/match.dart';
 import '../../models/player.dart';
 import '../../models/team.dart';
 import 'fupa_dtos.dart';
+import 'fupa_redux_importer.dart';
 
 /// Gemeinsame Übernahme importierter Daten in die Datenbank, inkl.
 /// Duplikatschutz für Spieler und Spiele. Wird von Import- und Sync-Service
@@ -54,6 +55,7 @@ class FupaPersistence {
           number: data.number ?? match.number,
           position: data.position ?? match.position,
           externalId: data.externalId ?? match.externalId,
+          photoPath: data.photoDataUrl,
         );
         await _repo.upsertPlayer(updated);
       } else {
@@ -65,6 +67,7 @@ class FupaPersistence {
           number: data.number,
           position: data.position,
           externalId: data.externalId,
+          photoPath: data.photoDataUrl,
           source: source,
           createdAt: DateTime.now(),
         ));
@@ -74,31 +77,34 @@ class FupaPersistence {
     return added;
   }
 
-  /// Legt das eigene Team an oder aktualisiert es und übernimmt den Kader.
-  Future<Team> persistOwnTeam(
-      FupaTeamRef ref, TeamData data, DataSource source) async {
+  /// Legt das eigene Team an oder aktualisiert es mit den FuPa-Vereinsdaten
+  /// (Name/Kurzname/Logo/Link). Der Kader wird separat (mit Fotos) übernommen.
+  Future<Team> saveOwnTeam(String url, FupaTeamImport data) async {
     final existing = await _repo.getOwnTeam();
-    final team = (existing ??
-            Team(
-              id: _uuid.v4(),
-              name: data.name,
-              isOwnTeam: true,
-              source: source,
-              createdAt: DateTime.now(),
-            ))
-        .copyWith(
-      name: data.name,
+    final base = existing ??
+        Team(
+          id: _uuid.v4(),
+          name: data.name ?? 'Meine Mannschaft',
+          isOwnTeam: true,
+          source: DataSource.fupaApproved,
+          createdAt: DateTime.now(),
+        );
+    final team = base.copyWith(
+      name: data.name ?? base.name,
       shortName: data.shortName,
-      fupaUrl: ref.url,
-      fupaRef: ref.ref,
-      source: source,
-      lastSyncedAt: source == DataSource.fupaApproved ? DateTime.now() : null,
+      logoPath: data.logoDataUrl,
+      fupaUrl: url,
+      fupaRef: _slug(url),
+      source: DataSource.fupaApproved,
+      lastSyncedAt: DateTime.now(),
     );
     await _repo.upsertTeam(team);
-    if (data.players.isNotEmpty) {
-      await syncPlayers(team.id, data.players, source);
-    }
     return team;
+  }
+
+  String _slug(String url) {
+    final m = RegExp(r'/team/([^/?#]+)', caseSensitive: false).firstMatch(url);
+    return (m?.group(1) ?? '').toLowerCase();
   }
 
   /// Findet oder erstellt ein Gegner-Team (dedupliziert über Ref/Name).

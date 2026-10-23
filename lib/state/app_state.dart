@@ -10,14 +10,26 @@ import '../models/player.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
-import '../services/fupa/approved_api_fupa_data_source.dart';
 import '../services/fupa/fupa_dtos.dart';
-import '../services/fupa/fupa_import_service.dart';
 import '../services/fupa/fupa_persistence.dart';
 import '../services/fupa/fupa_redux_importer.dart';
-import '../services/fupa/fupa_source_registry.dart';
-import '../services/fupa/manual_fupa_data_source.dart';
 import '../services/opponent_sync_service.dart';
+
+/// Zusammenfassung eines kompletten FuPa-Imports (für die Status-Anzeige).
+class ConnectSummary {
+  final String teamName;
+  final int players;
+  final int matches;
+  final int newMatches;
+  final int stats;
+  const ConnectSummary({
+    required this.teamName,
+    required this.players,
+    required this.matches,
+    required this.newMatches,
+    required this.stats,
+  });
+}
 
 /// Zentraler Anwendungszustand. Verdrahtet Persistenz, FuPa-Import und
 /// Gegner-Sync und stellt der UI alle Operationen bereit.
@@ -27,23 +39,13 @@ class AppState extends ChangeNotifier {
 
   final CoachRepository _repo;
   final _uuid = const Uuid();
+  late final FupaPersistence _persist = FupaPersistence(_repo);
+  final FupaReduxImporter _importer = FupaReduxImporter();
 
   CoachRepository get repository => _repo;
 
-  // Settings-Keys
-  static const kApiBase = 'fupa_api_base';
-  static const kApiToken = 'fupa_api_token';
-
   bool _loading = true;
   bool get loading => _loading;
-
-  String? _apiBase;
-  String? _apiToken;
-  String? get apiBase => _apiBase;
-  String? get apiToken => _apiToken;
-  bool get hasApprovedSource =>
-      (_apiBase?.trim().isNotEmpty ?? false) &&
-      (_apiToken?.trim().isNotEmpty ?? false);
 
   Team? _ownTeam;
   Team? get ownTeam => _ownTeam;
@@ -51,33 +53,15 @@ class AppState extends ChangeNotifier {
   List<GameMatch> _matches = [];
   List<GameMatch> get matches => List.unmodifiable(_matches);
 
-  late FupaSourceRegistry _registry;
-  late FupaImportService importService;
-  late OpponentSyncService opponentSync;
+  late final OpponentSyncService opponentSync =
+      OpponentSyncService(repository: _repo, importer: _importer);
 
   // ------------------------------------------------------------- Lifecycle
   Future<void> init() async {
-    _apiBase = await _repo.getSetting(kApiBase);
-    _apiToken = await _repo.getSetting(kApiToken);
-    _rebuildServices();
     await _reload();
     _loading = false;
     notifyListeners();
   }
-
-  void _rebuildServices() {
-    _registry = FupaSourceRegistry([
-      // Genehmigter Zugang zuerst – nur aktiv, wenn konfiguriert.
-      ApprovedApiFupaDataSource(baseUrl: _apiBase, token: _apiToken),
-      // Manueller Fallback ist immer vorhanden.
-      ManualFupaDataSource(),
-    ]);
-    importService =
-        FupaImportService(repository: _repo, registry: _registry);
-    opponentSync = OpponentSyncService(repository: _repo);
-  }
-
-  FupaSourceRegistry get registry => _registry;
 
   Future<void> _reload() async {
     _ownTeam = await _repo.getOwnTeam();
@@ -89,32 +73,58 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  // -------------------------------------------------------------- Settings
-  Future<void> saveApprovedSource(String? base, String? token) async {
-    _apiBase = base?.trim();
-    _apiToken = token?.trim();
-    await _repo.setSetting(kApiBase, _apiBase);
-    await _repo.setSetting(kApiToken, _apiToken);
-    _rebuildServices();
-    notifyListeners();
-  }
-
   // ----------------------------------------------------------- FuPa-Import
-  Future<ImportResult> connectOwnTeam(String url) async {
-    final result = await importService.connectOwnTeam(url);
+  /// Verbindet das eigene Team über einen FuPa-Teamlink und lädt alles:
+  /// Vereinsdaten + Logo, Kader + Fotos, Spielplan + Ergebnisse, Statistik.
+  Future<ConnectSummary> connectOwnTeam(String url,
+      {void Function(String)? onProgress}) async {
+    onProgress?.call('Mannschaft & Kader werden geladen …');
+    final teamImport = await _importer.importTeam(url);
+    final team = await _persist.saveOwnTeam(url, teamImport);
+
+    onProgress?.call('Spielerfotos werden geladen …');
+    final playerData =
+        await _importer.toPlayerDataWithPhotos(teamImport.players);
+    await _persist.syncPlayers(team.id, playerData, DataSource.fupaApproved);
+
+    onProgress?.call('Spielplan wird geladen …');
+    final matches = await _importer.importSchedule(url);
+    final newMatches = await _persist.syncSchedule(team.id, matches);
+
+    onProgress?.call('Statistik wird geladen …');
+    var statsCount = 0;
+    try {
+      statsCount = await _importStatsInto(team.id, url);
+    } catch (_) {
+      // Statistik ist optional – Rest des Imports bleibt gültig.
+    }
+
     await _reload();
     notifyListeners();
-    return result;
+    return ConnectSummary(
+      teamName: team.name,
+      players: playerData.length,
+      matches: matches.length,
+      newMatches: newMatches,
+      stats: statsCount,
+    );
+  }
+
+  /// Lädt alles für das bereits verbundene Team erneut.
+  Future<ConnectSummary> resyncOwnTeam({void Function(String)? onProgress}) async {
+    final url = _ownTeam?.fupaUrl;
+    if (url == null || url.isEmpty) {
+      throw StateError('Kein verbundenes Team mit FuPa-Link.');
+    }
+    return connectOwnTeam(url, onProgress: onProgress);
   }
 
   /// Importiert den Spielplan (inkl. Ergebnisse, Gegner-Link und -Logo) aus
   /// einem FuPa-Team-/Matches-Link. Gibt die Anzahl NEUER Spiele zurück.
   Future<int> importSchedule(String url) async {
     final team = await ensureOwnTeam();
-    final importer = FupaReduxImporter();
-    final matches = await importer.importSchedule(url);
-    final persist = FupaPersistence(_repo);
-    final added = await persist.syncSchedule(team.id, matches);
+    final matches = await _importer.importSchedule(url);
+    final added = await _persist.syncSchedule(team.id, matches);
     await _reload();
     notifyListeners();
     return added;
@@ -123,8 +133,13 @@ class AppState extends ChangeNotifier {
   /// Importiert die Spieler-Saison-Statistik aus einem FuPa-Link und ersetzt
   /// den bisherigen Stand des Teams. Gibt die Anzahl Spieler zurück.
   Future<int> importStats(String teamId, String url) async {
-    final importer = FupaReduxImporter();
-    final data = await importer.importStats(url);
+    final n = await _importStatsInto(teamId, url);
+    notifyListeners();
+    return n;
+  }
+
+  Future<int> _importStatsInto(String teamId, String url) async {
+    final data = await _importer.importStats(url);
     final stats = data
         .map((d) => PlayerStat(
               id: _uuid.v4(),
@@ -143,20 +158,10 @@ class AppState extends ChangeNotifier {
             ))
         .toList();
     await _repo.replaceStats(teamId, stats);
-    notifyListeners();
     return stats.length;
   }
 
   Future<List<PlayerStat>> statsOf(String teamId) => _repo.getStats(teamId);
-
-  Future<ImportResult> resyncOwnTeam() async {
-    final result = await importService.resyncOwnTeam();
-    await _reload();
-    notifyListeners();
-    return result;
-  }
-
-  Future<List<SourceStatus>> sourceStatuses() => _registry.statuses();
 
   // -------------------------------------------------------- Team / Players
   Future<Team> ensureOwnTeam() async {
