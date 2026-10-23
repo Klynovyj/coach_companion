@@ -13,7 +13,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 1;
+  static const _dbVersion = 2;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -39,8 +39,16 @@ class AppDatabase {
           await db.execute('PRAGMA foreign_keys = ON');
         },
         onCreate: _createSchema,
+        onUpgrade: _upgradeSchema,
       ),
     );
+  }
+
+  Future<void> _upgradeSchema(Database db, int oldV, int newV) async {
+    // v1 -> v2: Vereinslogo am Team.
+    if (oldV < 2) {
+      await db.execute('ALTER TABLE teams ADD COLUMN logo_path TEXT');
+    }
   }
 
   Future<void> _createSchema(Database db, int version) async {
@@ -51,6 +59,7 @@ class AppDatabase {
         short_name TEXT,
         fupa_url TEXT,
         fupa_ref TEXT,
+        logo_path TEXT,
         is_own_team INTEGER NOT NULL DEFAULT 0,
         source TEXT NOT NULL,
         last_synced_at TEXT,

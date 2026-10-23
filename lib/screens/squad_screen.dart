@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/team.dart';
 import '../state/app_state.dart';
 import '../widgets/squad_list_view.dart';
+import '../widgets/team_logo.dart';
 
 /// Kader des eigenen Teams.
 class SquadScreen extends StatelessWidget {
@@ -16,6 +17,12 @@ class SquadScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
+        leading: team?.logoPath != null
+            ? Padding(
+                padding: const EdgeInsets.all(8),
+                child: TeamLogo(logoPath: team!.logoPath, size: 32),
+              )
+            : null,
         title: Text(team?.name ?? 'Mein Kader'),
         actions: [
           if (team != null)

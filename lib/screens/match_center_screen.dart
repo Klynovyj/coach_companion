@@ -8,6 +8,7 @@ import '../models/team.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../state/app_state.dart';
 import '../widgets/squad_list_view.dart';
+import '../widgets/team_logo.dart';
 import 'lineup_editor_screen.dart';
 import 'live_match_screen.dart';
 
@@ -91,7 +92,12 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         ),
         body: Column(
           children: [
-            _Header(match: match, df: df),
+            _Header(
+              match: match,
+              df: df,
+              ownLogo: _ownTeam?.logoPath,
+              oppLogo: _opponentTeam?.logoPath,
+            ),
             if (_syncResult != null && _syncResult!.status != ImportStatus.alreadyPresent)
               _SyncBanner(result: _syncResult!),
             Expanded(
@@ -174,51 +180,63 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
 }
 
 class _Header extends StatelessWidget {
-  const _Header({required this.match, required this.df});
+  const _Header({
+    required this.match,
+    required this.df,
+    this.ownLogo,
+    this.oppLogo,
+  });
   final GameMatch match;
   final DateFormat df;
+  final String? ownLogo;
+  final String? oppLogo;
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final scheme = Theme.of(context).colorScheme;
     final ownName = state.ownTeam?.name ?? 'Mein Team';
     return Container(
       width: double.infinity,
-      color: Theme.of(context).colorScheme.primary,
+      color: scheme.primary,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: Column(
         children: [
           Text(
             '${match.venue.label}${match.kickoff != null ? ' • ${df.format(match.kickoff!)}' : ''}',
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.9)),
+            style: TextStyle(color: scheme.onPrimary.withValues(alpha: 0.9)),
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(
-                child: Text(ownName,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.onPrimary,
-                        fontWeight: FontWeight.bold)),
-              ),
+              Expanded(child: _side(scheme, ownLogo, ownName)),
               Text('${match.ownScore} : ${match.opponentScore}',
                   style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary,
+                      color: scheme.onPrimary,
                       fontSize: 28,
                       fontWeight: FontWeight.bold)),
-              Expanded(
-                child: Text(match.opponentName,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.onPrimary,
-                        fontWeight: FontWeight.bold)),
-              ),
+              Expanded(child: _side(scheme, oppLogo, match.opponentName)),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _side(ColorScheme scheme, String? logo, String name) {
+    return Column(
+      children: [
+        if (logo != null) ...[
+          TeamLogo(logoPath: logo, size: 40),
+          const SizedBox(height: 4),
+        ],
+        Text(name,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                color: scheme.onPrimary, fontWeight: FontWeight.bold)),
+      ],
     );
   }
 }

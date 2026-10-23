@@ -55,6 +55,42 @@ class FupaReduxImporter {
     return parseTeamPlayersHtml(await _fetchHtml(trimmed));
   }
 
+  /// Lädt die FuPa-Teamseite einmal und liefert Kader **und** Vereinsdaten
+  /// (Name, Kurzname, Logo als Data-URL).
+  Future<FupaTeamImport> importTeam(String url) async {
+    final trimmed = url.trim();
+    if (!isTeamUrl(trimmed)) {
+      throw FupaImportException(
+          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+    }
+    final html = await _fetchHtml(trimmed);
+    final players = parseTeamPlayersHtml(html);
+    final meta = parseTeamMetaHtml(html);
+    final logo = meta.logoUrl == null ? null : await downloadLogo(meta.logoUrl!);
+    return FupaTeamImport(
+      name: meta.name,
+      shortName: meta.shortName,
+      logoDataUrl: logo,
+      players: players,
+    );
+  }
+
+  /// Lädt das Vereinslogo als Data-URL (PNG). FuPa erlaubt nur feste Größen –
+  /// 128×128 ist für Avatare ausreichend. Fehler werden still verschluckt.
+  Future<String?> downloadLogo(String baseUrl) async {
+    final url = baseUrl.endsWith('/') ? '${baseUrl}128x128.png' : baseUrl;
+    try {
+      final resp = await _client.get(Uri.parse(url),
+          headers: const {'User-Agent': 'Mozilla/5.0 CoachCompanion/1.0'});
+      if (resp.statusCode != 200) return null;
+      final ct = resp.headers['content-type'] ?? 'image/png';
+      if (!ct.startsWith('image/')) return null;
+      return 'data:$ct;base64,${base64Encode(resp.bodyBytes)}';
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<String> _fetchHtml(String url) async {
     final http.Response resp;
     try {
@@ -107,6 +143,35 @@ class FupaReduxImporter {
       ));
     }
     return out;
+  }
+
+  /// Liest Vereinsname, Kurzname und Logo-Basis-URL aus `data.info.club`.
+  static FupaTeamMeta parseTeamMetaHtml(String html) {
+    final redux = _extractRedux(html);
+    final dh = redux['dataHistory'];
+    if (dh is List) {
+      for (final entry in dh) {
+        if (entry is! Map) continue;
+        for (final page in entry.values) {
+          if (page is Map && page['data'] is Map) {
+            final info = (page['data'] as Map)['info'];
+            if (info is Map && info['club'] is Map) {
+              final club = info['club'] as Map;
+              final img = club['image'];
+              final logoUrl = (img is Map) ? img['path'] as String? : null;
+              return FupaTeamMeta(
+                name: (club['name'] as String?)?.trim(),
+                shortName: (club['shortName'] as String?)?.trim(),
+                logoUrl: (logoUrl != null && logoUrl.startsWith('http'))
+                    ? logoUrl
+                    : null,
+              );
+            }
+          }
+        }
+      }
+    }
+    return const FupaTeamMeta();
   }
 
   static List<dynamic> _extractTeamPlayers(Map<String, dynamic> redux) {
@@ -243,4 +308,38 @@ class FupaImportException implements Exception {
   final String message;
   @override
   String toString() => message;
+}
+
+/// Vereins-Stammdaten aus der FuPa-Teamseite.
+class FupaTeamMeta {
+  final String? name;
+  final String? shortName;
+
+  /// Basis-URL des Logos (ohne Größen-Suffix), falls vorhanden.
+  final String? logoUrl;
+
+  const FupaTeamMeta({this.name, this.shortName, this.logoUrl});
+
+  bool get hasAny => name != null || shortName != null || logoUrl != null;
+}
+
+/// Ergebnis von [FupaReduxImporter.importTeam]: Kader + Vereinsdaten.
+class FupaTeamImport {
+  final String? name;
+  final String? shortName;
+
+  /// Logo als Data-URL (bereits heruntergeladen), falls verfügbar.
+  final String? logoDataUrl;
+
+  final List<ParsedPlayer> players;
+
+  const FupaTeamImport({
+    this.name,
+    this.shortName,
+    this.logoDataUrl,
+    this.players = const [],
+  });
+
+  bool get hasMeta =>
+      name != null || shortName != null || logoDataUrl != null;
 }

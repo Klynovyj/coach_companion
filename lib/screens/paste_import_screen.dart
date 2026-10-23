@@ -6,6 +6,7 @@ import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_redux_importer.dart';
 import '../services/paste/squad_paste_parser.dart';
 import '../state/app_state.dart';
+import '../widgets/team_logo.dart';
 
 /// Editierbare Zeile im Vorschau-Schritt.
 class _EditableRow {
@@ -64,6 +65,10 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
   bool _loading = false;
   String _progress = '';
 
+  /// Aus einem Team-Link gelesene Vereinsdaten (Name/Kurzname/Logo).
+  FupaTeamImport? _teamMeta;
+  bool _applyMeta = true;
+
   @override
   void dispose() {
     _textController.dispose();
@@ -90,6 +95,7 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
 
     final fetched = <ParsedPlayer>[];
     var failed = 0;
+    _teamMeta = null;
     final urlCount = teamUrls.length + playerUrls.length;
     if (urlCount > 0) {
       setState(() {
@@ -98,12 +104,14 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
       });
       final importer = FupaReduxImporter();
       var done = 0;
-      // Team-Links zuerst: liefern den ganzen Kader.
+      // Team-Links zuerst: liefern den ganzen Kader + Vereinsdaten.
       for (final url in teamUrls) {
         done++;
         setState(() => _progress = 'Lade FuPa-Kader $done/$urlCount …');
         try {
-          fetched.addAll(await importer.importTeamPlayers(url));
+          final res = await importer.importTeam(url);
+          fetched.addAll(res.players);
+          if (_teamMeta == null && res.hasMeta) _teamMeta = res;
         } catch (_) {
           failed++;
         }
@@ -164,8 +172,21 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
     final data = selected.map((r) => r.toData()).toList();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(context);
-    final added =
-        await context.read<AppState>().importPastedPlayers(widget.teamId, data);
+    final appState = context.read<AppState>();
+
+    final added = await appState.importPastedPlayers(widget.teamId, data);
+
+    // Vereinsdaten (Name/Kurzname/Logo) übernehmen, falls gewünscht.
+    final meta = _teamMeta;
+    if (_applyMeta && meta != null && meta.hasMeta) {
+      await appState.updateTeamMeta(
+        widget.teamId,
+        name: meta.name,
+        shortName: meta.shortName,
+        logoPath: meta.logoDataUrl,
+      );
+    }
+
     messenger.showSnackBar(
       SnackBar(
           content: Text(
@@ -266,8 +287,19 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
 
   Widget _buildPreview(List<_EditableRow> rows) {
     final selectedCount = rows.where((r) => r.selected && r.hasName).length;
+    final meta = _teamMeta;
     return Column(
       children: [
+        if (meta != null && meta.hasMeta)
+          CheckboxListTile(
+            value: _applyMeta,
+            onChanged: (v) => setState(() => _applyMeta = v ?? false),
+            secondary: TeamLogo(logoPath: meta.logoDataUrl, size: 36),
+            title: Text(meta.name ?? 'Vereinsdaten'),
+            subtitle: Text(
+                'Teamname${meta.shortName != null ? ' (${meta.shortName})' : ''} & Logo übernehmen'),
+            controlAffinity: ListTileControlAffinity.trailing,
+          ),
         Container(
           width: double.infinity,
           color: Theme.of(context).colorScheme.primaryContainer,

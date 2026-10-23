@@ -29,7 +29,8 @@ Ansatz wie im Schwesterprojekt *Coach Studio*:
 
 - Im Einfügen-Import (Kader bzw. Gegner) fügst du ein, beliebig gemischt:
   - einen **FuPa-Teamlink** (`…/team/…`) → holt den **ganzen Kader** auf einmal
-    (`dataHistory[].TeamPlayersPage.data.players`),
+    (`dataHistory[].TeamPlayersPage.data.players`) sowie **Vereinsname,
+    Kurzname und Logo** (`data.info.club`, Logo als PNG-Data-URL),
   - **FuPa-Spielerlinks** (`…/player/…`) → je ein Spieler,
   - oder **Klartextzeilen** (`7 Max Mustermann Sturm`).
 - Für jeden Link lädt die App die öffentliche Seite, extrahiert den

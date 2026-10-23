@@ -14,6 +14,9 @@ class Team {
   /// Aus dem Link ermittelter, stabiler Team-Bezeichner (Slug).
   final String? fupaRef;
 
+  /// Vereinslogo als Data-URL (image/png), falls importiert.
+  final String? logoPath;
+
   /// true = die vom Trainer geführte eigene Mannschaft.
   final bool isOwnTeam;
 
@@ -30,6 +33,7 @@ class Team {
     this.shortName,
     this.fupaUrl,
     this.fupaRef,
+    this.logoPath,
     this.isOwnTeam = false,
     this.source = DataSource.manual,
     this.lastSyncedAt,
@@ -41,6 +45,7 @@ class Team {
     String? shortName,
     String? fupaUrl,
     String? fupaRef,
+    String? logoPath,
     bool? isOwnTeam,
     DataSource? source,
     DateTime? lastSyncedAt,
@@ -51,6 +56,7 @@ class Team {
       shortName: shortName ?? this.shortName,
       fupaUrl: fupaUrl ?? this.fupaUrl,
       fupaRef: fupaRef ?? this.fupaRef,
+      logoPath: logoPath ?? this.logoPath,
       isOwnTeam: isOwnTeam ?? this.isOwnTeam,
       source: source ?? this.source,
       lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
@@ -64,6 +70,7 @@ class Team {
         'short_name': shortName,
         'fupa_url': fupaUrl,
         'fupa_ref': fupaRef,
+        'logo_path': logoPath,
         'is_own_team': isOwnTeam ? 1 : 0,
         'source': source.storageKey,
         'last_synced_at': lastSyncedAt?.toIso8601String(),
@@ -76,6 +83,7 @@ class Team {
         shortName: m['short_name'] as String?,
         fupaUrl: m['fupa_url'] as String?,
         fupaRef: m['fupa_ref'] as String?,
+        logoPath: m['logo_path'] as String?,
         isOwnTeam: (m['is_own_team'] as int? ?? 0) == 1,
         source: DataSource.fromKey(m['source'] as String?),
         lastSyncedAt: _parseDate(m['last_synced_at'] as String?),

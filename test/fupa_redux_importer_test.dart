@@ -67,6 +67,18 @@ void main() {
       expect(squad[1].number, 9);
     });
 
+    test('liest Vereinsname, Kurzname und Logo-URL (info.club)', () {
+      const html = 'window.REDUX_DATA = '
+          '{"dataHistory":[{"TeamPlayersPage":{"data":{"info":{"club":{'
+          '"name":"Garather SV","shortName":"GSV",'
+          '"image":{"path":"https://image.fupa.net/club/ABC/"}}},'
+          '"players":[]}}}]};';
+      final meta = FupaReduxImporter.parseTeamMetaHtml(html);
+      expect(meta.name, 'Garather SV');
+      expect(meta.shortName, 'GSV');
+      expect(meta.logoUrl, 'https://image.fupa.net/club/ABC/');
+    });
+
     test('Team-URL-Erkennung', () {
       expect(FupaReduxImporter.isTeamUrl(
           'https://www.fupa.net/team/garather-sv-m1-2026-27'), isTrue);

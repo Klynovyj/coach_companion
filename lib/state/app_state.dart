@@ -141,6 +141,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Übernimmt importierte Vereinsdaten (Name/Kurzname/Logo) in ein Team.
+  Future<void> updateTeamMeta(
+    String teamId, {
+    String? name,
+    String? shortName,
+    String? logoPath,
+  }) async {
+    final t = await _repo.getTeam(teamId);
+    if (t == null) return;
+    await _repo.upsertTeam(t.copyWith(
+      name: (name != null && name.isNotEmpty) ? name : null,
+      shortName: (shortName != null && shortName.isNotEmpty) ? shortName : null,
+      logoPath: (logoPath != null && logoPath.isNotEmpty) ? logoPath : null,
+    ));
+    await _reload();
+    notifyListeners();
+  }
+
   Future<List<Player>> playersOf(String teamId, {bool onlyActive = false}) =>
       _repo.getPlayers(teamId, onlyActive: onlyActive);
 
