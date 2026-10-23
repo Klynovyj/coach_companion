@@ -56,19 +56,55 @@ class TeamData {
 class ScheduledMatchData {
   final String opponentName;
   final String? opponentRef;
+
+  /// Vollständiger FuPa-Teamlink des Gegners (für späteren Kader-Import).
+  final String? opponentFupaUrl;
+
+  /// Basis-URL des Gegner-Logos (ohne Größen-Suffix), vor dem Download.
+  final String? opponentLogoUrl;
+
+  /// Gegner-Logo als Data-URL (bereits heruntergeladen), falls verfügbar.
+  final String? opponentLogoDataUrl;
+
   final DateTime? kickoff;
   final Venue venue;
   final String? competition;
   final String? externalId;
 
+  /// true = Spiel ist gespielt (Ergebnis vorhanden).
+  final bool finished;
+  final int? ownGoals;
+  final int? opponentGoals;
+
   const ScheduledMatchData({
     required this.opponentName,
     this.opponentRef,
+    this.opponentFupaUrl,
+    this.opponentLogoUrl,
+    this.opponentLogoDataUrl,
     this.kickoff,
     this.venue = Venue.home,
     this.competition,
     this.externalId,
+    this.finished = false,
+    this.ownGoals,
+    this.opponentGoals,
   });
+
+  ScheduledMatchData withLogo(String? dataUrl) => ScheduledMatchData(
+        opponentName: opponentName,
+        opponentRef: opponentRef,
+        opponentFupaUrl: opponentFupaUrl,
+        opponentLogoUrl: opponentLogoUrl,
+        opponentLogoDataUrl: dataUrl,
+        kickoff: kickoff,
+        venue: venue,
+        competition: competition,
+        externalId: externalId,
+        finished: finished,
+        ownGoals: ownGoals,
+        opponentGoals: opponentGoals,
+      );
 }
 
 /// Verfügbarkeit einer Datenquelle zum aktuellen Zeitpunkt.

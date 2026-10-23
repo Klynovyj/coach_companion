@@ -152,23 +152,37 @@ class FupaPersistence {
       }
       match ??= byKey[_matchKey(data.opponentName, data.kickoff)];
 
+      final status = data.finished ? MatchStatus.finished : null;
       if (match != null) {
         await _repo.upsertMatch(match.copyWith(
           opponentName: data.opponentName,
+          opponentFupaUrl: data.opponentFupaUrl,
+          opponentLogoPath: data.opponentLogoDataUrl,
           kickoff: data.kickoff,
           venue: data.venue,
           competition: data.competition,
           externalId: data.externalId,
+          // Live/beendete Spiele nicht zurücksetzen; nur Ergebnis nachtragen.
+          status: data.finished && match.status != MatchStatus.live
+              ? MatchStatus.finished
+              : null,
+          ownScore: data.finished ? data.ownGoals : null,
+          opponentScore: data.finished ? data.opponentGoals : null,
         ));
       } else {
         await _repo.upsertMatch(GameMatch(
           id: _uuid.v4(),
           ownTeamId: ownTeamId,
           opponentName: data.opponentName,
+          opponentFupaUrl: data.opponentFupaUrl,
+          opponentLogoPath: data.opponentLogoDataUrl,
           kickoff: data.kickoff,
           venue: data.venue,
           competition: data.competition,
           externalId: data.externalId,
+          status: status ?? MatchStatus.scheduled,
+          ownScore: data.finished ? (data.ownGoals ?? 0) : 0,
+          opponentScore: data.finished ? (data.opponentGoals ?? 0) : 0,
           createdAt: DateTime.now(),
         ));
         added++;

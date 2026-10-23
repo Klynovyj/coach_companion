@@ -11,6 +11,12 @@ class GameMatch {
   /// Gegnername aus dem Spielplan – immer gesetzt, auch ohne importierten Kader.
   final String opponentName;
 
+  /// FuPa-Teamlink des Gegners (aus dem Spielplan), für den Kader-Auto-Import.
+  final String? opponentFupaUrl;
+
+  /// Gegner-Logo als Data-URL (aus dem Spielplan), für die Anzeige.
+  final String? opponentLogoPath;
+
   final DateTime? kickoff;
   final Venue venue;
   final String? competition;
@@ -35,6 +41,8 @@ class GameMatch {
     required this.ownTeamId,
     this.opponentTeamId,
     required this.opponentName,
+    this.opponentFupaUrl,
+    this.opponentLogoPath,
     this.kickoff,
     this.venue = Venue.home,
     this.competition,
@@ -49,6 +57,8 @@ class GameMatch {
   GameMatch copyWith({
     String? opponentTeamId,
     String? opponentName,
+    String? opponentFupaUrl,
+    String? opponentLogoPath,
     DateTime? kickoff,
     Venue? venue,
     String? competition,
@@ -63,6 +73,8 @@ class GameMatch {
       ownTeamId: ownTeamId,
       opponentTeamId: opponentTeamId ?? this.opponentTeamId,
       opponentName: opponentName ?? this.opponentName,
+      opponentFupaUrl: opponentFupaUrl ?? this.opponentFupaUrl,
+      opponentLogoPath: opponentLogoPath ?? this.opponentLogoPath,
       kickoff: kickoff ?? this.kickoff,
       venue: venue ?? this.venue,
       competition: competition ?? this.competition,
@@ -80,6 +92,8 @@ class GameMatch {
         'own_team_id': ownTeamId,
         'opponent_team_id': opponentTeamId,
         'opponent_name': opponentName,
+        'opponent_fupa_url': opponentFupaUrl,
+        'opponent_logo_path': opponentLogoPath,
         'kickoff': kickoff?.toIso8601String(),
         'venue': venue.storageKey,
         'competition': competition,
@@ -96,6 +110,8 @@ class GameMatch {
         ownTeamId: m['own_team_id'] as String,
         opponentTeamId: m['opponent_team_id'] as String?,
         opponentName: m['opponent_name'] as String? ?? 'Gegner',
+        opponentFupaUrl: m['opponent_fupa_url'] as String?,
+        opponentLogoPath: m['opponent_logo_path'] as String?,
         kickoff: DateTime.tryParse(m['kickoff'] as String? ?? ''),
         venue: Venue.fromKey(m['venue'] as String?),
         competition: m['competition'] as String?,

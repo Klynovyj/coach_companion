@@ -96,7 +96,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
               match: match,
               df: df,
               ownLogo: _ownTeam?.logoPath,
-              oppLogo: _opponentTeam?.logoPath,
+              oppLogo: _opponentTeam?.logoPath ?? match.opponentLogoPath,
             ),
             if (_syncResult != null && _syncResult!.status != ImportStatus.alreadyPresent)
               _SyncBanner(result: _syncResult!),

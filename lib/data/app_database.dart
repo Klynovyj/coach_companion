@@ -13,7 +13,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 2;
+  static const _dbVersion = 3;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -48,6 +48,11 @@ class AppDatabase {
     // v1 -> v2: Vereinslogo am Team.
     if (oldV < 2) {
       await db.execute('ALTER TABLE teams ADD COLUMN logo_path TEXT');
+    }
+    // v2 -> v3: Gegner-Link und -Logo am Spiel (für Auto-Import/Anzeige).
+    if (oldV < 3) {
+      await db.execute('ALTER TABLE matches ADD COLUMN opponent_fupa_url TEXT');
+      await db.execute('ALTER TABLE matches ADD COLUMN opponent_logo_path TEXT');
     }
   }
 
@@ -90,6 +95,8 @@ class AppDatabase {
         own_team_id TEXT NOT NULL,
         opponent_team_id TEXT,
         opponent_name TEXT NOT NULL,
+        opponent_fupa_url TEXT,
+        opponent_logo_path TEXT,
         kickoff TEXT,
         venue TEXT NOT NULL,
         competition TEXT,

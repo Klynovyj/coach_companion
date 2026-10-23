@@ -2,7 +2,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import '../../models/enums.dart';
 import '../paste/squad_paste_parser.dart';
+import 'fupa_dtos.dart';
 
 /// Importiert Spielerstammdaten von einer öffentlichen FuPa-Spielerseite –
 /// portiert aus Coach Studio (`modules/players/fupaImport.ts`).
@@ -91,6 +93,56 @@ class FupaReduxImporter {
     }
   }
 
+  /// Importiert den Spielplan einer Mannschaft. Akzeptiert den Team- oder den
+  /// `/matches`-Link; lädt die `/matches`-Seite, parst die Spiele und lädt
+  /// Gegner-Logos nebenläufig als Data-URL.
+  Future<List<ScheduledMatchData>> importSchedule(String url) async {
+    final trimmed = url.trim();
+    if (!isTeamUrl(trimmed)) {
+      throw FupaImportException(
+          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+    }
+    final ownSlug = _teamSlug(trimmed);
+    final matchesUrl = _matchesUrlFor(trimmed);
+    final html = await _fetchHtml(matchesUrl);
+    final matches = parseTeamMatchesHtml(html, ownSlug);
+
+    // Gegner-Logos nebenläufig laden (eindeutige URLs nur einmal).
+    final uniqueLogos = <String>{
+      for (final m in matches)
+        if (m.opponentLogoUrl != null) m.opponentLogoUrl!,
+    };
+    final logoCache = <String, String?>{};
+    await Future.wait(uniqueLogos.map((u) async {
+      logoCache[u] = await downloadLogo(u);
+    }));
+
+    return [
+      for (final m in matches)
+        m.opponentLogoUrl == null
+            ? m
+            : m.withLogo(logoCache[m.opponentLogoUrl!]),
+    ];
+  }
+
+  /// Baut aus einem Teamlink die zugehörige `/matches`-URL.
+  static String _matchesUrlFor(String url) {
+    var u = url.trim();
+    u = u.replaceAll(RegExp(r'/+$'), '');
+    if (u.endsWith('/matches')) return u;
+    // evtl. /playerstats o.ä. am Ende entfernen -> bis einschließlich Slug.
+    final match = RegExp(r'^(https?://(?:www\.)?fupa\.(?:net|de)/team/[^/]+)',
+            caseSensitive: false)
+        .firstMatch(u);
+    final base = match?.group(1) ?? u;
+    return '$base/matches';
+  }
+
+  static String _teamSlug(String url) {
+    final m = RegExp(r'/team/([^/?#]+)', caseSensitive: false).firstMatch(url);
+    return (m?.group(1) ?? '').toLowerCase();
+  }
+
   Future<String> _fetchHtml(String url) async {
     final http.Response resp;
     try {
@@ -172,6 +224,113 @@ class FupaReduxImporter {
       }
     }
     return const FupaTeamMeta();
+  }
+
+  /// Extrahiert den Spielplan aus dem HTML der `/matches`-Seite
+  /// (`dataHistory[].TeamMatchesPage.items`). [ownSlug] bestimmt Heim/Auswärts
+  /// und die Ergebnis-Zuordnung. Netzwerkfrei testbar.
+  static List<ScheduledMatchData> parseTeamMatchesHtml(
+      String html, String ownSlug) {
+    final redux = _extractRedux(html);
+    final items = _extractMatchItems(redux);
+    final out = <ScheduledMatchData>[];
+    for (final raw in items) {
+      if (raw is! Map) continue;
+      final home = raw['homeTeam'];
+      final away = raw['awayTeam'];
+      if (home is! Map || away is! Map) continue;
+
+      final homeSlug = (home['slug'] as String?)?.toLowerCase();
+      final ownIsHome = homeSlug == ownSlug;
+      final Map opp = ownIsHome ? away : home;
+
+      final homeGoal = raw['homeGoal'];
+      final awayGoal = raw['awayGoal'];
+      final finished = homeGoal is int && awayGoal is int;
+
+      out.add(ScheduledMatchData(
+        opponentName: _teamName(opp),
+        opponentRef: (opp['slug'] as String?)?.toLowerCase(),
+        opponentFupaUrl: _teamLink(opp),
+        opponentLogoUrl: _teamLogo(opp),
+        kickoff: DateTime.tryParse((raw['kickoff'] ?? '').toString()),
+        venue: ownIsHome ? Venue.home : Venue.away,
+        competition: _competition(raw),
+        externalId: raw['id']?.toString(),
+        finished: finished,
+        ownGoals: finished ? (ownIsHome ? homeGoal : awayGoal) : null,
+        opponentGoals: finished ? (ownIsHome ? awayGoal : homeGoal) : null,
+      ));
+    }
+    return out;
+  }
+
+  static List<dynamic> _extractMatchItems(Map<String, dynamic> redux) {
+    final dh = redux['dataHistory'];
+    if (dh is! List) {
+      throw FupaImportException('REDUX_DATA enthält kein dataHistory-Array.');
+    }
+    for (final entry in dh) {
+      if (entry is! Map) continue;
+      final page = entry['TeamMatchesPage'];
+      if (page is Map && page['items'] is List) {
+        return page['items'] as List;
+      }
+    }
+    throw FupaImportException(
+        'Kein Spielplan (TeamMatchesPage.items) gefunden – zeigt der Link auf die Mannschaft?');
+  }
+
+  static String _teamName(Map team) {
+    final club = team['club'];
+    if (club is Map && club['name'] is String) return club['name'] as String;
+    final name = team['name'];
+    if (name is Map && name['full'] is String) return name['full'] as String;
+    return 'Gegner';
+  }
+
+  static String? _teamLink(Map team) {
+    final link = team['linkUrl'];
+    if (link is String && link.startsWith('/')) {
+      return 'https://www.fupa.net$link';
+    }
+    final slug = team['slug'];
+    if (slug is String && slug.isNotEmpty) {
+      return 'https://www.fupa.net/team/$slug';
+    }
+    return null;
+  }
+
+  static String? _teamLogo(Map team) {
+    final club = team['club'];
+    if (club is Map && club['image'] is Map) {
+      final path = (club['image'] as Map)['path'];
+      if (path is String && path.startsWith('http')) return path;
+    }
+    final img = team['image'];
+    if (img is Map && img['path'] is String) {
+      final path = img['path'] as String;
+      if (path.startsWith('http')) return path;
+    }
+    return null;
+  }
+
+  static String? _competition(Map item) {
+    final round = item['round'];
+    if (round is Map && round['competitionSeason'] is Map) {
+      final cs = round['competitionSeason'] as Map;
+      final short = cs['shortName'];
+      if (short is String && short.isNotEmpty) return short;
+      final name = cs['name'];
+      if (name is String && name.isNotEmpty) return name;
+    }
+    final comp = item['competition'];
+    if (comp is String && comp.isNotEmpty) return comp;
+    if (comp is Map) {
+      final n = comp['shortName'] ?? comp['name'];
+      if (n is String && n.isNotEmpty) return n;
+    }
+    return null;
   }
 
   static List<dynamic> _extractTeamPlayers(Map<String, dynamic> redux) {

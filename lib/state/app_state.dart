@@ -13,6 +13,7 @@ import '../services/fupa/approved_api_fupa_data_source.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_import_service.dart';
 import '../services/fupa/fupa_persistence.dart';
+import '../services/fupa/fupa_redux_importer.dart';
 import '../services/fupa/fupa_source_registry.dart';
 import '../services/fupa/manual_fupa_data_source.dart';
 import '../services/opponent_sync_service.dart';
@@ -72,8 +73,7 @@ class AppState extends ChangeNotifier {
     ]);
     importService =
         FupaImportService(repository: _repo, registry: _registry);
-    opponentSync =
-        OpponentSyncService(repository: _repo, registry: _registry);
+    opponentSync = OpponentSyncService(repository: _repo);
   }
 
   FupaSourceRegistry get registry => _registry;
@@ -104,6 +104,19 @@ class AppState extends ChangeNotifier {
     await _reload();
     notifyListeners();
     return result;
+  }
+
+  /// Importiert den Spielplan (inkl. Ergebnisse, Gegner-Link und -Logo) aus
+  /// einem FuPa-Team-/Matches-Link. Gibt die Anzahl NEUER Spiele zurück.
+  Future<int> importSchedule(String url) async {
+    final team = await ensureOwnTeam();
+    final importer = FupaReduxImporter();
+    final matches = await importer.importSchedule(url);
+    final persist = FupaPersistence(_repo);
+    final added = await persist.syncSchedule(team.id, matches);
+    await _reload();
+    notifyListeners();
+    return added;
   }
 
   Future<ImportResult> resyncOwnTeam() async {

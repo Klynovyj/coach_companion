@@ -1,109 +1,113 @@
 import '../data/coach_repository.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
-import 'fupa/fupa_data_source.dart';
+import '../models/team.dart';
 import 'fupa/fupa_dtos.dart';
 import 'fupa/fupa_persistence.dart';
-import 'fupa/fupa_source_registry.dart';
+import 'fupa/fupa_redux_importer.dart';
 
 /// Kümmert sich um den Gegnerkader eines Spiels.
 ///
 /// Beim Öffnen eines Spiels prüft der Service, ob der Gegner bereits importiert
-/// wurde. Falls nicht, löst er – sofern ein genehmigter Zugang verfügbar ist –
-/// den erlaubten Datenimport aus. Andernfalls wird ein Gegner-Platzhalter
-/// angelegt und ein klarer Status zurückgegeben; die manuelle Übernahme bleibt
-/// jederzeit möglich. Mehrfaches Synchronisieren erzeugt keine Dubletten.
+/// wurde. Falls nicht und im Spielplan ein FuPa-Teamlink des Gegners vorliegt,
+/// wird dessen Kader (inkl. Name/Logo) über denselben REDUX-Import geladen wie
+/// beim eigenen Team. Ohne Link wird ein Gegner-Platzhalter angelegt und ein
+/// klarer Status zurückgegeben; die manuelle Übernahme bleibt möglich.
+/// Mehrfaches Synchronisieren erzeugt keine Dubletten.
 class OpponentSyncService {
   OpponentSyncService({
     required CoachRepository repository,
-    required FupaSourceRegistry registry,
+    FupaReduxImporter? importer,
   })  : _repo = repository,
-        _registry = registry,
-        _persist = FupaPersistence(repository);
+        _persist = FupaPersistence(repository),
+        _importer = importer ?? FupaReduxImporter();
 
   final CoachRepository _repo;
-  final FupaSourceRegistry _registry;
   final FupaPersistence _persist;
+  final FupaReduxImporter _importer;
 
-  /// Wird beim Öffnen eines Spiels aufgerufen.
   Future<ImportResult> ensureOpponentForMatch(GameMatch match,
       {bool force = false}) async {
-    // Bereits importiert und verknüpft -> nichts tun (kein Duplikat).
-    if (!force &&
-        match.opponentImported &&
-        match.opponentTeamId != null) {
+    if (!force && match.opponentImported && match.opponentTeamId != null) {
       final team = await _repo.getTeam(match.opponentTeamId!);
       return ImportResult(
         status: ImportStatus.alreadyPresent,
-        message: 'Gegnerkader „${team?.name ?? match.opponentName}“ ist bereits vorhanden.',
+        message:
+            'Gegnerkader „${team?.name ?? match.opponentName}“ ist bereits vorhanden.',
       );
     }
 
-    final source = await _registry.firstAutomatic();
-    if (source == null) {
-      // Kein genehmigter Import: Platzhalter-Gegner sicherstellen + verknüpfen.
-      final team = await _persist.ensureOpponentTeam(
-        name: match.opponentName,
-        fupaRef: _refFromMatch(match),
-      );
-      await _repo.upsertMatch(match.copyWith(opponentTeamId: team.id));
-      return ImportResult(
-        status: ImportStatus.manualRequired,
-        message:
-            'Kein genehmigter FuPa-Import aktiv. Gegner „${team.name}“ wurde angelegt – '
-            'Kader bitte manuell ergänzen.',
-      );
+    final url = match.opponentFupaUrl;
+    if (url != null && url.isNotEmpty) {
+      try {
+        final data = await _importer.importTeam(url);
+        final team = await _persist.ensureOpponentTeam(
+          name: data.name ?? match.opponentName,
+          fupaRef: _slug(url),
+          source: DataSource.fupaApproved,
+        );
+        // Vereinsdaten (Kurzname/Logo/Link) nachtragen.
+        await _repo.upsertTeam(team.copyWith(
+          shortName: data.shortName,
+          logoPath: data.logoDataUrl ?? match.opponentLogoPath,
+          fupaUrl: url,
+          lastSyncedAt: DateTime.now(),
+        ));
+        final players = data.players
+            .map((p) => PlayerData(
+                  firstName: p.firstName,
+                  lastName: p.lastName,
+                  number: p.number,
+                  position: p.position,
+                ))
+            .toList();
+        final added = await _persist.syncPlayers(
+            team.id, players, DataSource.fupaApproved);
+        await _repo.upsertMatch(match.copyWith(
+          opponentTeamId: team.id,
+          opponentImported: true,
+        ));
+        return ImportResult(
+          status: ImportStatus.success,
+          message:
+              'Gegnerkader „${data.name ?? team.name}“ importiert: ${players.length} Spieler ($added neu).',
+          importedPlayers: players.length,
+        );
+      } catch (e) {
+        final team = await _ensurePlaceholder(match);
+        return ImportResult(
+          status: ImportStatus.error,
+          message:
+              'Gegner „${team.name}“ angelegt – automatischer Import fehlgeschlagen: $e.',
+        );
+      }
     }
 
-    try {
-      final data = await source.fetchOpponent(ScheduledMatchData(
-        opponentName: match.opponentName,
-        opponentRef: _refFromMatch(match),
-      ));
-      final team = await _persist.ensureOpponentTeam(
-        name: data.name,
-        fupaRef: data.fupaRef ?? _refFromMatch(match),
-        source: DataSource.fupaApproved,
-      );
-      final added =
-          await _persist.syncPlayers(team.id, data.players, DataSource.fupaApproved);
-      await _repo.upsertMatch(match.copyWith(
-        opponentTeamId: team.id,
-        opponentImported: true,
-      ));
-      await _repo.upsertTeam(
-          (await _repo.getTeam(team.id))!.copyWith(lastSyncedAt: DateTime.now()));
-      return ImportResult(
-        status: ImportStatus.success,
-        message:
-            'Gegnerkader „${team.name}“ importiert: ${data.players.length} Spieler ($added neu).',
-        importedPlayers: data.players.length,
-      );
-    } on SourceNotAuthorized catch (e) {
-      final team = await _persist.ensureOpponentTeam(
-        name: match.opponentName,
-        fupaRef: _refFromMatch(match),
-      );
-      await _repo.upsertMatch(match.copyWith(opponentTeamId: team.id));
-      return ImportResult(
-        status: ImportStatus.notAuthorized,
-        message: 'Gegner „${team.name}“ angelegt – Zugang nicht autorisiert: $e.',
-      );
-    } catch (e) {
-      final team = await _persist.ensureOpponentTeam(
-        name: match.opponentName,
-        fupaRef: _refFromMatch(match),
-      );
-      await _repo.upsertMatch(match.copyWith(opponentTeamId: team.id));
-      return ImportResult(
-        status: ImportStatus.error,
-        message: 'Gegner „${team.name}“ angelegt – automatischer Import fehlgeschlagen: $e.',
-      );
-    }
+    // Kein Gegner-Link: Platzhalter anlegen, manuell weiter.
+    final team = await _ensurePlaceholder(match);
+    return ImportResult(
+      status: ImportStatus.manualRequired,
+      message:
+          'Kein FuPa-Link für den Gegner hinterlegt. „${team.name}“ wurde angelegt – '
+          'Kader bitte manuell ergänzen (oder Spielplan aus FuPa importieren).',
+    );
   }
 
-  String? _refFromMatch(GameMatch match) {
-    // externalId des Spiels kann als Gegner-Hinweis dienen; sonst null.
-    return match.externalId;
+  Future<Team> _ensurePlaceholder(GameMatch match) async {
+    final team = await _persist.ensureOpponentTeam(
+      name: match.opponentName,
+      fupaRef: match.externalId,
+    );
+    final withLogo = match.opponentLogoPath != null
+        ? team.copyWith(logoPath: match.opponentLogoPath)
+        : team;
+    if (match.opponentLogoPath != null) await _repo.upsertTeam(withLogo);
+    await _repo.upsertMatch(match.copyWith(opponentTeamId: withLogo.id));
+    return withLogo;
+  }
+
+  String _slug(String url) {
+    final m = RegExp(r'/team/([^/?#]+)', caseSensitive: false).firstMatch(url);
+    return (m?.group(1) ?? '').toLowerCase();
   }
 }

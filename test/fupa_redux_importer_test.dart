@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:coach_companion/models/enums.dart';
 import 'package:coach_companion/services/fupa/fupa_redux_importer.dart';
 
 void main() {
@@ -86,6 +87,45 @@ void main() {
           'https://www.fupa.net/player/x'), isFalse);
       expect(FupaReduxImporter.isFupaUrl(
           'https://www.fupa.net/player/x'), isTrue);
+    });
+  });
+
+  group('FupaReduxImporter.parseTeamMatchesHtml', () {
+    const html = 'window.REDUX_DATA = '
+        '{"dataHistory":[{"TeamMatchesPage":{"items":['
+        '{"id":1,"kickoff":"2026-10-18T13:15:00+02:00","homeGoal":6,"awayGoal":2,'
+        '"round":{"competitionSeason":{"shortName":"Kreisliga B2"}},'
+        '"homeTeam":{"slug":"garather-sv-m1-2026-27","club":{"name":"Garather SV","image":{"path":"https://image.fupa.net/club/OWN/"}},"linkUrl":"/team/garather-sv-m1-2026-27"},'
+        '"awayTeam":{"slug":"sv-hoesel-m2-2026-27","club":{"name":"SV Hösel","image":{"path":"https://image.fupa.net/club/HOE/"}},"linkUrl":"/team/sv-hoesel-m2-2026-27"}},'
+        '{"id":2,"kickoff":"2026-10-25T15:00:00+01:00","homeGoal":null,"awayGoal":null,'
+        '"round":{"competitionSeason":{"shortName":"Kreisliga B2"}},'
+        '"homeTeam":{"slug":"post-sv-m1-2026-27","club":{"name":"Post SV"},"linkUrl":"/team/post-sv-m1-2026-27"},'
+        '"awayTeam":{"slug":"garather-sv-m1-2026-27","club":{"name":"Garather SV"},"linkUrl":"/team/garather-sv-m1-2026-27"}}'
+        ']}}]};';
+
+    test('Heimspiel mit Ergebnis', () {
+      final list = FupaReduxImporter.parseTeamMatchesHtml(
+          html, 'garather-sv-m1-2026-27');
+      expect(list, hasLength(2));
+      final m0 = list[0];
+      expect(m0.opponentName, 'SV Hösel');
+      expect(m0.venue, Venue.home);
+      expect(m0.finished, isTrue);
+      expect(m0.ownGoals, 6);
+      expect(m0.opponentGoals, 2);
+      expect(m0.competition, 'Kreisliga B2');
+      expect(m0.opponentFupaUrl, 'https://www.fupa.net/team/sv-hoesel-m2-2026-27');
+      expect(m0.opponentLogoUrl, 'https://image.fupa.net/club/HOE/');
+    });
+
+    test('Auswärtsspiel ohne Ergebnis (Ergebnis-Zuordnung über Venue)', () {
+      final list = FupaReduxImporter.parseTeamMatchesHtml(
+          html, 'garather-sv-m1-2026-27');
+      final m1 = list[1];
+      expect(m1.opponentName, 'Post SV');
+      expect(m1.venue, Venue.away);
+      expect(m1.finished, isFalse);
+      expect(m1.ownGoals, isNull);
     });
   });
 }

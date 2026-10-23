@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
+import '../widgets/team_logo.dart';
 import 'match_center_screen.dart';
 
 class ScheduleScreen extends StatelessWidget {
@@ -17,7 +18,16 @@ class ScheduleScreen extends StatelessWidget {
     final df = DateFormat('EEE, dd.MM.yyyy • HH:mm', 'de_DE');
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Spielplan')),
+      appBar: AppBar(
+        title: const Text('Spielplan'),
+        actions: [
+          IconButton(
+            tooltip: 'FuPa-Spielplan importieren',
+            icon: const Icon(Icons.cloud_download),
+            onPressed: () => _importSchedule(context),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _addMatch(context),
         icon: const Icon(Icons.add),
@@ -32,10 +42,13 @@ class ScheduleScreen extends StatelessWidget {
                 final m = matches[i];
                 return Card(
                   child: ListTile(
-                    leading: _VenueBadge(venue: m.venue),
+                    leading: m.opponentLogoPath != null
+                        ? TeamLogo(logoPath: m.opponentLogoPath, size: 36)
+                        : _VenueBadge(venue: m.venue),
                     title: Text('vs ${m.opponentName}',
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text([
+                      m.venue.label,
                       if (m.kickoff != null) df.format(m.kickoff!),
                       if (m.competition != null) m.competition!,
                     ].join('  ·  ')),
@@ -46,6 +59,67 @@ class ScheduleScreen extends StatelessWidget {
               },
             ),
     );
+  }
+
+  Future<void> _importSchedule(BuildContext context) async {
+    final controller = TextEditingController(
+        text: context.read<AppState>().ownTeam?.fupaUrl ?? '');
+    final url = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('FuPa-Spielplan importieren'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+                'FuPa-Teamlink einfügen – die Spiele (inkl. Ergebnisse und '
+                'Gegner-Wappen) werden geladen. Doppelte Spiele werden erkannt.'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              decoration: const InputDecoration(
+                labelText: 'FuPa-Teamlink',
+                hintText: 'https://www.fupa.net/team/...',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Importieren')),
+        ],
+      ),
+    );
+    if (url == null || url.isEmpty || !context.mounted) return;
+
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(children: [
+          CircularProgressIndicator(),
+          SizedBox(width: 16),
+          Expanded(child: Text('Spielplan wird geladen …')),
+        ]),
+      ),
+    );
+    try {
+      final added = await context.read<AppState>().importSchedule(url);
+      if (context.mounted) Navigator.pop(context); // Ladedialog schließen
+      messenger.showSnackBar(SnackBar(
+          content: Text('Spielplan importiert: $added neue Spiele.')));
+    } catch (e) {
+      if (context.mounted) Navigator.pop(context);
+      messenger.showSnackBar(SnackBar(
+          content: Text('Import fehlgeschlagen: $e'),
+          backgroundColor: Colors.red.shade700));
+    }
   }
 
   Future<void> _open(BuildContext context, GameMatch match) async {
