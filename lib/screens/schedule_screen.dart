@@ -6,6 +6,7 @@ import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import '../widgets/ui_bits.dart';
 import 'match_center_screen.dart';
 
 class ScheduleScreen extends StatelessWidget {
@@ -15,7 +16,7 @@ class ScheduleScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final matches = state.matches;
-    final df = DateFormat('EEE, dd.MM.yyyy • HH:mm', 'de_DE');
+    final df = DateFormat("HH:mm 'Uhr'", 'de_DE');
 
     return Scaffold(
       appBar: AppBar(
@@ -38,25 +39,8 @@ class ScheduleScreen extends StatelessWidget {
           : ListView.builder(
               padding: const EdgeInsets.only(bottom: 88),
               itemCount: matches.length,
-              itemBuilder: (context, i) {
-                final m = matches[i];
-                return Card(
-                  child: ListTile(
-                    leading: m.opponentLogoPath != null
-                        ? TeamLogo(logoPath: m.opponentLogoPath, size: 36)
-                        : _VenueBadge(venue: m.venue),
-                    title: Text('vs ${m.opponentName}',
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text([
-                      m.venue.label,
-                      if (m.kickoff != null) df.format(m.kickoff!),
-                      if (m.competition != null) m.competition!,
-                    ].join('  ·  ')),
-                    trailing: _ScoreOrStatus(match: m),
-                    onTap: () => _open(context, m),
-                  ),
-                );
-              },
+              itemBuilder: (context, i) =>
+                  _MatchCard(match: matches[i], df: df, onTap: () => _open(context, matches[i])),
             ),
     );
   }
@@ -153,49 +137,84 @@ class ScheduleScreen extends StatelessWidget {
   }
 }
 
-class _VenueBadge extends StatelessWidget {
-  const _VenueBadge({required this.venue});
-  final Venue venue;
-  @override
-  Widget build(BuildContext context) {
-    final isHome = venue == Venue.home;
-    return CircleAvatar(
-      backgroundColor: isHome
-          ? Theme.of(context).colorScheme.primaryContainer
-          : Theme.of(context).colorScheme.secondaryContainer,
-      child: Text(isHome ? 'H' : 'A',
-          style: const TextStyle(fontWeight: FontWeight.bold)),
-    );
-  }
-}
-
-class _ScoreOrStatus extends StatelessWidget {
-  const _ScoreOrStatus({required this.match});
+class _MatchCard extends StatelessWidget {
+  const _MatchCard({required this.match, required this.df, required this.onTap});
   final GameMatch match;
+  final DateFormat df;
+  final VoidCallback onTap;
+
   @override
   Widget build(BuildContext context) {
-    if (match.status == MatchStatus.scheduled &&
-        match.ownScore == 0 &&
-        match.opponentScore == 0) {
-      return const Icon(Icons.chevron_right);
-    }
+    final played = match.status != MatchStatus.scheduled ||
+        match.ownScore != 0 ||
+        match.opponentScore != 0;
     final live = match.status == MatchStatus.live;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text('${match.ownScore} : ${match.opponentScore}',
-            style: Theme.of(context)
-                .textTheme
-                .titleLarge
-                ?.copyWith(fontWeight: FontWeight.bold)),
-        if (live)
-          const Text('LIVE',
-              style: TextStyle(
-                  color: Colors.red,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold)),
-      ],
+
+    Widget trailing;
+    if (live) {
+      trailing = Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('${match.ownScore}:${match.opponentScore}',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
+        const Pill(text: 'LIVE', color: Colors.red, filled: true),
+      ]);
+    } else if (played) {
+      final win = match.ownScore > match.opponentScore;
+      final draw = match.ownScore == match.opponentScore;
+      final c = win
+          ? const Color(0xFF2E7D32)
+          : draw
+              ? const Color(0xFF9E9E9E)
+              : const Color(0xFFC62828);
+      trailing =
+          Pill(text: '${match.ownScore}:${match.opponentScore}', color: c, filled: true);
+    } else {
+      trailing = Pill(
+        text: match.venue == Venue.home ? 'Heim' : 'Auswärts',
+        color: match.venue == Venue.home
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.tertiary,
+      );
+    }
+
+    return Card(
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              DateBlock(date: match.kickoff, highlight: live),
+              const SizedBox(width: 12),
+              if (match.opponentLogoPath != null) ...[
+                TeamLogo(logoPath: match.opponentLogoPath, size: 32),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(match.opponentName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 15)),
+                    const SizedBox(height: 2),
+                    Text([
+                      if (match.kickoff != null) df.format(match.kickoff!),
+                      if (match.competition != null) match.competition!,
+                    ].join('  ·  '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              trailing,
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

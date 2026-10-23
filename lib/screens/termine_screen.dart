@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/team_event.dart';
 import '../state/app_state.dart';
+import '../widgets/ui_bits.dart';
 import 'event_detail_screen.dart';
 
 class TermineScreen extends StatelessWidget {
@@ -13,7 +14,7 @@ class TermineScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    final df = DateFormat('EEE, dd.MM.yyyy • HH:mm', 'de_DE');
+    final df = DateFormat("HH:mm 'Uhr'", 'de_DE');
 
     return Scaffold(
       appBar: AppBar(title: const Text('Termine')),
@@ -53,23 +54,44 @@ class TermineScreen extends StatelessWidget {
             itemBuilder: (context, i) {
               final e = events[i];
               return Card(
-                child: ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor:
-                        Theme.of(context).colorScheme.secondaryContainer,
-                    child: Text(e.type.symbol),
-                  ),
-                  title: Text(e.title,
-                      style: const TextStyle(fontWeight: FontWeight.w600)),
-                  subtitle: Text([
-                    df.format(e.date),
-                    if (e.location != null) e.location!,
-                  ].join('  ·  ')),
-                  trailing: const Icon(Icons.chevron_right),
+                child: InkWell(
                   onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (_) => EventDetailScreen(eventId: e.id),
+                    ),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      children: [
+                        DateBlock(date: e.date),
+                        const SizedBox(width: 12),
+                        Text(e.type.symbol, style: const TextStyle(fontSize: 22)),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(e.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w700, fontSize: 15)),
+                              const SizedBox(height: 2),
+                              Text([
+                                e.type.label,
+                                df.format(e.date),
+                                if (e.location != null) e.location!,
+                              ].join('  ·  '),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.bodySmall),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right),
+                      ],
                     ),
                   ),
                 ),
