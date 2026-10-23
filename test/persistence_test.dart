@@ -199,10 +199,10 @@ void main() {
     // To-Dos: anlegen, abhaken (zählt dann nicht mehr als offen).
     await s.addTodo('Platz reservieren');
     expect((await s.todos()), hasLength(1));
-    var count = await s.nachholenCount();
-    expect(count, greaterThanOrEqualTo(1), reason: 'offenes To-Do zählt');
+    expect(await s.openTodoCount(), 1, reason: 'offenes To-Do');
     final todo = (await s.todos()).first;
     await s.toggleTodo(todo, true);
+    expect(await s.openTodoCount(), 0, reason: 'erledigt zählt nicht mehr');
 
     // Beendetes Spiel mit Zusage, aber ohne Bewertung → offene Bewertung.
     final match = await s.addMatch(opponentName: 'Gegner');

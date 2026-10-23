@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../models/team.dart';
 import '../state/app_state.dart';
+import '../widgets/app_drawer.dart';
 import '../widgets/squad_list_view.dart';
 import '../widgets/team_logo.dart';
 import 'stats_screen.dart';
@@ -17,14 +18,19 @@ class SquadScreen extends StatelessWidget {
     final team = state.ownTeam;
 
     return Scaffold(
+      drawer: const AppDrawer(),
       appBar: AppBar(
-        leading: team?.logoPath != null
-            ? Padding(
-                padding: const EdgeInsets.all(8),
-                child: TeamLogo(logoPath: team!.logoPath, size: 32),
-              )
-            : null,
-        title: Text(team?.name ?? 'Mein Kader'),
+        title: Row(
+          children: [
+            if (team?.logoPath != null) ...[
+              TeamLogo(logoPath: team!.logoPath, size: 28),
+              const SizedBox(width: 8),
+            ],
+            Flexible(
+                child: Text(team?.name ?? 'Mein Kader',
+                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+          ],
+        ),
         actions: [
           if (team != null)
             IconButton(

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/team_event.dart';
 import '../state/app_state.dart';
+import '../widgets/app_drawer.dart';
 import '../widgets/ui_bits.dart';
 import 'event_detail_screen.dart';
 
@@ -17,6 +18,7 @@ class TermineScreen extends StatelessWidget {
     final df = DateFormat("HH:mm 'Uhr'", 'de_DE');
 
     return Scaffold(
+      drawer: const AppDrawer(),
       appBar: AppBar(title: const Text('Termine')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _addEvent(context),

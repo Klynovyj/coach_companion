@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'nachholen_screen.dart';
 import 'schedule_screen.dart';
-import 'settings_screen.dart';
 import 'squad_screen.dart';
 import 'termine_screen.dart';
 
@@ -32,7 +31,6 @@ class _HomeScreenState extends State<HomeScreen> {
       SquadScreen(),
       NachholenScreen(),
       TermineScreen(),
-      SettingsScreen(),
     ];
 
     return Scaffold(
@@ -57,10 +55,6 @@ class _HomeScreenState extends State<HomeScreen> {
               icon: Icon(Icons.event_outlined),
               selectedIcon: Icon(Icons.event),
               label: 'Termine'),
-          const NavigationDestination(
-              icon: Icon(Icons.settings_outlined),
-              selectedIcon: Icon(Icons.settings),
-              label: 'Einstellungen'),
         ],
       ),
     );

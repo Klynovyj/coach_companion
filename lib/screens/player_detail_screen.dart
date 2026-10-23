@@ -85,7 +85,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  _tabList([_stammdatenCard(context), _statusCard(context)]),
+                  _tabList([_stammdatenCard(context)]),
                   _tabList([_cardsCard(context, state, df)]),
                   _tabList([_goalsCard(context, state, df)]),
                   _tabList([_notesCard(context, state, df)]),
@@ -128,17 +128,14 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   if (p.position != null) p.position!,
                 ].join('  ·  ')),
                 const SizedBox(height: 8),
+                // Status & Rolle direkt im Kopf – antippen zum Ändern.
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    _statusChip(context, p.status),
-                    if (p.captainRole != CaptainRole.none)
-                      Chip(
-                        label: Text(
-                            '${p.captainRole.badge} ${p.captainRole.label}'),
-                        visualDensity: VisualDensity.compact,
-                      ),
+                    _statusMenu(context, p),
+                    _captainMenu(context, p),
                     _ratingChip(context),
                   ],
                 ),
@@ -166,13 +163,65 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     );
   }
 
-  Widget _statusChip(BuildContext context, PlayerStatus s) {
-    final color = playerStatusColor(s);
-    return Chip(
-      avatar: Text(s.symbol, style: const TextStyle(fontSize: 12)),
-      label: Text(s.label),
-      visualDensity: VisualDensity.compact,
-      side: BorderSide(color: color),
+  /// Antippbarer Status-Chip (öffnet die Status-Auswahl).
+  Widget _statusMenu(BuildContext context, Player p) {
+    return PopupMenuButton<PlayerStatus>(
+      tooltip: 'Status ändern',
+      onSelected: (s) => _apply(p.copyWith(status: s)),
+      itemBuilder: (_) => [
+        for (final s in PlayerStatus.values)
+          PopupMenuItem(value: s, child: Text('${s.symbol} ${s.label}')),
+      ],
+      child: _editChip(
+        context,
+        leading: Text(p.status.symbol, style: const TextStyle(fontSize: 12)),
+        label: p.status.label,
+        side: playerStatusColor(p.status),
+      ),
+    );
+  }
+
+  /// Antippbarer Kapitäns-Chip (öffnet die Rollen-Auswahl).
+  Widget _captainMenu(BuildContext context, Player p) {
+    final c = p.captainRole;
+    return PopupMenuButton<CaptainRole>(
+      tooltip: 'Kapitäns-Rolle ändern',
+      onSelected: (r) => _apply(p.copyWith(captainRole: r)),
+      itemBuilder: (_) => [
+        for (final r in CaptainRole.values)
+          PopupMenuItem(
+              value: r,
+              child: Text(
+                  r == CaptainRole.none ? 'Keine Rolle' : '${r.badge} ${r.label}')),
+      ],
+      child: _editChip(
+        context,
+        label: c == CaptainRole.none ? 'Rolle' : '${c.badge} ${c.label}',
+        side: c == CaptainRole.none
+            ? Theme.of(context).colorScheme.outline
+            : Theme.of(context).colorScheme.primary,
+      ),
+    );
+  }
+
+  /// Chip-Optik mit Dropdown-Pfeil, signalisiert „antippbar".
+  Widget _editChip(BuildContext context,
+      {Widget? leading, required String label, required Color side}) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 5, 6, 5),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: side),
+        color: Theme.of(context).colorScheme.surface,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (leading != null) ...[leading, const SizedBox(width: 6)],
+          Text(label),
+          const Icon(Icons.arrow_drop_down, size: 18),
+        ],
+      ),
     );
   }
 
@@ -240,55 +289,6 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               _apply(t.isEmpty
                   ? p.copyWith(clearWishPosition: true)
                   : p.copyWith(wishPosition: t));
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ------------------------------------------------------------ Status/Rolle
-  Widget _statusCard(BuildContext context) {
-    final p = _player;
-    return _SectionCard(
-      icon: Icons.verified_user_outlined,
-      title: 'Status & Rolle',
-      child: Column(
-        children: [
-          DropdownButtonFormField<PlayerStatus>(
-            initialValue: p.status,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Status',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: PlayerStatus.values
-                .map((s) => DropdownMenuItem(
-                    value: s, child: Text('${s.symbol} ${s.label}')))
-                .toList(),
-            onChanged: (v) {
-              if (v != null) _apply(p.copyWith(status: v));
-            },
-          ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<CaptainRole>(
-            initialValue: p.captainRole,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Kapitäns-Rolle',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: CaptainRole.values
-                .map((c) => DropdownMenuItem(
-                    value: c,
-                    child: Text(c == CaptainRole.none
-                        ? 'Keine'
-                        : '${c.badge} ${c.label}')))
-                .toList(),
-            onChanged: (v) {
-              if (v != null) _apply(p.copyWith(captainRole: v));
             },
           ),
         ],

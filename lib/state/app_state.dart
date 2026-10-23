@@ -932,12 +932,12 @@ class AppState extends ChangeNotifier {
         .toSet();
   }
 
-  /// Gesamtzahl offener Punkte (fürs „Nachholen"-Badge).
-  Future<int> nachholenCount() async {
-    final items = await nachholen();
-    final openTodos = await _repo.openTodoCount();
-    return items.length + openTodos;
-  }
+  /// Anzahl offener Nachhol-Punkte (Bewertungen/Nominierung/Aufstellung) –
+  /// ohne To-Dos, die haben einen eigenen Menüpunkt.
+  Future<int> nachholenCount() async => (await nachholen()).length;
+
+  /// Anzahl offener (nicht erledigter) eigener Aufgaben – fürs Menü-Badge.
+  Future<int> openTodoCount() => _repo.openTodoCount();
 }
 
 extension _FirstOrNull<E> on Iterable<E> {

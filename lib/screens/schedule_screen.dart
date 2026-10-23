@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
+import '../widgets/app_drawer.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/ui_bits.dart';
 import 'match_center_screen.dart';
@@ -19,6 +20,7 @@ class ScheduleScreen extends StatelessWidget {
     final df = DateFormat("HH:mm 'Uhr'", 'de_DE');
 
     return Scaffold(
+      drawer: const AppDrawer(),
       appBar: AppBar(
         title: const Text('Spielplan'),
         actions: [

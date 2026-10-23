@@ -2,28 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-import '../models/todo.dart';
 import '../state/app_state.dart';
+import '../widgets/app_drawer.dart';
 import 'match_center_screen.dart';
 import 'rating_screen.dart';
 
 /// „Nachholen" (wie MS-Teams): offene Punkte, die man später erledigen kann –
-/// fehlende Bewertungen, Nominierungen, Aufstellungen und eigene To-Dos.
-class NachholenScreen extends StatefulWidget {
+/// fehlende Bewertungen, Nominierungen und Aufstellungen. Eigene Aufgaben
+/// haben einen eigenen Menüpunkt („Aufgaben").
+class NachholenScreen extends StatelessWidget {
   const NachholenScreen({super.key});
-
-  @override
-  State<NachholenScreen> createState() => _NachholenScreenState();
-}
-
-class _NachholenScreenState extends State<NachholenScreen> {
-  final _todoCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _todoCtrl.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,26 +20,25 @@ class _NachholenScreenState extends State<NachholenScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Nachholen')),
-      body: FutureBuilder<(List<NachholenItem>, List<Todo>)>(
-        future: _load(state),
+      drawer: const AppDrawer(),
+      body: FutureBuilder<List<NachholenItem>>(
+        future: state.nachholen(),
         builder: (context, snap) {
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final items = snap.data!.$1;
-          final todos = snap.data!.$2;
+          final items = snap.data!;
           final ratings =
               items.where((i) => i.kind == NachholenKind.rating).toList();
           final noms =
               items.where((i) => i.kind == NachholenKind.nomination).toList();
           final lineups =
               items.where((i) => i.kind == NachholenKind.lineup).toList();
-          final allClear = items.isEmpty && todos.every((t) => t.done);
 
           return ListView(
             padding: const EdgeInsets.only(bottom: 24),
             children: [
-              if (allClear) _allClear(context),
+              if (items.isEmpty) _allClear(context),
               _section(
                 context,
                 icon: Icons.star_border,
@@ -78,7 +65,6 @@ class _NachholenScreenState extends State<NachholenScreen> {
                 onTap: (i) =>
                     _open(context, MatchCenterScreen(matchId: i.matchId)),
               ),
-              _todoSection(context, state, todos),
             ],
           );
         },
@@ -86,18 +72,12 @@ class _NachholenScreenState extends State<NachholenScreen> {
     );
   }
 
-  Future<(List<NachholenItem>, List<Todo>)> _load(AppState s) async {
-    final items = await s.nachholen();
-    final todos = await s.todos();
-    return (items, todos);
-  }
-
   Future<void> _open(BuildContext context, Widget screen) async {
     await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
   }
 
   Widget _allClear(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+        padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
         child: Column(
           children: [
             Icon(Icons.check_circle,
@@ -170,122 +150,4 @@ class _NachholenScreenState extends State<NachholenScreen> {
                 fontWeight: FontWeight.bold,
                 fontSize: 12)),
       );
-
-  Widget _todoSection(BuildContext context, AppState state, List<Todo> todos) {
-    return Card(
-      margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 8, 12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.checklist,
-                    size: 18, color: Theme.of(context).colorScheme.primary),
-                const SizedBox(width: 8),
-                Text('Eigene To-Dos',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
-              ],
-            ),
-            const SizedBox(height: 4),
-            if (todos.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 6),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text('Noch keine Aufgaben.',
-                      style: TextStyle(color: Colors.grey)),
-                ),
-              )
-            else
-              for (final t in todos)
-                Dismissible(
-                  key: ValueKey(t.id),
-                  direction: DismissDirection.endToStart,
-                  background: Container(
-                    color: Colors.red,
-                    alignment: Alignment.centerRight,
-                    padding: const EdgeInsets.only(right: 20),
-                    child: const Icon(Icons.delete, color: Colors.white),
-                  ),
-                  onDismissed: (_) => state.deleteTodo(t.id),
-                  child: ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: Checkbox(
-                      value: t.done,
-                      onChanged: (v) => state.toggleTodo(t, v ?? false),
-                    ),
-                    title: Text(
-                      t.text,
-                      style: t.done
-                          ? const TextStyle(
-                              decoration: TextDecoration.lineThrough,
-                              color: Colors.grey)
-                          : null,
-                    ),
-                    onTap: () => _editTodo(context, state, t),
-                  ),
-                ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _todoCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Neue Aufgabe …',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => _addTodo(state),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  onPressed: () => _addTodo(state),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _addTodo(AppState state) {
-    final t = _todoCtrl.text.trim();
-    if (t.isEmpty) return;
-    state.addTodo(t);
-    _todoCtrl.clear();
-  }
-
-  Future<void> _editTodo(
-      BuildContext context, AppState state, Todo todo) async {
-    final ctrl = TextEditingController(text: todo.text);
-    final text = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Aufgabe bearbeiten'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Aufgabe'),
-          onSubmitted: (v) => Navigator.pop(context, v.trim()),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-              child: const Text('Speichern')),
-        ],
-      ),
-    );
-    if (text != null) await state.updateTodoText(todo, text);
-  }
 }
