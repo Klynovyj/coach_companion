@@ -100,6 +100,38 @@ enum MatchEventType {
           orElse: () => MatchEventType.goal);
 }
 
+/// Verfügbarkeitsstatus eines Spielers (Stammdaten).
+enum PlayerStatus {
+  fit('fit', 'Fit', '🟢'),
+  verletzt('verletzt', 'Verletzt', '🤕'),
+  krank('krank', 'Krank', '🤒'),
+  gesperrt('gesperrt', 'Gesperrt', '⛔');
+
+  const PlayerStatus(this.storageKey, this.label, this.symbol);
+  final String storageKey;
+  final String label;
+  final String symbol;
+
+  static PlayerStatus fromKey(String? key) => PlayerStatus.values
+      .firstWhere((e) => e.storageKey == key, orElse: () => PlayerStatus.fit);
+}
+
+/// Kapitäns-Rolle eines Spielers (je eine pro Mannschaft).
+enum CaptainRole {
+  none('none', '—', ''),
+  captain('captain', 'Kapitän', 'Ⓒ'),
+  vice('vice', 'Vize-Kapitän', 'Ⓥ'),
+  third('third', '3. Kapitän', '③');
+
+  const CaptainRole(this.storageKey, this.label, this.badge);
+  final String storageKey;
+  final String label;
+  final String badge;
+
+  static CaptainRole fromKey(String? key) => CaptainRole.values
+      .firstWhere((e) => e.storageKey == key, orElse: () => CaptainRole.none);
+}
+
 /// Art eines Mannschafts-Termins (kein Pflichtspiel – dafür gibt es Spiele).
 enum TeamEventType {
   feier('feier', 'Feier', '🎉'),

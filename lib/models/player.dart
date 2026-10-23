@@ -13,6 +13,15 @@ class Player {
   /// Position/Spielort als Freitext (z.B. "Sturm", "IV").
   final String? position;
 
+  /// Wunschposition (Freitext).
+  final String? wishPosition;
+
+  /// Verfügbarkeitsstatus (Fit/Verletzt/Krank/Gesperrt).
+  final PlayerStatus status;
+
+  /// Kapitäns-Rolle (je eine pro Mannschaft).
+  final CaptainRole captainRole;
+
   /// Externer Bezeichner aus der Importquelle – für Duplikaterkennung.
   final String? externalId;
 
@@ -33,6 +42,9 @@ class Player {
     required this.lastName,
     this.number,
     this.position,
+    this.wishPosition,
+    this.status = PlayerStatus.fit,
+    this.captainRole = CaptainRole.none,
     this.externalId,
     this.photoPath,
     this.source = DataSource.manual,
@@ -64,6 +76,9 @@ class Player {
     int? number,
     bool clearNumber = false,
     String? position,
+    String? wishPosition,
+    PlayerStatus? status,
+    CaptainRole? captainRole,
     String? externalId,
     String? photoPath,
     DataSource? source,
@@ -76,6 +91,9 @@ class Player {
       lastName: lastName ?? this.lastName,
       number: clearNumber ? null : (number ?? this.number),
       position: position ?? this.position,
+      wishPosition: wishPosition ?? this.wishPosition,
+      status: status ?? this.status,
+      captainRole: captainRole ?? this.captainRole,
       externalId: externalId ?? this.externalId,
       photoPath: photoPath ?? this.photoPath,
       source: source ?? this.source,
@@ -91,6 +109,9 @@ class Player {
         'last_name': lastName,
         'number': number,
         'position': position,
+        'wish_position': wishPosition,
+        'status': status.storageKey,
+        'captain_role': captainRole.storageKey,
         'external_id': externalId,
         'photo_path': photoPath,
         'source': source.storageKey,
@@ -105,6 +126,9 @@ class Player {
         lastName: m['last_name'] as String? ?? '',
         number: m['number'] as int?,
         position: m['position'] as String?,
+        wishPosition: m['wish_position'] as String?,
+        status: PlayerStatus.fromKey(m['status'] as String?),
+        captainRole: CaptainRole.fromKey(m['captain_role'] as String?),
         externalId: m['external_id'] as String?,
         photoPath: m['photo_path'] as String?,
         source: DataSource.fromKey(m['source'] as String?),

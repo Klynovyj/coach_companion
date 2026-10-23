@@ -80,7 +80,25 @@ class SquadListView extends StatelessWidget {
                   final p = players[i];
                   return ListTile(
                     leading: PlayerAvatar(player: p),
-                    title: Text(p.fullName),
+                    title: Row(
+                      children: [
+                        Flexible(
+                            child: Text(p.fullName,
+                                maxLines: 1, overflow: TextOverflow.ellipsis)),
+                        if (p.captainRole != CaptainRole.none) ...[
+                          const SizedBox(width: 6),
+                          Text(p.captainRole.badge,
+                              style: TextStyle(
+                                  color:
+                                      Theme.of(context).colorScheme.primary)),
+                        ],
+                        if (p.status != PlayerStatus.fit) ...[
+                          const SizedBox(width: 6),
+                          Text(p.status.symbol,
+                              style: const TextStyle(fontSize: 13)),
+                        ],
+                      ],
+                    ),
                     subtitle: _subtitle(p, cards[p.id]),
                     onTap: () => Navigator.push(
                       context,
@@ -181,6 +199,9 @@ class SquadListView extends StatelessWidget {
           lastName: data.lastName,
           number: data.number,
           position: data.position,
+          wishPosition: data.wishPosition,
+          status: data.status,
+          captainRole: data.captainRole,
         );
   }
 
@@ -193,6 +214,9 @@ class SquadListView extends StatelessWidget {
           number: data.number,
           clearNumber: data.number == null,
           position: data.position,
+          wishPosition: data.wishPosition,
+          status: data.status,
+          captainRole: data.captainRole,
         ));
   }
 

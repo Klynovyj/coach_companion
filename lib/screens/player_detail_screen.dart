@@ -280,18 +280,62 @@ class PlayerDetailScreen extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(player.fullName,
-                    style: Theme.of(context).textTheme.titleLarge),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(player.fullName,
+                          style: Theme.of(context).textTheme.titleLarge),
+                    ),
+                    if (player.captainRole != CaptainRole.none) ...[
+                      const SizedBox(width: 8),
+                      Text(player.captainRole.badge,
+                          style: TextStyle(
+                              fontSize: 18,
+                              color: Theme.of(context).colorScheme.primary)),
+                    ],
+                  ],
+                ),
                 const SizedBox(height: 4),
                 Text([
                   if (player.number != null) 'Nr. ${player.number}',
                   if (player.position != null) player.position!,
+                  if (player.wishPosition != null)
+                    'Wunsch: ${player.wishPosition}',
                 ].join('  ·  ')),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _statusChip(context, player.status),
+                    if (player.captainRole != CaptainRole.none)
+                      Chip(
+                        label: Text(
+                            '${player.captainRole.badge} ${player.captainRole.label}'),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _statusChip(BuildContext context, PlayerStatus s) {
+    final color = switch (s) {
+      PlayerStatus.fit => Colors.green,
+      PlayerStatus.verletzt => Colors.orange,
+      PlayerStatus.krank => Colors.amber.shade800,
+      PlayerStatus.gesperrt => Colors.red,
+    };
+    return Chip(
+      avatar: Text(s.symbol, style: const TextStyle(fontSize: 12)),
+      label: Text(s.label),
+      visualDensity: VisualDensity.compact,
+      side: BorderSide(color: color),
     );
   }
 

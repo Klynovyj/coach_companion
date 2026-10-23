@@ -220,23 +220,43 @@ class AppState extends ChangeNotifier {
     required String lastName,
     int? number,
     String? position,
+    String? wishPosition,
+    PlayerStatus status = PlayerStatus.fit,
+    CaptainRole captainRole = CaptainRole.none,
   }) async {
-    await _repo.upsertPlayer(Player(
+    final player = Player(
       id: _uuid.v4(),
       teamId: teamId,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       number: number,
       position: position,
+      wishPosition: wishPosition,
+      status: status,
+      captainRole: captainRole,
       source: DataSource.manual,
       createdAt: DateTime.now(),
-    ));
+    );
+    await _repo.upsertPlayer(player);
+    await _enforceCaptainUniqueness(player);
     notifyListeners();
   }
 
   Future<void> updatePlayer(Player player) async {
     await _repo.upsertPlayer(player);
+    await _enforceCaptainUniqueness(player);
     notifyListeners();
+  }
+
+  /// Sorgt dafür, dass jede Kapitäns-Rolle pro Team nur einmal vergeben ist.
+  Future<void> _enforceCaptainUniqueness(Player player) async {
+    if (player.captainRole == CaptainRole.none) return;
+    final mates = await _repo.getPlayers(player.teamId);
+    for (final other in mates) {
+      if (other.id != player.id && other.captainRole == player.captainRole) {
+        await _repo.upsertPlayer(other.copyWith(captainRole: CaptainRole.none));
+      }
+    }
   }
 
   Future<void> deletePlayer(String id) async {
