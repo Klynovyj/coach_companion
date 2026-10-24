@@ -460,7 +460,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   Future<void> _addShootoutShot(
       {required bool ownSide, required bool scored}) async {
     final state = context.read<AppState>();
-    final players = ownSide ? _playersFor(true) : _opponentPlayers;
+    // Platzverwiesene dürfen nicht zum Elfmeterschießen antreten.
+    final players = ownSide
+        ? _playersFor(true).where((p) => !_sentOffIds.contains(p.id)).toList()
+        : _opponentPlayers;
     String? playerId;
     if (players.isNotEmpty) {
       final res = await showPlayerPickSheet(context, players);
@@ -759,8 +762,20 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     return _ownPlayers.where((p) => ids.contains(p.id)).toList();
   }
 
+  /// Spieler, die in diesem Spiel Rot oder Gelb-Rot gesehen haben – vom Platz
+  /// gestellt, dürfen nicht mehr mitspielen (kein Tor/Karte, nicht ein-/aus-
+  /// wechselbar).
+  Set<String> get _sentOffIds => {
+        for (final e in _events)
+          if ((e.type == MatchEventType.redCard ||
+                  e.type == MatchEventType.secondYellow) &&
+              e.playerId != null)
+            e.playerId!,
+      };
+
   /// Wer aktuell auf dem Feld steht: Startelf, fortgeschrieben durch alle
   /// bisherigen Wechsel (ein Spieler kann hin- und zurückgewechselt werden).
+  /// Platzverwiesene Spieler (Rot/Gelb-Rot) sind raus.
   Set<String> get _onFieldIds {
     final onField = _starterIds.isNotEmpty
         ? {..._starterIds}
@@ -772,6 +787,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       if (off != null) onField.remove(off);
       if (on != null) onField.add(on);
     }
+    onField.removeAll(_sentOffIds);
     return onField;
   }
 
@@ -923,10 +939,13 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _snack('Kein Kader vorhanden – Spieler zuerst ergänzen.');
       return;
     }
-    // Raus = aktuell auf dem Feld, Rein = aktuell auf der Bank.
+    // Raus = aktuell auf dem Feld, Rein = auf der Bank (ohne Platzverwiesene).
     final onIds = _onFieldIds;
+    final sentOff = _sentOffIds;
     final onField = players.where((p) => onIds.contains(p.id)).toList();
-    final bench = players.where((p) => !onIds.contains(p.id)).toList();
+    final bench = players
+        .where((p) => !onIds.contains(p.id) && !sentOff.contains(p.id))
+        .toList();
     if (onField.isEmpty) {
       _snack('Niemand auf dem Feld – bitte zuerst aufstellen.');
       return;
