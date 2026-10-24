@@ -148,16 +148,16 @@ class CloudService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
-  /// Ersetzt den Cloud-Kader eines Teams durch die übergebenen Spieler.
-  /// [roster] = Liste von {first_name,last_name,number,position}.
+  /// Spiegelt den Kader eines Teams per Upsert (nach id) – OHNE vorheriges
+  /// Löschen, damit der Kader nie kurz „leer" ist (sonst flackert/verfälscht es
+  /// bei anderen Geräten über Realtime).
   static Future<void> uploadRoster(
       String teamId, List<Map<String, dynamic>> roster) async {
-    await _c.from('players').delete().eq('team_id', teamId);
     if (roster.isEmpty) return;
     final rows = [
       for (final p in roster) {'team_id': teamId, ...p}
     ];
-    await _c.from('players').insert(rows);
+    await _c.from('players').upsert(rows, onConflict: 'id');
   }
 
   // --------------------------------------------------------------- Spiele

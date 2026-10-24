@@ -1,6 +1,6 @@
 {
-  "versionCode": 6,
-  "versionName": "1.3.1",
+  "versionCode": 7,
+  "versionName": "1.3.2",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Sync-Fix: App-Eingaben (Nominierung, Aufstellung, Aufgaben, Live-Ereignisse) landen jetzt zuverlässig bei allen Nutzern\n- Live-Aktualisierung (Realtime) stabilisiert – Änderungen erscheinen sofort ohne Neu-Laden\n- Zurückgesetzte Spiele bleiben geräteübergreifend zurückgesetzt\n- diverse Verbesserungen"
+  "notes": "Neuerungen:\n- Sync stabiler: Kader wird ohne Flackern aktualisiert (kein kurzzeitiges „leer“ mehr)\n- Kurzname wird synchronisiert\n- Gegner-Kader (Teams, Spieler, Logos) wird geteilt\n- diverse Verbesserungen am geräteübergreifenden Sync\n\nWichtig: Auf allen Geräten dieselbe Version nutzen."
 }
