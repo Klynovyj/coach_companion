@@ -98,6 +98,8 @@ class AppState extends ChangeNotifier {
   // ------------------------------------------------------------- Lifecycle
   Future<void> init() async {
     await _reload();
+    // Aktives Cloud-Team wiederherstellen (für Schreib-Sync nach Neustart).
+    _activeCloudTeamId = await _repo.getSetting('active_cloud_team');
     await _autoRevertAbsences();
     _loading = false;
     notifyListeners();
@@ -160,6 +162,7 @@ class AppState extends ChangeNotifier {
   }) async {
     await _repo.wipeTeams();
     _activeCloudTeamId = cloudTeamId; // ab jetzt Schreib-Sync in die Cloud
+    await _repo.setSetting('active_cloud_team', cloudTeamId);
     final now = DateTime.now();
     await _repo.upsertTeam(Team(
       id: cloudTeamId,
