@@ -65,6 +65,13 @@ class CoachRepository {
     if (updated == 0) await db.insert(table, map);
   }
 
+  /// Löscht eine Zeile per id (generisch, ohne Sync-Haken) – für den per-Zeile-
+  /// Realtime-Abgleich (DELETE eines anderen Geräts übernehmen).
+  Future<void> deleteByIdRaw(String table, String id) async {
+    final db = await _db;
+    await db.delete(table, where: 'id = ?', whereArgs: [id]);
+  }
+
   /// Löscht lokale Zeilen, deren id NICHT in [keepIds] steht (für den Realtime-
   /// Abgleich: in der Cloud gelöschte Datensätze auch lokal entfernen). Der
   /// lokale Cache hält genau ein Team, daher team-weit sicher.

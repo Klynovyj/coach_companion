@@ -240,8 +240,7 @@ class AppState extends ChangeNotifier {
   // Ereignisse, Bereiche) überall aktuell – nicht nur im Cloud-Bildschirm.
   List<RealtimeChannel> _teamChannels = [];
   String? _syncedTeamId;
-  bool _syncingRemote = false;
-  bool _pendingRemote = false;
+  Future<void> _applyQueue = Future.value(); // serialisiert per-Zeile-Updates
   Timer? _fupaTimer;
   Timer? _fullTimer;
   bool _autoRefreshing = false;
@@ -253,8 +252,9 @@ class AppState extends ChangeNotifier {
     _stopTeamSync();
     if (!CloudService.ready || !CloudService.signedIn) return;
     _syncedTeamId = teamId;
-    _teamChannels =
-        CloudService.subscribeTeam(teamId, () => _onRemoteChange(teamId));
+    _teamChannels = CloudService.subscribeTeam(teamId, _onRemoteRowChange);
+    // Einmaliger Voll-Abgleich beim Start (fängt verpasste Änderungen).
+    _refreshActiveTeamFromCloud(teamId);
     // FuPa (Spielplan/Ergebnisse) regelmäßig automatisch auffrischen.
     _fupaTimer = Timer.periodic(
         const Duration(minutes: 30), (_) => maybeAutoRefreshFupa());
@@ -329,21 +329,87 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> _onRemoteChange(String teamId) async {
-    if (_activeCloudTeamId != teamId) return;
-    if (_syncingRemote) {
-      _pendingRemote = true;
-      return;
-    }
-    _syncingRemote = true;
+  /// Realtime: GENAU die geänderte Zeile anwenden (sofortige Updates, kein
+  /// Voll-Reload). Serialisiert, damit sich die Schreibzugriffe nicht überholen.
+  void _onRemoteRowChange(
+      String table, String eventType, Map<String, dynamic> record) {
+    _applyQueue = _applyQueue
+        .then((_) => _applyRemoteChange(table, eventType, record))
+        .catchError((_) {});
+  }
+
+  Future<void> _applyRemoteChange(
+      String table, String eventType, Map<String, dynamic> record) async {
+    final teamId = _activeCloudTeamId;
+    if (teamId == null) return;
+    final now = DateTime.now();
     try {
-      do {
-        _pendingRemote = false;
-        await _refreshActiveTeamFromCloud(teamId);
-      } while (_pendingRemote);
-    } finally {
-      _syncingRemote = false;
+      if (eventType == 'delete') {
+        final id = record['id'] as String?;
+        if (id != null) await _repo.deleteByIdRaw(table, id);
+      } else {
+        switch (table) {
+          case 'players':
+            await _repo.upsertRawById(
+                'players', _playerFromCloud(record, teamId, now).toMap());
+          case 'matches':
+            final id = record['id'] as String?;
+            if (id != null) {
+              final local = await _repo.getMatch(id);
+              // Selbst verwaltete Spiele (zurückgesetzt/live) nicht überschreiben.
+              if (local != null && local.locallyManaged) break;
+            }
+            await _repo.upsertRawById(
+                'matches', _matchFromCloud(record, teamId, now).toMap());
+          case 'match_events':
+            await _applyRemoteEvent(record, teamId, now);
+          case 'player_stats':
+            await _pullStatsFromCloud(teamId);
+          case 'opponent_teams':
+          case 'opponent_players':
+            await _pullOpponentsFromCloud(teamId);
+          default:
+            // Bereichstabellen (Nominierung, Karten, Notizen, …).
+            final map = Map<String, Object?>.from(record);
+            if (table != 'lineups') map.remove('team_id');
+            if (_noIdTables.contains(table)) {
+              await _repo.insertRawForPull(table, map);
+            } else {
+              await _repo.upsertRawById(table, map);
+            }
+        }
+      }
+    } catch (_) {
+      // Einzelne Änderung überspringen – der Voll-Abgleich holt sie später.
     }
+    await _reload();
+    notifyListeners();
+  }
+
+  /// Wendet ein einzelnes Cloud-Ereignis lokal an (Eigen/Gegner-Zuordnung).
+  Future<void> _applyRemoteEvent(
+      Map<String, dynamic> r, String teamId, DateTime now) async {
+    String? localTeam;
+    if (r['is_opponent'] == true) {
+      final m = await _repo.getMatch(r['match_id'] as String);
+      localTeam = m?.opponentTeamId;
+      if (localTeam == null) return;
+    } else {
+      localTeam = _ownTeam?.id ?? teamId;
+    }
+    await _repo.upsertRawById('match_events', {
+      'id': r['id'],
+      'match_id': r['match_id'],
+      'team_id': localTeam,
+      'minute': (r['minute'] as num?)?.toInt() ?? 0,
+      'minute_extra': (r['minute_extra'] as num?)?.toInt() ?? 0,
+      'type': r['type'],
+      'player_id': r['player_id'],
+      'assist_player_id': r['assist_player_id'],
+      'note': r['note'],
+      'created_at':
+          (r['created_at'] as String?) ?? DateTime.now().toIso8601String(),
+    });
   }
 
   /// Zieht Spiele, Kader, Ereignisse und Bereiche des aktiven Teams frisch aus

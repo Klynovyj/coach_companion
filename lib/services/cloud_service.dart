@@ -355,10 +355,13 @@ class CloudService {
     'opponent_players',
   ];
 
-  /// Realtime pro Tabelle EIN eigener Kanal (zuverlässiger als viele Bindings
-  /// auf einem Kanal). onChange feuert bei jeder Änderung an den Team-Daten.
+  /// Realtime pro Tabelle EIN eigener Kanal. [onChange] liefert die konkrete
+  /// geänderte Zeile (Tabelle, Event-Typ insert/update/delete, Datensatz),
+  /// damit der Empfänger GEZIELT nur diese Zeile anwendet (sofortige Updates).
   static List<RealtimeChannel> subscribeTeam(
-      String teamId, void Function() onChange) {
+      String teamId,
+      void Function(String table, String eventType, Map<String, dynamic> record)
+          onChange) {
     final channels = <RealtimeChannel>[];
     for (final table in teamTables) {
       final ch = _c.channel('team_${teamId}_$table');
@@ -372,7 +375,13 @@ class CloudService {
               column: 'team_id',
               value: teamId,
             ),
-            callback: (_) => onChange(),
+            callback: (payload) {
+              final isDelete =
+                  payload.eventType == PostgresChangeEvent.delete;
+              final rec = isDelete ? payload.oldRecord : payload.newRecord;
+              onChange(table, payload.eventType.name,
+                  Map<String, dynamic>.from(rec));
+            },
           )
           .subscribe();
       channels.add(ch);

@@ -59,10 +59,24 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   // einteilen, danach im Feld frei anordnen.
   bool _listMode = true;
 
+  late final AppState _app = context.read<AppState>();
+
   @override
   void initState() {
     super.initState();
+    // Aufstellung anderer Trainer nach deren Speichern live übernehmen.
+    _app.addListener(_onChanged);
     _load();
+  }
+
+  void _onChanged() {
+    if (mounted) _load();
+  }
+
+  @override
+  void dispose() {
+    _app.removeListener(_onChanged);
+    super.dispose();
   }
 
   Future<void> _load() async {
