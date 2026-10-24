@@ -584,6 +584,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                   Positioned.fill(
                     child: DragTarget<String>(
                       onWillAcceptWithDetails: (_) => true,
+                      // Live mitziehen: Chip folgt dem Finger, dadurch stufenlos
+                      // fein justierbar (nicht erst beim Loslassen springen).
+                      onMove: (d) {
+                        final rel = _relFromGlobal(d.offset);
+                        if (rel != null) _placeAt(d.data, rel);
+                      },
                       onAcceptWithDetails: (d) {
                         final rel = _relFromGlobal(d.offset);
                         if (rel != null) _placeAt(d.data, rel);
@@ -594,8 +600,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                   for (final entry in _starters.entries)
                     if (_byId.containsKey(entry.key))
                       Positioned(
+                        // Anker = Avatar-Mitte (chip/2); muss mit dem Greif-Anker
+                        // im _draggable übereinstimmen, sonst springt der Spieler
+                        // beim Ablegen um die Labelhöhe nach oben.
                         left: entry.value.dx * w - chip / 2,
-                        top: entry.value.dy * h - chipH / 2,
+                        top: entry.value.dy * h - chip / 2,
                         width: chip,
                         height: chipH,
                         child: _draggable(
