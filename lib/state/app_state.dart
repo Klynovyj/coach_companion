@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 import 'package:uuid/uuid.dart';
 
 import '../data/coach_repository.dart';
@@ -232,6 +233,80 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------------------------------------------------- Globaler Realtime-Sync
+  // Hält bei aktivem Cloud-Team den gesamten lokalen Cache (Spiele, Kader,
+  // Ereignisse, Bereiche) überall aktuell – nicht nur im Cloud-Bildschirm.
+  RealtimeChannel? _teamChannel;
+  String? _syncedTeamId;
+  bool _syncingRemote = false;
+  bool _pendingRemote = false;
+
+  /// Startet (oder behält) das Realtime-Abo für das aktive Cloud-Team.
+  void ensureTeamSync(String teamId) {
+    if (_syncedTeamId == teamId && _teamChannel != null) return;
+    _stopTeamSync();
+    if (!CloudService.ready || !CloudService.signedIn) return;
+    _syncedTeamId = teamId;
+    _teamChannel =
+        CloudService.subscribeTeam(teamId, () => _onRemoteChange(teamId));
+  }
+
+  void _stopTeamSync() {
+    final ch = _teamChannel;
+    _teamChannel = null;
+    _syncedTeamId = null;
+    if (ch != null) CloudService.removeChannel(ch);
+  }
+
+  Future<void> _onRemoteChange(String teamId) async {
+    if (_activeCloudTeamId != teamId) return;
+    if (_syncingRemote) {
+      _pendingRemote = true;
+      return;
+    }
+    _syncingRemote = true;
+    try {
+      do {
+        _pendingRemote = false;
+        await _refreshActiveTeamFromCloud(teamId);
+      } while (_pendingRemote);
+    } finally {
+      _syncingRemote = false;
+    }
+  }
+
+  /// Zieht Spiele, Kader, Ereignisse und Bereiche des aktiven Teams frisch aus
+  /// der Cloud in den lokalen Cache (ohne Wipe) und benachrichtigt die UI.
+  Future<void> _refreshActiveTeamFromCloud(String teamId) async {
+    if (_activeCloudTeamId != teamId ||
+        !CloudService.ready ||
+        !CloudService.signedIn) {
+      return;
+    }
+    _applyingRemote = true;
+    try {
+      final now = DateTime.now();
+      final players = await CloudService.players(teamId);
+      for (final p in players) {
+        await _repo.upsertRawById('players',
+            _playerFromCloud(p, teamId, now).toMap());
+      }
+      final matches = await CloudService.matches(teamId);
+      for (final m in matches) {
+        await _repo.upsertRawById('matches',
+            _matchFromCloud(m, teamId, now).toMap());
+      }
+      await _pullEventsFromCloud(teamId, replace: false);
+      await _pullAuxFromCloud(teamId, replace: false);
+    } catch (_) {
+      // Offline/Teilfehler – lokaler Stand bleibt gültig.
+    } finally {
+      _applyingRemote = false;
+    }
+    await _reload();
+    notifyListeners();
+  }
+
   List<GameMatch> _matches = [];
   List<GameMatch> get matches => List.unmodifiable(_matches);
 
@@ -246,6 +321,8 @@ class AppState extends ChangeNotifier {
     await _autoRevertAbsences();
     _loading = false;
     notifyListeners();
+    // Realtime-Sync fortsetzen, falls ein Cloud-Team aktiv ist (und bereit).
+    if (_activeCloudTeamId != null) ensureTeamSync(_activeCloudTeamId!);
   }
 
   Future<void> _reload() async {
@@ -256,6 +333,12 @@ class AppState extends ChangeNotifier {
   Future<void> refresh() async {
     await _reload();
     notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _stopTeamSync();
+    super.dispose();
   }
 
   // ----------------------------------------------------------- FuPa-Import
@@ -337,6 +420,8 @@ class AppState extends ChangeNotifier {
     }
     await _reload();
     notifyListeners();
+    // Ab jetzt Änderungen dieses Teams überall live übernehmen.
+    ensureTeamSync(cloudTeamId);
   }
 
   /// Aktualisiert den lokalen Cache mit frischen Cloud-Spielen – ohne Wipe,

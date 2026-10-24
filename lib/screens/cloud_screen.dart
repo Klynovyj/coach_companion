@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -9,6 +8,7 @@ import '../models/player.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
+import 'home_screen.dart' show homeTabNotifier;
 
 /// Lokale Spieler → Cloud-Kader-Datensätze (mit stabiler id).
 List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
@@ -443,35 +443,23 @@ class CloudTeamScreen extends StatefulWidget {
 }
 
 class _CloudTeamScreenState extends State<CloudTeamScreen> {
-  late Future<List<Map<String, dynamic>>> _future =
-      CloudService.matches(widget.teamId);
-  static final _df = DateFormat('dd.MM.yyyy  HH:mm', 'de_DE');
-
   late final AppState _app = context.read<AppState>();
-  RealtimeChannel? _teamChannel;
-  bool _autoSyncing = false;
+  bool _syncing = false;
 
   @override
   void initState() {
     super.initState();
-    // Realtime: Änderungen an Spielen/Kader (auch von Kollegen) live übernehmen.
-    _teamChannel = CloudService.subscribeTeam(widget.teamId, _onCloudChange);
-    // Beim Öffnen automatisch in den lokalen Cache laden (cloud-first).
-    _autoSync();
+    _activate();
   }
 
-  @override
-  void dispose() {
-    final ch = _teamChannel;
-    if (ch != null) CloudService.removeChannel(ch);
-    super.dispose();
-  }
-
-  /// Lädt das Team beim Öffnen automatisch in den lokalen Cache – außer es ist
-  /// bereits das aktive Abbild (dann kein Wipe, nur Realtime hält es aktuell).
-  Future<void> _autoSync() async {
-    if (_app.activeCloudTeamId == widget.teamId) return;
-    setState(() => _autoSyncing = true);
+  /// Macht das Team aktiv und startet den Realtime-Sync. Ist es schon aktiv,
+  /// wird nur das Abo sichergestellt (kein Wipe).
+  Future<void> _activate() async {
+    if (_app.activeCloudTeamId == widget.teamId) {
+      _app.ensureTeamSync(widget.teamId);
+      return;
+    }
+    setState(() => _syncing = true);
     try {
       final players = await CloudService.players(widget.teamId);
       final matches = await CloudService.matches(widget.teamId);
@@ -480,77 +468,50 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
     } catch (_) {
       // Offline/Lesefehler: lokaler Cache bleibt wie er ist.
     }
-    if (mounted) setState(() => _autoSyncing = false);
+    if (mounted) setState(() => _syncing = false);
   }
 
-  /// Realtime-Callback: Spielliste neu laden und – wenn dieses Team aktiv ist –
-  /// den lokalen Cache nachziehen (ohne Wipe).
-  Future<void> _onCloudChange() async {
-    try {
-      final matches = await CloudService.matches(widget.teamId);
-      if (!mounted) return;
-      setState(() => _future = Future.value(matches));
-      await _app.syncCloudMatchesToCache(widget.teamId, matches);
-      final players = await CloudService.players(widget.teamId);
-      await _app.syncCloudPlayersToCache(widget.teamId, players);
-      // Geteilte Bereiche (Nominierung, Karten, Notizen, Bewertungen …) live.
-      await _app.resyncCloudAuxData(widget.teamId);
-    } catch (_) {}
+  /// Wechselt in die normale App (Spielplan=0, Kader=1) und schließt die
+  /// Cloud-Seiten.
+  void _goHomeTab(int index) {
+    homeTabNotifier.value = index;
+    Navigator.of(context).popUntil((r) => r.isFirst);
   }
 
-  void _reload() {
-    setState(() {
-      _future = CloudService.matches(widget.teamId);
-    });
-  }
-
-  Future<void> _newMatch() async {
-    final ctrl = TextEditingController();
-    final opp = await showDialog<String>(
+  Future<void> _resyncFupa() async {
+    final navigator = Navigator.of(context);
+    final status = ValueNotifier<String>('Aktualisiere aus FuPa …');
+    showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Neues Spiel'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          decoration: const InputDecoration(labelText: 'Gegner'),
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('FuPa-Aktualisierung'),
+        content: ValueListenableBuilder<String>(
+          valueListenable: status,
+          builder: (_, s, _) => Row(children: [
+            const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 16),
+            Expanded(child: Text(s)),
+          ]),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Starten')),
-        ],
       ),
     );
-    if (opp == null || opp.isEmpty) return;
     try {
-      final m = await CloudService.createMatch(widget.teamId, opp);
-      if (!mounted) return;
-      _reload();
-      _open(m);
+      final sum = await _app.resyncOwnTeam(onProgress: (p) => status.value = p);
+      if (mounted) navigator.pop();
+      _snack('Aktualisiert: ${sum.players} Spieler, ${sum.matches} Spiele – geteilt.');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Fehler: $e')));
-      }
+      if (mounted) navigator.pop();
+      _snack('Fehler: ${_err(e)}');
+    } finally {
+      status.dispose();
     }
   }
 
-  void _open(Map<String, dynamic> m) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => CloudMatchScreen(
-          match: m,
-          teamId: widget.teamId,
-          teamName: widget.teamName,
-          isTrainer: widget.isTrainer,
-        ),
-      ),
-    ).then((_) => _reload());
-  }
+  String _err(Object e) => e is PostgrestException ? e.message : e.toString();
 
   Future<void> _uploadData() async {
     final app = context.read<AppState>();
@@ -585,7 +546,6 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
     try {
       await CloudService.uploadRoster(widget.teamId, roster);
       final added = await CloudService.uploadSchedule(widget.teamId, schedule);
-      _reload();
       _snack('${roster.length} Spieler, $added Spiele hochgeladen.');
     } catch (e) {
       _snack('Fehler: $e');
@@ -628,6 +588,8 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final hasFupa = widget.fupaUrl?.isNotEmpty ?? false;
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.teamName),
@@ -647,7 +609,7 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
               ),
             ),
           IconButton(
-            tooltip: 'In diese App laden (Kader & Spielplan)',
+            tooltip: 'Neu aus Cloud laden',
             icon: const Icon(Icons.cloud_download_outlined),
             onPressed: _downloadToLocal,
           ),
@@ -659,54 +621,72 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
             ),
         ],
       ),
-      floatingActionButton: widget.isTrainer
-          ? FloatingActionButton.extended(
-              onPressed: _newMatch,
-              icon: const Icon(Icons.add),
-              label: const Text('Spiel'),
-            )
-          : null,
       body: Column(
         children: [
-          if (_autoSyncing)
-            const _SyncBanner(),
+          if (_syncing) const _SyncBanner(),
           Expanded(
-            child: FutureBuilder<List<Map<String, dynamic>>>(
-              future: _future,
-              builder: (context, snap) {
-                if (!snap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final matches = snap.data!;
-                if (matches.isEmpty) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('Noch keine Spiele.',
-                          style: TextStyle(color: Colors.grey)),
-                    ),
-                  );
-                }
-                return ListView(
-                  children: [
-                    for (final m in matches)
-                      Card(
-                        child: ListTile(
-                          title: Text('vs ${m['opponent']}'),
-                          subtitle: Text([
-                            '${m['own_score']} : ${m['opponent_score']}',
-                            if (m['kickoff'] != null)
-                              _df.format(
-                                  DateTime.parse(m['kickoff']).toLocal()),
-                            if (m['status'] == 'live') 'LIVE',
-                          ].join('  ·  ')),
-                          trailing: const Icon(Icons.chevron_right),
-                          onTap: () => _open(m),
+            child: ListView(
+              padding: const EdgeInsets.all(12),
+              children: [
+                Card(
+                  color: scheme.secondaryContainer,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Icon(Icons.cloud_done_outlined,
+                              color: scheme.onSecondaryContainer),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text('„${widget.teamName}" ist aktiv',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: scheme.onSecondaryContainer)),
+                          ),
+                        ]),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Spielplan, Kader, Nominierung, Aufstellung, '
+                          'Live-Tracking, Karten, Notizen, Bewertungen, Aufgaben '
+                          'und Gespräche nutzt du direkt in der App – alles wird '
+                          'für alle synchronisiert.',
+                          style:
+                              TextStyle(color: scheme.onSecondaryContainer),
                         ),
-                      ),
-                  ],
-                );
-              },
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.event_note),
+                    title: const Text('Zum Spielplan'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _goHomeTab(0),
+                  ),
+                ),
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.groups),
+                    title: const Text('Zum Kader'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () => _goHomeTab(1),
+                  ),
+                ),
+                if (widget.isTrainer && hasFupa)
+                  Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.sync),
+                      title: const Text('Aus FuPa aktualisieren'),
+                      subtitle: const Text(
+                          'Kader & Spielplan neu laden und teilen'),
+                      onTap: _resyncFupa,
+                    ),
+                  ),
+              ],
             ),
           ),
         ],
@@ -913,293 +893,6 @@ class _SyncBanner extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ------------------------------------------------- Spiel → Live (Echtzeit)
-class CloudMatchScreen extends StatefulWidget {
-  const CloudMatchScreen({
-    super.key,
-    required this.match,
-    required this.teamId,
-    required this.teamName,
-    required this.isTrainer,
-  });
-
-  final Map<String, dynamic> match;
-  final String teamId;
-  final String teamName;
-  final bool isTrainer;
-
-  @override
-  State<CloudMatchScreen> createState() => _CloudMatchScreenState();
-}
-
-class _CloudMatchScreenState extends State<CloudMatchScreen> {
-  late final String _matchId = widget.match['id'];
-  int _own = 0;
-  int _opp = 0;
-  List<Map<String, dynamic>> _events = [];
-  List<Map<String, dynamic>> _players = [];
-  RealtimeChannel? _channel;
-
-  @override
-  void initState() {
-    super.initState();
-    _own = widget.match['own_score'] ?? 0;
-    _opp = widget.match['opponent_score'] ?? 0;
-    _load();
-    _loadPlayers();
-    _channel = CloudService.subscribeEvents(_matchId, _load);
-  }
-
-  Future<void> _loadPlayers() async {
-    try {
-      final ps = await CloudService.players(widget.teamId);
-      if (mounted) setState(() => _players = ps);
-    } catch (_) {}
-  }
-
-  /// Spieler aus dem Cloud-Kader wählen. null = abgebrochen,
-  /// Record mit id=null/name=null = „ohne".
-  Future<({String? id, String? name})?> _pickCloudPlayer(String title) async {
-    if (_players.isEmpty) await _loadPlayers(); // evtl. erst jetzt hochgeladen
-    if (!mounted) return null;
-    if (_players.isEmpty) {
-      final t = await _askText('$title – Name (optional)');
-      if (t == _cancelled) return null;
-      return (id: null, name: (t == null || t.isEmpty) ? null : t);
-    }
-    return showModalBottomSheet<({String? id, String? name})>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.7),
-          child: ListView(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-                child: Text(title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16)),
-              ),
-              ListTile(
-                leading: const CircleAvatar(child: Icon(Icons.block)),
-                title: const Text('— ohne —'),
-                onTap: () => Navigator.pop(context, (id: null, name: null)),
-              ),
-              for (final p in _players)
-                ListTile(
-                  leading: CircleAvatar(child: Text('${p['number'] ?? ''}')),
-                  title: Text([p['first_name'], p['last_name']]
-                      .where((x) => x != null && '$x'.isNotEmpty)
-                      .join(' ')),
-                  subtitle: p['position'] != null ? Text('${p['position']}') : null,
-                  onTap: () => Navigator.pop(context, (
-                    id: p['id'] as String,
-                    name: [p['first_name'], p['last_name']]
-                        .where((x) => x != null && '$x'.isNotEmpty)
-                        .join(' '),
-                  )),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    if (_channel != null) CloudService.removeChannel(_channel!);
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    try {
-      final ev = await CloudService.events(_matchId);
-      if (!mounted) return;
-      setState(() => _events = ev);
-    } catch (_) {}
-  }
-
-  Future<void> _addGoal(bool own) async {
-    ({String? id, String? name})? pick;
-    if (own) {
-      pick = await _pickCloudPlayer('Torschütze');
-      if (pick == null) return; // abgebrochen
-    }
-    _own += own ? 1 : 0;
-    _opp += own ? 0 : 1;
-    await CloudService.addEvent(
-      matchId: _matchId,
-      teamId: widget.teamId,
-      type: 'goal',
-      playerId: pick?.id,
-      playerName: pick?.name,
-      note: own ? null : 'Gegner',
-      isOpponent: !own,
-    );
-    await CloudService.setScore(_matchId, _own, _opp);
-    if (mounted) setState(() {});
-  }
-
-  Future<void> _addSimple(String type, String label) async {
-    final pick = await _pickCloudPlayer(label);
-    if (pick == null) return; // abgebrochen
-    await CloudService.addEvent(
-      matchId: _matchId,
-      teamId: widget.teamId,
-      type: type,
-      playerId: pick.id,
-      playerName: pick.name,
-    );
-  }
-
-  Future<void> _addComment() async {
-    final text = await _askText('Kommentar');
-    if (text == _cancelled || text == null || text.isEmpty) return;
-    await CloudService.addEvent(
-      matchId: _matchId,
-      teamId: widget.teamId,
-      type: 'comment',
-      note: text,
-    );
-  }
-
-  static const _cancelled = '\u0000cancel';
-  Future<String?> _askText(String title) {
-    final ctrl = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          textCapitalization: TextCapitalization.sentences,
-          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, _cancelled),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('OK')),
-        ],
-      ),
-    );
-  }
-
-  String _label(String type) {
-    switch (type) {
-      case 'goal':
-        return '⚽ Tor';
-      case 'yellow_card':
-        return '🟨 Gelbe Karte';
-      case 'red_card':
-        return '🟥 Rote Karte';
-      case 'comment':
-        return '💬 Kommentar';
-      default:
-        return type;
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: Text('vs ${widget.match['opponent']}')),
-      body: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            color: scheme.primary,
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Text('${widget.teamName}   $_own : $_opp   ${widget.match['opponent']}',
-                    style: TextStyle(
-                        color: scheme.onPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold)),
-                const SizedBox(height: 4),
-                Text('Live · Änderungen erscheinen bei allen',
-                    style: TextStyle(
-                        color: scheme.onPrimary.withValues(alpha: 0.85),
-                        fontSize: 12)),
-              ],
-            ),
-          ),
-          if (widget.isTrainer)
-            Padding(
-              padding: const EdgeInsets.all(8),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                alignment: WrapAlignment.center,
-                children: [
-                  FilledButton(
-                      onPressed: () => _addGoal(true),
-                      child: const Text('⚽ Tor')),
-                  FilledButton.tonal(
-                      onPressed: () => _addGoal(false),
-                      child: const Text('⚽ Gegner')),
-                  OutlinedButton(
-                      onPressed: () => _addSimple('yellow_card', 'Gelbe Karte'),
-                      child: const Text('🟨 Gelb')),
-                  OutlinedButton(
-                      onPressed: () => _addSimple('red_card', 'Rote Karte'),
-                      child: const Text('🟥 Rot')),
-                  OutlinedButton(
-                      onPressed: _addComment, child: const Text('💬 Kommentar')),
-                ],
-              ),
-            )
-          else
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: Text('Nur-Ansicht – der Trainer trägt Ereignisse ein.',
-                  style: TextStyle(color: Colors.grey)),
-            ),
-          const Divider(height: 1),
-          Expanded(
-            child: _events.isEmpty
-                ? const Center(
-                    child: Text('Noch keine Ereignisse.',
-                        style: TextStyle(color: Colors.grey)))
-                : ListView(
-                    children: [
-                      for (final e in _events.reversed)
-                        ListTile(
-                          dense: true,
-                          leading: Text("${e['minute']}'"),
-                          title: Text(_label(e['type'])),
-                          subtitle: Text([
-                            if (e['player_name'] != null) e['player_name'],
-                            if (e['note'] != null) e['note'],
-                          ].join('  ·  ')),
-                          trailing: widget.isTrainer
-                              ? IconButton(
-                                  icon: const Icon(Icons.delete_outline,
-                                      size: 20),
-                                  onPressed: () async {
-                                    await CloudService.deleteEvent(e['id']);
-                                  },
-                                )
-                              : null,
-                        ),
-                    ],
-                  ),
-          ),
-        ],
       ),
     );
   }
