@@ -1,4 +1,4 @@
--- myCouch – Cloud-Daten zurücksetzen (Team/Kader/Spiele/Ereignisse)
+-- myCoach – Cloud-Daten zurücksetzen (Team/Kader/Spiele/Ereignisse)
 -- Im Supabase SQL-Editor ausführen. Das LOGIN-KONTO bleibt bestehen
 -- (auth.users + profiles werden NICHT gelöscht).
 -- Reihenfolge wegen Fremdschlüsseln; teams löscht den Rest via CASCADE mit,

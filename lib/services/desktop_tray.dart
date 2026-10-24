@@ -15,7 +15,7 @@ class DesktopTray with WindowListener, TrayListener {
   DesktopTray._();
   static final DesktopTray instance = DesktopTray._();
 
-  static const _baseTooltip = 'myCouch';
+  static const _baseTooltip = 'myCoach';
   bool _ready = false;
 
   /// Nur auf Windows einrichten. Erwartet, dass windowManager bereits
@@ -29,7 +29,7 @@ class DesktopTray with WindowListener, TrayListener {
       await trayManager.setIcon('assets/icon/tray_icon.ico');
       await trayManager.setToolTip(_baseTooltip);
       await trayManager.setContextMenu(Menu(items: [
-        MenuItem(key: 'show', label: 'myCouch öffnen'),
+        MenuItem(key: 'show', label: 'myCoach öffnen'),
         MenuItem.separator(),
         MenuItem(key: 'exit', label: 'Beenden'),
       ]));

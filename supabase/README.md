@@ -1,4 +1,4 @@
-# myCouch – Mehrbenutzer (Supabase) · Stufe 1
+# myCoach – Mehrbenutzer (Supabase) · Stufe 1
 
 Ziel von Stufe 1: **Konten/Login**, Team per **Einladungscode** beitreten und
 ein **gemeinsames Live-Spiel** (ein Trainer tippt Ereignisse, alle sehen sie in

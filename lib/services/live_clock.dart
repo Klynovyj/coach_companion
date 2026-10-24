@@ -159,7 +159,7 @@ class LiveClock {
     try {
       const android = AndroidInitializationSettings('@mipmap/ic_launcher');
       const windows = WindowsInitializationSettings(
-        appName: 'myCouch',
+        appName: 'myCoach',
         appUserModelId: 'de.coach.coach_companion',
         guid: 'b3f6d1c2-8a4e-4f2b-9e3a-2c7d5e9f1a60',
       );

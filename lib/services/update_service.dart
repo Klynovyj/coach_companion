@@ -70,7 +70,7 @@ class UpdateService {
   }) async {
     try {
       final dir = await getApplicationSupportDirectory();
-      final file = File('${dir.path}/myCouch-update.apk');
+      final file = File('${dir.path}/myCoach-update.apk');
       final client = http.Client();
       final resp = await client.send(http.Request('GET', Uri.parse(apkUrl)));
       if (resp.statusCode != 200) {
@@ -112,7 +112,7 @@ class UpdateService {
     if (info == null) {
       if (!silent) {
         ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('myCouch ist aktuell.')));
+            const SnackBar(content: Text('myCoach ist aktuell.')));
       }
       return;
     }
@@ -122,7 +122,7 @@ class UpdateService {
         title: Text('Update verfügbar${info.versionName.isEmpty ? '' : ' (${info.versionName})'}'),
         content: SingleChildScrollView(
           child: Text(info.notes.isEmpty
-              ? 'Eine neuere Version von myCouch ist verfügbar.'
+              ? 'Eine neuere Version von myCoach ist verfügbar.'
               : info.notes),
         ),
         actions: [

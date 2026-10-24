@@ -54,7 +54,7 @@ class AppDrawer extends StatelessWidget {
                     TeamLogo(logoPath: team!.logoPath, size: 36),
                   const SizedBox(height: 6),
                   Text(
-                    team?.name ?? 'myCouch',
+                    team?.name ?? 'myCoach',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.onPrimary,
                       fontSize: 18,

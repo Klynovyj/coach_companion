@@ -8,7 +8,7 @@
     <!-- Für In-App-Update: APK herunterladen und Installer öffnen. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
-        android:label="myCouch"
+        android:label="myCoach"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <!-- Vordergrund-Dienst für die Live-Spieluhr (flutter_foreground_task).

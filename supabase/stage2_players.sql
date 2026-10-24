@@ -1,4 +1,4 @@
--- myCouch – Stufe 2a: Kader in der Cloud
+-- myCoach – Stufe 2a: Kader in der Cloud
 -- Im Supabase SQL-Editor ausführen (nach schema.sql).
 
 create table if not exists public.players (

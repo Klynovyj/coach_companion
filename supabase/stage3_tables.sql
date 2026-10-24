@@ -1,4 +1,4 @@
--- myCouch – Stufe 3: geteilte Bereiche (eigene Tabelle pro Bereich)
+-- myCoach – Stufe 3: geteilte Bereiche (eigene Tabelle pro Bereich)
 -- Nach schema.sql und stage2_players.sql im Supabase SQL-Editor ausführen.
 --
 -- Jede Tabelle spiegelt EXAKT die lokalen SQLite-Spalten (+ team_id für RLS).

@@ -1,4 +1,4 @@
--- myCouch – Stufe 4: Rollen-UI (Co-Trainer hochstufen)
+-- myCoach – Stufe 4: Rollen-UI (Co-Trainer hochstufen)
 -- Nach schema.sql im Supabase SQL-Editor ausführen.
 --
 -- Zwei SECURITY-DEFINER-Funktionen:

@@ -1,5 +1,5 @@
--- myCouch – Stufe 1: Konten + gemeinsames Live-Tracking
--- Im Supabase SQL-Editor ausführen (neues Projekt für myCouch).
+-- myCoach – Stufe 1: Konten + gemeinsames Live-Tracking
+-- Im Supabase SQL-Editor ausführen (neues Projekt für myCoach).
 -- Enthält: Teams, Mitglieder (Rolle), Spiele, Ereignisse + Row-Level-Security
 -- + Einladungscode-Beitritt + Realtime.
 

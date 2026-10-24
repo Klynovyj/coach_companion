@@ -1,4 +1,4 @@
--- myCouch – Stufe 5: FuPa-Import direkt in die Cloud
+-- myCoach – Stufe 5: FuPa-Import direkt in die Cloud
 -- Nach schema.sql im Supabase SQL-Editor ausführen.
 --
 -- Der FuPa-Teamlink wird am Cloud-Team gespeichert, damit JEDER Trainer des
