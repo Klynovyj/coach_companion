@@ -17,9 +17,11 @@ import '../models/player_note.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/player_talk.dart';
+import '../models/team.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
+import '../widgets/team_logo.dart';
 import '../widgets/rich_note_view.dart';
 import '../widgets/star_rating.dart';
 import 'live_match_screen.dart';
@@ -284,7 +286,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  _tabList([_stammdatenCard(context)]),
+                  _tabList([
+                    _playerCard(context, state),
+                    _stammdatenCard(context),
+                  ]),
                   _tabList([_absencesCard(context, state)]),
                   _tabList([
                     _cardsCard(context, state, df),
@@ -775,6 +780,25 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   // -------------------------------------------------- FuPa-Saisonstatistik
+  /// Lädt Team (Logo/Name) + FuPa-Saisonstatistik für die Spielerkarte.
+  Future<(Team?, PlayerStat?)> _loadCardData(AppState s) async {
+    final team = await s.repository.getTeam(_player.teamId);
+    final stat = await s.playerSeasonStat(_player.teamId, _player.dedupKey);
+    return (team, stat);
+  }
+
+  /// Gestaltete Spielerkarte oben im Profil (Foto, Nummer, Name + FuPa-Werte).
+  Widget _playerCard(BuildContext context, AppState state) {
+    return FutureBuilder<(Team?, PlayerStat?)>(
+      future: _loadCardData(state),
+      builder: (context, snap) => _PlayerCardView(
+        player: _player,
+        team: snap.data?.$1,
+        stat: snap.data?.$2,
+      ),
+    );
+  }
+
   Widget _fupaStatCard(BuildContext context, AppState state) {
     return _SectionCard(
       icon: Icons.insights,
@@ -1933,4 +1957,118 @@ Future<CardDialogData?> showCardDialog(
       ),
     ),
   );
+}
+
+/// Gestaltete Spielerkarte (FuPa-Werte) im Vereins-Look – oben im Profil.
+class _PlayerCardView extends StatelessWidget {
+  const _PlayerCardView({required this.player, this.team, this.stat});
+
+  final Player player;
+  final Team? team;
+  final PlayerStat? stat;
+
+  static const _gold = Color(0xFFC9A24B);
+
+  Widget _stat(IconData icon, int value, String label) => Column(
+        children: [
+          Icon(icon, color: _gold, size: 20),
+          const SizedBox(height: 2),
+          Text('$value',
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(label,
+              style: const TextStyle(color: Colors.white54, fontSize: 11)),
+        ],
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = stat?.matches ?? 0;
+    final goals = stat?.goals ?? 0;
+    final assists = stat?.assists ?? 0;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF14130F), Color(0xFF2A2621)],
+        ),
+        border: Border.all(color: _gold, width: 1.5),
+      ),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (team?.logoPath != null)
+                TeamLogo(logoPath: team!.logoPath, size: 34)
+              else
+                const SizedBox(width: 34),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  team?.name ?? '',
+                  style: const TextStyle(
+                      color: _gold, fontWeight: FontWeight.bold, fontSize: 13),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white70, width: 2),
+                ),
+                child: Text(
+                  player.number?.toString() ?? '–',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          PlayerAvatar(player: player, radius: 54),
+          const SizedBox(height: 10),
+          if (player.firstName.isNotEmpty)
+            Text(player.firstName,
+                style: const TextStyle(color: Colors.white70, fontSize: 14)),
+          Text(
+            player.lastName.toUpperCase(),
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5),
+            textAlign: TextAlign.center,
+          ),
+          if (player.position != null && player.position!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(player.position!,
+                  style: const TextStyle(color: _gold, fontSize: 12)),
+            ),
+          const SizedBox(height: 12),
+          Container(height: 1, color: _gold.withValues(alpha: 0.4)),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _stat(Icons.directions_run, matches, 'Spiele'),
+              _stat(Icons.sports_soccer, goals, 'Tore'),
+              _stat(Icons.handshake, assists, 'Vorlagen'),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
