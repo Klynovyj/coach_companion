@@ -11,13 +11,14 @@ import '../widgets/player_picker_page.dart';
 
 /// Ergebnis des Gespräch-Formulars.
 class TalkFormData {
-  final String playerId;
+  /// Ein oder mehrere Spieler – je Spieler wird ein eigenes Gespräch angelegt.
+  final List<String> playerIds;
   final String title;
   final DateTime scheduledAt;
   final String? notes;
   final bool done;
   const TalkFormData(
-      this.playerId, this.title, this.scheduledAt, this.notes, this.done);
+      this.playerIds, this.title, this.scheduledAt, this.notes, this.done);
 }
 
 /// Formular zum Anlegen/Bearbeiten eines Spielergesprächs. [fixedPlayer] fixiert
@@ -27,6 +28,7 @@ Future<TalkFormData?> showTalkForm(
   PlayerTalk? existing,
   Player? fixedPlayer,
   required List<Player> players,
+  bool multi = false,
 }) {
   return Navigator.push<TalkFormData>(
     context,
@@ -36,6 +38,7 @@ Future<TalkFormData?> showTalkForm(
         existing: existing,
         fixedPlayer: fixedPlayer,
         players: players,
+        multi: multi,
       ),
     ),
   );
@@ -52,25 +55,40 @@ class SpielergespraecheScreen extends StatefulWidget {
 class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
   static final _df = DateFormat('EEE, dd.MM.yyyy  HH:mm', 'de_DE');
 
-  Future<(List<PlayerTalk>, Map<String, Player>)> _load(AppState s) async {
+  Future<(List<PlayerTalk>, List<Player>)> _load(AppState s) async {
     final talks = await s.talks();
     final team = s.ownTeam;
     final players = team == null ? <Player>[] : await s.playersOf(team.id);
-    return (talks, {for (final p in players) p.id: p});
+    return (talks, players);
   }
 
-  Future<void> _add(AppState state) async {
-    final team = state.ownTeam;
-    final players = team == null ? <Player>[] : await state.playersOf(team.id);
-    if (!mounted) return;
+  /// Neues Gespräch – Mehrfachauswahl: je Spieler ein eigener Eintrag.
+  Future<void> _add(AppState state, List<Player> players) async {
     if (players.isEmpty) {
       _snack('Kein Kader vorhanden – Spieler zuerst ergänzen.');
       return;
     }
-    final data = await showTalkForm(context, players: players);
-    if (data == null) return;
+    final data = await showTalkForm(context, players: players, multi: true);
+    if (data == null || !mounted) return;
+    for (final pid in data.playerIds) {
+      await state.addTalk(
+        playerId: pid,
+        title: data.title,
+        scheduledAt: data.scheduledAt,
+        notes: data.notes,
+        done: data.done,
+      );
+    }
+    if (mounted) setState(() {});
+  }
+
+  /// Gespräch für einen bestimmten Spieler (aus den Vorschlägen).
+  Future<void> _planFor(AppState state, Player player) async {
+    final data = await showTalkForm(context,
+        fixedPlayer: player, players: [player]);
+    if (data == null || !mounted) return;
     await state.addTalk(
-      playerId: data.playerId,
+      playerId: data.playerIds.first,
       title: data.title,
       scheduledAt: data.scheduledAt,
       notes: data.notes,
@@ -83,9 +101,9 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
       Player? player) async {
     final data = await showTalkForm(context,
         existing: talk, fixedPlayer: player, players: players);
-    if (data == null || !mounted) return;
+    if (data == null || !mounted || data.playerIds.isEmpty) return;
     await state.saveTalk(talk.copyWith(
-      playerId: data.playerId,
+      playerId: data.playerIds.first,
       title: data.title,
       scheduledAt: data.scheduledAt,
       notes: data.notes,
@@ -101,91 +119,153 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    return Scaffold(
-      drawer: const AppDrawer(),
-      appBar: AppBar(title: const Text('Spielergespräche')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _add(state),
-        icon: const Icon(Icons.add),
-        label: const Text('Gespräch'),
-      ),
-      body: FutureBuilder<(List<PlayerTalk>, Map<String, Player>)>(
+    return DefaultTabController(
+      length: 3,
+      child: FutureBuilder<(List<PlayerTalk>, List<Player>)>(
         future: _load(state),
         builder: (context, snap) {
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final talks = snap.data!.$1;
-          final players = snap.data!.$2;
-          if (talks.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.record_voice_over,
-                        size: 56, color: Colors.grey),
-                    SizedBox(height: 12),
-                    Text(
-                      'Noch keine Spielergespräche.\n'
-                      'Unten rechts ein Gespräch planen.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
+          final hasData = snap.hasData;
+          final talks = hasData ? snap.data!.$1 : <PlayerTalk>[];
+          final players = hasData ? snap.data!.$2 : <Player>[];
+          final playerMap = {for (final p in players) p.id: p};
+
+          final planned = talks.where((t) => !t.done).toList()
+            ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+          final done = talks.where((t) => t.done).toList()
+            ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+          final talkedIds = talks.map((t) => t.playerId).toSet();
+          // Vorschläge: aktive Kaderspieler (ohne Trainerteam) ohne Gespräch.
+          final suggestions = players
+              .where((p) =>
+                  p.active && !p.isStaff && !talkedIds.contains(p.id))
+              .toList();
+
+          return Scaffold(
+            drawer: const AppDrawer(),
+            appBar: AppBar(
+              title: const Text('Spielergespräche'),
+              bottom: TabBar(
+                tabs: [
+                  Tab(text: 'Geplant (${planned.length})'),
+                  Tab(text: 'Durchgeführt (${done.length})'),
+                  Tab(text: 'Vorschläge (${suggestions.length})'),
+                ],
               ),
-            );
-          }
-          return ListView.builder(
-            padding: const EdgeInsets.only(bottom: 88),
-            itemCount: talks.length,
-            itemBuilder: (context, i) {
-              final t = talks[i];
-              final p = players[t.playerId];
-              return Dismissible(
-                key: ValueKey(t.id),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  color: Colors.red,
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20),
-                  child: const Icon(Icons.delete, color: Colors.white),
-                ),
-                onDismissed: (_) => state.deleteTalk(t.id),
-                child: Card(
-                  child: ListTile(
-                    leading: p != null
-                        ? PlayerAvatar(player: p, radius: 20)
-                        : const CircleAvatar(child: Icon(Icons.person)),
-                    title: Text(t.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: t.done
-                            ? const TextStyle(
-                                decoration: TextDecoration.lineThrough,
-                                color: Colors.grey)
-                            : null),
-                    subtitle: Text([
-                      p?.displayName ?? 'Spieler',
-                      _df.format(t.scheduledAt),
-                      if (t.done) '✓ durchgeführt',
-                      if (t.notes != null && t.notes!.isNotEmpty) '📝',
-                    ].join('  ·  ')),
-                    trailing: Checkbox(
-                      value: t.done,
-                      onChanged: (v) =>
-                          state.saveTalk(t.copyWith(done: v ?? false)),
-                    ),
-                    onTap: () =>
-                        _edit(state, t, players.values.toList(), p),
+            ),
+            floatingActionButton: FloatingActionButton.extended(
+              onPressed: () => _add(state, players),
+              icon: const Icon(Icons.add),
+              label: const Text('Gespräch'),
+            ),
+            body: !hasData
+                ? const Center(child: CircularProgressIndicator())
+                : TabBarView(
+                    children: [
+                      _talkList(state, planned, playerMap,
+                          'Keine geplanten Gespräche.'),
+                      _talkList(state, done, playerMap,
+                          'Noch keine durchgeführten Gespräche.'),
+                      _suggestionList(state, suggestions),
+                    ],
                   ),
-                ),
-              );
-            },
           );
         },
       ),
+    );
+  }
+
+  Widget _talkList(AppState state, List<PlayerTalk> talks,
+      Map<String, Player> players, String empty) {
+    if (talks.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Text(empty,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 88),
+      itemCount: talks.length,
+      itemBuilder: (context, i) {
+        final t = talks[i];
+        final p = players[t.playerId];
+        return Dismissible(
+          key: ValueKey(t.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            color: Colors.red,
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
+            child: const Icon(Icons.delete, color: Colors.white),
+          ),
+          onDismissed: (_) => state.deleteTalk(t.id),
+          child: Card(
+            child: ListTile(
+              leading: p != null
+                  ? PlayerAvatar(player: p, radius: 20)
+                  : const CircleAvatar(child: Icon(Icons.person)),
+              title: Text(t.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: t.done
+                      ? const TextStyle(
+                          decoration: TextDecoration.lineThrough,
+                          color: Colors.grey)
+                      : null),
+              subtitle: Text([
+                p?.displayName ?? 'Spieler',
+                _df.format(t.scheduledAt),
+                if (t.notes != null && t.notes!.isNotEmpty) '📝',
+              ].join('  ·  ')),
+              trailing: Checkbox(
+                value: t.done,
+                onChanged: (v) => state.saveTalk(t.copyWith(done: v ?? false)),
+              ),
+              onTap: () => _edit(state, t, players.values.toList(), p),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _suggestionList(AppState state, List<Player> players) {
+    if (players.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text('Alle aktiven Spieler hatten schon ein Gespräch.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey)),
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 88),
+      itemCount: players.length,
+      itemBuilder: (context, i) {
+        final p = players[i];
+        return Card(
+          child: ListTile(
+            leading: PlayerAvatar(player: p, radius: 20),
+            title: Text(p.displayName),
+            subtitle: Text([
+              if (p.number != null) 'Nr. ${p.number}',
+              if (p.position != null) p.position!,
+              'noch kein Gespräch',
+            ].join('  ·  ')),
+            trailing: FilledButton.tonalIcon(
+              onPressed: () => _planFor(state, p),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Planen'),
+            ),
+            onTap: () => _planFor(state, p),
+          ),
+        );
+      },
     );
   }
 }
@@ -195,11 +275,15 @@ class _TalkFormPage extends StatefulWidget {
     this.existing,
     this.fixedPlayer,
     required this.players,
+    this.multi = false,
   });
 
   final PlayerTalk? existing;
   final Player? fixedPlayer;
   final List<Player> players;
+
+  /// Mehrfachauswahl (nur beim Neu-Planen im Hauptfenster).
+  final bool multi;
 
   @override
   State<_TalkFormPage> createState() => _TalkFormPageState();
@@ -209,7 +293,7 @@ class _TalkFormPageState extends State<_TalkFormPage> {
   late final TextEditingController _titleCtrl;
   late final TextEditingController _notesCtrl;
   late DateTime _date;
-  String? _playerId;
+  List<String> _playerIds = [];
   bool _done = false;
 
   final _df = DateFormat('EEE, dd.MM.yyyy  HH:mm', 'de_DE');
@@ -222,7 +306,8 @@ class _TalkFormPageState extends State<_TalkFormPage> {
     _notesCtrl = TextEditingController(text: e?.notes ?? '');
     _date = e?.scheduledAt ??
         DateTime.now().add(const Duration(days: 1));
-    _playerId = widget.fixedPlayer?.id ?? e?.playerId;
+    final initId = widget.fixedPlayer?.id ?? e?.playerId;
+    _playerIds = initId == null ? [] : [initId];
     _done = e?.done ?? false;
   }
 
@@ -233,26 +318,36 @@ class _TalkFormPageState extends State<_TalkFormPage> {
     super.dispose();
   }
 
-  Player? get _selPlayer {
-    final id = _playerId;
-    if (id == null) return null;
+  Player? _playerById(String id) {
     if (widget.fixedPlayer?.id == id) return widget.fixedPlayer;
     return widget.players.where((p) => p.id == id).firstOrNull;
   }
 
-  Future<void> _pickPlayer() async {
+  Future<void> _pickSingle() async {
     final res = await Navigator.of(context).push<String>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => PlayerPickerPage(
           players: widget.players,
-          selected: _playerId,
+          selected: _playerIds.isEmpty ? null : _playerIds.first,
           allowNone: false,
         ),
       ),
     );
     if (res == null || res == kPlayerPickNone) return;
-    setState(() => _playerId = res);
+    setState(() => _playerIds = [res]);
+  }
+
+  Future<void> _pickMulti() async {
+    final res = await Navigator.of(context).push<List<String>>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) =>
+            _MultiPlayerPickPage(players: widget.players, selected: _playerIds),
+      ),
+    );
+    if (res == null) return;
+    setState(() => _playerIds = res);
   }
 
   Future<void> _pickDate() async {
@@ -273,8 +368,10 @@ class _TalkFormPageState extends State<_TalkFormPage> {
   }
 
   void _save() {
-    if (_playerId == null) {
-      _snack('Bitte einen Spieler wählen.');
+    if (_playerIds.isEmpty) {
+      _snack(widget.multi
+          ? 'Bitte mindestens einen Spieler wählen.'
+          : 'Bitte einen Spieler wählen.');
       return;
     }
     if (_titleCtrl.text.trim().isEmpty) {
@@ -285,7 +382,7 @@ class _TalkFormPageState extends State<_TalkFormPage> {
     Navigator.pop(
       context,
       TalkFormData(
-        _playerId!,
+        _playerIds,
         _titleCtrl.text.trim(),
         _date,
         notes.isEmpty ? null : notes,
@@ -297,11 +394,51 @@ class _TalkFormPageState extends State<_TalkFormPage> {
   void _snack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
+  Widget _multiPlayerRow() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text('Spieler (${_playerIds.length})',
+                  style: Theme.of(context).textTheme.titleSmall),
+            ),
+            OutlinedButton.icon(
+              onPressed: _pickMulti,
+              icon: const Icon(Icons.group_add, size: 18),
+              label: const Text('Spieler wählen'),
+            ),
+          ],
+        ),
+        if (_playerIds.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: _playerIds.map((id) {
+              final p = _playerById(id);
+              return InputChip(
+                avatar:
+                    p == null ? null : PlayerAvatar(player: p, radius: 11),
+                label: Text(p?.displayName ?? 'Spieler'),
+                onDeleted: () => setState(() =>
+                    _playerIds = _playerIds.where((x) => x != id).toList()),
+              );
+            }).toList(),
+          ),
+        ],
+        const SizedBox(height: 4),
+        Text('Pro Spieler wird ein eigenes Gespräch angelegt.',
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final editing = widget.existing != null;
     final fixed = widget.fixedPlayer != null;
-    final sel = _selPlayer;
     return Scaffold(
       appBar: AppBar(
         title: Text(editing ? 'Gespräch bearbeiten' : 'Gespräch planen'),
@@ -320,30 +457,39 @@ class _TalkFormPageState extends State<_TalkFormPage> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
           // Spieler
-          Row(
-            children: [
-              Text('Spieler:', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: sel != null
-                      ? Chip(
-                          avatar: PlayerAvatar(player: sel, radius: 11),
-                          label: Text(sel.displayName),
-                        )
-                      : OutlinedButton.icon(
-                          onPressed: _pickPlayer,
-                          icon: const Icon(Icons.person_add_alt, size: 18),
-                          label: const Text('Spieler wählen'),
-                        ),
+          if (widget.multi)
+            _multiPlayerRow()
+          else
+            Row(
+              children: [
+                Text('Spieler:',
+                    style: Theme.of(context).textTheme.titleSmall),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _playerIds.isEmpty
+                        ? OutlinedButton.icon(
+                            onPressed: _pickSingle,
+                            icon: const Icon(Icons.person_add_alt, size: 18),
+                            label: const Text('Spieler wählen'),
+                          )
+                        : Builder(builder: (_) {
+                            final sel = _playerById(_playerIds.first);
+                            return Chip(
+                              avatar: sel == null
+                                  ? null
+                                  : PlayerAvatar(player: sel, radius: 11),
+                              label: Text(sel?.displayName ?? 'Spieler'),
+                            );
+                          }),
+                  ),
                 ),
-              ),
-              if (sel != null && !fixed)
-                TextButton(
-                    onPressed: _pickPlayer, child: const Text('Ändern')),
-            ],
-          ),
+                if (_playerIds.isNotEmpty && !fixed)
+                  TextButton(
+                      onPressed: _pickSingle, child: const Text('Ändern')),
+              ],
+            ),
           const SizedBox(height: 16),
           TextField(
             controller: _titleCtrl,
@@ -395,6 +541,89 @@ class _TalkFormPageState extends State<_TalkFormPage> {
             icon: const Icon(Icons.check),
             label: Text(editing ? 'Änderungen speichern' : 'Gespräch planen'),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Vollbild-Mehrfachauswahl von Spielern (Foto + Suche, Checkboxen).
+class _MultiPlayerPickPage extends StatefulWidget {
+  const _MultiPlayerPickPage({required this.players, required this.selected});
+
+  final List<Player> players;
+  final List<String> selected;
+
+  @override
+  State<_MultiPlayerPickPage> createState() => _MultiPlayerPickPageState();
+}
+
+class _MultiPlayerPickPageState extends State<_MultiPlayerPickPage> {
+  late final Set<String> _sel = {...widget.selected};
+  String _query = '';
+
+  List<Player> get _filtered {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return widget.players;
+    return widget.players
+        .where((p) => p.displayName.toLowerCase().contains(q))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Spieler (${_sel.length})'),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: FilledButton.icon(
+              onPressed: () => Navigator.pop(context, _sel.toList()),
+              icon: const Icon(Icons.check, size: 18),
+              label: const Text('Fertig'),
+            ),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
+        children: [
+          TextField(
+            onChanged: (v) => setState(() => _query = v),
+            decoration: InputDecoration(
+              hintText: 'Spieler suchen …',
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
+              border: const OutlineInputBorder(),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () => setState(() => _query = ''),
+                    ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          for (final p in _filtered)
+            CheckboxListTile(
+              value: _sel.contains(p.id),
+              onChanged: (v) => setState(() {
+                if (v == true) {
+                  _sel.add(p.id);
+                } else {
+                  _sel.remove(p.id);
+                }
+              }),
+              secondary: PlayerAvatar(player: p, radius: 18),
+              title: Text(p.displayName),
+              subtitle: Text([
+                if (p.number != null) 'Nr. ${p.number}',
+                if (p.position != null) p.position!,
+              ].join('  ·  ')),
+              controlAffinity: ListTileControlAffinity.trailing,
+              contentPadding: EdgeInsets.zero,
+            ),
         ],
       ),
     );
