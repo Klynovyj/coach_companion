@@ -1,6 +1,6 @@
 {
-  "versionCode": 10,
-  "versionName": "1.3.5",
+  "versionCode": 11,
+  "versionName": "1.3.6",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Sofort-Sync: Änderungen (Nominierung, Aufstellung u.a.) erscheinen jetzt unmittelbar bei allen – gezieltes Übernehmen statt langsamem Komplett-Neuladen\n- Aufstellung aktualisiert sich nach dem Speichern anderer Trainer live\n- weitere Sync-Verbesserungen"
+  "notes": "Neuerungen:\n- Geteilte Live-Uhr: jeder Trainer sieht die laufende Zeit und kann direkt erfassen\n- Kurzname, Vereinslogo und Ball-/Materialdienst synchronisieren jetzt sofort\n- Geburtsdatum der Spieler wird synchronisiert; Profil-Änderungen landen bei allen\n- Notiz-Spielauswahl mit Suche und Datum; Datum erscheint in der Notiz\n- Zurückgesetzte Spiele: Ergebnis per Menü aus FuPa übernehmen\n- Team-Ersteller ist Admin (volle Rechte, kann Rollen vergeben)\n- weitere Sync-Verbesserungen (Fotos, Logos, Statistik)"
 }
