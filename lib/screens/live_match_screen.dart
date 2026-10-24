@@ -725,6 +725,13 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             ),
             const Divider(height: 1),
             ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: Text(e.type == MatchEventType.comment
+                  ? 'Text ändern'
+                  : 'Text/Spieler ändern'),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
               leading: const Icon(Icons.timer),
               title: const Text('Minute ändern'),
               onTap: () => Navigator.pop(context, 'minute'),
@@ -741,6 +748,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     if (!mounted || action == null) return;
     if (action == 'delete') {
       await _deleteEvent(e);
+    } else if (action == 'edit') {
+      await _editEventDetail(e);
     } else if (action == 'minute') {
       final ctrl = TextEditingController(text: '${e.minute}');
       final newMin = await showDialog<int>(
@@ -769,6 +778,41 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         await _refreshEvents();
       }
     }
+  }
+
+  /// Ereignis-Text (und bei Nicht-Kommentaren den Spieler) nachträglich ändern.
+  Future<void> _editEventDetail(MatchEvent e) async {
+    final isComment = e.type == MatchEventType.comment;
+    final own = e.teamId == _match?.ownTeamId;
+    final players = isComment ? <Player>[] : _onFieldPlayers(own);
+    final detail = await Navigator.of(context)
+        .push<({String? playerId, String? note})>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _EventDetailPage(
+          type: e.type,
+          players: players,
+          initialPlayerId: e.playerId,
+          initialNote: e.note,
+        ),
+      ),
+    );
+    if (detail == null || !mounted) return;
+    // Direkt neu bauen (copyWith kann playerId/note nicht auf null setzen).
+    final updated = MatchEvent(
+      id: e.id,
+      matchId: e.matchId,
+      teamId: e.teamId,
+      minute: e.minute,
+      minuteExtra: e.minuteExtra,
+      type: e.type,
+      playerId: isComment ? e.playerId : detail.playerId,
+      assistPlayerId: e.assistPlayerId,
+      note: detail.note,
+      createdAt: e.createdAt,
+    );
+    await context.read<AppState>().updateEvent(updated);
+    await _refreshEvents();
   }
 
   void _snack(String msg) {
@@ -1427,10 +1471,17 @@ class _MinuteBadge extends StatelessWidget {
 /// Vollbild-Seite für ein dokumentiertes Ereignis (Ecke, Freistoß, Foul …)
 /// oder einen Kommentar: optionale Notiz + optionale Spielerauswahl mit Fotos.
 class _EventDetailPage extends StatefulWidget {
-  const _EventDetailPage({required this.type, required this.players});
+  const _EventDetailPage({
+    required this.type,
+    required this.players,
+    this.initialPlayerId,
+    this.initialNote,
+  });
 
   final MatchEventType type;
   final List<Player> players;
+  final String? initialPlayerId;
+  final String? initialNote;
 
   @override
   State<_EventDetailPage> createState() => _EventDetailPageState();
@@ -1438,7 +1489,15 @@ class _EventDetailPage extends StatefulWidget {
 
 class _EventDetailPageState extends State<_EventDetailPage> {
   String? _selPlayer;
+  String _query = '';
   final _noteCtrl = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _selPlayer = widget.initialPlayerId;
+    if (widget.initialNote != null) _noteCtrl.text = widget.initialNote!;
+  }
 
   @override
   void dispose() {
@@ -1454,6 +1513,14 @@ class _EventDetailPageState extends State<_EventDetailPage> {
     ));
   }
 
+  List<Player> get _filteredPlayers {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return widget.players;
+    return widget.players
+        .where((p) => p.displayName.toLowerCase().contains(q))
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isComment = widget.type == MatchEventType.comment;
@@ -1462,9 +1529,13 @@ class _EventDetailPageState extends State<_EventDetailPage> {
       appBar: AppBar(
         title: Text('${widget.type.symbol}  ${widget.type.label}'),
         actions: [
-          TextButton(
-            onPressed: _save,
-            child: Text(isComment ? 'Senden' : 'Speichern'),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: FilledButton.icon(
+              onPressed: _save,
+              icon: const Icon(Icons.check, size: 18),
+              label: Text(isComment ? 'Senden' : 'Speichern'),
+            ),
           ),
         ],
       ),
@@ -1489,6 +1560,22 @@ class _EventDetailPageState extends State<_EventDetailPage> {
             Text('Spieler (optional)',
                 style: Theme.of(context).textTheme.titleSmall),
             const SizedBox(height: 8),
+            TextField(
+              onChanged: (v) => setState(() => _query = v),
+              decoration: InputDecoration(
+                hintText: 'Spieler suchen …',
+                prefixIcon: const Icon(Icons.search),
+                isDense: true,
+                border: const OutlineInputBorder(),
+                suffixIcon: _query.isEmpty
+                    ? null
+                    : IconButton(
+                        icon: const Icon(Icons.clear),
+                        onPressed: () => setState(() => _query = ''),
+                      ),
+              ),
+            ),
+            const SizedBox(height: 8),
             _PlayerChoiceTile(
               selected: _selPlayer == null,
               leading: const CircleAvatar(
@@ -1496,7 +1583,7 @@ class _EventDetailPageState extends State<_EventDetailPage> {
               label: '— ohne —',
               onTap: () => setState(() => _selPlayer = null),
             ),
-            for (final p in widget.players)
+            for (final p in _filteredPlayers)
               _PlayerChoiceTile(
                 selected: _selPlayer == p.id,
                 leading: PlayerAvatar(player: p, radius: 18),
