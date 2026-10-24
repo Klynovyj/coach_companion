@@ -281,9 +281,12 @@ class CloudService {
     String? playerName,
     String? note,
     bool isOpponent = false,
+    String? createdAt,
   }) =>
       // Upsert per id: gespiegelte Ereignisse behalten ihre lokale ID (damit
       // Erwähnungen sie referenzieren können); ohne id vergibt die DB eine.
+      // created_at wird – wenn übergeben – mit dem lokalen Zeitstempel gesetzt,
+      // damit Phasen-Marken auf allen Geräten denselben Uhr-Anker haben.
       _c.from('match_events').upsert({
         'id': ?id,
         'match_id': matchId,
@@ -296,6 +299,7 @@ class CloudService {
         'player_name': playerName,
         'note': note,
         'is_opponent': isOpponent,
+        'created_at': ?createdAt,
         'created_by': user!.id,
       }, onConflict: 'id');
 

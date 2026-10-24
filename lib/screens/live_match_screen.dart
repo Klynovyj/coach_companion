@@ -16,8 +16,7 @@ import '../widgets/player_avatar.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/team_logo.dart';
 
-/// Spielphasen des Live-Modus. Reihenfolge am Ende erweitert, damit die
-/// gespeicherten Indizes (liveclock) stabil bleiben.
+/// Spielphasen des Live-Modus.
 enum _Phase {
   notStarted,
   firstHalf,
@@ -60,6 +59,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   int _elapsedSeconds = 0; // Gesamt-Spielzeit in Sekunden (2. HZ ab 45:00)
   bool _running = false;
   _Phase _phase = _Phase.notStarted;
+
+  // Anker für die aus den Phasen-Marken abgeleitete Uhr: Basiszeit der Phase
+  // (z.B. 45:00 für die 2. HZ) und Wall-Clock-Zeitpunkt der Marke in ms. Damit
+  // läuft die Uhr auf allen Geräten identisch (siehe _deriveClock).
+  int _baseElapsed = 0;
+  int? _anchorMs;
 
   static const _halfSeconds = 45 * 60;
   static const _fullSeconds = 90 * 60;
@@ -109,20 +114,83 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   void dispose() {
     _state.removeListener(_onAppStateChanged);
     _timer?.cancel();
-    _saveClock();
     super.dispose();
   }
 
-  String get _clockKey => 'liveclock_${widget.matchId}';
-
-  /// Sichert Spielphase + Uhr, damit die Zeit bei Rückkehr korrekt ist.
-  void _saveClock() {
-    _state.repository.setSetting(_clockKey,
-        '${_phase.index}|$_elapsedSeconds|${_running ? 1 : 0}|${DateTime.now().millisecondsSinceEpoch}');
+  /// Leitet Spielphase + Uhr aus den Phasen-Marken (kickoff/halftime/… als
+  /// Ereignisse) ab. Da diese Marken über die Cloud synchronisieren und einen
+  /// gemeinsamen Zeitstempel tragen, ergibt sich auf jedem Gerät dieselbe Uhr –
+  /// ohne eigene Cloud-Spalte. Die späteste Marke gewinnt (robust gegen
+  /// Reihenfolge und „Verlängerung nach Abpfiff").
+  ({_Phase phase, int base, bool running, int? anchorMs}) _deriveClock(
+      List<MatchEvent> events) {
+    const markers = <MatchEventType, (_Phase, int, bool)>{
+      MatchEventType.kickoff: (_Phase.firstHalf, 0, true),
+      MatchEventType.halftime: (_Phase.halftime, _halfSeconds, false),
+      MatchEventType.secondHalfStart: (_Phase.secondHalf, _halfSeconds, true),
+      MatchEventType.fulltime: (_Phase.finished, _fullSeconds, false),
+      MatchEventType.extraFirstStart: (_Phase.extraFirstHalf, _fullSeconds, true),
+      MatchEventType.extraHalftimeMark:
+          (_Phase.extraHalftime, _extraFirstEnd, false),
+      MatchEventType.extraSecondStart:
+          (_Phase.extraSecondHalf, _extraFirstEnd, true),
+      MatchEventType.shootoutStart: (_Phase.shootout, _fullExtra, false),
+    };
+    MatchEvent? latest;
+    for (final e in events) {
+      if (!markers.containsKey(e.type)) continue;
+      if (latest == null || e.createdAt.isAfter(latest.createdAt)) latest = e;
+    }
+    if (latest == null) {
+      return (phase: _Phase.notStarted, base: 0, running: false, anchorMs: null);
+    }
+    final (phase, base, running) = markers[latest.type]!;
+    return (
+      phase: phase,
+      base: base,
+      running: running,
+      anchorMs: running ? latest.createdAt.millisecondsSinceEpoch : null,
+    );
   }
 
-  void _clearClock() {
-    _state.repository.setSetting(_clockKey, null);
+  /// Übernimmt die abgeleitete Uhr in den State: Phase, laufende Zeit, Timer und
+  /// Hintergrunduhr. Wird beim Öffnen und bei jeder Ereignis-Aktualisierung
+  /// (auch per Realtime von anderen Trainern) aufgerufen.
+  Future<void> _applyDerivedClock() async {
+    final d = _deriveClock(_events);
+    var phase = d.phase;
+    var base = d.base;
+    var running = d.running;
+    var anchorMs = d.anchorMs;
+    // Fallback: Status „beendet" ohne Abpfiff-Marke → Abpfiff-Ansicht.
+    if (phase == _Phase.notStarted && _match?.status == MatchStatus.finished) {
+      phase = _Phase.finished;
+      base = _fullSeconds;
+      running = false;
+      anchorMs = null;
+    }
+    final elapsed = (running && anchorMs != null)
+        ? base + ((DateTime.now().millisecondsSinceEpoch - anchorMs) ~/ 1000)
+        : base;
+    if (!mounted) return;
+    setState(() {
+      _phase = phase;
+      _baseElapsed = base;
+      _anchorMs = anchorMs;
+      _running = running;
+      _elapsedSeconds = elapsed < 0 ? 0 : elapsed;
+    });
+    if (running) {
+      _startTimer();
+    } else {
+      _timer?.cancel();
+    }
+    // Hintergrunduhr (Tray/Benachrichtigung) nachführen bzw. beenden.
+    if (_isLiveClockPhase) {
+      await _startClock();
+    } else {
+      await LiveClock.stop();
+    }
   }
 
   /// Baut den aktuellen Uhr-Zustand für die Hintergrund-Uhr (Benachrichtigung).
@@ -221,69 +289,27 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       };
       _starterIds = starterIds;
       _events = events;
-      // Spielphase aus den Phasen-Marken rekonstruieren.
-      bool has(MatchEventType t) => events.any((e) => e.type == t);
-      if (has(MatchEventType.fulltime) ||
-          match!.status == MatchStatus.finished) {
-        _phase = _Phase.finished;
-        _elapsedSeconds = _fullSeconds;
-      } else if (has(MatchEventType.secondHalfStart)) {
-        _phase = _Phase.secondHalf;
-        _elapsedSeconds = _halfSeconds;
-      } else if (has(MatchEventType.halftime)) {
-        _phase = _Phase.halftime;
-        _elapsedSeconds = _halfSeconds;
-      } else if (has(MatchEventType.kickoff)) {
-        _phase = _Phase.firstHalf;
-        _elapsedSeconds = 0;
-      } else {
-        _phase = _Phase.notStarted;
-        _elapsedSeconds = 0;
-      }
-      _running = false; // beim Öffnen pausiert; Trainer setzt fort
       _loading = false;
     });
 
-    // Gesicherte Uhr wiederherstellen (hat Vorrang vor der groben Rekonstruktion).
-    final saved = await state.repository.getSetting(_clockKey);
-    if (saved != null && mounted) {
-      final parts = saved.split('|');
-      if (parts.length == 4) {
-        final phaseIdx = int.tryParse(parts[0]);
-        final elapsed = int.tryParse(parts[1]);
-        final wasRunning = parts[2] == '1';
-        final ts = int.tryParse(parts[3]);
-        if (phaseIdx != null &&
-            elapsed != null &&
-            ts != null &&
-            phaseIdx >= 0 &&
-            phaseIdx < _Phase.values.length) {
-          var e = elapsed;
-          if (wasRunning) {
-            e += ((DateTime.now().millisecondsSinceEpoch - ts) / 1000).floor();
-          }
-          setState(() {
-            _phase = _Phase.values[phaseIdx];
-            _elapsedSeconds = e;
-            _running = wasRunning;
-          });
-          if (wasRunning) _startTimer();
-          // Hintergrund-Uhr (Benachrichtigung/Dienst) wieder aufsetzen,
-          // falls das Spiel noch läuft.
-          if (_isLiveClockPhase) {
-            await _startClock();
-          }
-        }
-      }
-    }
+    // Spielphase + laufende Uhr aus den (synchronisierten) Phasen-Marken
+    // ableiten – dadurch ist die Zeit auf allen Geräten gleich und nach
+    // Neustart/Rückkehr korrekt, ohne lokalen Zwischenspeicher.
+    await _applyDerivedClock();
   }
 
   void _startTimer() {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      setState(() => _elapsedSeconds++);
-      // Alle 10 Sekunden sichern (für korrekte Zeit bei Rückkehr).
-      if (_elapsedSeconds % 10 == 0) _saveClock();
+      // Zeit aus dem gemeinsamen Anker neu berechnen (statt nur +1), damit sie
+      // auf allen Geräten gleich bleibt – bei fehlendem Anker hilfsweise +1.
+      setState(() {
+        final a = _anchorMs;
+        _elapsedSeconds = a != null
+            ? _baseElapsed +
+                ((DateTime.now().millisecondsSinceEpoch - a) ~/ 1000)
+            : _elapsedSeconds + 1;
+      });
       // Auf Desktop die Hintergrund-Uhr (Tray-Tooltip + Halbzeit/Abpfiff-
       // Alarm) sekündlich nachführen; auf Android erledigt das der Dienst.
       if (!Platform.isAndroid) _updateClock();
@@ -299,10 +325,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _match = match;
       _events = events;
     });
-    // Torstand in der Hintergrund-Benachrichtigung aktuell halten.
-    if (_isLiveClockPhase) {
-      await _updateClock();
-    }
+    // Phase + Uhr aus den (ggf. per Realtime aktualisierten) Marken neu
+    // ableiten: ein zuschauender Trainer folgt dadurch live, sobald eine Marke
+    // ankommt. Hält zugleich Torstand/Phase in der Hintergrunduhr aktuell.
+    await _applyDerivedClock();
   }
 
   /// Phasen mit laufender/pausierter Spieluhr (ohne Elfmeterschießen).
@@ -334,23 +360,17 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _elapsedSeconds = 0;
       _running = true;
     });
-    _startTimer();
-    _saveClock();
-    await _startClock();
     await _logPhase(MatchEventType.kickoff, 1, 0);
     await _refreshEvents();
   }
 
   /// Halbzeitpfiff: Uhr hält, 1. HZ zu Ende.
   Future<void> _halftime() async {
-    _timer?.cancel();
     final (min, extra) = _footMinute;
     setState(() {
       _phase = _Phase.halftime;
       _running = false;
     });
-    _saveClock();
-    await _updateClock();
     await _logPhase(MatchEventType.halftime, min, extra);
     await _refreshEvents();
   }
@@ -362,23 +382,18 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _elapsedSeconds = _halfSeconds;
       _running = true;
     });
-    _startTimer();
-    _saveClock();
-    await _startClock();
     await _logPhase(MatchEventType.secondHalfStart, 46, 0);
     await _refreshEvents();
   }
 
   /// Abpfiff: Spielende.
   Future<void> _finish() async {
-    _timer?.cancel();
     final state = context.read<AppState>();
     final (min, extra) = _footMinute;
     setState(() {
       _phase = _Phase.finished;
       _running = false;
     });
-    _saveClock();
     await LiveClock.stop();
     await state.setMatchStatus(widget.matchId, MatchStatus.finished);
     await _logPhase(MatchEventType.fulltime, min, extra);
@@ -397,9 +412,6 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _elapsedSeconds = _fullSeconds;
       _running = true;
     });
-    _startTimer();
-    _saveClock();
-    await _startClock();
     final (min, extra) = _footMinute;
     await _logPhase(MatchEventType.extraFirstStart, min, extra);
     await _refreshEvents();
@@ -407,14 +419,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   /// Halbzeit der Verlängerung (bei 105:00).
   Future<void> _extraHalftime() async {
-    _timer?.cancel();
     final (min, extra) = _footMinute;
     setState(() {
       _phase = _Phase.extraHalftime;
       _running = false;
     });
-    _saveClock();
-    await _updateClock();
     await _logPhase(MatchEventType.extraHalftimeMark, min, extra);
     await _refreshEvents();
   }
@@ -426,9 +435,6 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _elapsedSeconds = _extraFirstEnd;
       _running = true;
     });
-    _startTimer();
-    _saveClock();
-    await _startClock();
     final (min, extra) = _footMinute;
     await _logPhase(MatchEventType.extraSecondStart, min, extra);
     await _refreshEvents();
@@ -436,14 +442,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   /// Ins Elfmeterschießen wechseln.
   Future<void> _startShootout() async {
-    _timer?.cancel();
     final (min, extra) = _footMinute;
     setState(() {
       _phase = _Phase.shootout;
       _running = false;
     });
-    _saveClock();
-    await _updateClock();
     await _logPhase(MatchEventType.shootoutStart, min, extra);
     await _refreshEvents();
   }
@@ -1181,7 +1184,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         );
     if (!mounted) return;
     if (choice.verlauf) {
-      _clearClock();
+      // Die Uhr leitet sich aus den Marken-Ereignissen ab; durch das Löschen
+      // des Verlaufs (oben) ergibt _load()/_applyDerivedClock unten „nicht
+      // gestartet". Hier nur die Hintergrunduhr beenden.
       await LiveClock.stop();
       setState(() {
         _phase = _Phase.notStarted;

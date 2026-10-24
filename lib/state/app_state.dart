@@ -1362,6 +1362,7 @@ class AppState extends ChangeNotifier {
         assistPlayerId: isOwn ? e.assistPlayerId : null,
         note: e.note ?? (isOwn ? null : 'Gegner'),
         isOpponent: !isOwn,
+        createdAt: e.createdAt.toUtc().toIso8601String(),
       );
       final m = await _repo.getMatch(e.matchId);
       if (m != null) {
