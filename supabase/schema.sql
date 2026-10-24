@@ -66,6 +66,10 @@ returns boolean language sql security definer stable as $$
   select exists(
     select 1 from public.team_members m
     where m.team_id = t and m.user_id = auth.uid()
+  ) or exists(
+    -- Der Team-Ersteller (Admin) ist immer Mitglied.
+    select 1 from public.teams tm
+    where tm.id = t and tm.created_by = auth.uid()
   );
 $$;
 
@@ -74,6 +78,10 @@ returns boolean language sql security definer stable as $$
   select exists(
     select 1 from public.team_members m
     where m.team_id = t and m.user_id = auth.uid() and m.role = 'trainer'
+  ) or exists(
+    -- Der Team-Ersteller (Admin) hat immer volle Trainerrechte.
+    select 1 from public.teams tm
+    where tm.id = t and tm.created_by = auth.uid()
   );
 $$;
 

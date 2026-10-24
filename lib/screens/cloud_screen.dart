@@ -552,7 +552,10 @@ class _TeamCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final isTrainer = team['role'] == 'trainer';
+    // Der Ersteller (created_by) ist Admin und hat immer volle Trainerrechte.
+    final isAdmin = team['created_by'] != null &&
+        team['created_by'] == CloudService.user?.id;
+    final isTrainer = team['role'] == 'trainer' || isAdmin;
     return Card(
       child: ListTile(
         leading: Icon(
@@ -561,7 +564,12 @@ class _TeamCard extends StatelessWidget {
         ),
         title: Text((team['name'] as String?) ?? 'Team'),
         subtitle: Text([
-          if (isTrainer) 'Trainer · Code: ${team['invite_code']}' else 'Spieler',
+          if (isAdmin)
+            'Admin · Code: ${team['invite_code']}'
+          else if (isTrainer)
+            'Trainer · Code: ${team['invite_code']}'
+          else
+            'Spieler',
           if (isActive) 'aktiv',
         ].join('  ·  ')),
         onTap: isActive ? null : onActivate,
@@ -724,7 +732,8 @@ class _MemberTile extends StatelessWidget {
     final mail = (member['email'] as String?)?.trim();
     final role = member['role'] as String? ?? 'spieler';
     final isMe = member['is_me'] == true;
-    final isTrainer = role == 'trainer';
+    final isAdmin = member['is_admin'] == true; // Team-Ersteller
+    final isTrainer = role == 'trainer' || isAdmin;
     final shown = (name != null && name.isNotEmpty)
         ? name
         : (mail != null && mail.isNotEmpty
@@ -733,21 +742,28 @@ class _MemberTile extends StatelessWidget {
     return Card(
       child: ListTile(
         leading: CircleAvatar(
-          child: Icon(isTrainer ? Icons.sports : Icons.person),
+          child: Icon(isAdmin
+              ? Icons.shield
+              : (isTrainer ? Icons.sports : Icons.person)),
         ),
         title: Text(isMe ? '$shown (du)' : shown),
-        subtitle: Text(isTrainer ? 'Trainer' : 'Spieler'),
-        trailing: isMe
-            ? const Chip(label: Text('du'))
-            : (isTrainer
-                ? OutlinedButton(
-                    onPressed: () => onSetRole('spieler'),
-                    child: const Text('Zu Spieler'),
-                  )
-                : FilledButton.tonal(
-                    onPressed: () => onSetRole('trainer'),
-                    child: const Text('Zu Trainer'),
-                  )),
+        subtitle: Text(isAdmin
+            ? 'Admin · Ersteller'
+            : (isTrainer ? 'Trainer' : 'Spieler')),
+        trailing: isAdmin
+            // Der Admin (Ersteller) kann nicht herabgestuft werden.
+            ? Chip(label: Text(isMe ? 'Admin (du)' : 'Admin'))
+            : isMe
+                ? const Chip(label: Text('du'))
+                : (isTrainer
+                    ? OutlinedButton(
+                        onPressed: () => onSetRole('spieler'),
+                        child: const Text('Zu Spieler'),
+                      )
+                    : FilledButton.tonal(
+                        onPressed: () => onSetRole('trainer'),
+                        child: const Text('Zu Trainer'),
+                      )),
       ),
     );
   }
