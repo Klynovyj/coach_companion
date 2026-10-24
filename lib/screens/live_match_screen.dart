@@ -448,12 +448,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final players = ownSide ? _playersFor(true) : _opponentPlayers;
     String? playerId;
     if (players.isNotEmpty) {
-      final res = await Navigator.of(context).push<String>(
-        MaterialPageRoute(
-          fullscreenDialog: true,
-          builder: (_) => _PlayerPickPage(players: players, selected: null),
-        ),
-      );
+      final res = await showPlayerPickSheet(context, players);
       if (res == null) return; // abgebrochen
       if (res != _kPickNone) playerId = res;
     }
@@ -595,6 +590,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             extra: _currentExtra,
             phase: _phase,
             running: _running,
+            shootoutOwn: _shootoutScore(true),
+            shootoutOpp: _shootoutScore(false),
+            showShootout: _phase == _Phase.shootout ||
+                _events.any((e) =>
+                    e.type == MatchEventType.soGoal ||
+                    e.type == MatchEventType.soMiss),
           ),
           _Controls(
             phase: _phase,
@@ -1235,6 +1236,9 @@ class _Scoreboard extends StatelessWidget {
     required this.extra,
     required this.phase,
     required this.running,
+    required this.shootoutOwn,
+    required this.shootoutOpp,
+    required this.showShootout,
   });
 
   final GameMatch match;
@@ -1247,6 +1251,9 @@ class _Scoreboard extends StatelessWidget {
   final int extra;
   final _Phase phase;
   final bool running;
+  final int shootoutOwn;
+  final int shootoutOpp;
+  final bool showShootout;
 
   String get _minuteLabel {
     switch (phase) {
@@ -1254,6 +1261,10 @@ class _Scoreboard extends StatelessWidget {
         return 'Anpfiff ausstehend';
       case _Phase.halftime:
         return 'Halbzeit';
+      case _Phase.extraHalftime:
+        return 'Halbzeit Verl.';
+      case _Phase.shootout:
+        return 'Elfmeterschießen';
       case _Phase.finished:
         return 'Spielende';
       default:
@@ -1316,6 +1327,15 @@ class _Scoreboard extends StatelessWidget {
               Expanded(child: _side(scheme, oppLogo, oppName)),
             ],
           ),
+          // Elfmeterschießen oben mitzählen.
+          if (showShootout) ...[
+            const SizedBox(height: 4),
+            Text('Elfmeterschießen  $shootoutOwn : $shootoutOpp',
+                style: TextStyle(
+                    color: scheme.onPrimary,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700)),
+          ],
         ],
       ),
     );
@@ -1932,13 +1952,8 @@ class _EventDetailPageState extends State<_EventDetailPage> {
   }
 
   Future<void> _pickPlayer() async {
-    final res = await Navigator.of(context).push<String>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) =>
-            _PlayerPickPage(players: widget.players, selected: _selPlayer),
-      ),
-    );
+    final res = await showPlayerPickSheet(context, widget.players,
+        selected: _selPlayer);
     if (res == null) return; // abgebrochen → unverändert
     setState(() => _selPlayer = res == _kPickNone ? null : res);
   }
@@ -2026,18 +2041,30 @@ class _EventDetailPageState extends State<_EventDetailPage> {
 /// Sentinel für „— ohne —" im Spieler-Picker.
 const String _kPickNone = '\u0000none';
 
-/// Vollbild-Einzelauswahl eines Spielers (mit Foto + Suche).
-class _PlayerPickPage extends StatefulWidget {
-  const _PlayerPickPage({required this.players, this.selected});
+/// Spieler-Einzelauswahl als Bottom-Sheet (wie beim Einwechseln): Foto + Name
+/// + Nr./Position, antippen wählt aus. Mit Suchfeld und „— ohne —".
+/// Gibt die Spieler-ID zurück, [_kPickNone] für „ohne", oder null bei Abbruch.
+Future<String?> showPlayerPickSheet(BuildContext context, List<Player> players,
+    {String? selected}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    isScrollControlled: true,
+    showDragHandle: true,
+    builder: (_) => _EventPlayerSheet(players: players, selected: selected),
+  );
+}
+
+class _EventPlayerSheet extends StatefulWidget {
+  const _EventPlayerSheet({required this.players, this.selected});
 
   final List<Player> players;
   final String? selected;
 
   @override
-  State<_PlayerPickPage> createState() => _PlayerPickPageState();
+  State<_EventPlayerSheet> createState() => _EventPlayerSheetState();
 }
 
-class _PlayerPickPageState extends State<_PlayerPickPage> {
+class _EventPlayerSheetState extends State<_EventPlayerSheet> {
   String _query = '';
 
   List<Player> get _filtered {
@@ -2050,82 +2077,73 @@ class _PlayerPickPageState extends State<_PlayerPickPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Spieler wählen')),
-      body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
-        children: [
-          TextField(
-            onChanged: (v) => setState(() => _query = v),
-            decoration: InputDecoration(
-              hintText: 'Spieler suchen …',
-              prefixIcon: const Icon(Icons.search),
-              isDense: true,
-              border: const OutlineInputBorder(),
-              suffixIcon: _query.isEmpty
-                  ? null
-                  : IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: () => setState(() => _query = ''),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _PlayerChoiceTile(
-            selected: widget.selected == null,
-            leading: const CircleAvatar(
-                radius: 18, child: Icon(Icons.block, size: 18)),
-            label: '— ohne —',
-            onTap: () => Navigator.pop(context, _kPickNone),
-          ),
-          for (final p in _filtered)
-            _PlayerChoiceTile(
-              selected: widget.selected == p.id,
-              leading: PlayerAvatar(player: p, radius: 18),
-              label: p.displayName,
-              onTap: () => Navigator.pop(context, p.id),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Auswahlkachel für einen Spieler (mit Foto) in der Ereignis-Seite.
-class _PlayerChoiceTile extends StatelessWidget {
-  const _PlayerChoiceTile({
-    required this.selected,
-    required this.leading,
-    required this.label,
-    required this.onTap,
-  });
-
-  final bool selected;
-  final Widget leading;
-  final String label;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Card(
-      elevation: 0,
-      margin: const EdgeInsets.symmetric(vertical: 3),
-      color:
-          selected ? scheme.primaryContainer : scheme.surfaceContainerHighest,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: BorderSide(
-          color: selected ? scheme.primary : Colors.transparent,
-          width: 1.5,
+    final maxH = MediaQuery.of(context).size.height * 0.82;
+    return SafeArea(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: maxH),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: Text('Spieler wählen',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(fontWeight: FontWeight.bold)),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: TextField(
+                onChanged: (v) => setState(() => _query = v),
+                decoration: InputDecoration(
+                  hintText: 'Spieler suchen …',
+                  prefixIcon: const Icon(Icons.search),
+                  isDense: true,
+                  border: const OutlineInputBorder(),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(() => _query = ''),
+                        ),
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView(
+                padding: const EdgeInsets.only(bottom: 8),
+                children: [
+                  ListTile(
+                    leading: const CircleAvatar(
+                        radius: 20, child: Icon(Icons.block)),
+                    title: const Text('— ohne —'),
+                    trailing: widget.selected == null
+                        ? Icon(Icons.check_circle, color: scheme.primary)
+                        : null,
+                    onTap: () => Navigator.pop(context, _kPickNone),
+                  ),
+                  for (final p in _filtered)
+                    ListTile(
+                      leading: PlayerAvatar(player: p),
+                      title: Text(p.fullName),
+                      subtitle: Text([
+                        if (p.number != null) 'Nr. ${p.number}',
+                        if (p.position != null) p.position!,
+                      ].join('  ·  ')),
+                      trailing: widget.selected == p.id
+                          ? Icon(Icons.check_circle, color: scheme.primary)
+                          : null,
+                      onTap: () => Navigator.pop(context, p.id),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
-      ),
-      child: ListTile(
-        leading: leading,
-        title: Text(label),
-        trailing:
-            selected ? Icon(Icons.check_circle, color: scheme.primary) : null,
-        onTap: onTap,
       ),
     );
   }
