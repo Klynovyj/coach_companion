@@ -193,9 +193,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final lineup = _lineup!;
     final entries = <LineupEntry>[];
     var i = 0;
+    // Deterministische Eintrags-ID pro (Aufstellung, Spieler): erneutes Speichern
+    // upsertet in-place, nur wirklich entnommene Spieler gelten als „entfernt".
     _starters.forEach((pid, pos) {
       entries.add(LineupEntry(
-        id: context.read<AppState>().newEntryId(),
+        id: 'le_${lineup.id}_$pid',
         lineupId: lineup.id,
         playerId: pid,
         role: LineupRole.starter,
@@ -206,7 +208,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     });
     for (final pid in _bench) {
       entries.add(LineupEntry(
-        id: context.read<AppState>().newEntryId(),
+        id: 'le_${lineup.id}_$pid',
         lineupId: lineup.id,
         playerId: pid,
         role: LineupRole.substitute,

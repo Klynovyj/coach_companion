@@ -270,18 +270,29 @@ class CoachRepository {
     return rows.map(LineupEntry.fromMap).toList();
   }
 
-  /// Ersetzt sämtliche Einträge einer Aufstellung atomar.
+  /// Ersetzt die Einträge einer Aufstellung. Lokal atomar; der Cloud-Spiegel
+  /// löscht NUR tatsächlich entfernte Einträge gezielt (statt Bulk-Delete nach
+  /// lineup_id) und upsertet die aktuellen. So kann eine nachlaufende DELETE-
+  /// Anfrage nicht die frisch eingefügten Einträge wieder entfernen (Race →
+  /// leere Aufstellung bei allen); die Ziele der Deletes/Upserts sind disjunkt.
   Future<void> replaceLineupEntries(
       String lineupId, List<LineupEntry> entries) async {
     final db = await _db;
+    final old = await getLineupEntries(lineupId);
+    final keep = {for (final e in entries) e.id};
+    final removed = [for (final e in old) if (!keep.contains(e.id)) e.id];
     await db.transaction((txn) async {
-      await txn
-          .delete('lineup_entries', where: 'lineup_id = ?', whereArgs: [lineupId]);
+      for (final id in removed) {
+        await txn.delete('lineup_entries', where: 'id = ?', whereArgs: [id]);
+      }
       for (final e in entries) {
-        await txn.insert('lineup_entries', e.toMap());
+        await txn.insert('lineup_entries', e.toMap(),
+            conflictAlgorithm: ConflictAlgorithm.replace);
       }
     });
-    _syncDelete('lineup_entries', {'lineup_id': lineupId});
+    for (final id in removed) {
+      _syncDelete('lineup_entries', {'id': id});
+    }
     for (final e in entries) {
       _syncUpsert('lineup_entries', e.toMap());
     }

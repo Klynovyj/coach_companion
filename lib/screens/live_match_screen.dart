@@ -741,8 +741,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     );
   }
 
-  String _teamIdFor(bool ownSide) =>
-      ownSide ? _match!.ownTeamId : (_opponentTeam?.id ?? _match!.ownTeamId);
+  String _teamIdFor(bool ownSide) => ownSide
+      ? _match!.ownTeamId
+      // Gegner-Ereignis nie fälschlich dem eigenen Team zuordnen (sonst zählt
+      // ein Gegner-Tor als eigenes): bevorzugt die Gegner-Team-ID des Spiels.
+      : (_opponentTeam?.id ?? _match!.opponentTeamId ?? _match!.ownTeamId);
 
   List<Player> _playersFor(bool ownSide) {
     if (!ownSide) return _opponentPlayers;

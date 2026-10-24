@@ -915,6 +915,12 @@ class AppState extends ChangeNotifier {
       opponentTeamId: oppTeamId,
       opponentFupaUrl: cm.opponentFupaUrl ?? existing.opponentFupaUrl,
       opponentImported: oppTeamId != null,
+      // FuPa-Metadaten liegen nicht in der Cloud-matches-Zeile und wären in cm
+      // null – lokal bewahren, sonst gehen Spieltag/Wettbewerb und v.a. die
+      // external_id (FuPa-Zuordnung beim nächsten Spielplan-Sync) verloren.
+      competition: cm.competition ?? existing.competition,
+      matchday: cm.matchday ?? existing.matchday,
+      externalId: cm.externalId ?? existing.externalId,
     );
     await _repo.upsertRawById('matches', merged.toMap());
   }
