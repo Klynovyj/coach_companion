@@ -843,9 +843,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       allowUnknown: true,
     );
     if (player == _pickCancelled || !mounted) return;
+    final pid = player == _pickUnknown ? null : player;
+    // Hat der Spieler in diesem Spiel schon Gelb? Dann kein zweites Gelb.
+    final hasYellow = pid != null &&
+        _events.any((e) =>
+            e.type == MatchEventType.yellowCard && e.playerId == pid);
     final type = await showModalBottomSheet<MatchEventType>(
       context: context,
-      builder: (_) => _CardTypeSheet(),
+      builder: (_) => _CardTypeSheet(hideYellow: hasYellow),
     );
     if (type == null || !mounted) return;
     final n = await _askNote();
@@ -856,7 +861,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       minute: _currentMinute,
       minuteExtra: _currentExtra,
       type: type,
-      playerId: player == _pickUnknown ? null : player,
+      playerId: pid,
       note: n.note,
     );
     await _refreshEvents();
@@ -2150,18 +2155,29 @@ class _EventPlayerSheetState extends State<_EventPlayerSheet> {
 }
 
 class _CardTypeSheet extends StatelessWidget {
+  const _CardTypeSheet({this.hideYellow = false});
+
+  /// Hat der Spieler bereits Gelb → kein zweites Gelb, nur Gelb-Rot/Rot.
+  final bool hideYellow;
+
   @override
   Widget build(BuildContext context) {
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const ListTile(title: Text('Kartentyp')),
           ListTile(
-            leading: const Text('🟨', style: TextStyle(fontSize: 22)),
-            title: const Text('Gelbe Karte'),
-            onTap: () => Navigator.pop(context, MatchEventType.yellowCard),
+            title: const Text('Kartentyp'),
+            subtitle: hideYellow
+                ? const Text('Spieler hat bereits Gelb – nur Gelb-Rot/Rot')
+                : null,
           ),
+          if (!hideYellow)
+            ListTile(
+              leading: const Text('🟨', style: TextStyle(fontSize: 22)),
+              title: const Text('Gelbe Karte'),
+              onTap: () => Navigator.pop(context, MatchEventType.yellowCard),
+            ),
           ListTile(
             leading: const Text('🟨🟥', style: TextStyle(fontSize: 18)),
             title: const Text('Gelb-Rote Karte'),
