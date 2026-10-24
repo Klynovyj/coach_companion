@@ -333,26 +333,37 @@ class CloudService {
     'player_stats',
   ];
 
-  static RealtimeChannel subscribeTeam(
+  /// Realtime pro Tabelle EIN eigener Kanal (zuverlässiger als viele Bindings
+  /// auf einem Kanal). onChange feuert bei jeder Änderung an den Team-Daten.
+  static List<RealtimeChannel> subscribeTeam(
       String teamId, void Function() onChange) {
-    final ch = _c.channel('team_$teamId');
+    final channels = <RealtimeChannel>[];
     for (final table in teamTables) {
-      ch.onPostgresChanges(
-        event: PostgresChangeEvent.all,
-        schema: 'public',
-        table: table,
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'team_id',
-          value: teamId,
-        ),
-        callback: (_) => onChange(),
-      );
+      final ch = _c.channel('team_${teamId}_$table');
+      ch
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: table,
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'team_id',
+              value: teamId,
+            ),
+            callback: (_) => onChange(),
+          )
+          .subscribe();
+      channels.add(ch);
     }
-    ch.subscribe();
-    return ch;
+    return channels;
   }
 
   static Future<void> removeChannel(RealtimeChannel ch) =>
       _c.removeChannel(ch);
+
+  static Future<void> removeChannels(List<RealtimeChannel> chs) async {
+    for (final ch in chs) {
+      await _c.removeChannel(ch);
+    }
+  }
 }

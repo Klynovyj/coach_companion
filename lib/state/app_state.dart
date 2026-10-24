@@ -229,7 +229,7 @@ class AppState extends ChangeNotifier {
   // ---------------------------------------------------- Globaler Realtime-Sync
   // Hält bei aktivem Cloud-Team den gesamten lokalen Cache (Spiele, Kader,
   // Ereignisse, Bereiche) überall aktuell – nicht nur im Cloud-Bildschirm.
-  RealtimeChannel? _teamChannel;
+  List<RealtimeChannel> _teamChannels = [];
   String? _syncedTeamId;
   bool _syncingRemote = false;
   bool _pendingRemote = false;
@@ -240,11 +240,11 @@ class AppState extends ChangeNotifier {
   /// Startet (oder behält) das Realtime-Abo + die periodische FuPa-Auffrischung
   /// für das aktive Cloud-Team.
   void ensureTeamSync(String teamId) {
-    if (_syncedTeamId == teamId && _teamChannel != null) return;
+    if (_syncedTeamId == teamId && _teamChannels.isNotEmpty) return;
     _stopTeamSync();
     if (!CloudService.ready || !CloudService.signedIn) return;
     _syncedTeamId = teamId;
-    _teamChannel =
+    _teamChannels =
         CloudService.subscribeTeam(teamId, () => _onRemoteChange(teamId));
     // FuPa (Spielplan/Ergebnisse) regelmäßig automatisch auffrischen.
     _fupaTimer = Timer.periodic(
@@ -257,14 +257,14 @@ class AppState extends ChangeNotifier {
   }
 
   void _stopTeamSync() {
-    final ch = _teamChannel;
-    _teamChannel = null;
+    final chs = _teamChannels;
+    _teamChannels = [];
     _syncedTeamId = null;
     _fupaTimer?.cancel();
     _fupaTimer = null;
     _fullTimer?.cancel();
     _fullTimer = null;
-    if (ch != null) CloudService.removeChannel(ch);
+    if (chs.isNotEmpty) CloudService.removeChannels(chs);
   }
 
   /// Frischt den Spielplan (inkl. Ergebnisse) des aktiven Cloud-Teams still aus
