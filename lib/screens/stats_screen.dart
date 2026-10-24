@@ -54,13 +54,6 @@ class _StatsScreenState extends State<StatsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text('Statistik · ${widget.teamName}'),
-        actions: [
-          IconButton(
-            tooltip: 'Statistik aus FuPa importieren',
-            icon: const Icon(Icons.cloud_download),
-            onPressed: _import,
-          ),
-        ],
       ),
       body: Column(
         children: [
@@ -330,79 +323,12 @@ class _StatsScreenState extends State<StatsScreen> {
             const Icon(Icons.bar_chart, size: 48, color: Colors.grey),
             const SizedBox(height: 12),
             const Text(
-              'Noch keine Statistik.\nImportiere sie aus dem FuPa-Teamlink.',
+              'Noch keine Statistik.\nSie wird automatisch aus FuPa aktualisiert.',
               textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _import,
-              icon: const Icon(Icons.cloud_download),
-              label: const Text('Statistik importieren'),
-            ),
           ],
         ),
       ),
     );
-  }
-
-  Future<void> _import() async {
-    final controller = TextEditingController(text: widget.fupaUrl ?? '');
-    final url = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Statistik importieren'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-                'FuPa-Teamlink einfügen – Tore, Vorlagen, Spiele, Karten und '
-                'Minuten der Saison werden geladen und ersetzen den alten Stand.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: 'FuPa-Teamlink',
-                hintText: 'https://www.fupa.net/team/...',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Importieren')),
-        ],
-      ),
-    );
-    if (url == null || url.isEmpty || !mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: Row(children: [
-          CircularProgressIndicator(),
-          SizedBox(width: 16),
-          Expanded(child: Text('Statistik wird geladen …')),
-        ]),
-      ),
-    );
-    try {
-      final n = await context.read<AppState>().importStats(widget.teamId, url);
-      if (mounted) Navigator.pop(context);
-      messenger.showSnackBar(
-          SnackBar(content: Text('Statistik importiert: $n Spieler.')));
-      if (mounted) setState(() {});
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      messenger.showSnackBar(SnackBar(
-          content: Text('Import fehlgeschlagen: $e'),
-          backgroundColor: Colors.red.shade700));
-    }
   }
 }

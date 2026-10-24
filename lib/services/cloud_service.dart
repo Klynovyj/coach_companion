@@ -55,7 +55,7 @@ class CloudService {
   static Future<List<Map<String, dynamic>>> myTeams() async {
     final rows = await _c
         .from('team_members')
-        .select('role, teams(id, name, invite_code, created_by, fupa_url)')
+        .select('role, teams(id, name, invite_code, created_by, fupa_url, logo)')
         .eq('user_id', user!.id);
     return [
       for (final r in rows)
@@ -89,6 +89,20 @@ class CloudService {
   /// Team per Einladungscode beitreten (als Spieler).
   static Future<void> joinTeam(String code) =>
       _c.rpc('join_team', params: {'code': code.trim()});
+
+  /// Team-Felder aktualisieren (z.B. name, logo).
+  static Future<void> updateTeam(String teamId, Map<String, dynamic> fields) =>
+      _c.from('teams').update(fields).eq('id', teamId);
+
+  /// Ersetzt die Cloud-Statistik eines Teams (delete + insert, ein Stand).
+  static Future<void> uploadStats(
+      String teamId, List<Map<String, dynamic>> rows) async {
+    await _c.from('player_stats').delete().eq('team_id', teamId);
+    if (rows.isEmpty) return;
+    await _c.from('player_stats').insert([
+      for (final r in rows) {'team_id': teamId, ...r}
+    ]);
+  }
 
   /// Mitglieder eines Teams mit Namen + Rolle (über SECURITY-DEFINER-Funktion,
   /// damit auch fremde Profilnamen sichtbar sind).
@@ -312,6 +326,7 @@ class CloudService {
     'todo_topics',
     'player_talks',
     'player_absences',
+    'player_stats',
   ];
 
   static RealtimeChannel subscribeTeam(

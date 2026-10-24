@@ -86,11 +86,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                     }
                   },
           ),
-          IconButton(
-            tooltip: 'FuPa-Spielplan importieren',
-            icon: const Icon(Icons.cloud_download),
-            onPressed: () => _importSchedule(context),
-          ),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -112,67 +107,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
               ),
             ),
     );
-  }
-
-  Future<void> _importSchedule(BuildContext context) async {
-    final controller = TextEditingController(
-        text: context.read<AppState>().ownTeam?.fupaUrl ?? '');
-    final url = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('FuPa-Spielplan importieren'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-                'FuPa-Teamlink einfügen – die Spiele (inkl. Ergebnisse und '
-                'Gegner-Wappen) werden geladen. Doppelte Spiele werden erkannt.'),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              decoration: const InputDecoration(
-                labelText: 'FuPa-Teamlink',
-                hintText: 'https://www.fupa.net/team/...',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Importieren')),
-        ],
-      ),
-    );
-    if (url == null || url.isEmpty || !context.mounted) return;
-
-    final messenger = ScaffoldMessenger.of(context);
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: Row(children: [
-          CircularProgressIndicator(),
-          SizedBox(width: 16),
-          Expanded(child: Text('Spielplan wird geladen …')),
-        ]),
-      ),
-    );
-    try {
-      final added = await context.read<AppState>().importSchedule(url);
-      if (context.mounted) Navigator.pop(context); // Ladedialog schließen
-      messenger.showSnackBar(SnackBar(
-          content: Text('Spielplan importiert: $added neue Spiele.')));
-    } catch (e) {
-      if (context.mounted) Navigator.pop(context);
-      messenger.showSnackBar(SnackBar(
-          content: Text('Import fehlgeschlagen: $e'),
-          backgroundColor: Colors.red.shade700));
-    }
   }
 
   Future<void> _open(BuildContext context, GameMatch match) async {

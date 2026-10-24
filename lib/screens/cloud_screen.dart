@@ -8,7 +8,7 @@ import '../models/player.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 
-/// Lokale Spieler → Cloud-Kader-Datensätze (mit stabiler id).
+/// Lokale Spieler → Cloud-Kader-Datensätze (mit stabiler id + Foto).
 List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
       for (final p in players.where((p) => !p.isStaffOnly))
         {
@@ -17,15 +17,17 @@ List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
           'last_name': p.lastName,
           'number': p.number,
           'position': p.position,
+          'photo': p.photoPath,
         }
     ];
 
-/// Lokaler Spielplan → Cloud-Spiel-Datensätze (mit stabiler id).
+/// Lokaler Spielplan → Cloud-Spiel-Datensätze (mit stabiler id + Gegner-Logo).
 List<Map<String, dynamic>> scheduleMaps(List<GameMatch> matches) => [
       for (final m in matches)
         {
           'id': m.id,
           'opponent': m.opponentName,
+          'opponent_logo': m.opponentLogoPath,
           'kickoff': m.kickoff?.toUtc().toIso8601String(),
           'venue': m.venue == Venue.home ? 'Heim' : 'Auswärts',
           'own_score': m.ownScore,
@@ -264,11 +266,16 @@ class _TeamsViewState extends State<_TeamsView> {
           await CloudService.createTeam(summary.teamName, fupaUrl: url);
       await CloudService.uploadRoster(team['id'], roster);
       final added = await CloudService.uploadSchedule(team['id'], schedule);
+      // Vereinslogo am Cloud-Team hinterlegen.
+      await CloudService.updateTeam(team['id'], {'logo': localTeam?.logoPath});
       // Zurückladen, damit lokale IDs == Cloud-IDs sind (Schreib-Sync).
       final cloudPlayers = await CloudService.players(team['id']);
       final cloudMatches = await CloudService.matches(team['id']);
       await app.downloadCloudTeam(team['id'], summary.teamName,
-          players: cloudPlayers, matches: cloudMatches, fupaUrl: url);
+          players: cloudPlayers,
+          matches: cloudMatches,
+          fupaUrl: url,
+          logoPath: localTeam?.logoPath);
       if (mounted) navigator.pop(); // Fortschritt schließen
       _reload();
       _snack('„${summary.teamName}" angelegt · ${roster.length} Spieler, '
@@ -404,7 +411,8 @@ class _TeamsViewState extends State<_TeamsView> {
       await app.downloadCloudTeam(id, name,
           players: players,
           matches: matches,
-          fupaUrl: team['fupa_url'] as String?);
+          fupaUrl: team['fupa_url'] as String?,
+          logoPath: team['logo'] as String?);
       if (mounted) navigator.pop();
       _snack('„$name" ist jetzt aktiv – nutze die App-Funktionen.');
     } catch (e) {
@@ -716,7 +724,9 @@ class _MemberTile extends StatelessWidget {
     final isTrainer = role == 'trainer';
     final shown = (name != null && name.isNotEmpty)
         ? name
-        : (mail != null && mail.isNotEmpty ? mail : 'Unbekannt');
+        : (mail != null && mail.isNotEmpty
+            ? mail
+            : (isMe ? (CloudService.email ?? 'Unbekannt') : 'Unbekannt'));
     return Card(
       child: ListTile(
         leading: CircleAvatar(

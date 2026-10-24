@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/note_category.dart';
+import '../models/team.dart';
 import '../state/app_state.dart';
 import 'cloud_screen.dart';
 
@@ -36,6 +37,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
           ),
+          if (state.ownTeam != null) ...[
+            _sectionTitle(context, 'Team'),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.badge_outlined),
+                title: const Text('Team umbenennen'),
+                subtitle: Text(state.ownTeam!.name),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => _renameTeam(context, state.ownTeam!),
+              ),
+            ),
+          ],
           _sectionTitle(context, 'Notiz-Kategorien'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -49,6 +62,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _renameTeam(BuildContext context, Team team) async {
+    final ctrl = TextEditingController(text: team.name);
+    final shortCtrl = TextEditingController(text: team.shortName ?? '');
+    final name = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Team umbenennen'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+                controller: ctrl,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Teamname')),
+            const SizedBox(height: 10),
+            TextField(
+                controller: shortCtrl,
+                decoration: const InputDecoration(labelText: 'Kurzname')),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (name != null && name.isNotEmpty && context.mounted) {
+      await context.read<AppState>().renameTeam(team.id, name,
+          shortName:
+              shortCtrl.text.trim().isEmpty ? null : shortCtrl.text.trim());
+    }
   }
 
   Widget _sectionTitle(BuildContext context, String text) => Padding(

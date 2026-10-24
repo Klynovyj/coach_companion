@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
-import '../models/team.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 import '../widgets/squad_list_view.dart';
@@ -47,12 +46,6 @@ class SquadScreen extends StatelessWidget {
                 ),
               ),
             ),
-          if (team != null)
-            IconButton(
-              tooltip: 'Team umbenennen',
-              icon: const Icon(Icons.edit),
-              onPressed: () => _rename(context, team),
-            ),
         ],
       ),
       body: team == null
@@ -65,40 +58,6 @@ class SquadScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _rename(BuildContext context, Team team) async {
-    final ctrl = TextEditingController(text: team.name);
-    final shortCtrl = TextEditingController(text: team.shortName ?? '');
-    final name = await showDialog<String?>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Team umbenennen'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-                controller: ctrl,
-                decoration: const InputDecoration(labelText: 'Teamname')),
-            const SizedBox(height: 10),
-            TextField(
-                controller: shortCtrl,
-                decoration: const InputDecoration(labelText: 'Kurzname')),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-              child: const Text('Speichern')),
-        ],
-      ),
-    );
-    if (name != null && name.isNotEmpty && context.mounted) {
-      await context.read<AppState>().renameTeam(team.id, name,
-          shortName: shortCtrl.text.trim().isEmpty ? null : shortCtrl.text.trim());
-    }
-  }
 }
 
 class _NoTeam extends StatelessWidget {

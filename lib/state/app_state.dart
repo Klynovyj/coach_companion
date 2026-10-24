@@ -242,6 +242,7 @@ class AppState extends ChangeNotifier {
   bool _syncingRemote = false;
   bool _pendingRemote = false;
   Timer? _fupaTimer;
+  Timer? _fullTimer;
   bool _autoRefreshing = false;
 
   /// Startet (oder behält) das Realtime-Abo + die periodische FuPa-Auffrischung
@@ -256,6 +257,10 @@ class AppState extends ChangeNotifier {
     // FuPa (Spielplan/Ergebnisse) regelmäßig automatisch auffrischen.
     _fupaTimer = Timer.periodic(
         const Duration(minutes: 30), (_) => maybeAutoRefreshFupa());
+    // Voll-Import (Kader, Fotos, Logos, Statistik) seltener.
+    _fullTimer = Timer.periodic(
+        const Duration(hours: 6), (_) => maybeAutoFullRefresh());
+    maybeAutoFullRefresh();
     maybeAutoRefreshFupa();
   }
 
@@ -265,6 +270,8 @@ class AppState extends ChangeNotifier {
     _syncedTeamId = null;
     _fupaTimer?.cancel();
     _fupaTimer = null;
+    _fullTimer?.cancel();
+    _fullTimer = null;
     if (ch != null) CloudService.removeChannel(ch);
   }
 
@@ -287,6 +294,33 @@ class AppState extends ChangeNotifier {
       await importSchedule(url); // Spielplan/Ergebnisse + pushTeamToCloud
       await _repo.setSetting(
           'last_fupa_autosync', DateTime.now().toIso8601String());
+    } catch (_) {
+      // Offline/FuPa-Fehler: später erneut.
+    } finally {
+      _autoRefreshing = false;
+    }
+  }
+
+  /// Voller FuPa-Import (Kader + Fotos + Logo + Spielplan + Statistik) des
+  /// aktiven Cloud-Teams → spiegelt ALLES in die Cloud. Schwer (Fotos), daher
+  /// nur gedrosselt (alle 6 h) und still im Hintergrund.
+  Future<void> maybeAutoFullRefresh() async {
+    if (_autoRefreshing) return;
+    final team = _ownTeam;
+    final url = team?.fupaUrl;
+    if (_activeCloudTeamId == null || url == null || url.isEmpty) return;
+    final last = await _repo.getSetting('last_fupa_full');
+    final lastT = last == null ? null : DateTime.tryParse(last);
+    if (lastT != null &&
+        DateTime.now().difference(lastT) < const Duration(hours: 6)) {
+      return;
+    }
+    _autoRefreshing = true;
+    try {
+      await connectOwnTeam(url); // inkl. Fotos/Logo/Statistik → pushTeamToCloud
+      final nowIso = DateTime.now().toIso8601String();
+      await _repo.setSetting('last_fupa_full', nowIso);
+      await _repo.setSetting('last_fupa_autosync', nowIso);
     } catch (_) {
       // Offline/FuPa-Fehler: später erneut.
     } finally {
@@ -340,6 +374,7 @@ class AppState extends ChangeNotifier {
       }
       await _pullEventsFromCloud(teamId, replace: false);
       await _pullAuxFromCloud(teamId, replace: false);
+      await _pullStatsFromCloud(teamId);
     } catch (_) {
       // Offline/Teilfehler – lokaler Stand bleibt gültig.
     } finally {
@@ -347,6 +382,33 @@ class AppState extends ChangeNotifier {
     }
     await _reload();
     notifyListeners();
+  }
+
+  /// Lädt die Cloud-Statistik eines Teams in den lokalen Cache (ersetzt).
+  Future<void> _pullStatsFromCloud(String teamId) async {
+    if (!CloudService.ready || !CloudService.signedIn) return;
+    try {
+      final rows = await CloudService.fetchForTeam('player_stats', teamId);
+      final stats = [
+        for (final r in rows)
+          PlayerStat(
+            id: (r['id'] as String?) ?? _uuid.v4(),
+            teamId: teamId,
+            externalId: r['external_id'] as String?,
+            firstName: (r['first_name'] as String?) ?? '',
+            lastName: (r['last_name'] as String?) ?? '',
+            matches: (r['matches'] as num?)?.toInt() ?? 0,
+            goals: (r['goals'] as num?)?.toInt() ?? 0,
+            assists: (r['assists'] as num?)?.toInt() ?? 0,
+            yellowCards: (r['yellow_cards'] as num?)?.toInt() ?? 0,
+            yellowRedCards: (r['yellow_red_cards'] as num?)?.toInt() ?? 0,
+            redCards: (r['red_cards'] as num?)?.toInt() ?? 0,
+            minutes: (r['minutes'] as num?)?.toInt() ?? 0,
+            topEleven: (r['top_eleven'] as num?)?.toInt() ?? 0,
+          )
+      ];
+      await _repo.replaceStats(teamId, stats);
+    } catch (_) {}
   }
 
   List<GameMatch> _matches = [];
@@ -430,6 +492,7 @@ class AppState extends ChangeNotifier {
     required List<Map<String, dynamic>> players,
     required List<Map<String, dynamic>> matches,
     String? fupaUrl,
+    String? logoPath,
   }) async {
     _applyingRemote = true; // Cloud → lokal: nicht zurückspiegeln.
     try {
@@ -443,6 +506,7 @@ class AppState extends ChangeNotifier {
         isOwnTeam: true,
         source: DataSource.fupaApproved,
         fupaUrl: (fupaUrl == null || fupaUrl.isEmpty) ? null : fupaUrl,
+        logoPath: (logoPath == null || logoPath.isEmpty) ? null : logoPath,
         createdAt: now,
       ));
       for (final p in players) {
@@ -457,6 +521,7 @@ class AppState extends ChangeNotifier {
       // Alle geteilten Bereiche (Nominierung, Aufstellung, Karten, Notizen,
       // Bewertungen, Aufgaben, Gespräche, Abwesenheiten, Erwähnungen) mitladen.
       await _pullAuxFromCloud(cloudTeamId, replace: true);
+      await _pullStatsFromCloud(cloudTeamId);
     } finally {
       _applyingRemote = false;
     }
@@ -500,6 +565,7 @@ class AppState extends ChangeNotifier {
         lastName: (p['last_name'] as String?) ?? '',
         number: (p['number'] as num?)?.toInt(),
         position: p['position'] as String?,
+        photoPath: p['photo'] as String?,
         source: DataSource.fupaApproved,
         createdAt: now,
       );
@@ -510,6 +576,7 @@ class AppState extends ChangeNotifier {
       id: m['id'] as String,
       ownTeamId: teamId,
       opponentName: (m['opponent'] as String?) ?? 'Gegner',
+      opponentLogoPath: m['opponent_logo'] as String?,
       kickoff:
           kickoffStr == null ? null : DateTime.tryParse(kickoffStr)?.toLocal(),
       venue: (m['venue'] == 'Auswärts') ? Venue.away : Venue.home,
@@ -539,6 +606,7 @@ class AppState extends ChangeNotifier {
             'last_name': p.lastName,
             'number': p.number,
             'position': p.position,
+            'photo': p.photoPath,
           }
       ];
       await CloudService.uploadRoster(cloudTeam, roster);
@@ -548,6 +616,7 @@ class AppState extends ChangeNotifier {
             'id': m.id,
             'team_id': cloudTeam,
             'opponent': m.opponentName,
+            'opponent_logo': m.opponentLogoPath,
             'kickoff': m.kickoff?.toUtc().toIso8601String(),
             'venue': m.venue == Venue.home ? 'Heim' : 'Auswärts',
             'own_score': m.ownScore,
@@ -556,6 +625,28 @@ class AppState extends ChangeNotifier {
           }
       ];
       await CloudService.upsertMatches(matchRows);
+      // Eigenes Logo + Name am Cloud-Team aktualisieren.
+      await CloudService.updateTeam(
+          cloudTeam, {'name': team.name, 'logo': team.logoPath});
+      // Statistik spiegeln.
+      final stats = await _repo.getStats(team.id);
+      await CloudService.uploadStats(cloudTeam, [
+        for (final s in stats)
+          {
+            'id': s.id,
+            'external_id': s.externalId,
+            'first_name': s.firstName,
+            'last_name': s.lastName,
+            'matches': s.matches,
+            'goals': s.goals,
+            'assists': s.assists,
+            'yellow_cards': s.yellowCards,
+            'yellow_red_cards': s.yellowRedCards,
+            'red_cards': s.redCards,
+            'minutes': s.minutes,
+            'top_eleven': s.topEleven,
+          }
+      ]);
     } catch (_) {
       // Offline / keine Trainer-Rechte – lokaler Stand bleibt gültig.
     }
@@ -678,6 +769,14 @@ class AppState extends ChangeNotifier {
     await _repo.upsertTeam(t.copyWith(name: name, shortName: shortName));
     await _reload();
     notifyListeners();
+    // Umbenennung teilen, wenn dies das aktive Cloud-Team ist.
+    if (_activeCloudTeamId == teamId &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateTeam(teamId, {'name': name});
+      } catch (_) {}
+    }
   }
 
   /// Übernimmt importierte Vereinsdaten (Name/Kurzname/Logo) in ein Team.
