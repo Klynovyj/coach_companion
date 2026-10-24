@@ -1,6 +1,6 @@
 {
-  "versionCode": 3,
-  "versionName": "1.2.0",
+  "versionCode": 4,
+  "versionName": "1.2.1",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Gemeinsam nutzen: Team-Konten, Trainer-Kollegen & Spieler in Echtzeit\n- Alles aus der Cloud: Kader, Spielplan, Nominierung, Aufstellung, Karten, Notizen, Bewertungen, Aufgaben, Gespräche, Abwesenheiten synchronisieren\n- Rollen: Mitglieder zu Trainer hochstufen\n- FuPa-Import landet direkt in der geteilten Cloud\n- Auto-Update über GitHub-Release\n- viele Detailverbesserungen"
+  "notes": "Neuerungen:\n- Ereignisse & Erwähnungen werden geteilt: Kommentare mit erwähnten Spielern erscheinen bei allen und im Spielerprofil\n- Ereignis-Chronik synchronisiert geräteübergreifend (inkl. Korrekturen und Löschungen)\n- Cloud-Bildschirm zeigt den angemeldeten Nutzer\n- Mitglieder/Rollen: Fehlermeldung statt Dauerladen\n- Stabileres Cloud-Zusammenspiel"
 }

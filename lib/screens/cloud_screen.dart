@@ -1034,6 +1034,7 @@ class _CloudMatchScreenState extends State<CloudMatchScreen> {
       playerId: pick?.id,
       playerName: pick?.name,
       note: own ? null : 'Gegner',
+      isOpponent: !own,
     );
     await CloudService.setScore(_matchId, _own, _opp);
     if (mounted) setState(() {});

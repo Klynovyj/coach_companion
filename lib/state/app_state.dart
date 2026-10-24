@@ -110,8 +110,15 @@ class AppState extends ChangeNotifier {
     'todos',
     'player_talks',
     'player_absences',
+    // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
+    // referenzierten lokalen match_events bereits vorhanden sind.
+    'event_mentions',
   ];
   static const _auxTableSet = <String>{..._auxTables};
+
+  /// Tabellen ohne `id`-Primärschlüssel (zusammengesetzter PK) – beim Pull
+  /// immer ersetzend einfügen statt per id zu aktualisieren.
+  static const _noIdTables = <String>{'event_mentions'};
 
   /// Konflikt-Spalten für Upserts, wo der Primärschlüssel nicht die fachliche
   /// Eindeutigkeit abbildet.
@@ -149,7 +156,7 @@ class AppState extends ChangeNotifier {
           // Nur 'lineups' hat lokal selbst eine team_id-Spalte.
           if (table != 'lineups') map.remove('team_id');
           try {
-            if (replace) {
+            if (replace || _noIdTables.contains(table)) {
               await _repo.insertRawForPull(table, map);
             } else {
               await _repo.upsertRawById(table, map);
@@ -164,12 +171,60 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Lädt die Cloud-Ereignisse eines Teams in den lokalen Cache. Gegner-
+  /// Ereignisse (is_opponent) werden dem lokalen Gegner-Team des Spiels
+  /// zugeordnet; fehlt es, wird das Ereignis übersprungen.
+  Future<void> _pullEventsFromCloud(String teamId,
+      {required bool replace}) async {
+    if (!CloudService.ready || !CloudService.signedIn) return;
+    final ownId = _ownTeam?.id ?? teamId;
+    List<Map<String, dynamic>> rows;
+    try {
+      rows = await CloudService.fetchForTeam('match_events', teamId);
+    } catch (_) {
+      return;
+    }
+    for (final r in rows) {
+      try {
+        String? localTeam;
+        if (r['is_opponent'] == true) {
+          final m = await _repo.getMatch(r['match_id'] as String);
+          localTeam = m?.opponentTeamId;
+          if (localTeam == null) continue; // nicht zuzuordnen
+        } else {
+          localTeam = ownId;
+        }
+        final map = <String, Object?>{
+          'id': r['id'],
+          'match_id': r['match_id'],
+          'team_id': localTeam,
+          'minute': (r['minute'] as num?)?.toInt() ?? 0,
+          'minute_extra': (r['minute_extra'] as num?)?.toInt() ?? 0,
+          'type': r['type'],
+          'player_id': r['player_id'],
+          'assist_player_id': r['assist_player_id'],
+          'note': r['note'],
+          'created_at':
+              (r['created_at'] as String?) ?? DateTime.now().toIso8601String(),
+        };
+        if (replace) {
+          await _repo.insertRawForPull('match_events', map);
+        } else {
+          await _repo.upsertRawById('match_events', map);
+        }
+      } catch (_) {
+        // Einzelnes Ereignis überspringen.
+      }
+    }
+  }
+
   /// Realtime-Abgleich der Bereichsdaten (ohne Wipe). Löschungen anderer Geräte
   /// greifen erst beim nächsten vollständigen Team-Download.
   Future<void> resyncCloudAuxData(String teamId) async {
     if (_activeCloudTeamId != teamId) return;
     _applyingRemote = true;
     try {
+      await _pullEventsFromCloud(teamId, replace: false);
       await _pullAuxFromCloud(teamId, replace: false);
     } finally {
       _applyingRemote = false;
@@ -271,8 +326,11 @@ class AppState extends ChangeNotifier {
       for (final m in matches) {
         await _repo.upsertMatch(_matchFromCloud(m, cloudTeamId, now));
       }
+      // Ereignisse (für Chronik/Erwähnungen) vor den Bereichsdaten laden,
+      // damit event_mentions die lokalen match_events referenzieren können.
+      await _pullEventsFromCloud(cloudTeamId, replace: true);
       // Alle geteilten Bereiche (Nominierung, Aufstellung, Karten, Notizen,
-      // Bewertungen, Aufgaben, Gespräche, Abwesenheiten) mitladen.
+      // Bewertungen, Aufgaben, Gespräche, Abwesenheiten, Erwähnungen) mitladen.
       await _pullAuxFromCloud(cloudTeamId, replace: true);
     } finally {
       _applyingRemote = false;
@@ -862,7 +920,7 @@ class AppState extends ChangeNotifier {
     List<String> mentions = const [],
   }) async {
     final eventId = _uuid.v4();
-    await _repo.upsertEvent(MatchEvent(
+    final event = MatchEvent(
       id: eventId,
       matchId: matchId,
       teamId: teamId,
@@ -873,7 +931,8 @@ class AppState extends ChangeNotifier {
       assistPlayerId: assistPlayerId,
       note: note,
       createdAt: DateTime.now(),
-    ));
+    );
+    await _repo.upsertEvent(event);
     if (mentions.isNotEmpty) {
       await _repo.setEventMentions(eventId, mentions);
     }
@@ -895,31 +954,35 @@ class AppState extends ChangeNotifier {
     }
 
     await _recomputeScore(matchId);
-    await _mirrorEventToCloud(matchId, teamId, type, minute, playerId, note);
+    await _mirrorEventToCloud(event);
     notifyListeners();
   }
 
-  /// Spiegelt ein neues Ereignis in die Cloud (nur bei aktivem Cloud-Team und
-  /// Verbindung; sonst still – der lokale Cache bleibt gültig).
-  Future<void> _mirrorEventToCloud(String matchId, String teamId,
-      MatchEventType type, int minute, String? playerId, String? note) async {
+  /// Spiegelt ein Ereignis in die Cloud (Insert ODER Update per lokaler ID, nur
+  /// bei aktivem Cloud-Team und Verbindung). Gegner-Ereignisse werden markiert
+  /// (is_opponent) und ohne Spieler-Bezug gespiegelt.
+  Future<void> _mirrorEventToCloud(MatchEvent e) async {
     final cloudTeam = _activeCloudTeamId;
     if (cloudTeam == null || !CloudService.ready || !CloudService.signedIn) {
       return;
     }
-    final isOwn = teamId == _ownTeam?.id;
+    final isOwn = e.teamId == _ownTeam?.id;
     try {
       await CloudService.addEvent(
-        matchId: matchId,
+        id: e.id,
+        matchId: e.matchId,
         teamId: cloudTeam,
-        type: type.storageKey,
-        minute: minute,
-        playerId: isOwn ? playerId : null,
-        note: note ?? (isOwn ? null : 'Gegner'),
+        type: e.type.storageKey,
+        minute: e.minute,
+        minuteExtra: e.minuteExtra,
+        playerId: isOwn ? e.playerId : null,
+        assistPlayerId: isOwn ? e.assistPlayerId : null,
+        note: e.note ?? (isOwn ? null : 'Gegner'),
+        isOpponent: !isOwn,
       );
-      final m = await _repo.getMatch(matchId);
+      final m = await _repo.getMatch(e.matchId);
       if (m != null) {
-        await CloudService.setScore(matchId, m.ownScore, m.opponentScore);
+        await CloudService.setScore(e.matchId, m.ownScore, m.opponentScore);
       }
     } catch (_) {
       // Offline/kein Cloud-Spiel – später synchronisieren.
@@ -929,6 +992,7 @@ class AppState extends ChangeNotifier {
   Future<void> updateEvent(MatchEvent event) async {
     await _repo.upsertEvent(event);
     await _recomputeScore(event.matchId);
+    await _mirrorEventToCloud(event);
     notifyListeners();
   }
 
@@ -936,7 +1000,23 @@ class AppState extends ChangeNotifier {
     await _repo.deleteEvent(eventId);
     await _repo.deleteCardByEvent(eventId);
     await _recomputeScore(matchId);
+    await _mirrorEventDeleteToCloud(eventId, matchId);
     notifyListeners();
+  }
+
+  /// Löschung eines Ereignisses in die Cloud spiegeln (inkl. neuem Spielstand).
+  Future<void> _mirrorEventDeleteToCloud(String eventId, String matchId) async {
+    final cloudTeam = _activeCloudTeamId;
+    if (cloudTeam == null || !CloudService.ready || !CloudService.signedIn) {
+      return;
+    }
+    try {
+      await CloudService.deleteEvent(eventId);
+      final m = await _repo.getMatch(matchId);
+      if (m != null) {
+        await CloudService.setScore(matchId, m.ownScore, m.opponentScore);
+      }
+    } catch (_) {}
   }
 
   // ------------------------------------------------------------------- Cards
@@ -1131,6 +1211,16 @@ class AppState extends ChangeNotifier {
           ownScore: 0,
           opponentScore: 0,
         ));
+      }
+      // Cloud: Ereignisse + zugehörige Karten dieses Spiels leeren, Stand 0:0.
+      if (_activeCloudTeamId != null &&
+          CloudService.ready &&
+          CloudService.signedIn) {
+        try {
+          await CloudService.deleteEventsForMatch(matchId);
+          await CloudService.deleteWhere('card_entries', {'match_id': matchId});
+          await CloudService.setScore(matchId, 0, 0);
+        } catch (_) {}
       }
     }
     if (aufstellung) await _repo.deleteLineup(matchId, teamId);

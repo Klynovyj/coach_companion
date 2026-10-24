@@ -309,15 +309,20 @@ class CoachRepository {
   Future<void> setEventMentions(
       String eventId, List<String> playerIds) async {
     final db = await _db;
+    final unique = playerIds.toSet();
     await db.transaction((txn) async {
       await txn.delete('event_mentions',
           where: 'event_id = ?', whereArgs: [eventId]);
-      for (final pid in playerIds.toSet()) {
+      for (final pid in unique) {
         await txn.insert('event_mentions',
             {'event_id': eventId, 'player_id': pid},
             conflictAlgorithm: ConflictAlgorithm.ignore);
       }
     });
+    _syncDelete('event_mentions', {'event_id': eventId});
+    for (final pid in unique) {
+      _syncUpsert('event_mentions', {'event_id': eventId, 'player_id': pid});
+    }
   }
 
   /// Kommentare, in denen der Spieler erwähnt wurde.

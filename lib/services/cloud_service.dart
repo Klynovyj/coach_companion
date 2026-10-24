@@ -215,27 +215,42 @@ class CloudService {
   }
 
   static Future<void> addEvent({
+    String? id,
     required String matchId,
     required String teamId,
     required String type,
     int minute = 0,
+    int minuteExtra = 0,
     String? playerId,
+    String? assistPlayerId,
     String? playerName,
     String? note,
+    bool isOpponent = false,
   }) =>
-      _c.from('match_events').insert({
+      // Upsert per id: gespiegelte Ereignisse behalten ihre lokale ID (damit
+      // Erwähnungen sie referenzieren können); ohne id vergibt die DB eine.
+      _c.from('match_events').upsert({
+        'id': ?id,
         'match_id': matchId,
         'team_id': teamId,
         'type': type,
         'minute': minute,
+        'minute_extra': minuteExtra,
         'player_id': playerId,
+        'assist_player_id': assistPlayerId,
         'player_name': playerName,
         'note': note,
+        'is_opponent': isOpponent,
         'created_by': user!.id,
-      });
+      }, onConflict: 'id');
 
   static Future<void> deleteEvent(String eventId) =>
       _c.from('match_events').delete().eq('id', eventId);
+
+  /// Alle Ereignisse eines Spiels in der Cloud löschen (z.B. „Spiel zurück-
+  /// setzen").
+  static Future<void> deleteEventsForMatch(String matchId) =>
+      _c.from('match_events').delete().eq('match_id', matchId);
 
   /// Realtime-Abo für die Ereignisse eines Spiels. [onChange] wird bei jeder
   /// Änderung (insert/update/delete) aufgerufen.
@@ -267,6 +282,8 @@ class CloudService {
   static const teamTables = <String>[
     'matches',
     'players',
+    'match_events',
+    'event_mentions',
     'lineups',
     'lineup_entries',
     'match_nominations',
