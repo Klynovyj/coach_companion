@@ -506,17 +506,57 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   }
 
   // ------------------------------------------------- Ereignis-Erfassung
+  /// Optionaler Kommentar beim Erfassen einer Aktion.
+  /// proceed=false → Aktion abbrechen; note=null → ohne Kommentar speichern.
+  Future<({bool proceed, String? note})> _askNote() async {
+    final ctrl = TextEditingController();
+    final res = await showDialog<String?>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Kommentar (optional)'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 3,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+              hintText: 'z.B. Traumtor aus 20 m', border: OutlineInputBorder()),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, '\u0000cancel'),
+              child: const Text('Abbrechen')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, ''),
+              child: const Text('Ohne')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (res == null || res == '\u0000cancel') {
+      return (proceed: false, note: null);
+    }
+    return (proceed: true, note: res.isEmpty ? null : res);
+  }
+
   Future<void> _addGoal({required bool ownSide}) async {
     final state = context.read<AppState>();
 
     // Gegner-Tor: einfach ein Tor (nur für den Spielstand) – ohne Torschütze/Vorlage.
     if (!ownSide) {
+      final n = await _askNote();
+      if (!n.proceed || !mounted) return;
       await state.addEvent(
         matchId: widget.matchId,
         teamId: _teamIdFor(false),
         minute: _currentMinute,
         minuteExtra: _currentExtra,
         type: MatchEventType.goal,
+        note: n.note,
       );
       await _refreshEvents();
       return;
@@ -543,6 +583,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       if (assist != _pickCancelled && assist != _pickNone) assistId = assist;
     }
 
+    if (!mounted) return;
+    final n = await _askNote();
+    if (!n.proceed || !mounted) return;
     await state.addEvent(
       matchId: widget.matchId,
       teamId: _teamIdFor(ownSide),
@@ -551,6 +594,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       type: MatchEventType.goal,
       playerId: scorer == _pickUnknown ? null : scorer,
       assistPlayerId: assistId,
+      note: n.note,
     );
     await _refreshEvents();
   }
@@ -569,7 +613,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       context: context,
       builder: (_) => _CardTypeSheet(),
     );
-    if (type == null) return;
+    if (type == null || !mounted) return;
+    final n = await _askNote();
+    if (!n.proceed || !mounted) return;
     await state.addEvent(
       matchId: widget.matchId,
       teamId: _teamIdFor(ownSide),
@@ -577,6 +623,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       minuteExtra: _currentExtra,
       type: type,
       playerId: player == _pickUnknown ? null : player,
+      note: n.note,
     );
     await _refreshEvents();
   }
@@ -610,6 +657,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       builder: (_) => _SubstitutionSheet(onField: onField, bench: bench),
     );
     if (pairs == null || pairs.isEmpty || !mounted) return;
+    final n = await _askNote();
+    if (!n.proceed || !mounted) return;
     for (final pair in pairs) {
       await state.addEvent(
         matchId: widget.matchId,
@@ -619,6 +668,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         type: MatchEventType.substitution,
         playerId: pair.on, // kommt
         assistPlayerId: pair.off, // geht
+        note: n.note,
       );
     }
     await _refreshEvents();
@@ -633,6 +683,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       MatchEventType.penaltyMissed,
       MatchEventType.foul,
       MatchEventType.bigChance,
+      MatchEventType.meckern,
     ];
     final type = await showModalBottomSheet<MatchEventType>(
       context: context,
@@ -1294,7 +1345,7 @@ class _EventLog extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${e.type.symbol} ${_describe(e)}',
+                          Text(_describe(e),
                               style: const TextStyle(
                                   fontWeight: FontWeight.w500, height: 1.2)),
                           ..._subtitleLine(context, e, own),
@@ -1372,6 +1423,7 @@ class _EventLog extends StatelessWidget {
       case MatchEventType.penaltyMissed:
       case MatchEventType.foul:
       case MatchEventType.bigChance:
+      case MatchEventType.meckern:
         return e.playerId == null
             ? e.type.label
             : '${e.type.label} – ${resolveName(e.playerId)}';
