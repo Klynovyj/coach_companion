@@ -1,6 +1,6 @@
 {
-  "versionCode": 15,
-  "versionName": "1.3.10",
+  "versionCode": 16,
+  "versionName": "1.3.11",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Aufstellung wird zuverlässig geteilt: die Aufstellung eines Trainers kommt jetzt bei allen an (keine doppelten/leeren Aufstellungen mehr)\n- enthält außerdem: Live-Ticker-Rollen, Platzverweis, Spielerkarte im Profil, „unter Vorbehalt\" in der Aufstellung und die wiederhergestellte Gegner-Analyse"
+  "notes": "Neuerungen:\n- Gegner-Logo bleibt erhalten (ein Status-Update überschreibt es nicht mehr)\n- Spiele behalten Spieltag/Wettbewerb und FuPa-Zuordnung (Ergebnisse landen zuverlässig am richtigen Spiel)\n- Aufstellung geht beim Teilen nicht mehr verloren (Sync-Race behoben)\n- kleinere Korrekturen in der Live-Erfassung"
 }
