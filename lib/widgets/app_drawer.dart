@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/enums.dart';
 import '../screens/home_screen.dart';
+import '../screens/live_match_screen.dart';
 import '../screens/material_duty_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/todos_screen.dart';
@@ -29,6 +31,9 @@ class AppDrawer extends StatelessWidget {
     final state = context.watch<AppState>();
     final team = state.ownTeam;
     final nav = HomeNav.maybeOf(context);
+    final live = state.matches
+        .where((m) => m.status == MatchStatus.live)
+        .toList();
 
     return Drawer(
       child: SafeArea(
@@ -60,6 +65,41 @@ class AppDrawer extends StatelessWidget {
                 ],
               ),
             ),
+            // Laufendes Live-Spiel – direkt reinspringen.
+            if (live.isNotEmpty)
+              Container(
+                color: Theme.of(context).colorScheme.errorContainer,
+                child: ListTile(
+                  leading: Icon(Icons.sports_soccer,
+                      color: Theme.of(context).colorScheme.error),
+                  title: const Text('Live-Spiel läuft',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text('vs ${live.first.opponentName}'),
+                  trailing: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).colorScheme.error,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: const Text('LIVE',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            LiveMatchScreen(matchId: live.first.id),
+                      ),
+                    );
+                  },
+                ),
+              ),
             // Haupt-Bereiche (wechseln den unteren Tab).
             for (var i = 0; i < _mainSections.length; i++)
               ListTile(
