@@ -144,6 +144,35 @@ class CloudService {
       _c.from('matches').update(
           {'own_score': own, 'opponent_score': opp}).eq('id', matchId);
 
+  // ----------------------------------------------------- Generische Bereiche
+  // Für die „eigene Tabelle pro Bereich"-Spiegelung (Nominierung, Aufstellung,
+  // Karten, Notizen, Bewertungen, Aufgaben, Gespräche, Abwesenheiten …). Der
+  // lokale Cache ist Abbild genau eines Teams; team_id scoped die Cloud-Zeile.
+
+  /// Spiegelt eine Zeile in die Cloud (Insert oder Update). [onConflict] gibt
+  /// bei Bedarf die Konflikt-Spalten an (z.B. 'match_id,player_id').
+  static Future<void> upsertRow(String table, Map<String, dynamic> row,
+          {String? onConflict}) =>
+      _c.from(table).upsert(row, onConflict: onConflict);
+
+  /// Löscht Cloud-Zeilen anhand eines Spalten-Filters (z.B. {id: …} oder
+  /// {match_id: …, player_id: …}).
+  static Future<void> deleteWhere(
+      String table, Map<String, dynamic> filter) async {
+    var q = _c.from(table).delete();
+    for (final e in filter.entries) {
+      q = q.eq(e.key, e.value as Object);
+    }
+    await q;
+  }
+
+  /// Alle Zeilen einer Bereichstabelle eines Teams.
+  static Future<List<Map<String, dynamic>>> fetchForTeam(
+      String table, String teamId) async {
+    final rows = await _c.from(table).select().eq('team_id', teamId);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
   // ------------------------------------------------------------ Ereignisse
   static Future<List<Map<String, dynamic>>> events(String matchId) async {
     final rows = await _c
@@ -202,10 +231,28 @@ class CloudService {
   /// jeder Änderung an matches/players dieses Teams aufgerufen (z.B. wenn ein
   /// Trainer-Kollege auf einem anderen Gerät ein Spiel oder den Spielstand
   /// ändert). So bleibt der lokale Cache überall aktuell.
+  /// Alle team-scoped Tabellen, die per Realtime beobachtet und gespiegelt
+  /// werden (gemeinsam genutzte Bereiche).
+  static const teamTables = <String>[
+    'matches',
+    'players',
+    'lineups',
+    'lineup_entries',
+    'match_nominations',
+    'card_entries',
+    'player_notes',
+    'note_categories',
+    'player_ratings',
+    'todos',
+    'todo_topics',
+    'player_talks',
+    'player_absences',
+  ];
+
   static RealtimeChannel subscribeTeam(
       String teamId, void Function() onChange) {
     final ch = _c.channel('team_$teamId');
-    for (final table in ['matches', 'players']) {
+    for (final table in teamTables) {
       ch.onPostgresChanges(
         event: PostgresChangeEvent.all,
         schema: 'public',

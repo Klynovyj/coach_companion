@@ -19,6 +19,16 @@ import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import 'app_database.dart';
 
+/// Spiegel-Haken: wird nach jeder team-relevanten Schreiboperation gerufen,
+/// damit AppState die Zeile in die Cloud spiegeln kann. Genau einer von
+/// [upsertRow]/[deleteFilter] ist gesetzt: [upsertRow] = volle Spalten-Map
+/// (Insert/Update), [deleteFilter] = Spalten-Filter der Löschung.
+typedef CloudSyncHook = void Function(
+  String table,
+  Map<String, Object?>? upsertRow,
+  Map<String, Object?>? deleteFilter,
+);
+
 /// Einziger Zugang zur Persistenz. Gruppiert nach Entität; jede Entität
 /// hat ihr eigenes Datenmodell und ihre eigene Tabelle.
 class CoachRepository {
@@ -27,6 +37,33 @@ class CoachRepository {
   final AppDatabase _appDb;
 
   Future<Database> get _db async => _appDb.database;
+
+  /// Von AppState gesetzt; spiegelt Schreibzugriffe in die Cloud. Lesevorgänge
+  /// und die Pull-Helfer ([insertRawForPull]/[upsertRawById]) lösen ihn NICHT
+  /// aus, damit aus der Cloud geladene Daten nicht zurückgespiegelt werden.
+  CloudSyncHook? onCloudSync;
+
+  void _syncUpsert(String table, Map<String, Object?> row) =>
+      onCloudSync?.call(table, row, null);
+  void _syncDelete(String table, Map<String, Object?> filter) =>
+      onCloudSync?.call(table, null, filter);
+
+  /// Fügt eine aus der Cloud geladene Zeile direkt ein (ersetzend, OHNE
+  /// Sync-Haken). Nur für den vollständigen Pull/Download nach einem Wipe –
+  /// `replace` würde bei Eltern-Tabellen Kinddaten per CASCADE löschen.
+  Future<void> insertRawForPull(String table, Map<String, Object?> map) async {
+    final db = await _db;
+    await db.insert(table, map, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Update-oder-Insert per id OHNE Sync-Haken und OHNE Kaskaden-Löschung
+  /// (für den inkrementellen Realtime-Abgleich bestehender Daten).
+  Future<void> upsertRawById(String table, Map<String, Object?> map) async {
+    final db = await _db;
+    final updated =
+        await db.update(table, map, where: 'id = ?', whereArgs: [map['id']]);
+    if (updated == 0) await db.insert(table, map);
+  }
 
   /// Echtes Upsert per Primärschlüssel OHNE Löschen: erst UPDATE, sonst INSERT.
   ///
@@ -41,6 +78,7 @@ class CoachRepository {
     if (updated == 0) {
       await db.insert(table, map);
     }
+    _syncUpsert(table, map);
   }
 
   // ---------------------------------------------------------------- Settings
@@ -184,6 +222,7 @@ class CoachRepository {
     final db = await _db;
     await db.delete('lineups',
         where: 'match_id = ? AND team_id = ?', whereArgs: [matchId, teamId]);
+    _syncDelete('lineups', {'match_id': matchId, 'team_id': teamId});
   }
 
   /// Löscht alle Nominierungen eines Spiels.
@@ -191,6 +230,7 @@ class CoachRepository {
     final db = await _db;
     await db.delete('match_nominations',
         where: 'match_id = ?', whereArgs: [matchId]);
+    _syncDelete('match_nominations', {'match_id': matchId});
   }
 
   Future<List<LineupEntry>> getLineupEntries(String lineupId) async {
@@ -213,6 +253,10 @@ class CoachRepository {
         await txn.insert('lineup_entries', e.toMap());
       }
     });
+    _syncDelete('lineup_entries', {'lineup_id': lineupId});
+    for (final e in entries) {
+      _syncUpsert('lineup_entries', e.toMap());
+    }
   }
 
   // ------------------------------------------------------------------ Events
@@ -317,11 +361,13 @@ class CoachRepository {
     final db = await _db;
     await db.insert('player_ratings', rating.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    _syncUpsert('player_ratings', rating.toMap());
   }
 
   Future<void> deleteRating(String id) async {
     final db = await _db;
     await db.delete('player_ratings', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('player_ratings', {'id': id});
   }
 
   /// Bewertungen eines Spielers je Spiel: matchId -> Sterne.
@@ -411,12 +457,14 @@ class CoachRepository {
     final db = await _db;
     await db.insert('match_nominations', nomination.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    _syncUpsert('match_nominations', nomination.toMap());
   }
 
   Future<void> deleteNomination(String matchId, String playerId) async {
     final db = await _db;
     await db.delete('match_nominations',
         where: 'match_id = ? AND player_id = ?', whereArgs: [matchId, playerId]);
+    _syncDelete('match_nominations', {'match_id': matchId, 'player_id': playerId});
   }
 
   // ------------------------------------------------------------------- Cards
@@ -431,11 +479,13 @@ class CoachRepository {
     final db = await _db;
     await db.insert('card_entries', card.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    _syncUpsert('card_entries', card.toMap());
   }
 
   Future<void> deleteCard(String id) async {
     final db = await _db;
     await db.delete('card_entries', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('card_entries', {'id': id});
   }
 
   /// Löscht die zu einem Live-Ereignis gehörende Karte (falls vorhanden).
@@ -443,6 +493,7 @@ class CoachRepository {
     final db = await _db;
     await db.delete('card_entries',
         where: 'match_event_id = ?', whereArgs: [matchEventId]);
+    _syncDelete('card_entries', {'match_event_id': matchEventId});
   }
 
   /// Kartenzahl je Spieler eines Teams, als Map playerId -> {type: count}.
@@ -476,11 +527,13 @@ class CoachRepository {
     final db = await _db;
     await db.insert('player_notes', note.toMap(),
         conflictAlgorithm: ConflictAlgorithm.replace);
+    _syncUpsert('player_notes', note.toMap());
   }
 
   Future<void> deleteNote(String id) async {
     final db = await _db;
     await db.delete('player_notes', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('player_notes', {'id': id});
   }
 
   /// Neuester Notiz-/Kommentartext je Spieler eines Teams (für Gegner-Scouting).
@@ -519,6 +572,7 @@ class CoachRepository {
           where: 'category_id = ?', whereArgs: [id]);
       await txn.delete('note_categories', where: 'id = ?', whereArgs: [id]);
     });
+    _syncDelete('note_categories', {'id': id});
   }
 
   // ---------------------------------------------------------- Scout markers
@@ -590,6 +644,7 @@ class CoachRepository {
   Future<void> deleteTodo(String id) async {
     final db = await _db;
     await db.delete('todos', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('todos', {'id': id});
   }
 
   // ----------------------------------------------------- Aufgaben-Themen
@@ -609,6 +664,7 @@ class CoachRepository {
     await db.update('todos', {'topic_id': null},
         where: 'topic_id = ?', whereArgs: [id]);
     await db.delete('todo_topics', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('todo_topics', {'id': id});
   }
 
   // --------------------------------------------------- Spielergespräche
@@ -634,6 +690,7 @@ class CoachRepository {
   Future<void> deleteTalk(String id) async {
     final db = await _db;
     await db.delete('player_talks', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('player_talks', {'id': id});
   }
 
   // ------------------------------------------------------------ Absences
@@ -665,6 +722,7 @@ class CoachRepository {
   Future<void> deleteAbsence(String id) async {
     final db = await _db;
     await db.delete('player_absences', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('player_absences', {'id': id});
   }
 
   // ------------------------------------------------------------- Team events

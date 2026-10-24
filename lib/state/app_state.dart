@@ -69,7 +69,10 @@ class NachholenItem {
 /// Gegner-Sync und stellt der UI alle Operationen bereit.
 class AppState extends ChangeNotifier {
   AppState({CoachRepository? repository})
-      : _repo = repository ?? CoachRepository();
+      : _repo = repository ?? CoachRepository() {
+    // Jede team-relevante Schreiboperation in die Cloud spiegeln.
+    _repo.onCloudSync = _onRepoWrite;
+  }
 
   final CoachRepository _repo;
   final _uuid = const Uuid();
@@ -88,6 +91,91 @@ class AppState extends ChangeNotifier {
   /// lokale Schreibzugriffe in die Cloud gespiegelt.
   String? _activeCloudTeamId;
   String? get activeCloudTeamId => _activeCloudTeamId;
+
+  /// true, solange aus der Cloud geladene Daten lokal angewendet werden –
+  /// verhindert, dass diese Writes wieder in die Cloud zurückgespiegelt werden.
+  bool _applyingRemote = false;
+
+  /// Bereichstabellen mit eigener Cloud-Tabelle (Push + Pull). Reihenfolge =
+  /// Pull-Reihenfolge (Eltern vor Kindern wegen Fremdschlüsseln im Cache).
+  static const _auxTables = <String>[
+    'note_categories',
+    'todo_topics',
+    'lineups',
+    'lineup_entries',
+    'match_nominations',
+    'card_entries',
+    'player_notes',
+    'player_ratings',
+    'todos',
+    'player_talks',
+    'player_absences',
+  ];
+  static const _auxTableSet = <String>{..._auxTables};
+
+  /// Konflikt-Spalten für Upserts, wo der Primärschlüssel nicht die fachliche
+  /// Eindeutigkeit abbildet.
+  static const _auxOnConflict = <String, String>{
+    'match_nominations': 'match_id,player_id',
+  };
+
+  /// Spiegelt eine Schreiboperation des Repositorys in die Cloud (best effort).
+  void _onRepoWrite(String table, Map<String, Object?>? upsertRow,
+      Map<String, Object?>? deleteFilter) {
+    if (_applyingRemote) return;
+    final team = _activeCloudTeamId;
+    if (team == null || !CloudService.ready || !CloudService.signedIn) return;
+    if (!_auxTableSet.contains(table)) return;
+    if (upsertRow != null) {
+      final row = <String, dynamic>{...upsertRow, 'team_id': team};
+      CloudService.upsertRow(table, row, onConflict: _auxOnConflict[table])
+          .catchError((_) {});
+    } else if (deleteFilter != null) {
+      CloudService.deleteWhere(table, Map<String, dynamic>.from(deleteFilter))
+          .catchError((_) {});
+    }
+  }
+
+  /// Lädt alle Bereichstabellen eines Cloud-Teams in den lokalen Cache.
+  /// [replace] = true nach einem Wipe (reines Einfügen), sonst Update-oder-
+  /// Insert für den laufenden Realtime-Abgleich.
+  Future<void> _pullAuxFromCloud(String teamId, {required bool replace}) async {
+    if (!CloudService.ready || !CloudService.signedIn) return;
+    for (final table in _auxTables) {
+      try {
+        final rows = await CloudService.fetchForTeam(table, teamId);
+        for (final r in rows) {
+          final map = Map<String, Object?>.from(r);
+          // Nur 'lineups' hat lokal selbst eine team_id-Spalte.
+          if (table != 'lineups') map.remove('team_id');
+          try {
+            if (replace) {
+              await _repo.insertRawForPull(table, map);
+            } else {
+              await _repo.upsertRawById(table, map);
+            }
+          } catch (_) {
+            // Einzelne Zeile (z.B. fehlender Fremdschlüssel) überspringen.
+          }
+        }
+      } catch (_) {
+        // Tabelle nicht erreichbar/vorhanden – überspringen.
+      }
+    }
+  }
+
+  /// Realtime-Abgleich der Bereichsdaten (ohne Wipe). Löschungen anderer Geräte
+  /// greifen erst beim nächsten vollständigen Team-Download.
+  Future<void> resyncCloudAuxData(String teamId) async {
+    if (_activeCloudTeamId != teamId) return;
+    _applyingRemote = true;
+    try {
+      await _pullAuxFromCloud(teamId, replace: false);
+    } finally {
+      _applyingRemote = false;
+    }
+    notifyListeners();
+  }
 
   List<GameMatch> _matches = [];
   List<GameMatch> get matches => List.unmodifiable(_matches);
@@ -160,22 +248,30 @@ class AppState extends ChangeNotifier {
     required List<Map<String, dynamic>> players,
     required List<Map<String, dynamic>> matches,
   }) async {
-    await _repo.wipeTeams();
-    _activeCloudTeamId = cloudTeamId; // ab jetzt Schreib-Sync in die Cloud
-    await _repo.setSetting('active_cloud_team', cloudTeamId);
-    final now = DateTime.now();
-    await _repo.upsertTeam(Team(
-      id: cloudTeamId,
-      name: name,
-      isOwnTeam: true,
-      source: DataSource.fupaApproved,
-      createdAt: now,
-    ));
-    for (final p in players) {
-      await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
-    }
-    for (final m in matches) {
-      await _repo.upsertMatch(_matchFromCloud(m, cloudTeamId, now));
+    _applyingRemote = true; // Cloud → lokal: nicht zurückspiegeln.
+    try {
+      await _repo.wipeTeams();
+      _activeCloudTeamId = cloudTeamId; // ab jetzt Schreib-Sync in die Cloud
+      await _repo.setSetting('active_cloud_team', cloudTeamId);
+      final now = DateTime.now();
+      await _repo.upsertTeam(Team(
+        id: cloudTeamId,
+        name: name,
+        isOwnTeam: true,
+        source: DataSource.fupaApproved,
+        createdAt: now,
+      ));
+      for (final p in players) {
+        await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
+      }
+      for (final m in matches) {
+        await _repo.upsertMatch(_matchFromCloud(m, cloudTeamId, now));
+      }
+      // Alle geteilten Bereiche (Nominierung, Aufstellung, Karten, Notizen,
+      // Bewertungen, Aufgaben, Gespräche, Abwesenheiten) mitladen.
+      await _pullAuxFromCloud(cloudTeamId, replace: true);
+    } finally {
+      _applyingRemote = false;
     }
     await _reload();
     notifyListeners();

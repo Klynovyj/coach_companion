@@ -464,6 +464,8 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
       await _app.syncCloudMatchesToCache(widget.teamId, matches);
       final players = await CloudService.players(widget.teamId);
       await _app.syncCloudPlayersToCache(widget.teamId, players);
+      // Geteilte Bereiche (Nominierung, Karten, Notizen, Bewertungen …) live.
+      await _app.resyncCloudAuxData(widget.teamId);
     } catch (_) {}
   }
 
