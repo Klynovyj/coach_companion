@@ -541,8 +541,9 @@ class _TeamsViewState extends State<_TeamsView> {
   }
 }
 
-/// Kompakte Team-Karte in der Konto-&-Team-Liste: antippen = aktiv setzen,
-/// ⋮-Menü für Verwaltung (Mitglieder, Hochladen, FuPa-Aktualisieren, neu laden).
+/// Kompakte Team-Karte in der Konto-&-Team-Liste. Beim aktiven Team werden die
+/// Verwaltungs-Aktionen (Mitglieder/Rollen, Hochladen, FuPa, neu laden) direkt
+/// als Buttons gezeigt; nicht-aktive Teams haben einen „Aktivieren"-Button.
 class _TeamCard extends StatelessWidget {
   const _TeamCard({
     required this.team,
@@ -568,47 +569,61 @@ class _TeamCard extends StatelessWidget {
     final isTrainer = team['role'] == 'trainer';
     final hasFupa = (team['fupa_url'] as String?)?.isNotEmpty ?? false;
     return Card(
-      child: ListTile(
-        leading: Icon(
-          isActive ? Icons.check_circle : Icons.shield_outlined,
-          color: isActive ? scheme.primary : null,
-        ),
-        title: Text((team['name'] as String?) ?? 'Team'),
-        subtitle: Text([
-          if (isTrainer) 'Trainer · Code: ${team['invite_code']}' else 'Spieler',
-          if (isActive) 'aktiv',
-        ].join('  ·  ')),
-        onTap: onActivate,
-        trailing: PopupMenuButton<String>(
-          onSelected: (v) {
-            switch (v) {
-              case 'members':
-                onMembers();
-              case 'reload':
-                onReload();
-              case 'upload':
-                onUpload();
-              case 'fupa':
-                onResyncFupa();
-            }
-          },
-          itemBuilder: (_) => [
-            if (!isActive)
-              const PopupMenuItem(value: 'reload', child: Text('Aktivieren')),
-            if (isActive)
-              const PopupMenuItem(
-                  value: 'reload', child: Text('Neu aus Cloud laden')),
-            if (isTrainer)
-              const PopupMenuItem(
-                  value: 'members', child: Text('Mitglieder & Rollen')),
-            if (isActive && isTrainer)
-              const PopupMenuItem(
-                  value: 'upload', child: Text('Daten hochladen')),
-            if (isActive && isTrainer && hasFupa)
-              const PopupMenuItem(
-                  value: 'fupa', child: Text('Aus FuPa aktualisieren')),
-          ],
-        ),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(
+              isActive ? Icons.check_circle : Icons.shield_outlined,
+              color: isActive ? scheme.primary : null,
+            ),
+            title: Text((team['name'] as String?) ?? 'Team'),
+            subtitle: Text([
+              if (isTrainer)
+                'Trainer · Code: ${team['invite_code']}'
+              else
+                'Spieler',
+              if (isActive) 'aktiv',
+            ].join('  ·  ')),
+            onTap: isActive ? null : onActivate,
+            trailing: isActive
+                ? null
+                : FilledButton.tonal(
+                    onPressed: onActivate, child: const Text('Aktivieren')),
+          ),
+          if (isActive)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (isTrainer)
+                    OutlinedButton.icon(
+                      onPressed: onMembers,
+                      icon: const Icon(Icons.manage_accounts, size: 18),
+                      label: const Text('Mitglieder & Rollen'),
+                    ),
+                  if (isTrainer)
+                    OutlinedButton.icon(
+                      onPressed: onUpload,
+                      icon: const Icon(Icons.cloud_upload_outlined, size: 18),
+                      label: const Text('Hochladen'),
+                    ),
+                  if (isTrainer && hasFupa)
+                    OutlinedButton.icon(
+                      onPressed: onResyncFupa,
+                      icon: const Icon(Icons.sync, size: 18),
+                      label: const Text('Aus FuPa'),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: onReload,
+                    icon: const Icon(Icons.cloud_download_outlined, size: 18),
+                    label: const Text('Neu laden'),
+                  ),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
