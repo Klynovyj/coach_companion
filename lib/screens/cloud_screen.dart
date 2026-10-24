@@ -540,6 +540,8 @@ class _CloudMatchScreenState extends State<CloudMatchScreen> {
   /// Spieler aus dem Cloud-Kader wählen. null = abgebrochen,
   /// Record mit id=null/name=null = „ohne".
   Future<({String? id, String? name})?> _pickCloudPlayer(String title) async {
+    if (_players.isEmpty) await _loadPlayers(); // evtl. erst jetzt hochgeladen
+    if (!mounted) return null;
     if (_players.isEmpty) {
       final t = await _askText('$title – Name (optional)');
       if (t == _cancelled) return null;
