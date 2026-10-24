@@ -45,6 +45,8 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   Lineup? _lineup;
   String _formation = '4-4-2';
   final Map<String, Player> _byId = {};
+  // Abweichende Rückennummern für dieses Spiel (Spieler-ID → Nummer).
+  Map<String, int> _matchNumbers = {};
   List<Player> _nominated = [];
   final Map<String, Offset> _starters = {}; // playerId -> relative Position
   final Set<String> _bench = {};
@@ -69,6 +71,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         .toList();
     final noms = await state.nominationsOf(widget.matchId);
     final entries = await state.lineupEntries(lineup.id);
+    final matchNumbers = await state.matchNumbers(widget.matchId);
 
     final nominated = players
         .where((p) => noms[p.id] == NominationStatus.zugesagt)
@@ -84,6 +87,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         ..clear()
         ..addEntries(players.map((p) => MapEntry(p.id, p)));
       _nominated = pool;
+      _matchNumbers = matchNumbers;
       _restricted = nominated.isNotEmpty;
       _starters.clear();
       _bench.clear();
@@ -710,8 +714,8 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         children: [
           PlayerAvatar(player: p, radius: 13),
           const SizedBox(width: 6),
-          if (p.number != null) ...[
-            Text('${p.number}',
+          if (_numberFor(p) != null) ...[
+            Text('${_numberFor(p)}',
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(width: 4),
           ],
@@ -774,13 +778,95 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     );
   }
 
+  /// Rückennummer für dieses Spiel (Override, sonst Standard).
+  int? _numberFor(Player p) => _matchNumbers[p.id] ?? p.number;
+
+  /// Antippbare Nummer – pro Spiel änderbar; leer/Standard entfernt den Override.
+  Widget _numberChip(Player p) {
+    final scheme = Theme.of(context).colorScheme;
+    final n = _numberFor(p);
+    final overridden = _matchNumbers.containsKey(p.id);
+    const accent = Color(0xFFEF6C00);
+    return InkWell(
+      onTap: () => _editNumber(p),
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        width: 30,
+        height: 30,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: (overridden ? accent : scheme.primary).withValues(alpha: 0.14),
+          shape: BoxShape.circle,
+          border: Border.all(
+              color: overridden ? accent : scheme.primary.withValues(alpha: 0.4),
+              width: overridden ? 1.5 : 1),
+        ),
+        child: Text(n != null ? '$n' : '–',
+            style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.bold,
+                color: overridden ? accent : scheme.primary)),
+      ),
+    );
+  }
+
+  Future<void> _editNumber(Player p) async {
+    final ctrl = TextEditingController(text: _numberFor(p)?.toString() ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nummer für dieses Spiel'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          keyboardType: TextInputType.number,
+          decoration: InputDecoration(
+            labelText: 'Rückennummer',
+            hintText: p.number != null
+                ? 'Standard: ${p.number} (leer = Standard)'
+                : 'leer = keine',
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    final state = context.read<AppState>();
+    final n = result.isEmpty ? null : int.tryParse(result);
+    // Leer oder gleich der Standard-Nummer → Override entfernen.
+    if (n == null || n == p.number) {
+      await state.setMatchNumber(widget.matchId, p.id, null);
+      if (mounted) setState(() => _matchNumbers.remove(p.id));
+    } else {
+      await state.setMatchNumber(widget.matchId, p.id, n);
+      if (mounted) setState(() => _matchNumbers[p.id] = n);
+    }
+  }
+
   Widget _listRow(Player p) {
     final isStarter = _starters.containsKey(p.id);
     final onBench = _bench.contains(p.id);
     final role = isStarter ? 'start' : (onBench ? 'bank' : 'raus');
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
-      title: Text(p.shortOrFullName),
+      title: Row(
+        children: [
+          _numberChip(p),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(p.shortOrFullName,
+                maxLines: 1, overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
       subtitle: p.position == null ? null : Text(p.position!),
       trailing: SegmentedButton<String>(
         style: const ButtonStyle(

@@ -469,6 +469,36 @@ class AppState extends ChangeNotifier {
     await _repo.setSetting('share_info_$matchId', jsonEncode(info));
   }
 
+  /// Abweichende Rückennummern für genau ein Spiel (Spieler-ID → Nummer).
+  /// Fehlt ein Eintrag, gilt die Standard-Nummer des Spielers.
+  Future<Map<String, int>> matchNumbers(String matchId) async {
+    final s = await _repo.getSetting('match_numbers_$matchId');
+    if (s == null || s.isEmpty) return {};
+    try {
+      final m = jsonDecode(s) as Map<String, Object?>;
+      final out = <String, int>{};
+      m.forEach((k, v) {
+        final n = v is num ? v.toInt() : int.tryParse('$v');
+        if (n != null) out[k] = n;
+      });
+      return out;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> setMatchNumber(
+      String matchId, String playerId, int? number) async {
+    final map = await matchNumbers(matchId);
+    if (number == null) {
+      map.remove(playerId);
+    } else {
+      map[playerId] = number;
+    }
+    await _repo.setSetting('match_numbers_$matchId', jsonEncode(map));
+    notifyListeners();
+  }
+
   /// Spieltags-Ankündigung je Spiel (Spieltag, Trikot, Adresse, Treffpunkte,
   /// Einleitungstext). Als JSON in den Settings.
   Future<Map<String, String>> matchAnnouncement(String matchId) async {

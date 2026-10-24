@@ -111,7 +111,15 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final opp = match.opponentTeamId == null
         ? null
         : await state.repository.getTeam(match.opponentTeamId!);
-    final ownPlayers = await state.playersOf(match.ownTeamId);
+    final ownPlayersRaw = await state.playersOf(match.ownTeamId);
+    // Abweichende Rückennummern für dieses Spiel anwenden (für Picker/Ticker).
+    final matchNumbers = await state.matchNumbers(widget.matchId);
+    final ownPlayers = matchNumbers.isEmpty
+        ? ownPlayersRaw
+        : ownPlayersRaw.map((p) {
+            final n = matchNumbers[p.id];
+            return n == null ? p : p.copyWith(number: n);
+          }).toList();
     final oppPlayers =
         opp == null ? <Player>[] : await state.playersOf(opp.id);
     final events = await state.eventsOf(widget.matchId);
