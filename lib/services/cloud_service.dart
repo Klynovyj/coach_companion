@@ -38,7 +38,7 @@ class CloudService {
   static Future<List<Map<String, dynamic>>> myTeams() async {
     final rows = await _c
         .from('team_members')
-        .select('role, teams(id, name, invite_code, created_by)')
+        .select('role, teams(id, name, invite_code, created_by, fupa_url)')
         .eq('user_id', user!.id);
     return [
       for (final r in rows)
@@ -49,7 +49,8 @@ class CloudService {
     ];
   }
 
-  static Future<Map<String, dynamic>> createTeam(String name) async {
+  static Future<Map<String, dynamic>> createTeam(String name,
+      {String? fupaUrl}) async {
     // Eigene ID vergeben, damit wir NICHT direkt zurücklesen müssen (die
     // Lese-Regel greift erst, wenn man Mitglied ist). Erst Team + Mitglied-
     // schaft anlegen, dann lesen.
@@ -58,6 +59,7 @@ class CloudService {
       'id': id,
       'name': name.trim(),
       'created_by': user!.id,
+      if (fupaUrl != null && fupaUrl.isNotEmpty) 'fupa_url': fupaUrl,
     });
     await _c.from('team_members').insert({
       'team_id': id,
@@ -136,6 +138,13 @@ class CloudService {
       await _c.from('matches').insert(toInsert);
     }
     return toInsert.length;
+  }
+
+  /// Spiele id-stabil in die Cloud spiegeln (Insert oder Update per id) –
+  /// aktualisiert bestehende Spiele (Ergebnis/Status) ohne sie zu löschen.
+  static Future<void> upsertMatches(List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) return Future.value();
+    return _c.from('matches').upsert(rows, onConflict: 'id');
   }
 
   static Future<Map<String, dynamic>> createMatch(

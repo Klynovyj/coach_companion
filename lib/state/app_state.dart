@@ -231,6 +231,8 @@ class AppState extends ChangeNotifier {
 
     await _reload();
     notifyListeners();
+    // Falls dieses Team ein Cloud-Team ist: Aktualisierung direkt teilen.
+    await pushTeamToCloud();
     return ConnectSummary(
       teamName: team.name,
       players: playerData.length,
@@ -247,6 +249,7 @@ class AppState extends ChangeNotifier {
     String name, {
     required List<Map<String, dynamic>> players,
     required List<Map<String, dynamic>> matches,
+    String? fupaUrl,
   }) async {
     _applyingRemote = true; // Cloud → lokal: nicht zurückspiegeln.
     try {
@@ -259,6 +262,7 @@ class AppState extends ChangeNotifier {
         name: name,
         isOwnTeam: true,
         source: DataSource.fupaApproved,
+        fupaUrl: (fupaUrl == null || fupaUrl.isEmpty) ? null : fupaUrl,
         createdAt: now,
       ));
       for (final p in players) {
@@ -331,6 +335,47 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// Spiegelt den aktuellen Kader + Spielplan des aktiven Cloud-Teams nach
+  /// einem FuPa-Import/-Resync in die Cloud. IDs bleiben stabil; bestehende
+  /// Spiele werden aktualisiert (Ergebnis/Status), nicht gelöscht. Nur wirksam,
+  /// wenn ein Cloud-Team aktiv ist – sonst (reiner Lokalbetrieb) ein No-op.
+  Future<void> pushTeamToCloud() async {
+    final cloudTeam = _activeCloudTeamId;
+    final team = _ownTeam;
+    if (cloudTeam == null || team == null) return;
+    if (!CloudService.ready || !CloudService.signedIn) return;
+    try {
+      final players = await _repo.getPlayers(team.id);
+      final roster = [
+        for (final p in players.where((p) => !p.isStaffOnly))
+          {
+            'id': p.id,
+            'first_name': p.firstName,
+            'last_name': p.lastName,
+            'number': p.number,
+            'position': p.position,
+          }
+      ];
+      await CloudService.uploadRoster(cloudTeam, roster);
+      final matchRows = [
+        for (final m in _matches)
+          {
+            'id': m.id,
+            'team_id': cloudTeam,
+            'opponent': m.opponentName,
+            'kickoff': m.kickoff?.toUtc().toIso8601String(),
+            'venue': m.venue == Venue.home ? 'Heim' : 'Auswärts',
+            'own_score': m.ownScore,
+            'opponent_score': m.opponentScore,
+            'status': m.status.storageKey,
+          }
+      ];
+      await CloudService.upsertMatches(matchRows);
+    } catch (_) {
+      // Offline / keine Trainer-Rechte – lokaler Stand bleibt gültig.
+    }
+  }
+
   /// Lädt alles für das bereits verbundene Team erneut.
   Future<ConnectSummary> resyncOwnTeam({void Function(String)? onProgress}) async {
     final url = _ownTeam?.fupaUrl;
@@ -348,6 +393,7 @@ class AppState extends ChangeNotifier {
     final added = await _persist.syncSchedule(team.id, matches);
     await _reload();
     notifyListeners();
+    await pushTeamToCloud();
     return added;
   }
 

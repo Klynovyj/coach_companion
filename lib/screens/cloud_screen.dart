@@ -10,10 +10,11 @@ import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 
-/// Lokale Spieler → Cloud-Kader-Datensätze.
+/// Lokale Spieler → Cloud-Kader-Datensätze (mit stabiler id).
 List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
       for (final p in players.where((p) => !p.isStaffOnly))
         {
+          'id': p.id,
           'first_name': p.firstName,
           'last_name': p.lastName,
           'number': p.number,
@@ -21,10 +22,11 @@ List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
         }
     ];
 
-/// Lokaler Spielplan → Cloud-Spiel-Datensätze.
+/// Lokaler Spielplan → Cloud-Spiel-Datensätze (mit stabiler id).
 List<Map<String, dynamic>> scheduleMaps(List<GameMatch> matches) => [
       for (final m in matches)
         {
+          'id': m.id,
           'opponent': m.opponentName,
           'kickoff': m.kickoff?.toUtc().toIso8601String(),
           'venue': m.venue == Venue.home ? 'Heim' : 'Auswärts',
@@ -261,14 +263,15 @@ class _TeamsViewState extends State<_TeamsView> {
           localTeam == null ? <Player>[] : await app.playersOf(localTeam.id);
       final roster = rosterMaps(players);
       final schedule = scheduleMaps(app.matches);
-      final team = await CloudService.createTeam(summary.teamName);
+      final team =
+          await CloudService.createTeam(summary.teamName, fupaUrl: url);
       await CloudService.uploadRoster(team['id'], roster);
       final added = await CloudService.uploadSchedule(team['id'], schedule);
       // Zurückladen, damit lokale IDs == Cloud-IDs sind (Schreib-Sync).
       final cloudPlayers = await CloudService.players(team['id']);
       final cloudMatches = await CloudService.matches(team['id']);
       await app.downloadCloudTeam(team['id'], summary.teamName,
-          players: cloudPlayers, matches: cloudMatches);
+          players: cloudPlayers, matches: cloudMatches, fupaUrl: url);
       if (mounted) navigator.pop(); // Fortschritt schließen
       _reload();
       _snack('„${summary.teamName}" angelegt · ${roster.length} Spieler, '
@@ -381,6 +384,7 @@ class _TeamsViewState extends State<_TeamsView> {
                               teamId: t['id'],
                               teamName: t['name'] ?? 'Team',
                               isTrainer: t['role'] == 'trainer',
+                              fupaUrl: t['fupa_url'] as String?,
                             ),
                           ),
                         ),
@@ -403,11 +407,13 @@ class CloudTeamScreen extends StatefulWidget {
     required this.teamId,
     required this.teamName,
     required this.isTrainer,
+    this.fupaUrl,
   });
 
   final String teamId;
   final String teamName;
   final bool isTrainer;
+  final String? fupaUrl;
 
   @override
   State<CloudTeamScreen> createState() => _CloudTeamScreenState();
@@ -447,7 +453,7 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
       final players = await CloudService.players(widget.teamId);
       final matches = await CloudService.matches(widget.teamId);
       await _app.downloadCloudTeam(widget.teamId, widget.teamName,
-          players: players, matches: matches);
+          players: players, matches: matches, fupaUrl: widget.fupaUrl);
     } catch (_) {
       // Offline/Lesefehler: lokaler Cache bleibt wie er ist.
     }
@@ -587,7 +593,7 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
       final players = await CloudService.players(widget.teamId);
       final matches = await CloudService.matches(widget.teamId);
       await app.downloadCloudTeam(widget.teamId, widget.teamName,
-          players: players, matches: matches);
+          players: players, matches: matches, fupaUrl: widget.fupaUrl);
       if (mounted) navigator.pop();
       _snack('„${widget.teamName}" geladen: ${players.length} Spieler, '
           '${matches.length} Spiele. Siehe Menü → Spielplan/Kader.');
