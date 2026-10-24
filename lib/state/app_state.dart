@@ -352,6 +352,8 @@ class AppState extends ChangeNotifier {
         await _repo.upsertRawById('players',
             _playerFromCloud(p, teamId, now).toMap());
       }
+      // Gegner VOR den Spielen (matches.opponent_team_id → teams-FK).
+      await _pullOpponentsFromCloud(teamId);
       final matches = await CloudService.matches(teamId);
       for (final m in matches) {
         final mid = m['id'] as String?;
@@ -397,6 +399,85 @@ class AppState extends ChangeNotifier {
           )
       ];
       await _repo.replaceStats(teamId, stats);
+    } catch (_) {}
+  }
+
+  /// Spiegelt den Gegner eines Spiels (Team-Meta + Kader) in die Cloud und
+  /// setzt die Verknüpfung am Cloud-Spiel – damit das ganze Team denselben
+  /// Gegnerkader sieht.
+  Future<void> _pushOpponentToCloud(String matchId) async {
+    final cloudTeam = _activeCloudTeamId;
+    if (cloudTeam == null || !CloudService.ready || !CloudService.signedIn) {
+      return;
+    }
+    try {
+      final m = await _repo.getMatch(matchId);
+      final oppId = m?.opponentTeamId;
+      if (oppId == null) return;
+      final opp = await _repo.getTeam(oppId);
+      if (opp == null) return;
+      await CloudService.uploadOpponentTeam(cloudTeam, {
+        'id': opp.id,
+        'name': opp.name,
+        'short_name': opp.shortName,
+        'logo': opp.logoPath,
+        'fupa_url': opp.fupaUrl,
+      });
+      final players = await _repo.getPlayers(oppId);
+      await CloudService.uploadOpponentPlayers(cloudTeam, oppId, [
+        for (final p in players)
+          {
+            'id': p.id,
+            'first_name': p.firstName,
+            'last_name': p.lastName,
+            'number': p.number,
+            'position': p.position,
+            'photo': p.photoPath,
+          }
+      ]);
+      await CloudService.updateMatch(matchId, {'opponent_team_id': oppId});
+    } catch (_) {
+      // Offline/keine Rechte – lokaler Stand bleibt gültig.
+    }
+  }
+
+  /// Lädt geteilte Gegner-Teams + -Kader aus der Cloud in den lokalen Cache.
+  /// Muss VOR den Spielen laufen (matches.opponent_team_id → teams-FK).
+  Future<void> _pullOpponentsFromCloud(String teamId) async {
+    if (!CloudService.ready || !CloudService.signedIn) return;
+    final now = DateTime.now();
+    try {
+      final teams = await CloudService.fetchForTeam('opponent_teams', teamId);
+      for (final t in teams) {
+        await _repo.upsertRawById('teams', {
+          'id': t['id'],
+          'name': (t['name'] as String?) ?? 'Gegner',
+          'short_name': t['short_name'],
+          'fupa_url': t['fupa_url'],
+          'logo_path': t['logo'],
+          'is_own_team': 0,
+          'source': DataSource.fupaApproved.storageKey,
+          'created_at': now.toIso8601String(),
+        });
+      }
+      final players =
+          await CloudService.fetchForTeam('opponent_players', teamId);
+      for (final p in players) {
+        try {
+          await _repo.upsertRawById('players', {
+            'id': p['id'],
+            'team_id': p['opponent_team_id'],
+            'first_name': (p['first_name'] as String?) ?? '',
+            'last_name': (p['last_name'] as String?) ?? '',
+            'number': p['number'],
+            'position': p['position'],
+            'photo_path': p['photo'],
+            'source': DataSource.fupaApproved.storageKey,
+            'active': 1,
+            'created_at': now.toIso8601String(),
+          });
+        } catch (_) {}
+      }
     } catch (_) {}
   }
 
@@ -501,6 +582,8 @@ class AppState extends ChangeNotifier {
     for (final p in players) {
       await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
     }
+    // Gegner VOR den Spielen (matches.opponent_team_id → teams-FK).
+    await _pullOpponentsFromCloud(cloudTeamId);
     for (final m in matches) {
       await _repo.upsertMatch(_matchFromCloud(m, cloudTeamId, now));
     }
@@ -558,11 +641,15 @@ class AppState extends ChangeNotifier {
 
   GameMatch _matchFromCloud(Map<String, dynamic> m, String teamId, DateTime now) {
     final kickoffStr = m['kickoff'] as String?;
+    final oppTeamId = m['opponent_team_id'] as String?;
     return GameMatch(
       id: m['id'] as String,
       ownTeamId: teamId,
       opponentName: (m['opponent'] as String?) ?? 'Gegner',
       opponentLogoPath: m['opponent_logo'] as String?,
+      opponentTeamId: oppTeamId,
+      // Verknüpfter Gegner → Kader liegt (geteilt) vor, kein „manuell"-Hinweis.
+      opponentImported: oppTeamId != null,
       kickoff:
           kickoffStr == null ? null : DateTime.tryParse(kickoffStr)?.toLocal(),
       venue: (m['venue'] == 'Auswärts') ? Venue.away : Venue.home,
@@ -604,6 +691,7 @@ class AppState extends ChangeNotifier {
             'team_id': cloudTeam,
             'opponent': m.opponentName,
             'opponent_logo': m.opponentLogoPath,
+            'opponent_team_id': m.opponentTeamId,
             'kickoff': m.kickoff?.toUtc().toIso8601String(),
             'venue': m.venue == Venue.home ? 'Heim' : 'Auswärts',
             'own_score': m.ownScore,
@@ -1090,6 +1178,8 @@ class AppState extends ChangeNotifier {
     }
     await _reload();
     notifyListeners();
+    // Gegner (Team + Kader) teilen, damit alle denselben Gegnerkader sehen.
+    await _pushOpponentToCloud(match.id);
     return result;
   }
 

@@ -105,6 +105,25 @@ class CloudService {
     ]);
   }
 
+  /// Gegner-Team (Meta) spiegeln – Owner = eigenes Cloud-Team.
+  static Future<void> uploadOpponentTeam(
+          String ownerTeamId, Map<String, dynamic> row) =>
+      _c.from('opponent_teams').upsert({'team_id': ownerTeamId, ...row});
+
+  /// Gegner-Kader ersetzen (delete + insert für diesen Gegner).
+  static Future<void> uploadOpponentPlayers(String ownerTeamId,
+      String opponentTeamId, List<Map<String, dynamic>> rows) async {
+    await _c
+        .from('opponent_players')
+        .delete()
+        .eq('opponent_team_id', opponentTeamId);
+    if (rows.isEmpty) return;
+    await _c.from('opponent_players').insert([
+      for (final r in rows)
+        {'team_id': ownerTeamId, 'opponent_team_id': opponentTeamId, ...r}
+    ]);
+  }
+
   /// Mitglieder eines Teams mit Namen + Rolle (über SECURITY-DEFINER-Funktion,
   /// damit auch fremde Profilnamen sichtbar sind).
   static Future<List<Map<String, dynamic>>> teamMembers(String teamId) async {
@@ -332,6 +351,8 @@ class CloudService {
     'player_talks',
     'player_absences',
     'player_stats',
+    'opponent_teams',
+    'opponent_players',
   ];
 
   /// Realtime pro Tabelle EIN eigener Kanal (zuverlässiger als viele Bindings
