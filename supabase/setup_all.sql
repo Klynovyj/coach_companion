@@ -338,10 +338,18 @@ exception when duplicate_object then null; end $$;
 alter table public.players add column if not exists photo text;         -- Spielerfoto (Data-URL)
 alter table public.teams   add column if not exists logo text;          -- eigenes Vereinslogo
 alter table public.teams   add column if not exists short_name text;    -- Kurzname
+alter table public.teams   add column if not exists material_duty text; -- Ball-/Materialdienst (JSON)
 alter table public.matches add column if not exists opponent_logo text; -- Gegner-Logo
 -- „selbst verwaltet" (zurückgesetzt/live): FuPa-Import überschreibt es nicht –
 -- geteilt, damit der Reset auf allen Geräten hält.
 alter table public.matches add column if not exists locally_managed boolean not null default false;
+
+-- Realtime für die Team-Zeile selbst (Kurzname/Name/Logo/Materialdienst).
+-- teams hat keine team_id; die App abonniert per id-Filter. Lese-Policy
+-- "read teams" (is_team_member(id)) existiert bereits.
+do $$ begin
+  alter publication supabase_realtime add table public.teams;
+exception when duplicate_object then null; end $$;
 
 -- Spieler-Saison-Statistik (geteilt, aus FuPa)
 create table if not exists public.player_stats (

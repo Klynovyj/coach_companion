@@ -133,9 +133,19 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                 if (v == 'reset') _resetMatch();
                 if (v == 'rate') _openRating();
                 if (v == 'announce') _shareAnnouncement();
+                if (v == 'adopt_fupa') _adoptFupaResult();
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
+              itemBuilder: (_) => [
+                if (match.locallyManaged)
+                  const PopupMenuItem(
+                      value: 'adopt_fupa',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.cloud_download_outlined),
+                        title: Text('Ergebnis aus FuPa übernehmen'),
+                      )),
+                const PopupMenuItem(
                     value: 'announce',
                     child: ListTile(
                       dense: true,
@@ -374,6 +384,17 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
           nominierung: choice.nominierung,
         );
     if (mounted) _load();
+  }
+
+  /// Hebt die Selbstverwaltung auf und holt das echte Ergebnis aus FuPa.
+  Future<void> _adoptFupaResult() async {
+    final messenger = ScaffoldMessenger.of(context);
+    await context.read<AppState>().adoptFupaResult(widget.matchId);
+    if (!mounted) return;
+    await _load();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Ergebnis aus FuPa übernommen.')),
+    );
   }
 
   Future<void> _openLineup() async {

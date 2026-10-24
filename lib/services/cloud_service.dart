@@ -56,7 +56,7 @@ class CloudService {
     final rows = await _c
         .from('team_members')
         .select(
-            'role, teams(id, name, short_name, invite_code, created_by, fupa_url, logo)')
+            'role, teams(id, name, short_name, invite_code, created_by, fupa_url, logo, material_duty)')
         .eq('user_id', user!.id);
     return [
       for (final r in rows)
@@ -94,6 +94,10 @@ class CloudService {
   /// Team-Felder aktualisieren (z.B. name, logo).
   static Future<void> updateTeam(String teamId, Map<String, dynamic> fields) =>
       _c.from('teams').update(fields).eq('id', teamId);
+
+  /// Die komplette Team-Zeile laden (Name/Kurzname/Logo/Materialdienst …).
+  static Future<Map<String, dynamic>> teamById(String teamId) =>
+      _c.from('teams').select().eq('id', teamId).single();
 
   /// Ersetzt die Cloud-Statistik eines Teams (delete + insert, ein Stand).
   static Future<void> uploadStats(
@@ -390,6 +394,28 @@ class CloudService {
           .subscribe();
       channels.add(ch);
     }
+    // Die Team-Zeile selbst (Name/Kurzname/Logo/Materialdienst) – gefiltert per
+    // id, da teams keine team_id-Spalte hat.
+    final teamCh = _c.channel('team_${teamId}_self');
+    teamCh
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'teams',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'id',
+            value: teamId,
+          ),
+          callback: (payload) {
+            final isDelete = payload.eventType == PostgresChangeEvent.delete;
+            final rec = isDelete ? payload.oldRecord : payload.newRecord;
+            onChange('teams', payload.eventType.name,
+                Map<String, dynamic>.from(rec));
+          },
+        )
+        .subscribe();
+    channels.add(teamCh);
     return channels;
   }
 

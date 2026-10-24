@@ -25,10 +25,24 @@ class _RatingScreenState extends State<RatingScreen> {
   Map<String, PlayerRating> _ratings = {};
   bool _loading = true;
 
+  late final AppState _app = context.read<AppState>();
+
   @override
   void initState() {
     super.initState();
+    // Bewertungen anderer Trainer live übernehmen.
+    _app.addListener(_onAppChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+  }
+
+  void _onAppChanged() {
+    if (mounted) _load();
+  }
+
+  @override
+  void dispose() {
+    _app.removeListener(_onAppChanged);
+    super.dispose();
   }
 
   Future<void> _load() async {

@@ -35,10 +35,24 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
   List<DutyVacation> _vacations = [];
   bool _loading = true;
 
+  late final AppState _app = context.read<AppState>();
+
   @override
   void initState() {
     super.initState();
+    // Live-Aktualisierung, wenn andere Trainer den Materialdienst/Kader ändern.
+    _app.addListener(_onAppChanged);
     _load();
+  }
+
+  void _onAppChanged() {
+    if (mounted) _load();
+  }
+
+  @override
+  void dispose() {
+    _app.removeListener(_onAppChanged);
+    super.dispose();
   }
 
   Future<void> _load() async {

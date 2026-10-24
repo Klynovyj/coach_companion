@@ -365,6 +365,9 @@ class AppState extends ChangeNotifier {
             await _applyRemoteEvent(record, teamId, now);
           case 'player_stats':
             await _pullStatsFromCloud(teamId);
+          case 'teams':
+            // Eigene Team-Zeile (Name/Kurzname/Logo/Materialdienst).
+            await _applyCloudTeamRow(Map<String, dynamic>.from(record), teamId);
           case 'opponent_teams':
           case 'opponent_players':
             await _pullOpponentsFromCloud(teamId);
@@ -422,6 +425,10 @@ class AppState extends ChangeNotifier {
     }
     try {
       final now = DateTime.now();
+      // Eigene Team-Zeile (Name/Kurzname/Logo/Materialdienst) mitziehen.
+      try {
+        await _applyCloudTeamRow(await CloudService.teamById(teamId), teamId);
+      } catch (_) {}
       final players = await CloudService.players(teamId);
       for (final p in players) {
         await _repo.upsertRawById('players',
@@ -448,6 +455,30 @@ class AppState extends ChangeNotifier {
     }
     await _reload();
     notifyListeners();
+  }
+
+  /// Übernimmt eine Cloud-Team-Zeile (Name/Kurzname/Logo + Materialdienst-JSON)
+  /// in den lokalen Cache des eigenen Teams. fupa_url wird bewusst NICHT
+  /// gespiegelt, damit nur das Trainer-Gerät mit Link automatisch importiert.
+  Future<void> _applyCloudTeamRow(
+      Map<String, dynamic> t, String teamId) async {
+    final existing = await _repo.getTeam(teamId);
+    if (existing != null) {
+      final name = t['name'] as String?;
+      final shortName = t['short_name'] as String?;
+      final logo = t['logo'] as String?;
+      await _repo.upsertTeam(existing.copyWith(
+        name: (name == null || name.isEmpty) ? existing.name : name,
+        shortName: (shortName == null || shortName.isEmpty) ? null : shortName,
+        logoPath: (logo == null || logo.isEmpty) ? null : logo,
+      ));
+    }
+    // Ball-/Materialdienst-Konfiguration (JSON) lokal spiegeln.
+    if (t.containsKey('material_duty')) {
+      final md = t['material_duty'] as String?;
+      await _repo.setSetting(
+          'material_duty_$teamId', (md == null || md.isEmpty) ? null : md);
+    }
   }
 
   /// Lädt die Cloud-Statistik eines Teams in den lokalen Cache (ersetzt).
@@ -1621,6 +1652,32 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Hebt die Selbstverwaltung eines Spiels auf (z.B. nach einem Reset) und
+  /// zieht das Ergebnis wieder aus FuPa – damit ein zurückgesetztes Spiel das
+  /// echte FuPa-Ergebnis anzeigt. Mit FuPa-Link wird sofort nachgezogen,
+  /// sonst holt es der nächste Auto-Sync des Trainer-Geräts.
+  Future<void> adoptFupaResult(String matchId) async {
+    final m = await _repo.getMatch(matchId);
+    if (m == null) return;
+    await _repo.upsertMatch(m.copyWith(locallyManaged: false));
+    if (_activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateMatch(matchId, {'locally_managed': false});
+      } catch (_) {}
+    }
+    final url = _ownTeam?.fupaUrl;
+    if (url != null && url.isNotEmpty) {
+      try {
+        await importSchedule(url); // reconciliert jetzt das Ergebnis + pusht
+        return;
+      } catch (_) {}
+    }
+    await _reload();
+    notifyListeners();
+  }
+
   Future<void> setMatchStatus(String matchId, MatchStatus status) async {
     final match = await _repo.getMatch(matchId);
     if (match == null) return;
@@ -1794,6 +1851,14 @@ class AppState extends ChangeNotifier {
       String teamId, MaterialDutyConfig config) async {
     await _repo.setSetting('material_duty_$teamId', config.encode());
     notifyListeners();
+    // Materialdienst teilen, wenn dies das aktive Cloud-Team ist.
+    if (_activeCloudTeamId == teamId &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateTeam(teamId, {'material_duty': config.encode()});
+      } catch (_) {}
+    }
   }
 
   /// Urlaube der Team-Spieler (aus den „Urlaub"-Abwesenheiten) als Zeiträume.
