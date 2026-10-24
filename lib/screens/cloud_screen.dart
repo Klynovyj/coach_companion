@@ -7,8 +7,6 @@ import '../models/match.dart';
 import '../models/player.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
-import '../widgets/app_drawer.dart';
-import 'home_screen.dart' show homeTabNotifier;
 
 /// Lokale Spieler → Cloud-Kader-Datensätze (mit stabiler id).
 List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
@@ -49,9 +47,8 @@ class _CloudScreenState extends State<CloudScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: const AppDrawer(),
       appBar: AppBar(
-        title: const Text('Gemeinsam (Cloud)'),
+        title: const Text('Konto & Team'),
         actions: [
           if (CloudService.ready && CloudService.signedIn)
             IconButton(
@@ -320,9 +317,142 @@ class _TeamsViewState extends State<_TeamsView> {
   void _snack(String m) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
+  String _err(Object e) => e is PostgrestException ? e.message : e.toString();
+
+  /// Macht ein Team zum aktiven Team (lädt es in den lokalen Cache + startet
+  /// den Realtime-Sync). Ab dann laufen alle normalen App-Funktionen darüber.
+  Future<void> _activate(Map<String, dynamic> team, {bool force = false}) async {
+    final app = context.read<AppState>();
+    final id = team['id'] as String;
+    final name = (team['name'] as String?) ?? 'Team';
+    if (!force && app.activeCloudTeamId == id) {
+      app.ensureTeamSync(id);
+      _snack('„$name" ist bereits aktiv.');
+      return;
+    }
+    final navigator = Navigator.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(children: [
+          SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+          SizedBox(width: 16),
+          Expanded(child: Text('Team wird aktiviert …')),
+        ]),
+      ),
+    );
+    try {
+      final players = await CloudService.players(id);
+      final matches = await CloudService.matches(id);
+      await app.downloadCloudTeam(id, name,
+          players: players,
+          matches: matches,
+          fupaUrl: team['fupa_url'] as String?);
+      if (mounted) navigator.pop();
+      _snack('„$name" ist jetzt aktiv – nutze die App-Funktionen.');
+    } catch (e) {
+      if (mounted) navigator.pop();
+      _snack('Fehler: ${_err(e)}');
+    }
+  }
+
+  void _openMembers(Map<String, dynamic> team) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => CloudMembersScreen(
+          teamId: team['id'] as String,
+          teamName: (team['name'] as String?) ?? 'Team',
+        ),
+      ),
+    );
+  }
+
+  /// Lädt den aktuellen lokalen Kader + Spielplan in die Cloud (nur sinnvoll
+  /// für das aktive Team, dessen Daten lokal vorliegen).
+  Future<void> _uploadData() async {
+    final app = context.read<AppState>();
+    final localTeam = app.ownTeam;
+    final cloudId = app.activeCloudTeamId;
+    if (localTeam == null || cloudId == null) {
+      _snack('Zuerst ein Team aktivieren.');
+      return;
+    }
+    final players = await app.playersOf(localTeam.id);
+    final roster = rosterMaps(players);
+    final schedule = scheduleMaps(app.matches);
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Daten hochladen'),
+        content: Text(
+            '${roster.length} Spieler und ${schedule.length} Spiele in die '
+            'Cloud laden? Der Kader wird ersetzt; fehlende Spiele werden '
+            'ergänzt (bestehende/getrackte bleiben).'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Hochladen')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await CloudService.uploadRoster(cloudId, roster);
+      final added = await CloudService.uploadSchedule(cloudId, schedule);
+      _snack('${roster.length} Spieler, $added Spiele hochgeladen.');
+    } catch (e) {
+      _snack('Fehler: ${_err(e)}');
+    }
+  }
+
+  /// Aktualisiert Kader + Spielplan des aktiven Teams aus FuPa (und teilt).
+  Future<void> _resyncFupa() async {
+    final app = context.read<AppState>();
+    final navigator = Navigator.of(context);
+    final status = ValueNotifier<String>('Aktualisiere aus FuPa …');
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('FuPa-Aktualisierung'),
+        content: ValueListenableBuilder<String>(
+          valueListenable: status,
+          builder: (_, s, _) => Row(children: [
+            const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2)),
+            const SizedBox(width: 16),
+            Expanded(child: Text(s)),
+          ]),
+        ),
+      ),
+    );
+    try {
+      final sum = await app.resyncOwnTeam(onProgress: (p) => status.value = p);
+      if (mounted) navigator.pop();
+      _snack('Aktualisiert: ${sum.players} Spieler, ${sum.matches} Spiele – geteilt.');
+    } catch (e) {
+      if (mounted) navigator.pop();
+      _snack('Fehler: ${_err(e)}');
+    } finally {
+      status.dispose();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final who = CloudService.displayName ?? CloudService.email ?? '—';
+    final activeId = context.watch<AppState>().activeCloudTeamId;
     return Column(
       children: [
         Container(
@@ -392,26 +522,14 @@ class _TeamsViewState extends State<_TeamsView> {
               return ListView(
                 children: [
                   for (final t in teams)
-                    Card(
-                      child: ListTile(
-                        leading: const Icon(Icons.shield_outlined),
-                        title: Text(t['name'] ?? 'Team'),
-                        subtitle: Text(t['role'] == 'trainer'
-                            ? 'Trainer · Code: ${t['invite_code']}'
-                            : 'Spieler'),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => CloudTeamScreen(
-                              teamId: t['id'],
-                              teamName: t['name'] ?? 'Team',
-                              isTrainer: t['role'] == 'trainer',
-                              fupaUrl: t['fupa_url'] as String?,
-                            ),
-                          ),
-                        ),
-                      ),
+                    _TeamCard(
+                      team: t,
+                      isActive: t['id'] == activeId,
+                      onActivate: () => _activate(t),
+                      onReload: () => _activate(t, force: true),
+                      onMembers: () => _openMembers(t),
+                      onUpload: _uploadData,
+                      onResyncFupa: _resyncFupa,
                     ),
                 ],
               );
@@ -423,273 +541,74 @@ class _TeamsViewState extends State<_TeamsView> {
   }
 }
 
-// ----------------------------------------------------------- Team → Spiele
-class CloudTeamScreen extends StatefulWidget {
-  const CloudTeamScreen({
-    super.key,
-    required this.teamId,
-    required this.teamName,
-    required this.isTrainer,
-    this.fupaUrl,
+/// Kompakte Team-Karte in der Konto-&-Team-Liste: antippen = aktiv setzen,
+/// ⋮-Menü für Verwaltung (Mitglieder, Hochladen, FuPa-Aktualisieren, neu laden).
+class _TeamCard extends StatelessWidget {
+  const _TeamCard({
+    required this.team,
+    required this.isActive,
+    required this.onActivate,
+    required this.onReload,
+    required this.onMembers,
+    required this.onUpload,
+    required this.onResyncFupa,
   });
 
-  final String teamId;
-  final String teamName;
-  final bool isTrainer;
-  final String? fupaUrl;
-
-  @override
-  State<CloudTeamScreen> createState() => _CloudTeamScreenState();
-}
-
-class _CloudTeamScreenState extends State<CloudTeamScreen> {
-  late final AppState _app = context.read<AppState>();
-  bool _syncing = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _activate();
-  }
-
-  /// Macht das Team aktiv und startet den Realtime-Sync. Ist es schon aktiv,
-  /// wird nur das Abo sichergestellt (kein Wipe).
-  Future<void> _activate() async {
-    if (_app.activeCloudTeamId == widget.teamId) {
-      _app.ensureTeamSync(widget.teamId);
-      return;
-    }
-    setState(() => _syncing = true);
-    try {
-      final players = await CloudService.players(widget.teamId);
-      final matches = await CloudService.matches(widget.teamId);
-      await _app.downloadCloudTeam(widget.teamId, widget.teamName,
-          players: players, matches: matches, fupaUrl: widget.fupaUrl);
-    } catch (_) {
-      // Offline/Lesefehler: lokaler Cache bleibt wie er ist.
-    }
-    if (mounted) setState(() => _syncing = false);
-  }
-
-  /// Wechselt in die normale App (Spielplan=0, Kader=1) und schließt die
-  /// Cloud-Seiten.
-  void _goHomeTab(int index) {
-    homeTabNotifier.value = index;
-    Navigator.of(context).popUntil((r) => r.isFirst);
-  }
-
-  Future<void> _resyncFupa() async {
-    final navigator = Navigator.of(context);
-    final status = ValueNotifier<String>('Aktualisiere aus FuPa …');
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('FuPa-Aktualisierung'),
-        content: ValueListenableBuilder<String>(
-          valueListenable: status,
-          builder: (_, s, _) => Row(children: [
-            const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2)),
-            const SizedBox(width: 16),
-            Expanded(child: Text(s)),
-          ]),
-        ),
-      ),
-    );
-    try {
-      final sum = await _app.resyncOwnTeam(onProgress: (p) => status.value = p);
-      if (mounted) navigator.pop();
-      _snack('Aktualisiert: ${sum.players} Spieler, ${sum.matches} Spiele – geteilt.');
-    } catch (e) {
-      if (mounted) navigator.pop();
-      _snack('Fehler: ${_err(e)}');
-    } finally {
-      status.dispose();
-    }
-  }
-
-  String _err(Object e) => e is PostgrestException ? e.message : e.toString();
-
-  Future<void> _uploadData() async {
-    final app = context.read<AppState>();
-    final localTeam = app.ownTeam;
-    if (localTeam == null) {
-      _snack('Keine lokalen Daten vorhanden.');
-      return;
-    }
-    final players = await app.playersOf(localTeam.id);
-    final roster = rosterMaps(players);
-    final schedule = scheduleMaps(app.matches);
-    if (!mounted) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Daten hochladen'),
-        content: Text(
-            '${roster.length} Spieler und ${schedule.length} Spiele in die '
-            'Cloud laden? Der Kader wird ersetzt; fehlende Spiele werden '
-            'ergänzt (bestehende/getrackte bleiben).'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Hochladen')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      await CloudService.uploadRoster(widget.teamId, roster);
-      final added = await CloudService.uploadSchedule(widget.teamId, schedule);
-      _snack('${roster.length} Spieler, $added Spiele hochgeladen.');
-    } catch (e) {
-      _snack('Fehler: $e');
-    }
-  }
-
-  void _snack(String m) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
-
-  Future<void> _downloadToLocal() async {
-    final app = context.read<AppState>();
-    final navigator = Navigator.of(context);
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const AlertDialog(
-        content: Row(children: [
-          SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(strokeWidth: 2)),
-          SizedBox(width: 16),
-          Expanded(child: Text('Team wird in diese App geladen …')),
-        ]),
-      ),
-    );
-    try {
-      final players = await CloudService.players(widget.teamId);
-      final matches = await CloudService.matches(widget.teamId);
-      await app.downloadCloudTeam(widget.teamId, widget.teamName,
-          players: players, matches: matches, fupaUrl: widget.fupaUrl);
-      if (mounted) navigator.pop();
-      _snack('„${widget.teamName}" geladen: ${players.length} Spieler, '
-          '${matches.length} Spiele. Siehe Menü → Spielplan/Kader.');
-    } catch (e) {
-      if (mounted) navigator.pop();
-      _snack('Fehler: $e');
-    }
-  }
+  final Map<String, dynamic> team;
+  final bool isActive;
+  final VoidCallback onActivate;
+  final VoidCallback onReload;
+  final VoidCallback onMembers;
+  final VoidCallback onUpload;
+  final VoidCallback onResyncFupa;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final hasFupa = widget.fupaUrl?.isNotEmpty ?? false;
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.teamName),
-        actions: [
-          if (widget.isTrainer)
-            IconButton(
-              tooltip: 'Mitglieder & Rollen',
-              icon: const Icon(Icons.group_outlined),
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CloudMembersScreen(
-                    teamId: widget.teamId,
-                    teamName: widget.teamName,
-                  ),
-                ),
-              ),
-            ),
-          IconButton(
-            tooltip: 'Neu aus Cloud laden',
-            icon: const Icon(Icons.cloud_download_outlined),
-            onPressed: _downloadToLocal,
-          ),
-          if (widget.isTrainer)
-            IconButton(
-              tooltip: 'Kader & Spielplan hochladen',
-              icon: const Icon(Icons.cloud_upload_outlined),
-              onPressed: _uploadData,
-            ),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (_syncing) const _SyncBanner(),
-          Expanded(
-            child: ListView(
-              padding: const EdgeInsets.all(12),
-              children: [
-                Card(
-                  color: scheme.secondaryContainer,
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Icon(Icons.cloud_done_outlined,
-                              color: scheme.onSecondaryContainer),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text('„${widget.teamName}" ist aktiv',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    color: scheme.onSecondaryContainer)),
-                          ),
-                        ]),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Spielplan, Kader, Nominierung, Aufstellung, '
-                          'Live-Tracking, Karten, Notizen, Bewertungen, Aufgaben '
-                          'und Gespräche nutzt du direkt in der App – alles wird '
-                          'für alle synchronisiert.',
-                          style:
-                              TextStyle(color: scheme.onSecondaryContainer),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.event_note),
-                    title: const Text('Zum Spielplan'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _goHomeTab(0),
-                  ),
-                ),
-                Card(
-                  child: ListTile(
-                    leading: const Icon(Icons.groups),
-                    title: const Text('Zum Kader'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _goHomeTab(1),
-                  ),
-                ),
-                if (widget.isTrainer && hasFupa)
-                  Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.sync),
-                      title: const Text('Aus FuPa aktualisieren'),
-                      subtitle: const Text(
-                          'Kader & Spielplan neu laden und teilen'),
-                      onTap: _resyncFupa,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+    final isTrainer = team['role'] == 'trainer';
+    final hasFupa = (team['fupa_url'] as String?)?.isNotEmpty ?? false;
+    return Card(
+      child: ListTile(
+        leading: Icon(
+          isActive ? Icons.check_circle : Icons.shield_outlined,
+          color: isActive ? scheme.primary : null,
+        ),
+        title: Text((team['name'] as String?) ?? 'Team'),
+        subtitle: Text([
+          if (isTrainer) 'Trainer · Code: ${team['invite_code']}' else 'Spieler',
+          if (isActive) 'aktiv',
+        ].join('  ·  ')),
+        onTap: onActivate,
+        trailing: PopupMenuButton<String>(
+          onSelected: (v) {
+            switch (v) {
+              case 'members':
+                onMembers();
+              case 'reload':
+                onReload();
+              case 'upload':
+                onUpload();
+              case 'fupa':
+                onResyncFupa();
+            }
+          },
+          itemBuilder: (_) => [
+            if (!isActive)
+              const PopupMenuItem(value: 'reload', child: Text('Aktivieren')),
+            if (isActive)
+              const PopupMenuItem(
+                  value: 'reload', child: Text('Neu aus Cloud laden')),
+            if (isTrainer)
+              const PopupMenuItem(
+                  value: 'members', child: Text('Mitglieder & Rollen')),
+            if (isActive && isTrainer)
+              const PopupMenuItem(
+                  value: 'upload', child: Text('Daten hochladen')),
+            if (isActive && isTrainer && hasFupa)
+              const PopupMenuItem(
+                  value: 'fupa', child: Text('Aus FuPa aktualisieren')),
+          ],
+        ),
       ),
     );
   }
@@ -861,38 +780,6 @@ class _MemberTile extends StatelessWidget {
                     onPressed: () => onSetRole('trainer'),
                     child: const Text('Zu Trainer'),
                   )),
-      ),
-    );
-  }
-}
-
-/// Schlanke Leiste, während das Team beim Öffnen in den lokalen Cache geladen
-/// wird (Auto-Sync, cloud-first).
-class _SyncBanner extends StatelessWidget {
-  const _SyncBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.secondaryContainer,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-        child: Row(
-          children: [
-            SizedBox(
-              width: 16,
-              height: 16,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: scheme.onSecondaryContainer),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text('Team wird synchronisiert …',
-                  style: TextStyle(color: scheme.onSecondaryContainer)),
-            ),
-          ],
-        ),
       ),
     );
   }

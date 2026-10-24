@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/note_category.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import 'cloud_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -75,6 +76,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 32),
         children: [
+          _sectionTitle(context, 'Gemeinsam nutzen'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.cloud_outlined),
+              title: const Text('Konto & Team'),
+              subtitle: const Text(
+                  'Anmelden, Team anlegen/beitreten und aktives Team wählen'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CloudScreen()),
+              ),
+            ),
+          ),
           _sectionTitle(context, 'FuPa-Teamlink'),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),

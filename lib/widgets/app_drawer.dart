@@ -5,7 +5,6 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
-import '../screens/cloud_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/live_match_screen.dart';
 import '../screens/material_duty_screen.dart';
@@ -144,12 +143,6 @@ class AppDrawer extends StatelessWidget {
                   );
                 },
               ),
-            _push(
-              context,
-              icon: Icons.cloud_outlined,
-              label: 'Gemeinsam (Cloud)',
-              screen: const CloudScreen(),
-            ),
             _push(
               context,
               icon: Icons.settings_outlined,
