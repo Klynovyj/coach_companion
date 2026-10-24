@@ -104,6 +104,27 @@ class CloudService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// Lädt den Spielplan in die Cloud – nur Spiele, die noch nicht da sind
+  /// (dedupliziert über Gegner + Anstoß), damit getrackte Spiele nicht
+  /// verloren gehen. Gibt die Anzahl NEU hinzugefügter Spiele zurück.
+  static Future<int> uploadSchedule(
+      String teamId, List<Map<String, dynamic>> matches) async {
+    final existing =
+        await _c.from('matches').select('opponent, kickoff').eq('team_id', teamId);
+    final seen = <String>{
+      for (final e in existing) '${e['opponent']}|${e['kickoff']}'
+    };
+    final toInsert = [
+      for (final m in matches)
+        if (!seen.contains('${m['opponent']}|${m['kickoff']}'))
+          {'team_id': teamId, ...m}
+    ];
+    if (toInsert.isNotEmpty) {
+      await _c.from('matches').insert(toInsert);
+    }
+    return toInsert.length;
+  }
+
   static Future<Map<String, dynamic>> createMatch(
       String teamId, String opponent) async {
     return await _c

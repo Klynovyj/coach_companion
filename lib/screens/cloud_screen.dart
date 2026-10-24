@@ -3,10 +3,36 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/enums.dart';
+import '../models/match.dart';
 import '../models/player.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
+
+/// Lokale Spieler → Cloud-Kader-Datensätze.
+List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
+      for (final p in players.where((p) => !p.isStaffOnly))
+        {
+          'first_name': p.firstName,
+          'last_name': p.lastName,
+          'number': p.number,
+          'position': p.position,
+        }
+    ];
+
+/// Lokaler Spielplan → Cloud-Spiel-Datensätze.
+List<Map<String, dynamic>> scheduleMaps(List<GameMatch> matches) => [
+      for (final m in matches)
+        {
+          'opponent': m.opponentName,
+          'kickoff': m.kickoff?.toUtc().toIso8601String(),
+          'venue': m.venue == Venue.home ? 'Heim' : 'Auswärts',
+          'own_score': m.ownScore,
+          'opponent_score': m.opponentScore,
+          'status': m.status.storageKey,
+        }
+    ];
 
 /// Einstieg in den Mehrbenutzer-Bereich (Supabase): Login → Teams → Spiele →
 /// gemeinsames Live-Spiel in Echtzeit.
@@ -233,21 +259,15 @@ class _TeamsViewState extends State<_TeamsView> {
       final localTeam = app.ownTeam;
       final List<Player> players =
           localTeam == null ? <Player>[] : await app.playersOf(localTeam.id);
-      final roster = [
-        for (final p in players.where((p) => !p.isStaffOnly))
-          {
-            'first_name': p.firstName,
-            'last_name': p.lastName,
-            'number': p.number,
-            'position': p.position,
-          }
-      ];
+      final roster = rosterMaps(players);
+      final schedule = scheduleMaps(app.matches);
       final team = await CloudService.createTeam(summary.teamName);
       await CloudService.uploadRoster(team['id'], roster);
+      final added = await CloudService.uploadSchedule(team['id'], schedule);
       if (mounted) navigator.pop(); // Fortschritt schließen
       _reload();
       _snack('„${summary.teamName}" angelegt · ${roster.length} Spieler, '
-          '${summary.matches} Spiele geladen.');
+          '$added Spiele in die Cloud.');
     } catch (e) {
       if (mounted) navigator.pop();
       _snack('Fehler: $e');
@@ -447,31 +467,25 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
     ).then((_) => _reload());
   }
 
-  Future<void> _uploadRoster() async {
+  Future<void> _uploadData() async {
     final app = context.read<AppState>();
     final localTeam = app.ownTeam;
     if (localTeam == null) {
-      _snack('Kein lokaler Kader vorhanden.');
+      _snack('Keine lokalen Daten vorhanden.');
       return;
     }
     final players = await app.playersOf(localTeam.id);
-    final roster = [
-      for (final p in players.where((p) => !p.isStaffOnly))
-        {
-          'first_name': p.firstName,
-          'last_name': p.lastName,
-          'number': p.number,
-          'position': p.position,
-        }
-    ];
+    final roster = rosterMaps(players);
+    final schedule = scheduleMaps(app.matches);
     if (!mounted) return;
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Kader hochladen'),
+        title: const Text('Daten hochladen'),
         content: Text(
-            '${roster.length} Spieler aus deinem lokalen Kader in die Cloud '
-            'laden? Ersetzt den bisherigen Cloud-Kader dieses Teams.'),
+            '${roster.length} Spieler und ${schedule.length} Spiele in die '
+            'Cloud laden? Der Kader wird ersetzt; fehlende Spiele werden '
+            'ergänzt (bestehende/getrackte bleiben).'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -485,7 +499,9 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
     if (ok != true) return;
     try {
       await CloudService.uploadRoster(widget.teamId, roster);
-      _snack('${roster.length} Spieler hochgeladen.');
+      final added = await CloudService.uploadSchedule(widget.teamId, schedule);
+      _reload();
+      _snack('${roster.length} Spieler, $added Spiele hochgeladen.');
     } catch (e) {
       _snack('Fehler: $e');
     }
@@ -502,9 +518,9 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
         actions: [
           if (widget.isTrainer)
             IconButton(
-              tooltip: 'Lokalen Kader hochladen',
+              tooltip: 'Kader & Spielplan hochladen',
               icon: const Icon(Icons.cloud_upload_outlined),
-              onPressed: _uploadRoster,
+              onPressed: _uploadData,
             ),
         ],
       ),
