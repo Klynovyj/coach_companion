@@ -358,6 +358,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   onGoal: () => _addGoal(ownSide: true),
                   onCard: () => _addCard(ownSide: true),
                   onSub: () => _addSub(ownSide: true),
+                  onEvent: () => _addOtherEvent(ownSide: true),
                 ),
                 _TeamActionBar(
                   label: match.opponentName,
@@ -368,6 +369,19 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   // Gegner: nur Tore für den Spielstand – keine Karten/Wechsel.
                   onCard: null,
                   onSub: null,
+                  onEvent: () => _addOtherEvent(ownSide: false),
+                ),
+                const SizedBox(height: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _actionsEnabled ? _addComment : null,
+                      icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                      label: const Text('Kommentar'),
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 _EventLog(
@@ -544,6 +558,157 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         assistPlayerId: pair.off, // geht
       );
     }
+    await _refreshEvents();
+  }
+
+  /// Weitere Ereignisse: Typ wählen, optional Spieler + Notiz.
+  Future<void> _addOtherEvent({required bool ownSide}) async {
+    const types = [
+      MatchEventType.corner,
+      MatchEventType.freeKick,
+      MatchEventType.penalty,
+      MatchEventType.penaltyMissed,
+      MatchEventType.foul,
+      MatchEventType.bigChance,
+    ];
+    final type = await showModalBottomSheet<MatchEventType>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Ereignis',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+            const Divider(height: 1),
+            for (final t in types)
+              ListTile(
+                leading: Text(t.symbol, style: const TextStyle(fontSize: 20)),
+                title: Text(t.label),
+                onTap: () => Navigator.pop(context, t),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (type == null || !mounted) return;
+    final detail = await _eventDetail(type, _onFieldPlayers(ownSide));
+    if (detail == null || !mounted) return;
+    await context.read<AppState>().addEvent(
+          matchId: widget.matchId,
+          teamId: _teamIdFor(ownSide),
+          minute: _currentMinute,
+          minuteExtra: _currentExtra,
+          type: type,
+          playerId: detail.playerId,
+          note: detail.note,
+        );
+    await _refreshEvents();
+  }
+
+  /// Dialog: optionaler Spieler + optionale Notiz zu einem Ereignis.
+  Future<({String? playerId, String? note})?> _eventDetail(
+      MatchEventType type, List<Player> players) {
+    String? selPlayer;
+    final noteCtrl = TextEditingController();
+    return showDialog<({String? playerId, String? note})>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text('${type.symbol}  ${type.label}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (players.isNotEmpty)
+                DropdownButtonFormField<String?>(
+                  initialValue: selPlayer,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                      labelText: 'Spieler (optional)',
+                      border: OutlineInputBorder()),
+                  items: [
+                    const DropdownMenuItem<String?>(
+                        value: null, child: Text('— ohne —')),
+                    for (final p in players)
+                      DropdownMenuItem<String?>(
+                          value: p.id,
+                          child: Text(p.displayName,
+                              overflow: TextOverflow.ellipsis)),
+                  ],
+                  onChanged: (v) => setD(() => selPlayer = v),
+                ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: noteCtrl,
+                minLines: 1,
+                maxLines: 3,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                    labelText: 'Notiz (optional)',
+                    border: OutlineInputBorder()),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Abbrechen')),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, (
+                playerId: selPlayer,
+                note: noteCtrl.text.trim().isEmpty
+                    ? null
+                    : noteCtrl.text.trim(),
+              )),
+              child: const Text('Speichern'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Neutraler Freitext-Kommentar.
+  Future<void> _addComment() async {
+    final ctrl = TextEditingController();
+    final text = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Kommentar'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: 2,
+          maxLines: 5,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+              hintText: 'Was passiert gerade?', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (text == null || text.isEmpty || !mounted) return;
+    await context.read<AppState>().addEvent(
+          matchId: widget.matchId,
+          teamId: _teamIdFor(true),
+          minute: _currentMinute,
+          minuteExtra: _currentExtra,
+          type: MatchEventType.comment,
+          note: text,
+        );
     await _refreshEvents();
   }
 
@@ -872,6 +1037,7 @@ class _TeamActionBar extends StatelessWidget {
     required this.onGoal,
     this.onCard,
     this.onSub,
+    this.onEvent,
     this.enabled = true,
     this.isOwn = true,
   });
@@ -881,6 +1047,9 @@ class _TeamActionBar extends StatelessWidget {
   final VoidCallback onGoal;
   final VoidCallback? onCard;
   final VoidCallback? onSub;
+
+  /// Weitere Ereignisse (Ecke/Freistoß/Elfmeter/Foul/Großchance).
+  final VoidCallback? onEvent;
 
   /// Nur nach Anpfiff aktiv.
   final bool enabled;
@@ -994,6 +1163,21 @@ class _TeamActionBar extends StatelessWidget {
                 ),
               ],
             ),
+            if (onEvent != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: enabled ? onEvent : null,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: color,
+                    side: BorderSide(color: color.withValues(alpha: 0.5)),
+                  ),
+                  icon: const Icon(Icons.add, size: 18),
+                  label: const Text('Ereignis (Ecke, Freistoß, Elfmeter …)'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -1064,7 +1248,7 @@ class _EventLog extends StatelessWidget {
                     style: const TextStyle(fontSize: 10)),
               ),
               title: Text('${e.type.symbol} ${_describe(e)}'),
-              subtitle: Text(own ? 'Eigenes Team' : 'Gegner'),
+              subtitle: _rowSubtitle(e, own),
               trailing: IconButton(
                 tooltip: 'Korrigieren',
                 icon: const Icon(Icons.more_vert),
@@ -1127,12 +1311,34 @@ class _EventLog extends StatelessWidget {
         return 'Gelb-Rot – ${resolveName(e.playerId)}';
       case MatchEventType.redCard:
         return 'Rote Karte – ${resolveName(e.playerId)}';
+      case MatchEventType.corner:
+      case MatchEventType.freeKick:
+      case MatchEventType.penalty:
+      case MatchEventType.penaltyMissed:
+      case MatchEventType.foul:
+      case MatchEventType.bigChance:
+        return e.playerId == null
+            ? e.type.label
+            : '${e.type.label} – ${resolveName(e.playerId)}';
+      case MatchEventType.comment:
+        return (e.note == null || e.note!.isEmpty) ? 'Kommentar' : e.note!;
       case MatchEventType.kickoff:
       case MatchEventType.halftime:
       case MatchEventType.secondHalfStart:
       case MatchEventType.fulltime:
         return e.type.label;
     }
+  }
+
+  /// Untertitel im Ticker: Team + Notiz; beim Kommentar steht der Text schon
+  /// im Titel, daher kein Untertitel.
+  Widget? _rowSubtitle(MatchEvent e, bool own) {
+    if (e.type == MatchEventType.comment) return null;
+    final parts = [
+      own ? 'Eigenes Team' : 'Gegner',
+      if (e.note != null && e.note!.isNotEmpty) e.note!,
+    ];
+    return Text(parts.join('  ·  '));
   }
 }
 

@@ -255,10 +255,15 @@ class CoachRepository {
   /// Zählt die Tore je Team für ein Spiel (Grundlage des Spielstands).
   Future<Map<String, int>> goalCountByTeam(String matchId) async {
     final db = await _db;
+    // Tore und verwandelte Elfmeter zählen für den Spielstand.
     final rows = await db.rawQuery(
       'SELECT team_id, COUNT(*) AS c FROM match_events '
-      'WHERE match_id = ? AND type = ? GROUP BY team_id',
-      [matchId, MatchEventType.goal.storageKey],
+      'WHERE match_id = ? AND type IN (?, ?) GROUP BY team_id',
+      [
+        matchId,
+        MatchEventType.goal.storageKey,
+        MatchEventType.penalty.storageKey,
+      ],
     );
     return {for (final r in rows) r['team_id'] as String: r['c'] as int};
   }

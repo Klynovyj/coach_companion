@@ -74,6 +74,14 @@ enum MatchEventType {
   secondYellow('second_yellow', 'Gelb-Rot', '🟨🟥'),
   redCard('red_card', 'Rote Karte', '🟥'),
   substitution('substitution', 'Wechsel', '🔁'),
+  // Weitere dokumentierbare Ereignisse (wie FuPa-Ticker).
+  corner('corner', 'Ecke', '🚩'),
+  freeKick('free_kick', 'Freistoß', '🎯'),
+  penalty('penalty', 'Elfmeter', '⚽'),
+  penaltyMissed('penalty_missed', 'Elfmeter verschossen', '❌'),
+  foul('foul', 'Foul', '⚠️'),
+  bigChance('big_chance', 'Großchance', '✨'),
+  comment('comment', 'Kommentar', '💬'),
   // Team-neutrale Spielphasen-Marken (ohne Spieler).
   kickoff('kickoff', 'Anpfiff', '🟢'),
   halftime('halftime', 'Halbzeit', '⏸'),
@@ -86,7 +94,11 @@ enum MatchEventType {
   final String symbol;
 
   /// Zählt dieses Ereignis als Tor für das ausführende Team?
-  bool get countsAsGoal => this == MatchEventType.goal;
+  bool get countsAsGoal =>
+      this == MatchEventType.goal || this == MatchEventType.penalty;
+
+  /// Neutrales Ereignis ohne zugeordnetes Team (freier Kommentar).
+  bool get isNeutral => this == MatchEventType.comment;
 
   /// Team-neutrale Phasen-Marke (Anpfiff/Halbzeit/Abpfiff)?
   bool get isPhaseMarker =>
