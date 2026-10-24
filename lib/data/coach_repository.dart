@@ -227,10 +227,18 @@ class CoachRepository {
   // ----------------------------------------------------------------- Lineups
   Future<Lineup?> getLineup(String matchId, String teamId) async {
     final db = await _db;
-    final rows = await db.query('lineups',
-        where: 'match_id = ? AND team_id = ?',
-        whereArgs: [matchId, teamId],
-        limit: 1);
+    // Gibt es (durch Sync verschiedener Geräte) mehrere Aufstellungen für dies
+    // Spiel/Team, die mit den MEISTEN Einträgen bevorzugen – sonst würde eine
+    // leere lokale Zeile die übernommene (volle) Aufstellung verdecken.
+    final rows = await db.rawQuery('''
+      SELECT l.* FROM lineups l
+      LEFT JOIN (
+        SELECT lineup_id, COUNT(*) AS c FROM lineup_entries GROUP BY lineup_id
+      ) e ON e.lineup_id = l.id
+      WHERE l.match_id = ? AND l.team_id = ?
+      ORDER BY COALESCE(e.c, 0) DESC, l.created_at ASC
+      LIMIT 1
+    ''', [matchId, teamId]);
     return rows.isEmpty ? null : Lineup.fromMap(rows.first);
   }
 

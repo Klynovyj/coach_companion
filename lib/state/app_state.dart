@@ -1448,7 +1448,10 @@ class AppState extends ChangeNotifier {
     final existing = await _repo.getLineup(matchId, teamId);
     if (existing != null) return existing;
     final lineup = Lineup(
-      id: _uuid.v4(),
+      // Deterministische ID pro (Spiel, Team): so vergeben beide Geräte
+      // dieselbe ID und die Aufstellung läuft über GENAU eine Cloud-Zeile
+      // zusammen (kein Divergieren der Einträge mehr).
+      id: 'lu_${matchId}_$teamId',
       matchId: matchId,
       teamId: teamId,
       formation: formation,
