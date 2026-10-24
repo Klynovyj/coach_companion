@@ -762,13 +762,24 @@ class AppState extends ChangeNotifier {
         position: p['position'] as String?,
         photoPath: p['photo'] as String?,
         birthdate: DateTime.tryParse((p['birthdate'] as String?) ?? ''),
+        status: PlayerStatus.fromKey(p['status'] as String?),
+        captainRole: CaptainRole.fromKey(p['captain_role'] as String?),
+        active: (p['active'] as bool?) ?? true,
+        nickname: p['nickname'] as String?,
+        positions: ((p['positions'] as String?) ?? '')
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList(),
+        wishPosition: p['wish_position'] as String?,
+        staffRole: p['staff_role'] as String?,
         source: DataSource.fupaApproved,
         createdAt: now,
       );
 
-  /// Geteilte Spielerfelder für die Cloud (Name/Nr/Position/Foto/Geburtsdatum).
-  /// Lokale Felder (Status, Kapitän, Positionen, Spitzname, aktiv) bleiben
-  /// geräteseitig und werden NICHT geteilt.
+  /// Geteilte Spielerfelder für die Cloud. Der Kader ist mannschaftsweit
+  /// geteilt: Name, Nr., Position(en), Foto, Geburtsdatum, Status (inkl.
+  /// Deaktivierung), Kapitän, Spitzname, Wunsch-/Aktuelle Positionen, Staff.
   Map<String, dynamic> _playerCloudMap(Player p) => {
         'id': p.id,
         'first_name': p.firstName,
@@ -777,25 +788,51 @@ class AppState extends ChangeNotifier {
         'position': p.position,
         'photo': p.photoPath,
         'birthdate': p.birthdate?.toIso8601String(),
+        'status': p.status.storageKey,
+        'active': p.active,
+        'captain_role': p.captainRole.storageKey,
+        'nickname': p.nickname,
+        'positions': p.positions.join(','),
+        'wish_position': p.wishPosition,
+        'staff_role': p.staffRole,
       };
 
-  /// Übernimmt einen Cloud-Spieler in den lokalen Cache, OHNE lokale Felder
-  /// (Status, Kapitän, Positionen, Spitzname, aktiv) zu überschreiben.
+  /// Übernimmt einen Cloud-Spieler in den lokalen Cache. Felder werden nur
+  /// übernommen, wenn die Cloud sie liefert (null = lokalen Wert behalten) –
+  /// so clobbern alte Zeilen ohne diese Spalten nichts.
   Future<void> _applyCloudPlayer(
       Map<String, dynamic> record, String teamId, DateTime now) async {
-    final cp = _playerFromCloud(record, teamId, now);
-    final existing = await _repo.getPlayer(cp.id);
+    final id = record['id'] as String?;
+    if (id == null) return;
+    final existing = await _repo.getPlayer(id);
     if (existing == null) {
-      await _repo.upsertPlayer(cp);
+      await _repo.upsertPlayer(_playerFromCloud(record, teamId, now));
       return;
     }
+    final statusRaw = record['status'] as String?;
+    final captainRaw = record['captain_role'] as String?;
+    final activeRaw = record['active'];
+    final positionsRaw = record['positions'] as String?;
     await _repo.upsertPlayer(existing.copyWith(
-      firstName: cp.firstName,
-      lastName: cp.lastName,
-      number: cp.number,
-      position: cp.position,
-      photoPath: cp.photoPath,
-      birthdate: cp.birthdate,
+      firstName: record['first_name'] as String?,
+      lastName: record['last_name'] as String?,
+      number: (record['number'] as num?)?.toInt(),
+      position: record['position'] as String?,
+      photoPath: record['photo'] as String?,
+      birthdate: DateTime.tryParse((record['birthdate'] as String?) ?? ''),
+      status: statusRaw == null ? null : PlayerStatus.fromKey(statusRaw),
+      captainRole: captainRaw == null ? null : CaptainRole.fromKey(captainRaw),
+      active: activeRaw is bool
+          ? activeRaw
+          : (activeRaw is num ? activeRaw != 0 : null),
+      nickname: record['nickname'] as String?,
+      positions: positionsRaw
+          ?.split(',')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList(),
+      wishPosition: record['wish_position'] as String?,
+      staffRole: record['staff_role'] as String?,
     ));
   }
 

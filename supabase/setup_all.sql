@@ -370,6 +370,13 @@ exception when duplicate_object then null; end $$;
 
 alter table public.players add column if not exists photo text;         -- Spielerfoto (Data-URL)
 alter table public.players add column if not exists birthdate text;      -- Geburtsdatum (ISO)
+alter table public.players add column if not exists status text;         -- fit/verletzt/krank/urlaub/inaktiv
+alter table public.players add column if not exists active boolean;      -- false = deaktiviert
+alter table public.players add column if not exists captain_role text;   -- Kapitän/Vize
+alter table public.players add column if not exists nickname text;       -- Spitzname
+alter table public.players add column if not exists positions text;      -- aktuelle Position(en), kommagetrennt
+alter table public.players add column if not exists wish_position text;  -- Wunschposition
+alter table public.players add column if not exists staff_role text;     -- Trainer/Co-Trainer etc.
 alter table public.teams   add column if not exists logo text;          -- eigenes Vereinslogo
 alter table public.teams   add column if not exists short_name text;    -- Kurzname
 alter table public.teams   add column if not exists material_duty text; -- Ball-/Materialdienst (JSON)
