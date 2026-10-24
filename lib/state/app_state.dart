@@ -722,13 +722,14 @@ class AppState extends ChangeNotifier {
   Future<List<PlayerNote>> notesOf(String playerId) => _repo.getNotes(playerId);
 
   Future<void> addNote(String playerId, String text,
-      {String? categoryId}) async {
+      {String? categoryId, String? matchId}) async {
     await _repo.upsertNote(PlayerNote(
       id: _uuid.v4(),
       playerId: playerId,
       text: text.trim(),
       createdAt: DateTime.now(),
       categoryId: categoryId,
+      matchId: matchId,
     ));
     notifyListeners();
   }

@@ -2,16 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:provider/provider.dart';
 
+import '../models/match.dart';
 import '../models/note_category.dart';
 import '../models/player_note.dart';
 import '../state/app_state.dart';
 import '../utils/rich_note.dart';
 
-/// Ergebnis des Notiz-Editors: formatierter Inhalt (Delta-JSON) + Rubrik.
+/// Ergebnis des Notiz-Editors: formatierter Inhalt (Delta-JSON) + Rubrik +
+/// optional verknüpftes Spiel.
 class NoteEditResult {
   final String stored;
   final String? categoryId;
-  const NoteEditResult(this.stored, this.categoryId);
+  final String? matchId;
+  const NoteEditResult(this.stored, this.categoryId, this.matchId);
 }
 
 /// Vollbild-Editor für eine Spieler-Notiz mit voller Textformatierung
@@ -22,10 +25,14 @@ class NoteEditorScreen extends StatefulWidget {
     super.key,
     required this.playerName,
     this.existing,
+    this.matches = const [],
   });
 
   final String playerName;
   final PlayerNote? existing;
+
+  /// Auswählbare Spiele (neueste zuerst) zum Verknüpfen.
+  final List<GameMatch> matches;
 
   @override
   State<NoteEditorScreen> createState() => _NoteEditorScreenState();
@@ -38,6 +45,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
   List<NoteCategory> _categories = [];
   String? _categoryId;
+  String? _matchId;
   bool _loadingCats = true;
 
   @override
@@ -49,6 +57,7 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       selection: const TextSelection.collapsed(offset: 0),
     );
     _categoryId = widget.existing?.categoryId;
+    _matchId = widget.existing?.matchId;
     _loadCategories();
   }
 
@@ -80,11 +89,17 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
       );
       return;
     }
+    // Nur ein noch existierendes Spiel verknüpfen.
+    final matchId =
+        widget.matches.any((m) => m.id == _matchId) ? _matchId : null;
     Navigator.pop(
       context,
-      NoteEditResult(RichNote.encode(_controller.document), _categoryId),
+      NoteEditResult(
+          RichNote.encode(_controller.document), _categoryId, matchId),
     );
   }
+
+  String _matchLabel(GameMatch m) => 'vs ${m.opponentName}';
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +154,31 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     onChanged: (v) => setState(() => _categoryId = v),
                   ),
           ),
+          // Spiel verknüpfen (optional)
+          if (widget.matches.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+              child: DropdownButtonFormField<String?>(
+                initialValue:
+                    widget.matches.any((m) => m.id == _matchId) ? _matchId : null,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Spiel verknüpfen (optional)',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null, child: Text('Kein Spiel')),
+                  ...widget.matches.map((m) => DropdownMenuItem<String?>(
+                      value: m.id, child: Text(_matchLabel(m)))),
+                ],
+                onChanged: (v) => setState(() => _matchId = v),
+              ),
+            ),
           // Formatierungsleiste
+          // Bewusst schlank: nur Fett/Kursiv/Unterstreichen, Listen & Haken –
+          // kein Farbdialog, keine Überschriften/Einrückung/Ausrichtung.
           QuillSimpleToolbar(
             controller: _controller,
             config: const QuillSimpleToolbarConfig(
@@ -152,7 +191,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               showCodeBlock: false,
               showSearchButton: false,
               showLink: false,
-              multiRowsDisplay: true,
+              showColorButton: false,
+              showBackgroundColorButton: false,
+              showStrikeThrough: false,
+              showHeaderStyle: false,
+              showQuote: false,
+              showIndent: false,
+              showAlignmentButtons: false,
+              showClearFormat: false,
+              showDividers: false,
+              multiRowsDisplay: false,
             ),
           ),
           const Divider(height: 1),

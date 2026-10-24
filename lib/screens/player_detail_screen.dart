@@ -21,6 +21,7 @@ import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/rich_note_view.dart';
 import '../widgets/star_rating.dart';
+import 'live_match_screen.dart';
 import 'note_editor_screen.dart';
 
 /// Spielerprofil – alles nach Kategorien geordnet und direkt im Profil
@@ -934,57 +935,186 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   /// Alle dem Spieler zugeordneten Live-Ereignisse (Tore, Karten, Wechsel,
   /// Großchance, Foul, Ecke, Freistoß, Elfmeter …) – chronologisch.
   Widget _eventsCard(BuildContext context, AppState state, DateFormat df) {
-    return _SectionCard(
-      icon: Icons.timeline,
-      title: 'Ereignis-Chronik',
-      child: FutureBuilder<(List<MatchEvent>, Map<String, GameMatch>)>(
-        future: _loadEvents(state),
-        builder: (context, snap) {
-          if (!snap.hasData) {
-            return const Padding(
-              padding: EdgeInsets.all(8),
-              child: LinearProgressIndicator(),
-            );
-          }
-          final matches = snap.data!.$2;
-          final events = [...snap.data!.$1]..sort((a, b) {
-              final ka = matches[a.matchId]?.kickoff ?? DateTime(1970);
-              final kb = matches[b.matchId]?.kickoff ?? DateTime(1970);
-              final c = kb.compareTo(ka);
-              if (c != 0) return c;
-              return b.minute.compareTo(a.minute);
-            });
-          if (events.isEmpty) {
-            return const Padding(
+    return FutureBuilder<(List<MatchEvent>, Map<String, GameMatch>)>(
+      future: _loadEvents(state),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const _SectionCard(
+            icon: Icons.timeline,
+            title: 'Ereignis-Chronik',
+            child: Padding(
+                padding: EdgeInsets.all(8), child: LinearProgressIndicator()),
+          );
+        }
+        final matches = snap.data!.$2;
+        final events = snap.data!.$1;
+        if (events.isEmpty) {
+          return const _SectionCard(
+            icon: Icons.timeline,
+            title: 'Ereignis-Chronik',
+            child: Padding(
               padding: EdgeInsets.all(8),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text('Noch keine Ereignisse erfasst.',
                     style: TextStyle(color: Colors.grey)),
               ),
-            );
-          }
-          return Column(
-            children: events.map((e) {
-              final m = matches[e.matchId];
-              final (symbol, label) = _eventLabel(e);
-              return ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Text(symbol, style: const TextStyle(fontSize: 20)),
-                title: Text(label),
-                subtitle: Text(_context(
-                  df: df,
-                  date: m?.kickoff,
-                  match: m,
-                  minuteLabel: e.minuteLabel,
-                  note: e.note,
-                )),
-              );
-            }).toList(),
+            ),
           );
-        },
+        }
+        // Nach Spiel gruppieren, neueste Spiele zuerst.
+        final byMatch = <String, List<MatchEvent>>{};
+        for (final e in events) {
+          byMatch.putIfAbsent(e.matchId, () => []).add(e);
+        }
+        final matchIds = byMatch.keys.toList()
+          ..sort((a, b) {
+            final ka = matches[a]?.kickoff ?? DateTime(1970);
+            final kb = matches[b]?.kickoff ?? DateTime(1970);
+            return kb.compareTo(ka);
+          });
+        return Column(
+          children: [
+            for (final mid in matchIds)
+              _matchEventsCard(
+                  context, state, df, matches[mid], mid, byMatch[mid]!),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Ein Karten-Abschnitt je Spiel – klar voneinander getrennt.
+  Widget _matchEventsCard(BuildContext context, AppState state, DateFormat df,
+      GameMatch? m, String matchId, List<MatchEvent> evs) {
+    final head = m == null ? 'Spiel' : 'vs ${m.opponentName}';
+    final date = m?.kickoff == null ? '' : df.format(m!.kickoff!.toLocal());
+    final sorted = [...evs]..sort((a, b) => a.minute.compareTo(b.minute));
+    return _SectionCard(
+      icon: Icons.sports_soccer,
+      title: date.isEmpty ? head : '$head  ·  $date',
+      child: Column(
+        children: [
+          for (final e in sorted) _chronRow(context, state, df, e, m),
+        ],
       ),
     );
+  }
+
+  Widget _chronRow(BuildContext context, AppState state, DateFormat df,
+      MatchEvent e, GameMatch? m) {
+    final (symbol, label) = _eventLabel(e);
+    final sub = [
+      e.minuteLabel,
+      if (e.note != null && e.note!.isNotEmpty) e.note!,
+    ].join('  ·  ');
+    return ListTile(
+      contentPadding: EdgeInsets.zero,
+      leading: Text(symbol, style: const TextStyle(fontSize: 20)),
+      title: Text(label),
+      subtitle: sub.isEmpty ? null : Text(sub),
+      trailing: const Icon(Icons.more_vert, size: 20),
+      onTap: () => _eventActions(context, state, e, m),
+    );
+  }
+
+  Future<void> _eventActions(BuildContext context, AppState state,
+      MatchEvent e, GameMatch? m) async {
+    final navigator = Navigator.of(context);
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (m != null)
+              ListTile(
+                leading: const Icon(Icons.open_in_new),
+                title: const Text('Zum Spiel'),
+                onTap: () => Navigator.pop(context, 'match'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Korrigieren'),
+              onTap: () => Navigator.pop(context, 'edit'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Löschen'),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (action == null || !mounted) return;
+    switch (action) {
+      case 'match':
+        await navigator.push(MaterialPageRoute(
+            builder: (_) => LiveMatchScreen(matchId: e.matchId)));
+        if (mounted) setState(() {});
+      case 'edit':
+        await _editChronEvent(state, e);
+      case 'delete':
+        await state.deleteEvent(e.matchId, e.id);
+        if (mounted) setState(() {});
+    }
+  }
+
+  /// Minute + Notiz eines Ereignisses direkt im Profil korrigieren.
+  Future<void> _editChronEvent(AppState state, MatchEvent e) async {
+    final minCtrl = TextEditingController(text: '${e.minute}');
+    final noteCtrl = TextEditingController(text: e.note ?? '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Ereignis korrigieren'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: minCtrl,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                  labelText: 'Spielminute', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: noteCtrl,
+              minLines: 1,
+              maxLines: 3,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                  labelText: 'Notiz', border: OutlineInputBorder()),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final newMin = int.tryParse(minCtrl.text.trim()) ?? e.minute;
+    final note = noteCtrl.text.trim();
+    await state.updateEvent(MatchEvent(
+      id: e.id,
+      matchId: e.matchId,
+      teamId: e.teamId,
+      minute: newMin,
+      minuteExtra: e.minuteExtra,
+      type: e.type,
+      playerId: e.playerId,
+      assistPlayerId: e.assistPlayerId,
+      note: note.isEmpty ? null : note,
+      createdAt: e.createdAt,
+    ));
+    if (mounted) setState(() {});
   }
 
   /// Symbol + Beschriftung eines Ereignisses aus Sicht dieses Spielers.
@@ -1011,7 +1141,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Notiz'),
       ),
-      child: FutureBuilder<(List<PlayerNote>, List<NoteCategory>)>(
+      child: FutureBuilder<
+          (List<PlayerNote>, List<NoteCategory>, Map<String, GameMatch>)>(
         future: _loadNotes(state),
         builder: (context, snap) {
           if (!snap.hasData) {
@@ -1022,6 +1153,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
           }
           final notes = snap.data!.$1;
           final cats = snap.data!.$2;
+          final matches = snap.data!.$3;
           if (notes.isEmpty) {
             return const Padding(
               padding: EdgeInsets.all(8),
@@ -1077,7 +1209,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                       title: RichNoteView(stored: n.text),
                       subtitle: Padding(
                         padding: const EdgeInsets.only(top: 4),
-                        child: Text(df.format(n.createdAt)),
+                        child: Text([
+                          df.format(n.createdAt),
+                          if (n.matchId != null && matches[n.matchId] != null)
+                            'vs ${matches[n.matchId]!.opponentName}',
+                        ].join('  ·  ')),
                       ),
                       trailing: const Icon(Icons.edit, size: 18),
                       onTap: () => _editNote(context, n),
@@ -1308,24 +1444,28 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   Future<void> _addNote(BuildContext context) async {
-    final result = await Navigator.push<NoteEditResult>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => NoteEditorScreen(playerName: _player.fullName),
-      ),
-    );
-    if (result == null || !context.mounted) return;
-    await context
-        .read<AppState>()
-        .addNote(_player.id, result.stored, categoryId: result.categoryId);
-  }
-
-  Future<void> _editNote(BuildContext context, PlayerNote note) async {
+    final matches = await _matchesFor(context);
+    if (!context.mounted) return;
     final result = await Navigator.push<NoteEditResult>(
       context,
       MaterialPageRoute(
         builder: (_) =>
-            NoteEditorScreen(playerName: _player.fullName, existing: note),
+            NoteEditorScreen(playerName: _player.fullName, matches: matches),
+      ),
+    );
+    if (result == null || !context.mounted) return;
+    await context.read<AppState>().addNote(_player.id, result.stored,
+        categoryId: result.categoryId, matchId: result.matchId);
+  }
+
+  Future<void> _editNote(BuildContext context, PlayerNote note) async {
+    final matches = await _matchesFor(context);
+    if (!context.mounted) return;
+    final result = await Navigator.push<NoteEditResult>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NoteEditorScreen(
+            playerName: _player.fullName, existing: note, matches: matches),
       ),
     );
     if (result == null || !context.mounted) return;
@@ -1334,14 +1474,18 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             text: result.stored,
             categoryId: result.categoryId,
             clearCategory: result.categoryId == null,
+            matchId: result.matchId,
+            clearMatch: result.matchId == null,
           ),
         );
   }
 
-  Future<(List<PlayerNote>, List<NoteCategory>)> _loadNotes(AppState s) async {
+  Future<(List<PlayerNote>, List<NoteCategory>, Map<String, GameMatch>)>
+      _loadNotes(AppState s) async {
     final notes = await s.notesOf(_player.id);
     final cats = await s.noteCategories();
-    return (notes, cats);
+    final mm = await s.matchMap(_player.teamId);
+    return (notes, cats, mm);
   }
 
   Future<(List<CardEntry>, Map<String, GameMatch>)> _loadCards(

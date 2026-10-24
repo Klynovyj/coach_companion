@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 23;
+  static const _dbVersion = 24;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -178,6 +178,12 @@ class AppDatabase {
       await db.execute('ALTER TABLE todos ADD COLUMN topic_id TEXT');
       await db.execute('ALTER TABLE todos ADD COLUMN responsible TEXT');
     }
+    // v23 -> v24: Notiz optional mit einem Spiel verknüpfen.
+    // Nur für DBs mit player_notes-Tabelle (ab v8); bei oldV < 8 kommt die
+    // Spalte bereits über _playerNotesTableSql.
+    if (oldV < 24 && oldV >= 8) {
+      await db.execute('ALTER TABLE player_notes ADD COLUMN match_id TEXT');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -197,6 +203,7 @@ class AppDatabase {
         text TEXT NOT NULL,
         created_at TEXT NOT NULL,
         category_id TEXT,
+        match_id TEXT,
         FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
       )
   ''';
