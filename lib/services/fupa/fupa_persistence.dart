@@ -170,6 +170,9 @@ class FupaPersistence {
 
       final status = data.finished ? MatchStatus.finished : null;
       if (match != null) {
+        // Selbst verwaltete Spiele (zurückgesetzt/live getrackt): Metadaten
+        // aktualisieren, aber Status/Ergebnis NICHT aus FuPa überschreiben.
+        final managed = match.locallyManaged;
         await _repo.upsertMatch(match.copyWith(
           opponentName: data.opponentName,
           opponentFupaUrl: data.opponentFupaUrl,
@@ -179,12 +182,12 @@ class FupaPersistence {
           competition: data.competition,
           matchday: data.matchday ?? match.matchday,
           externalId: data.externalId,
-          // Live/beendete Spiele nicht zurücksetzen; nur Ergebnis nachtragen.
-          status: data.finished && match.status != MatchStatus.live
+          // Live/beendete/selbst verwaltete Spiele nicht zurücksetzen.
+          status: !managed && data.finished && match.status != MatchStatus.live
               ? MatchStatus.finished
               : null,
-          ownScore: data.finished ? data.ownGoals : null,
-          opponentScore: data.finished ? data.opponentGoals : null,
+          ownScore: !managed && data.finished ? data.ownGoals : null,
+          opponentScore: !managed && data.finished ? data.opponentGoals : null,
         ));
       } else {
         await _repo.upsertMatch(GameMatch(

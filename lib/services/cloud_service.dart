@@ -183,6 +183,15 @@ class CloudService {
       _c.from('matches').update(
           {'own_score': own, 'opponent_score': opp}).eq('id', matchId);
 
+  /// Setzt Status + Spielstand (z.B. beim Zurücksetzen auf „scheduled", 0:0).
+  static Future<void> setMatchState(
+          String matchId, String status, int own, int opp) =>
+      _c.from('matches').update({
+        'status': status,
+        'own_score': own,
+        'opponent_score': opp,
+      }).eq('id', matchId);
+
   // ----------------------------------------------------- Generische Bereiche
   // Für die „eigene Tabelle pro Bereich"-Spiegelung (Nominierung, Aufstellung,
   // Karten, Notizen, Bewertungen, Aufgaben, Gespräche, Abwesenheiten …). Der

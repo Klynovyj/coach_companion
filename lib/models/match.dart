@@ -37,6 +37,10 @@ class GameMatch {
   /// true = Gegnerkader wurde bereits synchronisiert/angelegt.
   final bool opponentImported;
 
+  /// true = der Trainer verwaltet dieses Spiel selbst (z.B. zurückgesetzt oder
+  /// live getrackt). Dann überschreibt der FuPa-Import Status/Ergebnis NICHT.
+  final bool locallyManaged;
+
   final DateTime createdAt;
 
   const GameMatch({
@@ -55,6 +59,7 @@ class GameMatch {
     this.ownScore = 0,
     this.opponentScore = 0,
     this.opponentImported = false,
+    this.locallyManaged = false,
     required this.createdAt,
   });
 
@@ -72,6 +77,7 @@ class GameMatch {
     int? ownScore,
     int? opponentScore,
     bool? opponentImported,
+    bool? locallyManaged,
   }) {
     return GameMatch(
       id: id,
@@ -89,6 +95,7 @@ class GameMatch {
       ownScore: ownScore ?? this.ownScore,
       opponentScore: opponentScore ?? this.opponentScore,
       opponentImported: opponentImported ?? this.opponentImported,
+      locallyManaged: locallyManaged ?? this.locallyManaged,
       createdAt: createdAt,
     );
   }
@@ -109,6 +116,7 @@ class GameMatch {
         'own_score': ownScore,
         'opponent_score': opponentScore,
         'opponent_imported': opponentImported ? 1 : 0,
+        'locally_managed': locallyManaged ? 1 : 0,
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -128,6 +136,7 @@ class GameMatch {
         ownScore: m['own_score'] as int? ?? 0,
         opponentScore: m['opponent_score'] as int? ?? 0,
         opponentImported: (m['opponent_imported'] as int? ?? 0) == 1,
+        locallyManaged: (m['locally_managed'] as int? ?? 0) == 1,
         createdAt:
             DateTime.tryParse(m['created_at'] as String? ?? '') ??
                 DateTime.now(),

@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 27;
+  static const _dbVersion = 28;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -198,6 +198,12 @@ class AppDatabase {
     // v26 -> v27: Spieler in Ereignissen/Kommentaren erwähnen (n:m).
     if (oldV < 27) {
       await db.execute(_eventMentionsTableSql);
+    }
+    // v27 -> v28: „selbst verwaltet"-Kennzeichen am Spiel (zurückgesetzte/live
+    // getrackte Spiele nicht vom FuPa-Import überschreiben).
+    if (oldV < 28) {
+      await db.execute(
+          'ALTER TABLE matches ADD COLUMN locally_managed INTEGER NOT NULL DEFAULT 0');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -431,6 +437,7 @@ class AppDatabase {
         own_score INTEGER NOT NULL DEFAULT 0,
         opponent_score INTEGER NOT NULL DEFAULT 0,
         opponent_imported INTEGER NOT NULL DEFAULT 0,
+        locally_managed INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY (own_team_id) REFERENCES teams (id) ON DELETE CASCADE,
         FOREIGN KEY (opponent_team_id) REFERENCES teams (id) ON DELETE SET NULL

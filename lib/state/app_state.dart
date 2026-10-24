@@ -329,6 +329,12 @@ class AppState extends ChangeNotifier {
       }
       final matches = await CloudService.matches(teamId);
       for (final m in matches) {
+        final mid = m['id'] as String?;
+        if (mid != null) {
+          final local = await _repo.getMatch(mid);
+          // Selbst verwaltete Spiele (zurückgesetzt/live) nicht überschreiben.
+          if (local != null && local.locallyManaged) continue;
+        }
         await _repo.upsertRawById('matches',
             _matchFromCloud(m, teamId, now).toMap());
       }
@@ -1331,6 +1337,9 @@ class AppState extends ChangeNotifier {
           status: MatchStatus.scheduled,
           ownScore: 0,
           opponentScore: 0,
+          // Ab jetzt selbst verwaltet – FuPa setzt das Spiel nicht wieder
+          // auf „beendet" (sonst käme es sofort zurück ins Nachholen).
+          locallyManaged: true,
         ));
       }
       // Cloud: Ereignisse + zugehörige Karten dieses Spiels leeren, Stand 0:0.
@@ -1340,7 +1349,8 @@ class AppState extends ChangeNotifier {
         try {
           await CloudService.deleteEventsForMatch(matchId);
           await CloudService.deleteWhere('card_entries', {'match_id': matchId});
-          await CloudService.setScore(matchId, 0, 0);
+          await CloudService.setMatchState(
+              matchId, MatchStatus.scheduled.storageKey, 0, 0);
         } catch (_) {}
       }
     }
@@ -1738,8 +1748,11 @@ class AppState extends ChangeNotifier {
           }
         }
       } else {
-        // Nur die aktuelle Woche und Vergangenes – keine weit entfernten Spiele.
-        final relevant = m.kickoff == null || !m.kickoff!.isAfter(endOfWeek);
+        // Nominierung/Aufstellung nur für anstehende Spiele (heute bis Ende der
+        // Woche) – NICHT für vergangene (z.B. zurückgesetzte) Spiele.
+        final k = m.kickoff;
+        final relevant =
+            k != null && !k.isBefore(today) && !k.isAfter(endOfWeek);
         if (!relevant) continue;
         final noms = await _repo.getNominations(m.id);
         if (noms.isEmpty) {
