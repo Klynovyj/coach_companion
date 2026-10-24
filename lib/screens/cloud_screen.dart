@@ -603,6 +603,20 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
       appBar: AppBar(
         title: Text(widget.teamName),
         actions: [
+          if (widget.isTrainer)
+            IconButton(
+              tooltip: 'Mitglieder & Rollen',
+              icon: const Icon(Icons.group_outlined),
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => CloudMembersScreen(
+                    teamId: widget.teamId,
+                    teamName: widget.teamName,
+                  ),
+                ),
+              ),
+            ),
           IconButton(
             tooltip: 'In diese App laden (Kader & Spielplan)',
             icon: const Icon(Icons.cloud_download_outlined),
@@ -667,6 +681,141 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ------------------------------------------------- Mitglieder & Rollen
+/// Zeigt die Team-Mitglieder und lässt Trainer Kollegen hochstufen
+/// (Spieler ↔ Trainer). Nur Trainer dürfen schreiben – ein Trainer bleibt
+/// mindestens erhalten (serverseitig abgesichert).
+class CloudMembersScreen extends StatefulWidget {
+  const CloudMembersScreen(
+      {super.key, required this.teamId, required this.teamName});
+
+  final String teamId;
+  final String teamName;
+
+  @override
+  State<CloudMembersScreen> createState() => _CloudMembersScreenState();
+}
+
+class _CloudMembersScreenState extends State<CloudMembersScreen> {
+  late Future<List<Map<String, dynamic>>> _future =
+      CloudService.teamMembers(widget.teamId);
+
+  void _reload() => setState(
+      () => _future = CloudService.teamMembers(widget.teamId));
+
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  Future<void> _setRole(Map<String, dynamic> member, String role) async {
+    final current = member['role'] as String?;
+    if (current == role) return;
+    final name = (member['display_name'] as String?)?.trim();
+    final label = (name == null || name.isEmpty) ? 'dieses Mitglied' : name;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rolle ändern'),
+        content: Text(role == 'trainer'
+            ? '$label zum Trainer machen? Trainer dürfen alles eintragen und bearbeiten.'
+            : '$label auf Spieler zurückstufen? Spieler haben nur Ansicht.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ändern')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await CloudService.setMemberRole(
+          widget.teamId, member['user_id'] as String, role);
+      _reload();
+    } catch (e) {
+      _snack('Fehler: ${_clean(e)}');
+    }
+  }
+
+  String _clean(Object e) =>
+      e is PostgrestException ? e.message : e.toString();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text('Mitglieder · ${widget.teamName}')),
+      body: FutureBuilder<List<Map<String, dynamic>>>(
+        future: _future,
+        builder: (context, snap) {
+          if (!snap.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final members = snap.data!;
+          if (members.isEmpty) {
+            return const Center(
+                child: Text('Noch keine Mitglieder.',
+                    style: TextStyle(color: Colors.grey)));
+          }
+          return ListView(
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Text(
+                  'Trainer dürfen eintragen und bearbeiten. Spieler sehen nur zu. '
+                  'Stufe Trainer-Kollegen hier hoch.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+              for (final m in members)
+                _MemberTile(
+                  member: m,
+                  onSetRole: (role) => _setRole(m, role),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _MemberTile extends StatelessWidget {
+  const _MemberTile({required this.member, required this.onSetRole});
+
+  final Map<String, dynamic> member;
+  final void Function(String role) onSetRole;
+
+  @override
+  Widget build(BuildContext context) {
+    final name = (member['display_name'] as String?)?.trim();
+    final role = member['role'] as String? ?? 'spieler';
+    final isMe = member['is_me'] == true;
+    final isTrainer = role == 'trainer';
+    final shown = (name == null || name.isEmpty) ? 'Unbekannt' : name;
+    return Card(
+      child: ListTile(
+        leading: CircleAvatar(
+          child: Icon(isTrainer ? Icons.sports : Icons.person),
+        ),
+        title: Text(isMe ? '$shown (du)' : shown),
+        subtitle: Text(isTrainer ? 'Trainer' : 'Spieler'),
+        trailing: isMe
+            ? const Chip(label: Text('du'))
+            : (isTrainer
+                ? OutlinedButton(
+                    onPressed: () => onSetRole('spieler'),
+                    child: const Text('Zu Spieler'),
+                  )
+                : FilledButton.tonal(
+                    onPressed: () => onSetRole('trainer'),
+                    child: const Text('Zu Trainer'),
+                  )),
       ),
     );
   }

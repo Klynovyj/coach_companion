@@ -71,6 +71,19 @@ class CloudService {
   static Future<void> joinTeam(String code) =>
       _c.rpc('join_team', params: {'code': code.trim()});
 
+  /// Mitglieder eines Teams mit Namen + Rolle (über SECURITY-DEFINER-Funktion,
+  /// damit auch fremde Profilnamen sichtbar sind).
+  static Future<List<Map<String, dynamic>>> teamMembers(String teamId) async {
+    final rows = await _c.rpc('list_team_members', params: {'t': teamId});
+    return List<Map<String, dynamic>>.from(rows as List);
+  }
+
+  /// Rolle eines Mitglieds ändern (nur Trainer; letzter Trainer bleibt).
+  static Future<void> setMemberRole(
+          String teamId, String userId, String role) =>
+      _c.rpc('set_member_role',
+          params: {'t': teamId, 'target': userId, 'new_role': role});
+
   // ---------------------------------------------------------------- Kader
   static Future<List<Map<String, dynamic>>> players(String teamId) async {
     final rows = await _c
