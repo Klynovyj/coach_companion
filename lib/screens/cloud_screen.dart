@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/player.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
@@ -184,13 +185,74 @@ class _TeamsViewState extends State<_TeamsView> {
   }
 
   Future<void> _createTeam() async {
-    final name = await _prompt('Team anlegen', 'Teamname', 'z.B. Garather SV');
-    if (name == null || name.isEmpty) return;
+    final url = await _prompt('Team aus FuPa anlegen', 'FuPa-Teamlink',
+        'https://www.fupa.net/team/…');
+    if (url == null || !mounted) return; // abgebrochen
+    final app = context.read<AppState>();
+
+    // Ohne Link: einfaches Team nur mit Namen.
+    if (url.isEmpty) {
+      final name =
+          await _prompt('Team anlegen', 'Teamname', 'z.B. Garather SV');
+      if (name == null || name.isEmpty) return;
+      try {
+        await CloudService.createTeam(name);
+        _reload();
+      } catch (e) {
+        _snack('Fehler: $e');
+      }
+      return;
+    }
+
+    // Mit FuPa-Link: alles laden (Team, Kader, Spielplan) + Cloud-Team + Upload.
+    final navigator = Navigator.of(context);
+    final status = ValueNotifier<String>('Starte Import …');
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('FuPa wird geladen …'),
+        content: ValueListenableBuilder<String>(
+          valueListenable: status,
+          builder: (_, s, _) => Row(
+            children: [
+              const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 16),
+              Expanded(child: Text(s)),
+            ],
+          ),
+        ),
+      ),
+    );
     try {
-      await CloudService.createTeam(name);
+      final summary =
+          await app.connectOwnTeam(url, onProgress: (p) => status.value = p);
+      final localTeam = app.ownTeam;
+      final List<Player> players =
+          localTeam == null ? <Player>[] : await app.playersOf(localTeam.id);
+      final roster = [
+        for (final p in players.where((p) => !p.isStaffOnly))
+          {
+            'first_name': p.firstName,
+            'last_name': p.lastName,
+            'number': p.number,
+            'position': p.position,
+          }
+      ];
+      final team = await CloudService.createTeam(summary.teamName);
+      await CloudService.uploadRoster(team['id'], roster);
+      if (mounted) navigator.pop(); // Fortschritt schließen
       _reload();
+      _snack('„${summary.teamName}" angelegt · ${roster.length} Spieler, '
+          '${summary.matches} Spiele geladen.');
     } catch (e) {
+      if (mounted) navigator.pop();
       _snack('Fehler: $e');
+    } finally {
+      status.dispose();
     }
   }
 
