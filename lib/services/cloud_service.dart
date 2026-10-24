@@ -198,6 +198,30 @@ class CloudService {
     return ch;
   }
 
+  /// Realtime-Abo für ein ganzes Team: Spiele + Kader. [onChange] wird bei
+  /// jeder Änderung an matches/players dieses Teams aufgerufen (z.B. wenn ein
+  /// Trainer-Kollege auf einem anderen Gerät ein Spiel oder den Spielstand
+  /// ändert). So bleibt der lokale Cache überall aktuell.
+  static RealtimeChannel subscribeTeam(
+      String teamId, void Function() onChange) {
+    final ch = _c.channel('team_$teamId');
+    for (final table in ['matches', 'players']) {
+      ch.onPostgresChanges(
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: table,
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'team_id',
+          value: teamId,
+        ),
+        callback: (_) => onChange(),
+      );
+    }
+    ch.subscribe();
+    return ch;
+  }
+
   static Future<void> removeChannel(RealtimeChannel ch) =>
       _c.removeChannel(ch);
 }

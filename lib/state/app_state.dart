@@ -172,34 +172,67 @@ class AppState extends ChangeNotifier {
       createdAt: now,
     ));
     for (final p in players) {
-      await _repo.upsertPlayer(Player(
+      await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
+    }
+    for (final m in matches) {
+      await _repo.upsertMatch(_matchFromCloud(m, cloudTeamId, now));
+    }
+    await _reload();
+    notifyListeners();
+  }
+
+  /// Aktualisiert den lokalen Cache mit frischen Cloud-Spielen – ohne Wipe,
+  /// nur ergänzend/überschreibend (für Realtime-Auto-Sync). Wirkt nur, wenn
+  /// dieses Team das aktive Cloud-Team ist.
+  Future<void> syncCloudMatchesToCache(
+      String cloudTeamId, List<Map<String, dynamic>> matches) async {
+    if (_activeCloudTeamId != cloudTeamId) return;
+    final now = DateTime.now();
+    for (final m in matches) {
+      await _repo.upsertMatch(_matchFromCloud(m, cloudTeamId, now));
+    }
+    await _reload();
+    notifyListeners();
+  }
+
+  /// Aktualisiert den lokalen Kader-Cache mit frischen Cloud-Spielern – ohne
+  /// Wipe. Wirkt nur, wenn dieses Team das aktive Cloud-Team ist.
+  Future<void> syncCloudPlayersToCache(
+      String cloudTeamId, List<Map<String, dynamic>> players) async {
+    if (_activeCloudTeamId != cloudTeamId) return;
+    final now = DateTime.now();
+    for (final p in players) {
+      await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
+    }
+    notifyListeners();
+  }
+
+  Player _playerFromCloud(Map<String, dynamic> p, String teamId, DateTime now) =>
+      Player(
         id: p['id'] as String,
-        teamId: cloudTeamId,
+        teamId: teamId,
         firstName: (p['first_name'] as String?) ?? '',
         lastName: (p['last_name'] as String?) ?? '',
         number: (p['number'] as num?)?.toInt(),
         position: p['position'] as String?,
         source: DataSource.fupaApproved,
         createdAt: now,
-      ));
-    }
-    for (final m in matches) {
-      final kickoffStr = m['kickoff'] as String?;
-      await _repo.upsertMatch(GameMatch(
-        id: m['id'] as String,
-        ownTeamId: cloudTeamId,
-        opponentName: (m['opponent'] as String?) ?? 'Gegner',
-        kickoff:
-            kickoffStr == null ? null : DateTime.tryParse(kickoffStr)?.toLocal(),
-        venue: (m['venue'] == 'Auswärts') ? Venue.away : Venue.home,
-        ownScore: (m['own_score'] as num?)?.toInt() ?? 0,
-        opponentScore: (m['opponent_score'] as num?)?.toInt() ?? 0,
-        status: MatchStatus.fromKey(m['status'] as String?),
-        createdAt: now,
-      ));
-    }
-    await _reload();
-    notifyListeners();
+      );
+
+  GameMatch _matchFromCloud(Map<String, dynamic> m, String teamId, DateTime now) {
+    final kickoffStr = m['kickoff'] as String?;
+    return GameMatch(
+      id: m['id'] as String,
+      ownTeamId: teamId,
+      opponentName: (m['opponent'] as String?) ?? 'Gegner',
+      kickoff:
+          kickoffStr == null ? null : DateTime.tryParse(kickoffStr)?.toLocal(),
+      venue: (m['venue'] == 'Auswärts') ? Venue.away : Venue.home,
+      ownScore: (m['own_score'] as num?)?.toInt() ?? 0,
+      opponentScore: (m['opponent_score'] as num?)?.toInt() ?? 0,
+      status: MatchStatus.fromKey(m['status'] as String?),
+      createdAt: now,
+    );
   }
 
   /// Lädt alles für das bereits verbundene Team erneut.

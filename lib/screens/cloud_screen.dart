@@ -418,6 +418,55 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
       CloudService.matches(widget.teamId);
   static final _df = DateFormat('dd.MM.yyyy  HH:mm', 'de_DE');
 
+  late final AppState _app = context.read<AppState>();
+  RealtimeChannel? _teamChannel;
+  bool _autoSyncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Realtime: Änderungen an Spielen/Kader (auch von Kollegen) live übernehmen.
+    _teamChannel = CloudService.subscribeTeam(widget.teamId, _onCloudChange);
+    // Beim Öffnen automatisch in den lokalen Cache laden (cloud-first).
+    _autoSync();
+  }
+
+  @override
+  void dispose() {
+    final ch = _teamChannel;
+    if (ch != null) CloudService.removeChannel(ch);
+    super.dispose();
+  }
+
+  /// Lädt das Team beim Öffnen automatisch in den lokalen Cache – außer es ist
+  /// bereits das aktive Abbild (dann kein Wipe, nur Realtime hält es aktuell).
+  Future<void> _autoSync() async {
+    if (_app.activeCloudTeamId == widget.teamId) return;
+    setState(() => _autoSyncing = true);
+    try {
+      final players = await CloudService.players(widget.teamId);
+      final matches = await CloudService.matches(widget.teamId);
+      await _app.downloadCloudTeam(widget.teamId, widget.teamName,
+          players: players, matches: matches);
+    } catch (_) {
+      // Offline/Lesefehler: lokaler Cache bleibt wie er ist.
+    }
+    if (mounted) setState(() => _autoSyncing = false);
+  }
+
+  /// Realtime-Callback: Spielliste neu laden und – wenn dieses Team aktiv ist –
+  /// den lokalen Cache nachziehen (ohne Wipe).
+  Future<void> _onCloudChange() async {
+    try {
+      final matches = await CloudService.matches(widget.teamId);
+      if (!mounted) return;
+      setState(() => _future = Future.value(matches));
+      await _app.syncCloudMatchesToCache(widget.teamId, matches);
+      final players = await CloudService.players(widget.teamId);
+      await _app.syncCloudPlayersToCache(widget.teamId, players);
+    } catch (_) {}
+  }
+
   void _reload() {
     setState(() {
       _future = CloudService.matches(widget.teamId);
@@ -572,41 +621,82 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
               label: const Text('Spiel'),
             )
           : null,
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _future,
-        builder: (context, snap) {
-          if (!snap.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          final matches = snap.data!;
-          if (matches.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('Noch keine Spiele.',
-                    style: TextStyle(color: Colors.grey)),
-              ),
-            );
-          }
-          return ListView(
-            children: [
-              for (final m in matches)
-                Card(
-                  child: ListTile(
-                    title: Text('vs ${m['opponent']}'),
-                    subtitle: Text([
-                      '${m['own_score']} : ${m['opponent_score']}',
-                      if (m['kickoff'] != null)
-                        _df.format(DateTime.parse(m['kickoff']).toLocal()),
-                      if (m['status'] == 'live') 'LIVE',
-                    ].join('  ·  ')),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _open(m),
-                  ),
-                ),
-            ],
-          );
-        },
+      body: Column(
+        children: [
+          if (_autoSyncing)
+            const _SyncBanner(),
+          Expanded(
+            child: FutureBuilder<List<Map<String, dynamic>>>(
+              future: _future,
+              builder: (context, snap) {
+                if (!snap.hasData) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final matches = snap.data!;
+                if (matches.isEmpty) {
+                  return const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(24),
+                      child: Text('Noch keine Spiele.',
+                          style: TextStyle(color: Colors.grey)),
+                    ),
+                  );
+                }
+                return ListView(
+                  children: [
+                    for (final m in matches)
+                      Card(
+                        child: ListTile(
+                          title: Text('vs ${m['opponent']}'),
+                          subtitle: Text([
+                            '${m['own_score']} : ${m['opponent_score']}',
+                            if (m['kickoff'] != null)
+                              _df.format(
+                                  DateTime.parse(m['kickoff']).toLocal()),
+                            if (m['status'] == 'live') 'LIVE',
+                          ].join('  ·  ')),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _open(m),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Schlanke Leiste, während das Team beim Öffnen in den lokalen Cache geladen
+/// wird (Auto-Sync, cloud-first).
+class _SyncBanner extends StatelessWidget {
+  const _SyncBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.secondaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: scheme.onSecondaryContainer),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Team wird synchronisiert …',
+                  style: TextStyle(color: scheme.onSecondaryContainer)),
+            ),
+          ],
+        ),
       ),
     );
   }
