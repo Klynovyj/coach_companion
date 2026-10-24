@@ -1560,6 +1560,16 @@ class AppState extends ChangeNotifier {
     await _repo.upsertMatch(match.copyWith(status: status));
     await _reload();
     notifyListeners();
+    // Status (z.B. „live"/„beendet") teilen, damit das Live-Spiel bei allen
+    // sichtbar ist (Menü „Live-Spiel läuft") und mitgeschrieben werden kann.
+    if (_activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateMatch(
+            matchId, {'status': status.storageKey});
+      } catch (_) {}
+    }
   }
 
   // ---------------------------------------------------------------- Ratings

@@ -96,11 +96,18 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   void initState() {
     super.initState();
     _state = context.read<AppState>();
+    // Eingehende Live-Daten anderer Trainer (per Realtime) sofort anzeigen.
+    _state.addListener(_onAppStateChanged);
     _load();
+  }
+
+  void _onAppStateChanged() {
+    if (mounted) _refreshEvents();
   }
 
   @override
   void dispose() {
+    _state.removeListener(_onAppStateChanged);
     _timer?.cancel();
     _saveClock();
     super.dispose();
