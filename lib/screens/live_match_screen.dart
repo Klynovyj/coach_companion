@@ -675,102 +675,33 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     await _refreshEvents();
   }
 
-  /// Dialog: optionaler Spieler + optionale Notiz zu einem Ereignis.
+  /// Vollbild-Seite: optionaler Spieler (mit Foto) + optionale Notiz.
   Future<({String? playerId, String? note})?> _eventDetail(
       MatchEventType type, List<Player> players) {
-    String? selPlayer;
-    final noteCtrl = TextEditingController();
-    return showDialog<({String? playerId, String? note})>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setD) => AlertDialog(
-          title: Text('${type.symbol}  ${type.label}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (players.isNotEmpty)
-                DropdownButtonFormField<String?>(
-                  initialValue: selPlayer,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                      labelText: 'Spieler (optional)',
-                      border: OutlineInputBorder()),
-                  items: [
-                    const DropdownMenuItem<String?>(
-                        value: null, child: Text('— ohne —')),
-                    for (final p in players)
-                      DropdownMenuItem<String?>(
-                          value: p.id,
-                          child: Text(p.displayName,
-                              overflow: TextOverflow.ellipsis)),
-                  ],
-                  onChanged: (v) => setD(() => selPlayer = v),
-                ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: noteCtrl,
-                minLines: 1,
-                maxLines: 3,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                    labelText: 'Notiz (optional)',
-                    border: OutlineInputBorder()),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Abbrechen')),
-            FilledButton(
-              onPressed: () => Navigator.pop(ctx, (
-                playerId: selPlayer,
-                note: noteCtrl.text.trim().isEmpty
-                    ? null
-                    : noteCtrl.text.trim(),
-              )),
-              child: const Text('Speichern'),
-            ),
-          ],
-        ),
+    return Navigator.of(context).push<({String? playerId, String? note})>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => _EventDetailPage(type: type, players: players),
       ),
     );
   }
 
-  /// Neutraler Freitext-Kommentar.
+  /// Neutraler Freitext-Kommentar (ebenfalls als Vollbild-Seite).
   Future<void> _addComment() async {
-    final ctrl = TextEditingController();
-    final text = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Kommentar'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          minLines: 2,
-          maxLines: 5,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-              hintText: 'Was passiert gerade?', border: OutlineInputBorder()),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Speichern')),
-        ],
-      ),
-    );
-    if (text == null || text.isEmpty || !mounted) return;
+    final detail = await _eventDetail(MatchEventType.comment, const []);
+    if (detail == null ||
+        detail.note == null ||
+        detail.note!.isEmpty ||
+        !mounted) {
+      return;
+    }
     await context.read<AppState>().addEvent(
           matchId: widget.matchId,
           teamId: _teamIdFor(true),
           minute: _currentMinute,
           minuteExtra: _currentExtra,
           type: MatchEventType.comment,
-          note: text,
+          note: detail.note,
         );
     await _refreshEvents();
   }
@@ -1488,6 +1419,139 @@ class _MinuteBadge extends StatelessWidget {
           fontWeight: FontWeight.w600,
           color: own ? scheme.onPrimaryContainer : scheme.onTertiaryContainer,
         ),
+      ),
+    );
+  }
+}
+
+/// Vollbild-Seite für ein dokumentiertes Ereignis (Ecke, Freistoß, Foul …)
+/// oder einen Kommentar: optionale Notiz + optionale Spielerauswahl mit Fotos.
+class _EventDetailPage extends StatefulWidget {
+  const _EventDetailPage({required this.type, required this.players});
+
+  final MatchEventType type;
+  final List<Player> players;
+
+  @override
+  State<_EventDetailPage> createState() => _EventDetailPageState();
+}
+
+class _EventDetailPageState extends State<_EventDetailPage> {
+  String? _selPlayer;
+  final _noteCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final note = _noteCtrl.text.trim();
+    Navigator.pop(context, (
+      playerId: _selPlayer,
+      note: note.isEmpty ? null : note,
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isComment = widget.type == MatchEventType.comment;
+    final showPlayers = !isComment && widget.players.isNotEmpty;
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('${widget.type.symbol}  ${widget.type.label}'),
+        actions: [
+          TextButton(
+            onPressed: _save,
+            child: Text(isComment ? 'Senden' : 'Speichern'),
+          ),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        children: [
+          TextField(
+            controller: _noteCtrl,
+            autofocus: isComment,
+            minLines: isComment ? 3 : 1,
+            maxLines: isComment ? 6 : 3,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: InputDecoration(
+              labelText: isComment ? 'Kommentar' : 'Notiz (optional)',
+              hintText: isComment ? 'Was passiert gerade?' : null,
+              border: const OutlineInputBorder(),
+              alignLabelWithHint: true,
+            ),
+          ),
+          if (showPlayers) ...[
+            const SizedBox(height: 20),
+            Text('Spieler (optional)',
+                style: Theme.of(context).textTheme.titleSmall),
+            const SizedBox(height: 8),
+            _PlayerChoiceTile(
+              selected: _selPlayer == null,
+              leading: const CircleAvatar(
+                  radius: 18, child: Icon(Icons.block, size: 18)),
+              label: '— ohne —',
+              onTap: () => setState(() => _selPlayer = null),
+            ),
+            for (final p in widget.players)
+              _PlayerChoiceTile(
+                selected: _selPlayer == p.id,
+                leading: PlayerAvatar(player: p, radius: 18),
+                label: p.displayName,
+                onTap: () => setState(() => _selPlayer = p.id),
+              ),
+          ],
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _save,
+            icon: const Icon(Icons.check),
+            label:
+                Text(isComment ? 'Kommentar speichern' : 'Ereignis speichern'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Auswahlkachel für einen Spieler (mit Foto) in der Ereignis-Seite.
+class _PlayerChoiceTile extends StatelessWidget {
+  const _PlayerChoiceTile({
+    required this.selected,
+    required this.leading,
+    required this.label,
+    required this.onTap,
+  });
+
+  final bool selected;
+  final Widget leading;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      color:
+          selected ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected ? scheme.primary : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
+      child: ListTile(
+        leading: leading,
+        title: Text(label),
+        trailing:
+            selected ? Icon(Icons.check_circle, color: scheme.primary) : null,
+        onTap: onTap,
       ),
     );
   }
