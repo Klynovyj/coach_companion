@@ -680,7 +680,6 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       MatchEventType.corner,
       MatchEventType.freeKick,
       MatchEventType.penalty,
-      MatchEventType.penaltyMissed,
       MatchEventType.foul,
       MatchEventType.bigChance,
       MatchEventType.meckern,
@@ -712,18 +711,64 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ),
     );
     if (type == null || !mounted) return;
-    final detail = await _eventDetail(type, _onFieldPlayers(ownSide));
+    // Elfmeter: erst den Ausgang abfragen (Tor / verschossen / gehalten).
+    var resolved = type;
+    if (type == MatchEventType.penalty) {
+      final outcome = await _askPenaltyOutcome();
+      if (outcome == null || !mounted) return;
+      resolved = outcome;
+    }
+    final detail = await _eventDetail(resolved, _onFieldPlayers(ownSide));
     if (detail == null || !mounted) return;
     await context.read<AppState>().addEvent(
           matchId: widget.matchId,
           teamId: _teamIdFor(ownSide),
           minute: _currentMinute,
           minuteExtra: _currentExtra,
-          type: type,
+          type: resolved,
           playerId: detail.playerId,
           note: detail.note,
         );
     await _refreshEvents();
+  }
+
+  /// Abfrage des Elfmeter-Ausgangs.
+  Future<MatchEventType?> _askPenaltyOutcome() {
+    return showModalBottomSheet<MatchEventType>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Elfmeter – Ausgang',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Text('⚽', style: TextStyle(fontSize: 20)),
+              title: const Text('Tor (verwandelt)'),
+              onTap: () => Navigator.pop(context, MatchEventType.penalty),
+            ),
+            ListTile(
+              leading: const Text('❌', style: TextStyle(fontSize: 20)),
+              title: const Text('Verschossen'),
+              onTap: () => Navigator.pop(context, MatchEventType.penaltyMissed),
+            ),
+            ListTile(
+              leading: const Text('🧤', style: TextStyle(fontSize: 20)),
+              title: const Text('Gehalten'),
+              onTap: () => Navigator.pop(context, MatchEventType.penaltySaved),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Vollbild-Seite: optionaler Spieler (mit Foto) + optionale Notiz.
@@ -1417,10 +1462,20 @@ class _EventLog extends StatelessWidget {
         return 'Gelb-Rot – ${resolveName(e.playerId)}';
       case MatchEventType.redCard:
         return 'Rote Karte – ${resolveName(e.playerId)}';
+      case MatchEventType.penalty:
+        return e.playerId == null
+            ? 'Elfmeter verwandelt'
+            : 'Elfmeter verwandelt – ${resolveName(e.playerId)}';
+      case MatchEventType.penaltyMissed:
+        return e.playerId == null
+            ? 'Elfmeter verschossen'
+            : 'Elfmeter verschossen – ${resolveName(e.playerId)}';
+      case MatchEventType.penaltySaved:
+        return e.playerId == null
+            ? 'Elfmeter gehalten'
+            : 'Elfmeter gehalten – ${resolveName(e.playerId)}';
       case MatchEventType.corner:
       case MatchEventType.freeKick:
-      case MatchEventType.penalty:
-      case MatchEventType.penaltyMissed:
       case MatchEventType.foul:
       case MatchEventType.bigChance:
       case MatchEventType.meckern:
@@ -1541,7 +1596,6 @@ class _EventDetailPage extends StatefulWidget {
 
 class _EventDetailPageState extends State<_EventDetailPage> {
   String? _selPlayer;
-  String _query = '';
   final _noteCtrl = TextEditingController();
 
   @override
@@ -1565,18 +1619,25 @@ class _EventDetailPageState extends State<_EventDetailPage> {
     ));
   }
 
-  List<Player> get _filteredPlayers {
-    final q = _query.trim().toLowerCase();
-    if (q.isEmpty) return widget.players;
-    return widget.players
-        .where((p) => p.displayName.toLowerCase().contains(q))
-        .toList();
+  Future<void> _pickPlayer() async {
+    final res = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) =>
+            _PlayerPickPage(players: widget.players, selected: _selPlayer),
+      ),
+    );
+    if (res == null) return; // abgebrochen → unverändert
+    setState(() => _selPlayer = res == _kPickNone ? null : res);
   }
 
   @override
   Widget build(BuildContext context) {
     final isComment = widget.type == MatchEventType.comment;
     final showPlayers = !isComment && widget.players.isNotEmpty;
+    final sel = _selPlayer == null
+        ? null
+        : widget.players.where((p) => p.id == _selPlayer).firstOrNull;
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.type.symbol}  ${widget.type.label}'),
@@ -1591,65 +1652,127 @@ class _EventDetailPageState extends State<_EventDetailPage> {
           ),
         ],
       ),
+      body: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Spieler-Auswahl per Button (kompakt), Notiz bekommt den Platz.
+            if (showPlayers) ...[
+              Row(
+                children: [
+                  Text('Spieler:',
+                      style: Theme.of(context).textTheme.titleSmall),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: sel == null
+                          ? OutlinedButton.icon(
+                              onPressed: _pickPlayer,
+                              icon: const Icon(Icons.person_add_alt, size: 18),
+                              label: const Text('Spieler wählen'),
+                            )
+                          : InputChip(
+                              avatar: PlayerAvatar(player: sel, radius: 11),
+                              label: Text(sel.displayName),
+                              onPressed: _pickPlayer,
+                              onDeleted: () => setState(() => _selPlayer = null),
+                            ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            // Notiz – nimmt den restlichen Platz ein.
+            Expanded(
+              child: TextField(
+                controller: _noteCtrl,
+                autofocus: isComment,
+                expands: true,
+                minLines: null,
+                maxLines: null,
+                textAlignVertical: TextAlignVertical.top,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: InputDecoration(
+                  labelText: isComment ? 'Kommentar' : 'Notiz (optional)',
+                  hintText:
+                      isComment ? 'Was passiert gerade?' : 'Notiz zum Ereignis …',
+                  border: const OutlineInputBorder(),
+                  alignLabelWithHint: true,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Sentinel für „— ohne —" im Spieler-Picker.
+const String _kPickNone = '\u0000none';
+
+/// Vollbild-Einzelauswahl eines Spielers (mit Foto + Suche).
+class _PlayerPickPage extends StatefulWidget {
+  const _PlayerPickPage({required this.players, this.selected});
+
+  final List<Player> players;
+  final String? selected;
+
+  @override
+  State<_PlayerPickPage> createState() => _PlayerPickPageState();
+}
+
+class _PlayerPickPageState extends State<_PlayerPickPage> {
+  String _query = '';
+
+  List<Player> get _filtered {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return widget.players;
+    return widget.players
+        .where((p) => p.displayName.toLowerCase().contains(q))
+        .toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Spieler wählen')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),
         children: [
           TextField(
-            controller: _noteCtrl,
-            autofocus: isComment,
-            minLines: isComment ? 3 : 1,
-            maxLines: isComment ? 6 : 3,
-            textCapitalization: TextCapitalization.sentences,
+            onChanged: (v) => setState(() => _query = v),
             decoration: InputDecoration(
-              labelText: isComment ? 'Kommentar' : 'Notiz (optional)',
-              hintText: isComment ? 'Was passiert gerade?' : null,
+              hintText: 'Spieler suchen …',
+              prefixIcon: const Icon(Icons.search),
+              isDense: true,
               border: const OutlineInputBorder(),
-              alignLabelWithHint: true,
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () => setState(() => _query = ''),
+                    ),
             ),
           ),
-          if (showPlayers) ...[
-            const SizedBox(height: 20),
-            Text('Spieler (optional)',
-                style: Theme.of(context).textTheme.titleSmall),
-            const SizedBox(height: 8),
-            TextField(
-              onChanged: (v) => setState(() => _query = v),
-              decoration: InputDecoration(
-                hintText: 'Spieler suchen …',
-                prefixIcon: const Icon(Icons.search),
-                isDense: true,
-                border: const OutlineInputBorder(),
-                suffixIcon: _query.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Icons.clear),
-                        onPressed: () => setState(() => _query = ''),
-                      ),
-              ),
-            ),
-            const SizedBox(height: 8),
+          const SizedBox(height: 8),
+          _PlayerChoiceTile(
+            selected: widget.selected == null,
+            leading: const CircleAvatar(
+                radius: 18, child: Icon(Icons.block, size: 18)),
+            label: '— ohne —',
+            onTap: () => Navigator.pop(context, _kPickNone),
+          ),
+          for (final p in _filtered)
             _PlayerChoiceTile(
-              selected: _selPlayer == null,
-              leading: const CircleAvatar(
-                  radius: 18, child: Icon(Icons.block, size: 18)),
-              label: '— ohne —',
-              onTap: () => setState(() => _selPlayer = null),
+              selected: widget.selected == p.id,
+              leading: PlayerAvatar(player: p, radius: 18),
+              label: p.displayName,
+              onTap: () => Navigator.pop(context, p.id),
             ),
-            for (final p in _filteredPlayers)
-              _PlayerChoiceTile(
-                selected: _selPlayer == p.id,
-                leading: PlayerAvatar(player: p, radius: 18),
-                label: p.displayName,
-                onTap: () => setState(() => _selPlayer = p.id),
-              ),
-          ],
-          const SizedBox(height: 24),
-          FilledButton.icon(
-            onPressed: _save,
-            icon: const Icon(Icons.check),
-            label:
-                Text(isComment ? 'Kommentar speichern' : 'Ereignis speichern'),
-          ),
         ],
       ),
     );

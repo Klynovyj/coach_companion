@@ -79,6 +79,7 @@ enum MatchEventType {
   freeKick('free_kick', 'Freistoß', '🎯'),
   penalty('penalty', 'Elfmeter', '⚽'),
   penaltyMissed('penalty_missed', 'Elfmeter verschossen', '❌'),
+  penaltySaved('penalty_saved', 'Elfmeter gehalten', '🧤'),
   foul('foul', 'Foul', '⚠️'),
   bigChance('big_chance', 'Großchance', '✨'),
   meckern('meckern', 'Meckern', '🗣️'),
