@@ -16,6 +16,15 @@ class CloudService {
   static bool get signedIn => user != null;
   static Stream<AuthState> get authChanges => _c.auth.onAuthStateChange;
 
+  /// E-Mail des angemeldeten Kontos.
+  static String? get email => user?.email;
+
+  /// Anzeigename (aus den Registrierungs-Metadaten), falls hinterlegt.
+  static String? get displayName {
+    final n = user?.userMetadata?['display_name'];
+    return (n is String && n.trim().isNotEmpty) ? n.trim() : null;
+  }
+
   // ----------------------------------------------------------------- Auth
   static Future<void> signIn(String email, String password) =>
       _c.auth.signInWithPassword(email: email.trim(), password: password);

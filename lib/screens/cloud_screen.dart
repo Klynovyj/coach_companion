@@ -322,8 +322,31 @@ class _TeamsViewState extends State<_TeamsView> {
 
   @override
   Widget build(BuildContext context) {
+    final who = CloudService.displayName ?? CloudService.email ?? '—';
     return Column(
       children: [
+        Container(
+          width: double.infinity,
+          color: Theme.of(context).colorScheme.secondaryContainer,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Icon(Icons.account_circle,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.onSecondaryContainer),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Angemeldet als $who',
+                  style: TextStyle(
+                      color:
+                          Theme.of(context).colorScheme.onSecondaryContainer),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
         Padding(
           padding: const EdgeInsets.all(12),
           child: Row(
@@ -759,6 +782,33 @@ class _CloudMembersScreenState extends State<CloudMembersScreen> {
       body: FutureBuilder<List<Map<String, dynamic>>>(
         future: _future,
         builder: (context, snap) {
+          if (snap.hasError) {
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cloud_off, size: 40, color: Colors.grey),
+                    const SizedBox(height: 12),
+                    const Text(
+                      'Mitglieder konnten nicht geladen werden.\n'
+                      'Die Rollen-Funktion ist in der Cloud möglicherweise '
+                      'noch nicht eingerichtet.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: _reload,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Erneut versuchen'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
           if (!snap.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
