@@ -228,14 +228,17 @@ end $$;
 --    Team behält mindestens einen Trainer.
 
 create or replace function public.list_team_members(t uuid)
-returns table (user_id uuid, role text, display_name text, is_me boolean)
+returns table (user_id uuid, role text, display_name text, email text,
+               is_me boolean)
 language sql security definer stable as $$
   select m.user_id,
          m.role::text,
          coalesce(p.display_name, ''),
+         u.email,
          m.user_id = auth.uid()
   from public.team_members m
   left join public.profiles p on p.id = m.user_id
+  left join auth.users u on u.id = m.user_id
   where m.team_id = t and public.is_team_member(t)
   order by (m.role = 'trainer') desc, p.display_name nulls last;
 $$;

@@ -734,8 +734,11 @@ class _CloudMembersScreenState extends State<CloudMembersScreen> {
   late Future<List<Map<String, dynamic>>> _future =
       CloudService.teamMembers(widget.teamId);
 
-  void _reload() => setState(
-      () => _future = CloudService.teamMembers(widget.teamId));
+  void _reload() {
+    setState(() {
+      _future = CloudService.teamMembers(widget.teamId);
+    });
+  }
 
   void _snack(String m) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
@@ -744,7 +747,10 @@ class _CloudMembersScreenState extends State<CloudMembersScreen> {
     final current = member['role'] as String?;
     if (current == role) return;
     final name = (member['display_name'] as String?)?.trim();
-    final label = (name == null || name.isEmpty) ? 'dieses Mitglied' : name;
+    final mail = (member['email'] as String?)?.trim();
+    final label = (name != null && name.isNotEmpty)
+        ? name
+        : (mail != null && mail.isNotEmpty ? mail : 'dieses Mitglied');
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -850,10 +856,13 @@ class _MemberTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final name = (member['display_name'] as String?)?.trim();
+    final mail = (member['email'] as String?)?.trim();
     final role = member['role'] as String? ?? 'spieler';
     final isMe = member['is_me'] == true;
     final isTrainer = role == 'trainer';
-    final shown = (name == null || name.isEmpty) ? 'Unbekannt' : name;
+    final shown = (name != null && name.isNotEmpty)
+        ? name
+        : (mail != null && mail.isNotEmpty ? mail : 'Unbekannt');
     return Card(
       child: ListTile(
         leading: CircleAvatar(
