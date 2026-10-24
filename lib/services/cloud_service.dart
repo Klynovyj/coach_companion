@@ -55,7 +55,8 @@ class CloudService {
   static Future<List<Map<String, dynamic>>> myTeams() async {
     final rows = await _c
         .from('team_members')
-        .select('role, teams(id, name, invite_code, created_by, fupa_url, logo)')
+        .select(
+            'role, teams(id, name, short_name, invite_code, created_by, fupa_url, logo)')
         .eq('user_id', user!.id);
     return [
       for (final r in rows)

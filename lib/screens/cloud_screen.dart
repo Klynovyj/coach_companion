@@ -266,8 +266,9 @@ class _TeamsViewState extends State<_TeamsView> {
           await CloudService.createTeam(summary.teamName, fupaUrl: url);
       await CloudService.uploadRoster(team['id'], roster);
       final added = await CloudService.uploadSchedule(team['id'], schedule);
-      // Vereinslogo am Cloud-Team hinterlegen.
-      await CloudService.updateTeam(team['id'], {'logo': localTeam?.logoPath});
+      // Logo + Kurzname am Cloud-Team hinterlegen.
+      await CloudService.updateTeam(team['id'],
+          {'logo': localTeam?.logoPath, 'short_name': localTeam?.shortName});
       // Zurückladen, damit lokale IDs == Cloud-IDs sind (Schreib-Sync).
       final cloudPlayers = await CloudService.players(team['id']);
       final cloudMatches = await CloudService.matches(team['id']);
@@ -275,7 +276,8 @@ class _TeamsViewState extends State<_TeamsView> {
           players: cloudPlayers,
           matches: cloudMatches,
           fupaUrl: url,
-          logoPath: localTeam?.logoPath);
+          logoPath: localTeam?.logoPath,
+          shortName: localTeam?.shortName);
       if (mounted) navigator.pop(); // Fortschritt schließen
       _reload();
       _snack('„${summary.teamName}" angelegt · ${roster.length} Spieler, '
@@ -412,7 +414,8 @@ class _TeamsViewState extends State<_TeamsView> {
           players: players,
           matches: matches,
           fupaUrl: team['fupa_url'] as String?,
-          logoPath: team['logo'] as String?);
+          logoPath: team['logo'] as String?,
+          shortName: team['short_name'] as String?);
       if (mounted) navigator.pop();
       _snack('„$name" ist jetzt aktiv – nutze die App-Funktionen.');
     } catch (e) {

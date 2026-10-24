@@ -482,6 +482,7 @@ class AppState extends ChangeNotifier {
     required List<Map<String, dynamic>> matches,
     String? fupaUrl,
     String? logoPath,
+    String? shortName,
   }) async {
     await _repo.wipeTeams();
     _activeCloudTeamId = cloudTeamId; // ab jetzt Schreib-Sync in die Cloud
@@ -490,6 +491,7 @@ class AppState extends ChangeNotifier {
     await _repo.upsertTeam(Team(
       id: cloudTeamId,
       name: name,
+      shortName: (shortName == null || shortName.isEmpty) ? null : shortName,
       isOwnTeam: true,
       source: DataSource.fupaApproved,
       fupaUrl: (fupaUrl == null || fupaUrl.isEmpty) ? null : fupaUrl,
@@ -612,8 +614,11 @@ class AppState extends ChangeNotifier {
       ];
       await CloudService.upsertMatches(matchRows);
       // Eigenes Logo + Name am Cloud-Team aktualisieren.
-      await CloudService.updateTeam(
-          cloudTeam, {'name': team.name, 'logo': team.logoPath});
+      await CloudService.updateTeam(cloudTeam, {
+        'name': team.name,
+        'short_name': team.shortName,
+        'logo': team.logoPath,
+      });
       // Statistik spiegeln.
       final stats = await _repo.getStats(team.id);
       await CloudService.uploadStats(cloudTeam, [
@@ -760,7 +765,8 @@ class AppState extends ChangeNotifier {
         CloudService.ready &&
         CloudService.signedIn) {
       try {
-        await CloudService.updateTeam(teamId, {'name': name});
+        await CloudService.updateTeam(
+            teamId, {'name': name, 'short_name': shortName});
       } catch (_) {}
     }
   }

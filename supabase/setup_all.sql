@@ -337,6 +337,7 @@ exception when duplicate_object then null; end $$;
 
 alter table public.players add column if not exists photo text;         -- Spielerfoto (Data-URL)
 alter table public.teams   add column if not exists logo text;          -- eigenes Vereinslogo
+alter table public.teams   add column if not exists short_name text;    -- Kurzname
 alter table public.matches add column if not exists opponent_logo text; -- Gegner-Logo
 -- „selbst verwaltet" (zurückgesetzt/live): FuPa-Import überschreibt es nicht –
 -- geteilt, damit der Reset auf allen Geräten hält.
