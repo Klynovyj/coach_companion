@@ -175,7 +175,11 @@ class _TeamsView extends StatefulWidget {
 class _TeamsViewState extends State<_TeamsView> {
   late Future<List<Map<String, dynamic>>> _future = CloudService.myTeams();
 
-  void _reload() => setState(() => _future = CloudService.myTeams());
+  void _reload() {
+    setState(() {
+      _future = CloudService.myTeams();
+    });
+  }
 
   Future<void> _createTeam() async {
     final name = await _prompt('Team anlegen', 'Teamname', 'z.B. Garather SV');
@@ -325,8 +329,11 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
       CloudService.matches(widget.teamId);
   static final _df = DateFormat('dd.MM.yyyy  HH:mm', 'de_DE');
 
-  void _reload() =>
-      setState(() => _future = CloudService.matches(widget.teamId));
+  void _reload() {
+    setState(() {
+      _future = CloudService.matches(widget.teamId);
+    });
+  }
 
   Future<void> _newMatch() async {
     final ctrl = TextEditingController();
