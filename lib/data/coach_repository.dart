@@ -15,6 +15,7 @@ import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/team_event.dart';
 import '../models/todo.dart';
+import '../models/todo_topic.dart';
 import 'app_database.dart';
 
 /// Einziger Zugang zur Persistenz. Gruppiert nach Entität; jede Entität
@@ -553,6 +554,25 @@ class CoachRepository {
   Future<void> deleteTodo(String id) async {
     final db = await _db;
     await db.delete('todos', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // ----------------------------------------------------- Aufgaben-Themen
+  Future<List<TodoTopic>> getTodoTopics() async {
+    final db = await _db;
+    final rows = await db.query('todo_topics',
+        orderBy: 'sort_order ASC, created_at ASC');
+    return rows.map(TodoTopic.fromMap).toList();
+  }
+
+  Future<void> upsertTodoTopic(TodoTopic topic) =>
+      _upsertById('todo_topics', topic.toMap());
+
+  /// Löscht ein Thema; zugeordnete Aufgaben werden auf „ohne Thema" gesetzt.
+  Future<void> deleteTodoTopic(String id) async {
+    final db = await _db;
+    await db.update('todos', {'topic_id': null},
+        where: 'topic_id = ?', whereArgs: [id]);
+    await db.delete('todo_topics', where: 'id = ?', whereArgs: [id]);
   }
 
   // ------------------------------------------------------------ Absences

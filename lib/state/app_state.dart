@@ -21,6 +21,7 @@ import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/todo.dart';
+import '../models/todo_topic.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_persistence.dart';
 import '../services/material_duty.dart';
@@ -1098,7 +1099,12 @@ class AppState extends ChangeNotifier {
 
   Future<List<Todo>> archivedTodos() => _repo.getArchivedTodos();
 
-  Future<void> addTodo(String text, {DateTime? dueDate}) async {
+  Future<void> addTodo(
+    String text, {
+    DateTime? dueDate,
+    String? topicId,
+    List<TodoResponsible> responsible = const [],
+  }) async {
     final t = text.trim();
     if (t.isEmpty) return;
     await _repo.upsertTodo(Todo(
@@ -1106,7 +1112,43 @@ class AppState extends ChangeNotifier {
       text: t,
       createdAt: DateTime.now(),
       dueDate: dueDate,
+      topicId: topicId,
+      responsible: responsible,
     ));
+    notifyListeners();
+  }
+
+  /// Komplette Aufgabe speichern (z.B. nach dem Bearbeiten im Dialog).
+  Future<void> saveTodo(Todo todo) async {
+    await _repo.upsertTodo(todo);
+    notifyListeners();
+  }
+
+  // -------------------------------------------------------- Aufgaben-Themen
+  Future<List<TodoTopic>> todoTopics() => _repo.getTodoTopics();
+
+  Future<TodoTopic> addTodoTopic(String title) async {
+    final topics = await _repo.getTodoTopics();
+    final topic = TodoTopic(
+      id: _uuid.v4(),
+      title: title.trim(),
+      sortOrder: topics.length,
+      createdAt: DateTime.now(),
+    );
+    await _repo.upsertTodoTopic(topic);
+    notifyListeners();
+    return topic;
+  }
+
+  Future<void> renameTodoTopic(TodoTopic topic, String title) async {
+    final t = title.trim();
+    if (t.isEmpty) return;
+    await _repo.upsertTodoTopic(topic.copyWith(title: t));
+    notifyListeners();
+  }
+
+  Future<void> deleteTodoTopic(String id) async {
+    await _repo.deleteTodoTopic(id);
     notifyListeners();
   }
 

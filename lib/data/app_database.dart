@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 22;
+  static const _dbVersion = 23;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -168,6 +168,16 @@ class AppDatabase {
     if (oldV < 22) {
       await db.execute('ALTER TABLE players ADD COLUMN nickname TEXT');
     }
+    // v22 -> v23: Themen für Aufgaben + Zuordnung/Verantwortliche an der Aufgabe.
+    if (oldV < 23) {
+      await db.execute(_todoTopicsTableSql);
+    }
+    // Nur für DBs, deren todos-Tabelle noch ohne die neuen Spalten erzeugt
+    // wurde (ab v15). Bei oldV < 15 kommen sie bereits über _todosTableSql.
+    if (oldV < 23 && oldV >= 15) {
+      await db.execute('ALTER TABLE todos ADD COLUMN topic_id TEXT');
+      await db.execute('ALTER TABLE todos ADD COLUMN responsible TEXT');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -216,7 +226,18 @@ class AppDatabase {
         created_at TEXT NOT NULL,
         due_date TEXT,
         completed_at TEXT,
-        archived INTEGER NOT NULL DEFAULT 0
+        archived INTEGER NOT NULL DEFAULT 0,
+        topic_id TEXT,
+        responsible TEXT
+      )
+  ''';
+
+  static const _todoTopicsTableSql = '''
+      CREATE TABLE todo_topics (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL
       )
   ''';
 
@@ -451,6 +472,7 @@ class AppDatabase {
     await db.execute(_noteCategoriesTableSql);
     await db.execute(_playerMarkersTableSql);
     await db.execute(_todosTableSql);
+    await db.execute(_todoTopicsTableSql);
     await db.execute(_playerAbsencesTableSql);
     await db.execute(
         'CREATE INDEX idx_absences_player ON player_absences (player_id)');
