@@ -94,10 +94,6 @@ class AppState extends ChangeNotifier {
   String? _activeCloudTeamId;
   String? get activeCloudTeamId => _activeCloudTeamId;
 
-  /// true, solange aus der Cloud geladene Daten lokal angewendet werden –
-  /// verhindert, dass diese Writes wieder in die Cloud zurückgespiegelt werden.
-  bool _applyingRemote = false;
-
   /// Bereichstabellen mit eigener Cloud-Tabelle (Push + Pull). Reihenfolge =
   /// Pull-Reihenfolge (Eltern vor Kindern wegen Fremdschlüsseln im Cache).
   static const _auxTables = <String>[
@@ -131,7 +127,8 @@ class AppState extends ChangeNotifier {
   /// Spiegelt eine Schreiboperation des Repositorys in die Cloud (best effort).
   void _onRepoWrite(String table, Map<String, Object?>? upsertRow,
       Map<String, Object?>? deleteFilter) {
-    if (_applyingRemote) return;
+    // Pulls nutzen hook-freie Roh-Methoden; jede Hook-Auslösung ist also eine
+    // echte Nutzer-/App-Eingabe und MUSS gespiegelt werden (nicht blockieren).
     final team = _activeCloudTeamId;
     if (team == null || !CloudService.ready || !CloudService.signedIn) return;
     if (!_auxTableSet.contains(table)) return;
@@ -224,13 +221,8 @@ class AppState extends ChangeNotifier {
   /// greifen erst beim nächsten vollständigen Team-Download.
   Future<void> resyncCloudAuxData(String teamId) async {
     if (_activeCloudTeamId != teamId) return;
-    _applyingRemote = true;
-    try {
-      await _pullEventsFromCloud(teamId, replace: false);
-      await _pullAuxFromCloud(teamId, replace: false);
-    } finally {
-      _applyingRemote = false;
-    }
+    await _pullEventsFromCloud(teamId, replace: false);
+    await _pullAuxFromCloud(teamId, replace: false);
     notifyListeners();
   }
 
@@ -353,7 +345,6 @@ class AppState extends ChangeNotifier {
         !CloudService.signedIn) {
       return;
     }
-    _applyingRemote = true;
     try {
       final now = DateTime.now();
       final players = await CloudService.players(teamId);
@@ -377,8 +368,6 @@ class AppState extends ChangeNotifier {
       await _pullStatsFromCloud(teamId);
     } catch (_) {
       // Offline/Teilfehler – lokaler Stand bleibt gültig.
-    } finally {
-      _applyingRemote = false;
     }
     await _reload();
     notifyListeners();
@@ -494,37 +483,32 @@ class AppState extends ChangeNotifier {
     String? fupaUrl,
     String? logoPath,
   }) async {
-    _applyingRemote = true; // Cloud → lokal: nicht zurückspiegeln.
-    try {
-      await _repo.wipeTeams();
-      _activeCloudTeamId = cloudTeamId; // ab jetzt Schreib-Sync in die Cloud
-      await _repo.setSetting('active_cloud_team', cloudTeamId);
-      final now = DateTime.now();
-      await _repo.upsertTeam(Team(
-        id: cloudTeamId,
-        name: name,
-        isOwnTeam: true,
-        source: DataSource.fupaApproved,
-        fupaUrl: (fupaUrl == null || fupaUrl.isEmpty) ? null : fupaUrl,
-        logoPath: (logoPath == null || logoPath.isEmpty) ? null : logoPath,
-        createdAt: now,
-      ));
-      for (final p in players) {
-        await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
-      }
-      for (final m in matches) {
-        await _repo.upsertMatch(_matchFromCloud(m, cloudTeamId, now));
-      }
-      // Ereignisse (für Chronik/Erwähnungen) vor den Bereichsdaten laden,
-      // damit event_mentions die lokalen match_events referenzieren können.
-      await _pullEventsFromCloud(cloudTeamId, replace: true);
-      // Alle geteilten Bereiche (Nominierung, Aufstellung, Karten, Notizen,
-      // Bewertungen, Aufgaben, Gespräche, Abwesenheiten, Erwähnungen) mitladen.
-      await _pullAuxFromCloud(cloudTeamId, replace: true);
-      await _pullStatsFromCloud(cloudTeamId);
-    } finally {
-      _applyingRemote = false;
+    await _repo.wipeTeams();
+    _activeCloudTeamId = cloudTeamId; // ab jetzt Schreib-Sync in die Cloud
+    await _repo.setSetting('active_cloud_team', cloudTeamId);
+    final now = DateTime.now();
+    await _repo.upsertTeam(Team(
+      id: cloudTeamId,
+      name: name,
+      isOwnTeam: true,
+      source: DataSource.fupaApproved,
+      fupaUrl: (fupaUrl == null || fupaUrl.isEmpty) ? null : fupaUrl,
+      logoPath: (logoPath == null || logoPath.isEmpty) ? null : logoPath,
+      createdAt: now,
+    ));
+    for (final p in players) {
+      await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
     }
+    for (final m in matches) {
+      await _repo.upsertMatch(_matchFromCloud(m, cloudTeamId, now));
+    }
+    // Ereignisse (für Chronik/Erwähnungen) vor den Bereichsdaten laden,
+    // damit event_mentions die lokalen match_events referenzieren können.
+    await _pullEventsFromCloud(cloudTeamId, replace: true);
+    // Alle geteilten Bereiche (Nominierung, Aufstellung, Karten, Notizen,
+    // Bewertungen, Aufgaben, Gespräche, Abwesenheiten, Erwähnungen) mitladen.
+    await _pullAuxFromCloud(cloudTeamId, replace: true);
+    await _pullStatsFromCloud(cloudTeamId);
     await _reload();
     notifyListeners();
     // Ab jetzt Änderungen dieses Teams überall live übernehmen.
