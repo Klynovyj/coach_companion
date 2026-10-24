@@ -294,8 +294,15 @@ class _TeamsViewState extends State<_TeamsView> {
   /// umgeht die 6h-Drossel. Nur fürs aktive Trainer-Team mit FuPa-Link.
   Future<void> _refreshFupa(Map<String, dynamic> team) async {
     final app = context.read<AppState>();
-    final url = team['fupa_url'] as String?;
-    if (url == null || url.isEmpty) return;
+    // Link ermitteln: Cloud-Team → lokales Team → ggf. erfragen und merken.
+    var url = (team['fupa_url'] as String?)?.trim();
+    if (url == null || url.isEmpty) url = app.ownTeam?.fupaUrl?.trim();
+    if (url == null || url.isEmpty) {
+      final entered = await _prompt(
+          'FuPa verknüpfen', 'FuPa-Teamlink', 'https://www.fupa.net/team/…');
+      if (entered == null || entered.trim().isEmpty || !mounted) return;
+      url = entered.trim();
+    }
     final navigator = Navigator.of(context);
     final status = ValueNotifier<String>('Starte Import …');
     showDialog(
@@ -605,7 +612,6 @@ class _TeamCard extends StatelessWidget {
     final isAdmin = team['created_by'] != null &&
         team['created_by'] == CloudService.user?.id;
     final isTrainer = team['role'] == 'trainer' || isAdmin;
-    final hasFupa = (team['fupa_url'] as String?)?.isNotEmpty == true;
     return Card(
       child: Column(
         children: [
@@ -636,8 +642,8 @@ class _TeamCard extends StatelessWidget {
                 : FilledButton.tonal(
                     onPressed: onActivate, child: const Text('Aktivieren')),
           ),
-          // Nur auf dem aktiven Trainer-Team mit FuPa-Link: Voll-Import jetzt.
-          if (isActive && isTrainer && hasFupa)
+          // Aktives Trainer-Team: Voll-Import jetzt (fragt bei Bedarf den Link).
+          if (isActive && isTrainer)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
               child: Align(

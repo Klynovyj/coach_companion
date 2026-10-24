@@ -891,11 +891,13 @@ class AppState extends ChangeNotifier {
           }
       ];
       await CloudService.upsertMatches(matchRows);
-      // Eigenes Logo + Name am Cloud-Team aktualisieren.
+      // Eigenes Logo + Name + FuPa-Link am Cloud-Team aktualisieren.
       await CloudService.updateTeam(cloudTeam, {
         'name': team.name,
         'short_name': team.shortName,
         'logo': team.logoPath,
+        if (team.fupaUrl != null && team.fupaUrl!.isNotEmpty)
+          'fupa_url': team.fupaUrl,
       });
       // Statistik spiegeln.
       final stats = await _repo.getStats(team.id);
