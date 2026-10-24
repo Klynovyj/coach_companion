@@ -206,6 +206,10 @@ class CloudService {
         'opponent_score': opp,
       }).eq('id', matchId);
 
+  /// Beliebige Spiel-Felder aktualisieren (z.B. locally_managed beim Reset).
+  static Future<void> updateMatch(String matchId, Map<String, dynamic> fields) =>
+      _c.from('matches').update(fields).eq('id', matchId);
+
   // ----------------------------------------------------- Generische Bereiche
   // Für die „eigene Tabelle pro Bereich"-Spiegelung (Nominierung, Aufstellung,
   // Karten, Notizen, Bewertungen, Aufgaben, Gespräche, Abwesenheiten …). Der

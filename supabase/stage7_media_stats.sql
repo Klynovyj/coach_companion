@@ -7,6 +7,9 @@
 alter table public.players add column if not exists photo text;         -- Spielerfoto (Data-URL)
 alter table public.teams   add column if not exists logo text;          -- eigenes Vereinslogo
 alter table public.matches add column if not exists opponent_logo text; -- Gegner-Logo
+-- „selbst verwaltet" (zurückgesetzt/live): FuPa-Import überschreibt es nicht –
+-- geteilt, damit der Reset auf allen Geräten hält.
+alter table public.matches add column if not exists locally_managed boolean not null default false;
 
 -- Spieler-Saison-Statistik (geteilt, aus FuPa)
 create table if not exists public.player_stats (

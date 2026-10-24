@@ -583,6 +583,7 @@ class AppState extends ChangeNotifier {
       ownScore: (m['own_score'] as num?)?.toInt() ?? 0,
       opponentScore: (m['opponent_score'] as num?)?.toInt() ?? 0,
       status: MatchStatus.fromKey(m['status'] as String?),
+      locallyManaged: m['locally_managed'] == true,
       createdAt: now,
     );
   }
@@ -622,6 +623,7 @@ class AppState extends ChangeNotifier {
             'own_score': m.ownScore,
             'opponent_score': m.opponentScore,
             'status': m.status.storageKey,
+            'locally_managed': m.locallyManaged,
           }
       ];
       await CloudService.upsertMatches(matchRows);
@@ -1448,8 +1450,12 @@ class AppState extends ChangeNotifier {
         try {
           await CloudService.deleteEventsForMatch(matchId);
           await CloudService.deleteWhere('card_entries', {'match_id': matchId});
-          await CloudService.setMatchState(
-              matchId, MatchStatus.scheduled.storageKey, 0, 0);
+          await CloudService.updateMatch(matchId, {
+            'status': MatchStatus.scheduled.storageKey,
+            'own_score': 0,
+            'opponent_score': 0,
+            'locally_managed': true,
+          });
         } catch (_) {}
       }
     }
