@@ -52,8 +52,17 @@ class SpielergespraecheScreen extends StatefulWidget {
       _SpielergespraecheScreenState();
 }
 
-class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
+class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
+    with SingleTickerProviderStateMixin {
   static final _df = DateFormat('EEE, dd.MM.yyyy  HH:mm', 'de_DE');
+
+  late final TabController _tab = TabController(length: 3, vsync: this);
+
+  @override
+  void dispose() {
+    _tab.dispose();
+    super.dispose();
+  }
 
   Future<(List<PlayerTalk>, List<Player>)> _load(AppState s) async {
     final talks = await s.talks();
@@ -102,6 +111,7 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
     final data = await showTalkForm(context,
         existing: talk, fixedPlayer: player, players: players);
     if (data == null || !mounted || data.playerIds.isEmpty) return;
+    final wasDone = talk.done;
     await state.saveTalk(talk.copyWith(
       playerId: data.playerIds.first,
       title: data.title,
@@ -110,7 +120,24 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
       clearNotes: data.notes == null,
       done: data.done,
     ));
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    if (data.done && !wasDone) {
+      _tab.animateTo(1); // in den Reiter „Durchgeführt" wechseln
+      _snack('Als durchgeführt gespeichert.');
+    } else {
+      _snack('Gespeichert.');
+    }
+  }
+
+  Future<void> _toggleDone(AppState state, PlayerTalk t, bool v) async {
+    await state.saveTalk(t.copyWith(done: v));
+    if (!mounted) return;
+    setState(() {});
+    if (v) {
+      _tab.animateTo(1);
+      _snack('Als durchgeführt markiert.');
+    }
   }
 
   void _snack(String msg) =>
@@ -119,9 +146,7 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
-    return DefaultTabController(
-      length: 3,
-      child: FutureBuilder<(List<PlayerTalk>, List<Player>)>(
+    return FutureBuilder<(List<PlayerTalk>, List<Player>)>(
         future: _load(state),
         builder: (context, snap) {
           final hasData = snap.hasData;
@@ -145,6 +170,7 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
             appBar: AppBar(
               title: const Text('Spielergespräche'),
               bottom: TabBar(
+                controller: _tab,
                 labelColor: Colors.white,
                 unselectedLabelColor: Colors.white70,
                 indicatorColor: Colors.white,
@@ -163,6 +189,7 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
             body: !hasData
                 ? const Center(child: CircularProgressIndicator())
                 : TabBarView(
+                    controller: _tab,
                     children: [
                       _talkList(state, planned, playerMap,
                           'Keine geplanten Gespräche.'),
@@ -173,7 +200,6 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
                   ),
           );
         },
-      ),
     );
   }
 
@@ -225,7 +251,7 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
               ].join('  ·  ')),
               trailing: Checkbox(
                 value: t.done,
-                onChanged: (v) => state.saveTalk(t.copyWith(done: v ?? false)),
+                onChanged: (v) => _toggleDone(state, t, v ?? false),
               ),
               onTap: () => _edit(state, t, players.values.toList(), p),
             ),
