@@ -288,9 +288,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _opponentTeam = opp;
       _ownPlayers = ownPlayers;
       _opponentPlayers = oppPlayers;
+      // Zugesagte UND „unter Vorbehalt" nominierte Spieler sind einsetzbar.
       _nominatedIds = {
         for (final e in noms.entries)
-          if (e.value == NominationStatus.zugesagt) e.key,
+          if (e.value == NominationStatus.zugesagt ||
+              e.value == NominationStatus.unterVorbehalt)
+            e.key,
       };
       _starterIds = starterIds;
       _events = events;

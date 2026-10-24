@@ -96,8 +96,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             s,
     };
 
+    // Zugesagte UND „unter Vorbehalt" nominierte Spieler stehen zur Aufstellung
+    // zur Verfügung.
     final nominated = players
-        .where((p) => noms[p.id] == NominationStatus.zugesagt)
+        .where((p) =>
+            noms[p.id] == NominationStatus.zugesagt ||
+            noms[p.id] == NominationStatus.unterVorbehalt)
         .toList();
     final pool = nominated.isEmpty ? players : nominated;
     final slots = slotsForFormation(lineup.formation);
