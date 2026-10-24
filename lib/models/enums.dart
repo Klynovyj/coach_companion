@@ -88,7 +88,14 @@ enum MatchEventType {
   kickoff('kickoff', 'Anpfiff', '🟢'),
   halftime('halftime', 'Halbzeit', '⏸'),
   secondHalfStart('second_half', 'Anpfiff 2. Halbzeit', '🟢'),
-  fulltime('fulltime', 'Abpfiff', '🔚');
+  fulltime('fulltime', 'Abpfiff', '🔚'),
+  // Verlängerung & Elfmeterschießen (Pokal).
+  extraFirstStart('extra_first_start', 'Beginn Verlängerung', '🟢'),
+  extraHalftimeMark('extra_halftime', 'Halbzeit Verlängerung', '⏸'),
+  extraSecondStart('extra_second_start', 'Anpfiff 2. Verlängerung', '🟢'),
+  shootoutStart('shootout_start', 'Elfmeterschießen', '🥅'),
+  soGoal('so_goal', 'Elfmeterschießen: Tor', '⚽'),
+  soMiss('so_miss', 'Elfmeterschießen: kein Tor', '❌');
 
   const MatchEventType(this.storageKey, this.label, this.symbol);
   final String storageKey;
@@ -102,12 +109,16 @@ enum MatchEventType {
   /// Neutrales Ereignis ohne zugeordnetes Team (freier Kommentar).
   bool get isNeutral => this == MatchEventType.comment;
 
-  /// Team-neutrale Phasen-Marke (Anpfiff/Halbzeit/Abpfiff)?
+  /// Team-neutrale Phasen-Marke (Anpfiff/Halbzeit/Abpfiff/Verlängerung …)?
   bool get isPhaseMarker =>
       this == MatchEventType.kickoff ||
       this == MatchEventType.halftime ||
       this == MatchEventType.secondHalfStart ||
-      this == MatchEventType.fulltime;
+      this == MatchEventType.fulltime ||
+      this == MatchEventType.extraFirstStart ||
+      this == MatchEventType.extraHalftimeMark ||
+      this == MatchEventType.extraSecondStart ||
+      this == MatchEventType.shootoutStart;
 
   static MatchEventType fromKey(String? key) =>
       MatchEventType.values.firstWhere((e) => e.storageKey == key,

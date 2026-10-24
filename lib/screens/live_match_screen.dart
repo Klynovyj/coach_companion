@@ -16,8 +16,20 @@ import '../widgets/player_avatar.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/team_logo.dart';
 
-/// Spielphasen des Live-Modus.
-enum _Phase { notStarted, firstHalf, halftime, secondHalf, finished }
+/// Spielphasen des Live-Modus. Reihenfolge am Ende erweitert, damit die
+/// gespeicherten Indizes (liveclock) stabil bleiben.
+enum _Phase {
+  notStarted,
+  firstHalf,
+  halftime,
+  secondHalf,
+  finished,
+  // Pokal: Verlängerung (2×15) + Elfmeterschießen.
+  extraFirstHalf,
+  extraHalftime,
+  extraSecondHalf,
+  shootout,
+}
 
 /// Live-Spielerfassung für beide Mannschaften.
 ///
@@ -51,18 +63,27 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   static const _halfSeconds = 45 * 60;
   static const _fullSeconds = 90 * 60;
+  static const _extraFirstEnd = 105 * 60;
+  static const _fullExtra = 120 * 60;
 
   /// Aktuelle Fußball-Minute inkl. Nachspielzeit (z.B. 45 + 2).
   (int, int) get _footMinute {
-    final sec = _elapsedSeconds;
-    final secondHalf =
-        _phase == _Phase.secondHalf || _phase == _Phase.finished;
-    if (!secondHalf) {
-      if (sec < _halfSeconds) return ((sec ~/ 60) + 1, 0);
-      return (45, (sec ~/ 60) - 45 + 1);
-    } else {
-      if (sec < _fullSeconds) return ((sec ~/ 60) + 1, 0);
-      return (90, (sec ~/ 60) - 90 + 1);
+    final m = _elapsedSeconds ~/ 60;
+    switch (_phase) {
+      case _Phase.secondHalf:
+        if (_elapsedSeconds < _fullSeconds) return (m + 1, 0);
+        return (90, m - 90 + 1);
+      case _Phase.extraFirstHalf:
+      case _Phase.extraHalftime:
+        if (_elapsedSeconds < _extraFirstEnd) return (m + 1, 0);
+        return (105, m - 105 + 1);
+      case _Phase.extraSecondHalf:
+      case _Phase.shootout:
+        if (_elapsedSeconds < _fullExtra) return (m + 1, 0);
+        return (120, m - 120 + 1);
+      default: // notStarted, firstHalf, halftime, finished
+        if (_elapsedSeconds < _halfSeconds) return (m + 1, 0);
+        return (45, m - 45 + 1);
     }
   }
 
@@ -105,14 +126,24 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _Phase.firstHalf => '1. Halbzeit',
       _Phase.halftime => 'Halbzeit (Pause)',
       _Phase.secondHalf => '2. Halbzeit',
+      _Phase.extraFirstHalf => '1. Verlängerung',
+      _Phase.extraHalftime => 'Verlängerung (Pause)',
+      _Phase.extraSecondHalf => '2. Verlängerung',
+      _Phase.shootout => 'Elfmeterschießen',
       _Phase.finished => 'Abpfiff',
       _Phase.notStarted => 'Anpfiff',
     };
+    // half nur für den 45/90-Alarm; in der Verlängerung/Schießen kein Alarm.
+    final half = _phase == _Phase.firstHalf || _phase == _Phase.halftime
+        ? 1
+        : _phase == _Phase.secondHalf
+            ? 2
+            : 3;
     return MatchClockData(
       running: _running,
       baseElapsed: _elapsedSeconds,
       startedAtMs: DateTime.now().millisecondsSinceEpoch,
-      half: _phase == _Phase.secondHalf ? 2 : 1,
+      half: half,
       phaseLabel: label,
       ownName: _ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim',
       oppName: _opponentTeam?.name ?? m.opponentName,
@@ -232,9 +263,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           if (wasRunning) _startTimer();
           // Hintergrund-Uhr (Benachrichtigung/Dienst) wieder aufsetzen,
           // falls das Spiel noch läuft.
-          if (_phase == _Phase.firstHalf ||
-              _phase == _Phase.halftime ||
-              _phase == _Phase.secondHalf) {
+          if (_isLiveClockPhase) {
             await _startClock();
           }
         }
@@ -264,12 +293,19 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _events = events;
     });
     // Torstand in der Hintergrund-Benachrichtigung aktuell halten.
-    if (_phase == _Phase.firstHalf ||
-        _phase == _Phase.halftime ||
-        _phase == _Phase.secondHalf) {
+    if (_isLiveClockPhase) {
       await _updateClock();
     }
   }
+
+  /// Phasen mit laufender/pausierter Spieluhr (ohne Elfmeterschießen).
+  bool get _isLiveClockPhase =>
+      _phase == _Phase.firstHalf ||
+      _phase == _Phase.halftime ||
+      _phase == _Phase.secondHalf ||
+      _phase == _Phase.extraFirstHalf ||
+      _phase == _Phase.extraHalftime ||
+      _phase == _Phase.extraSecondHalf;
 
   Future<void> _logPhase(MatchEventType type, int minute, int extra) async {
     final m = _match!;
@@ -344,6 +380,173 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     // ist jederzeit über das 3-Punkte-Menü („Spieler bewerten") erreichbar.
   }
 
+  /// Verlängerung starten (ab 90:00). Auch nach dem Abpfiff möglich.
+  Future<void> _startExtra() async {
+    await context
+        .read<AppState>()
+        .setMatchStatus(widget.matchId, MatchStatus.live);
+    setState(() {
+      _phase = _Phase.extraFirstHalf;
+      _elapsedSeconds = _fullSeconds;
+      _running = true;
+    });
+    _startTimer();
+    _saveClock();
+    await _startClock();
+    final (min, extra) = _footMinute;
+    await _logPhase(MatchEventType.extraFirstStart, min, extra);
+    await _refreshEvents();
+  }
+
+  /// Halbzeit der Verlängerung (bei 105:00).
+  Future<void> _extraHalftime() async {
+    _timer?.cancel();
+    final (min, extra) = _footMinute;
+    setState(() {
+      _phase = _Phase.extraHalftime;
+      _running = false;
+    });
+    _saveClock();
+    await _updateClock();
+    await _logPhase(MatchEventType.extraHalftimeMark, min, extra);
+    await _refreshEvents();
+  }
+
+  /// Anpfiff 2. Verlängerung (ab 105:00).
+  Future<void> _startExtraSecond() async {
+    setState(() {
+      _phase = _Phase.extraSecondHalf;
+      _elapsedSeconds = _extraFirstEnd;
+      _running = true;
+    });
+    _startTimer();
+    _saveClock();
+    await _startClock();
+    final (min, extra) = _footMinute;
+    await _logPhase(MatchEventType.extraSecondStart, min, extra);
+    await _refreshEvents();
+  }
+
+  /// Ins Elfmeterschießen wechseln.
+  Future<void> _startShootout() async {
+    _timer?.cancel();
+    final (min, extra) = _footMinute;
+    setState(() {
+      _phase = _Phase.shootout;
+      _running = false;
+    });
+    _saveClock();
+    await _updateClock();
+    await _logPhase(MatchEventType.shootoutStart, min, extra);
+    await _refreshEvents();
+  }
+
+  /// Ein Schuss im Elfmeterschießen (Tor oder kein Tor), optional mit Schütze.
+  Future<void> _addShootoutShot(
+      {required bool ownSide, required bool scored}) async {
+    final state = context.read<AppState>();
+    final players = ownSide ? _playersFor(true) : _opponentPlayers;
+    String? playerId;
+    if (players.isNotEmpty) {
+      final res = await Navigator.of(context).push<String>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => _PlayerPickPage(players: players, selected: null),
+        ),
+      );
+      if (res == null) return; // abgebrochen
+      if (res != _kPickNone) playerId = res;
+    }
+    if (!mounted) return;
+    await state.addEvent(
+      matchId: widget.matchId,
+      teamId: _teamIdFor(ownSide),
+      minute: _currentMinute,
+      minuteExtra: _currentExtra,
+      type: scored ? MatchEventType.soGoal : MatchEventType.soMiss,
+      playerId: playerId,
+    );
+    await _refreshEvents();
+  }
+
+  /// Verwandelte Elfmeter im Schießen je Team.
+  int _shootoutScore(bool ownSide) {
+    final ownId = _match?.ownTeamId;
+    return _events.where((e) {
+      if (e.type != MatchEventType.soGoal) return false;
+      final isOwn = e.teamId == ownId;
+      return ownSide ? isOwn : !isOwn;
+    }).length;
+  }
+
+  /// Erfassungs-Panel für das Elfmeterschießen.
+  Widget _shootoutPanel(BuildContext context, GameMatch match) {
+    final own = _shootoutScore(true);
+    final opp = _shootoutScore(false);
+    final ownName = _ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim';
+    final oppName = _opponentTeam?.name ?? match.opponentName;
+
+    Widget teamCard(String name, bool ownSide, Color color) => Card(
+          margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name,
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, color: color)),
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(backgroundColor: color),
+                      onPressed: () =>
+                          _addShootoutShot(ownSide: ownSide, scored: true),
+                      icon: const Text('⚽'),
+                      label: const Text('Tor'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          _addShootoutShot(ownSide: ownSide, scored: false),
+                      icon: const Icon(Icons.close, size: 18),
+                      label: const Text('Kein Tor'),
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        );
+
+    return Column(
+      children: [
+        Card(
+          margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          color: Theme.of(context).colorScheme.primaryContainer,
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              children: [
+                const Text('Elfmeterschießen',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text('$ownName  $own : $opp  $oppName',
+                    style: const TextStyle(
+                        fontSize: 20, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ),
+        ),
+        teamCard(ownName, true, Theme.of(context).colorScheme.primary),
+        teamCard(oppName, false, const Color(0xFFB26A00)),
+      ],
+    );
+  }
+
   String get _clockText {
     final m = (_elapsedSeconds ~/ 60).toString().padLeft(2, '0');
     final s = (_elapsedSeconds % 60).toString().padLeft(2, '0');
@@ -399,46 +602,72 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             onHalftime: _halftime,
             onSecondHalf: _startSecondHalf,
             onFinish: _finish,
+            onExtra: _startExtra,
+            onExtraHalftime: _extraHalftime,
+            onExtraSecond: _startExtraSecond,
+            onShootout: _startShootout,
           ),
           const Divider(height: 1),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(bottom: 16),
               children: [
-                _TeamActionBar(
-                  label: _ownTeam?.name ?? 'Eigenes Team',
-                  color: Theme.of(context).colorScheme.primary,
-                  isOwn: true,
-                  // Erst nach Anpfiff (während einer Halbzeit) erfassbar.
-                  enabled: _actionsEnabled,
-                  onGoal: () => _addGoal(ownSide: true),
-                  onCard: () => _addCard(ownSide: true),
-                  onSub: () => _addSub(ownSide: true),
-                  onEvent: () => _addOtherEvent(ownSide: true),
-                ),
-                _TeamActionBar(
-                  label: match.opponentName,
-                  color: const Color(0xFFB26A00), // Gegner klar abgesetzt
-                  isOwn: false,
-                  enabled: _actionsEnabled,
-                  onGoal: () => _addGoal(ownSide: false),
-                  // Gegner: nur Tore für den Spielstand – keine Karten/Wechsel.
-                  onCard: null,
-                  onSub: null,
-                  onEvent: () => _addOtherEvent(ownSide: false),
-                ),
-                const SizedBox(height: 8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _actionsEnabled ? _addComment : null,
-                      icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                      label: const Text('Kommentar'),
+                if (_phase == _Phase.shootout) _shootoutPanel(context, match),
+                if (_phase != _Phase.shootout &&
+                    _events.any((e) =>
+                        e.type == MatchEventType.soGoal ||
+                        e.type == MatchEventType.soMiss))
+                  Card(
+                    margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                    color: Theme.of(context).colorScheme.secondaryContainer,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Text(
+                        'Elfmeterschießen: '
+                        '${_ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim'} '
+                        '${_shootoutScore(true)} : ${_shootoutScore(false)} '
+                        '${_opponentTeam?.name ?? match.opponentName}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
                     ),
                   ),
-                ),
+                if (_phase != _Phase.shootout) ...[
+                  _TeamActionBar(
+                    label: _ownTeam?.name ?? 'Eigenes Team',
+                    color: Theme.of(context).colorScheme.primary,
+                    isOwn: true,
+                    // Erst nach Anpfiff (während einer Halbzeit) erfassbar.
+                    enabled: _actionsEnabled,
+                    onGoal: () => _addGoal(ownSide: true),
+                    onCard: () => _addCard(ownSide: true),
+                    onSub: () => _addSub(ownSide: true),
+                    onEvent: () => _addOtherEvent(ownSide: true),
+                  ),
+                  _TeamActionBar(
+                    label: match.opponentName,
+                    color: const Color(0xFFB26A00), // Gegner klar abgesetzt
+                    isOwn: false,
+                    enabled: _actionsEnabled,
+                    onGoal: () => _addGoal(ownSide: false),
+                    // Gegner: nur Tore für den Spielstand – keine Karten/Wechsel.
+                    onCard: null,
+                    onSub: null,
+                    onEvent: () => _addOtherEvent(ownSide: false),
+                  ),
+                  const SizedBox(height: 8),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _actionsEnabled ? _addComment : null,
+                        icon: const Icon(Icons.chat_bubble_outline, size: 18),
+                        label: const Text('Kommentar'),
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 8),
                 _EventLog(
                   events: _events,
@@ -465,9 +694,13 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     return _ownPlayers.where((p) => _nominatedIds.contains(p.id)).toList();
   }
 
-  /// Tor/Karte/Wechsel nur während einer laufenden Halbzeit (nach Anpfiff).
+  /// Tor/Karte/Wechsel nur während einer laufenden Halbzeit (nach Anpfiff) –
+  /// auch in der Verlängerung.
   bool get _actionsEnabled =>
-      _phase == _Phase.firstHalf || _phase == _Phase.secondHalf;
+      _phase == _Phase.firstHalf ||
+      _phase == _Phase.secondHalf ||
+      _phase == _Phase.extraFirstHalf ||
+      _phase == _Phase.extraSecondHalf;
 
   /// Eigene Spieler, die aktuell auf dem Feld stehen (für Tor/Karte).
   List<Player> _onFieldPlayers(bool ownSide) {
@@ -1113,6 +1346,10 @@ class _Controls extends StatelessWidget {
     required this.onHalftime,
     required this.onSecondHalf,
     required this.onFinish,
+    required this.onExtra,
+    required this.onExtraHalftime,
+    required this.onExtraSecond,
+    required this.onShootout,
   });
 
   final _Phase phase;
@@ -1120,22 +1357,34 @@ class _Controls extends StatelessWidget {
   final VoidCallback onHalftime;
   final VoidCallback onSecondHalf;
   final VoidCallback onFinish;
+  final VoidCallback onExtra;
+  final VoidCallback onExtraHalftime;
+  final VoidCallback onExtraSecond;
+  final VoidCallback onShootout;
 
   @override
   Widget build(BuildContext context) {
-    // Keine Pause – die Uhr läuft durch. Nur ein Button je Spielphase.
     Widget full(Widget button) => Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           child: SizedBox(width: double.infinity, child: button),
         );
+    Widget two(Widget a, Widget b) => Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(children: [
+            Expanded(child: a),
+            const SizedBox(width: 8),
+            Expanded(child: b),
+          ]),
+        );
+
+    final finishBtn = FilledButton.icon(
+      style: FilledButton.styleFrom(backgroundColor: Colors.red),
+      onPressed: onFinish,
+      icon: const Icon(Icons.stop),
+      label: const Text('Abpfiff'),
+    );
 
     switch (phase) {
-      case _Phase.finished:
-        return full(OutlinedButton.icon(
-          onPressed: onKickoff,
-          icon: const Icon(Icons.replay),
-          label: const Text('Neues Spiel starten'),
-        ));
       case _Phase.notStarted:
         return full(FilledButton.icon(
           onPressed: onKickoff,
@@ -1155,11 +1404,54 @@ class _Controls extends StatelessWidget {
           label: const Text('Anpfiff 2. Halbzeit'),
         ));
       case _Phase.secondHalf:
+        return two(
+          finishBtn,
+          OutlinedButton.icon(
+            onPressed: onExtra,
+            icon: const Icon(Icons.more_time),
+            label: const Text('Verlängerung'),
+          ),
+        );
+      case _Phase.finished:
+        return two(
+          OutlinedButton.icon(
+            onPressed: onExtra,
+            icon: const Icon(Icons.more_time),
+            label: const Text('Verlängerung'),
+          ),
+          OutlinedButton.icon(
+            onPressed: onKickoff,
+            icon: const Icon(Icons.replay),
+            label: const Text('Neues Spiel'),
+          ),
+        );
+      case _Phase.extraFirstHalf:
+        return full(FilledButton.icon(
+          onPressed: onExtraHalftime,
+          icon: const Icon(Icons.timer),
+          label: const Text('Halbzeit Verlängerung'),
+        ));
+      case _Phase.extraHalftime:
+        return full(FilledButton.icon(
+          onPressed: onExtraSecond,
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Anpfiff 2. Verlängerung'),
+        ));
+      case _Phase.extraSecondHalf:
+        return two(
+          finishBtn,
+          OutlinedButton.icon(
+            onPressed: onShootout,
+            icon: const Icon(Icons.sports_soccer),
+            label: const Text('Elfmeterschießen'),
+          ),
+        );
+      case _Phase.shootout:
         return full(FilledButton.icon(
           style: FilledButton.styleFrom(backgroundColor: Colors.red),
           onPressed: onFinish,
-          icon: const Icon(Icons.stop),
-          label: const Text('Abpfiff'),
+          icon: const Icon(Icons.emoji_events),
+          label: const Text('Spiel beenden'),
         ));
     }
   }
@@ -1492,10 +1784,22 @@ class _EventLog extends StatelessWidget {
             : '${e.type.label} – ${resolveName(e.playerId)}';
       case MatchEventType.comment:
         return (e.note == null || e.note!.isEmpty) ? 'Kommentar' : e.note!;
+      case MatchEventType.soGoal:
+        return e.playerId == null
+            ? 'Elfmeterschießen: Tor'
+            : 'Elfmeterschießen: Tor – ${resolveName(e.playerId)}';
+      case MatchEventType.soMiss:
+        return e.playerId == null
+            ? 'Elfmeterschießen: kein Tor'
+            : 'Elfmeterschießen: kein Tor – ${resolveName(e.playerId)}';
       case MatchEventType.kickoff:
       case MatchEventType.halftime:
       case MatchEventType.secondHalfStart:
       case MatchEventType.fulltime:
+      case MatchEventType.extraFirstStart:
+      case MatchEventType.extraHalftimeMark:
+      case MatchEventType.extraSecondStart:
+      case MatchEventType.shootoutStart:
         return e.type.label;
     }
   }
