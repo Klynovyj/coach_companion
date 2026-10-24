@@ -602,12 +602,26 @@ class AppState extends ChangeNotifier {
     try {
       final teams = await CloudService.fetchForTeam('opponent_teams', teamId);
       for (final t in teams) {
+        final id = t['id'] as String?;
+        if (id == null) continue;
+        // Lokale Werte (v.a. FuPa-Link für die Gegner-Statistik) NICHT mit
+        // null überschreiben, wenn die Cloud-Zeile sie (noch) nicht hat.
+        final existing = await _repo.getTeam(id);
+        final cloudFupa = t['fupa_url'] as String?;
+        final cloudLogo = t['logo'] as String?;
+        final cloudShort = t['short_name'] as String?;
         await _repo.upsertRawById('teams', {
-          'id': t['id'],
-          'name': (t['name'] as String?) ?? 'Gegner',
-          'short_name': t['short_name'],
-          'fupa_url': t['fupa_url'],
-          'logo_path': t['logo'],
+          'id': id,
+          'name': (t['name'] as String?) ?? existing?.name ?? 'Gegner',
+          'short_name': (cloudShort != null && cloudShort.isNotEmpty)
+              ? cloudShort
+              : existing?.shortName,
+          'fupa_url': (cloudFupa != null && cloudFupa.isNotEmpty)
+              ? cloudFupa
+              : existing?.fupaUrl,
+          'logo_path': (cloudLogo != null && cloudLogo.isNotEmpty)
+              ? cloudLogo
+              : existing?.logoPath,
           'is_own_team': 0,
           'source': DataSource.fupaApproved.storageKey,
           'created_at': now.toIso8601String(),
@@ -1008,7 +1022,22 @@ class AppState extends ChangeNotifier {
     final existing = await _repo.getStats(teamId);
     if (existing.isNotEmpty) return;
     final team = await _repo.getTeam(teamId);
-    final url = team?.fupaUrl;
+    var url = team?.fupaUrl;
+    // Fehlt der Link am Gegner-Team (z.B. durch Sync verloren), aus einem Spiel
+    // dieses Gegners nachziehen und wieder am Team hinterlegen.
+    if (url == null || url.isEmpty) {
+      for (final m in _matches) {
+        if (m.opponentTeamId == teamId &&
+            m.opponentFupaUrl != null &&
+            m.opponentFupaUrl!.isNotEmpty) {
+          url = m.opponentFupaUrl;
+          break;
+        }
+      }
+      if (url != null && url.isNotEmpty && team != null) {
+        await _repo.upsertTeam(team.copyWith(fupaUrl: url));
+      }
+    }
     if (url == null || url.isEmpty) return;
     try {
       await _importStatsInto(teamId, url);
