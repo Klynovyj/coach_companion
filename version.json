@@ -1,6 +1,6 @@
 {
-  "versionCode": 7,
-  "versionName": "1.3.2",
+  "versionCode": 8,
+  "versionName": "1.3.3",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Sync stabiler: Kader wird ohne Flackern aktualisiert (kein kurzzeitiges „leer“ mehr)\n- Kurzname wird synchronisiert\n- Gegner-Kader (Teams, Spieler, Logos) wird geteilt\n- diverse Verbesserungen am geräteübergreifenden Sync\n\nWichtig: Auf allen Geräten dieselbe Version nutzen."
+  "notes": "Neuerungen:\n- Löschungen werden jetzt geteilt: Ab-Nominieren/Entfernen verschwindet auch bei den anderen (nicht nur Hinzufügen)\n- weitere Sync-Stabilität\n\nWichtig: Auf allen Geräten dieselbe Version nutzen."
 }

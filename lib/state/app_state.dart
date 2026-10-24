@@ -150,10 +150,13 @@ class AppState extends ChangeNotifier {
     for (final table in _auxTables) {
       try {
         final rows = await CloudService.fetchForTeam(table, teamId);
+        final ids = <String>[];
         for (final r in rows) {
           final map = Map<String, Object?>.from(r);
           // Nur 'lineups' hat lokal selbst eine team_id-Spalte.
           if (table != 'lineups') map.remove('team_id');
+          final id = r['id'] as String?;
+          if (id != null) ids.add(id);
           try {
             if (replace || _noIdTables.contains(table)) {
               await _repo.insertRawForPull(table, map);
@@ -163,6 +166,12 @@ class AppState extends ChangeNotifier {
           } catch (_) {
             // Einzelne Zeile (z.B. fehlender Fremdschlüssel) überspringen.
           }
+        }
+        // Löschungen anderer Geräte übernehmen: lokale Zeilen entfernen, die in
+        // der Cloud nicht mehr existieren (id-Tabellen; Cache = genau dies Team).
+        // Nach einem Wipe (replace) nicht nötig.
+        if (!replace && !_noIdTables.contains(table)) {
+          await _repo.deleteRowsNotIn(table, ids);
         }
       } catch (_) {
         // Tabelle nicht erreichbar/vorhanden – überspringen.

@@ -65,6 +65,19 @@ class CoachRepository {
     if (updated == 0) await db.insert(table, map);
   }
 
+  /// Löscht lokale Zeilen, deren id NICHT in [keepIds] steht (für den Realtime-
+  /// Abgleich: in der Cloud gelöschte Datensätze auch lokal entfernen). Der
+  /// lokale Cache hält genau ein Team, daher team-weit sicher.
+  Future<void> deleteRowsNotIn(String table, List<String> keepIds) async {
+    final db = await _db;
+    if (keepIds.isEmpty) {
+      await db.delete(table);
+      return;
+    }
+    final ph = List.filled(keepIds.length, '?').join(',');
+    await db.delete(table, where: 'id NOT IN ($ph)', whereArgs: keepIds);
+  }
+
   /// Echtes Upsert per Primärschlüssel OHNE Löschen: erst UPDATE, sonst INSERT.
   ///
   /// Wichtig für Eltern-Tabellen (teams/players/matches/lineups/team_events):
