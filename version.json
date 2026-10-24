@@ -1,6 +1,6 @@
 {
-  "versionCode": 4,
-  "versionName": "1.2.1",
+  "versionCode": 5,
+  "versionName": "1.3.0",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Ereignisse & Erwähnungen werden geteilt: Kommentare mit erwähnten Spielern erscheinen bei allen und im Spielerprofil\n- Ereignis-Chronik synchronisiert geräteübergreifend (inkl. Korrekturen und Löschungen)\n- Cloud-Bildschirm zeigt den angemeldeten Nutzer\n- Mitglieder/Rollen: Fehlermeldung statt Dauerladen\n- Stabileres Cloud-Zusammenspiel"
+  "notes": "Neuerungen:\n- Gemeinsam nutzen: Konto & Team jetzt unter Einstellungen (anmelden, Team anlegen/beitreten, aktiv setzen, Mitglieder & Rollen)\n- Alles automatisch synchron: Spielplan, Ergebnisse, Kader, Fotos, Vereinslogos, Statistik und alle Bereiche – ohne manuelles Importieren\n- FuPa-Aktualisierung läuft automatisch im Hintergrund\n- Zurückgesetzte Spiele bleiben zurückgesetzt (kein erneutes „beendet“)\n- Mitglieder zeigen Name/E-Mail; eigenen Namen in Konto & Team setzbar\n- viele Detailverbesserungen"
 }
