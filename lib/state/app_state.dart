@@ -374,12 +374,10 @@ class AppState extends ChangeNotifier {
           case 'players':
             await _applyCloudPlayer(record, teamId, now);
           case 'matches':
-            final id = record['id'] as String?;
-            if (id != null) {
-              final local = await _repo.getMatch(id);
-              // Selbst verwaltete Spiele (zurückgesetzt/live) nicht überschreiben.
-              if (local != null && local.locallyManaged) break;
-            }
+            // Cloud = geteilte Wahrheit: Status (live/beendet), Ergebnis und
+            // „zurückgesetzt" anderer Trainer immer übernehmen, damit ein
+            // laufendes Spiel bei allen erscheint. FuPa-Schutz sitzt separat
+            // in syncSchedule (locallyManaged wird dort geprüft).
             await _repo.upsertRawById(
                 'matches', _matchFromCloud(record, teamId, now).toMap());
           case 'match_events':
@@ -458,12 +456,8 @@ class AppState extends ChangeNotifier {
       await _pullOpponentsFromCloud(teamId);
       final matches = await CloudService.matches(teamId);
       for (final m in matches) {
-        final mid = m['id'] as String?;
-        if (mid != null) {
-          final local = await _repo.getMatch(mid);
-          // Selbst verwaltete Spiele (zurückgesetzt/live) nicht überschreiben.
-          if (local != null && local.locallyManaged) continue;
-        }
+        // Cloud = geteilte Wahrheit (Status/Ergebnis/zurückgesetzt). So sieht
+        // ein zuschauendes Gerät ein laufendes Spiel auch nach dem Aktivieren.
         await _repo.upsertRawById('matches',
             _matchFromCloud(m, teamId, now).toMap());
       }
