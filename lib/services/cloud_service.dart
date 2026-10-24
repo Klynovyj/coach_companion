@@ -2,6 +2,7 @@
 // Stufe 1: Trainer schreiben, alle Mitglieder sehen in Echtzeit zu.
 
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 class CloudService {
   CloudService._();
@@ -49,17 +50,21 @@ class CloudService {
   }
 
   static Future<Map<String, dynamic>> createTeam(String name) async {
-    final team = await _c
-        .from('teams')
-        .insert({'name': name.trim(), 'created_by': user!.id})
-        .select()
-        .single();
+    // Eigene ID vergeben, damit wir NICHT direkt zurücklesen müssen (die
+    // Lese-Regel greift erst, wenn man Mitglied ist). Erst Team + Mitglied-
+    // schaft anlegen, dann lesen.
+    final id = const Uuid().v4();
+    await _c.from('teams').insert({
+      'id': id,
+      'name': name.trim(),
+      'created_by': user!.id,
+    });
     await _c.from('team_members').insert({
-      'team_id': team['id'],
+      'team_id': id,
       'user_id': user!.id,
       'role': 'trainer',
     });
-    return team;
+    return await _c.from('teams').select().eq('id', id).single();
   }
 
   /// Team per Einladungscode beitreten (als Spieler).
