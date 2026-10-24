@@ -1364,6 +1364,11 @@ class _EventLog extends StatelessWidget {
         ...reversed.map((e) {
           if (e.type.isPhaseMarker) return _phaseRow(context, e);
           final own = e.teamId == ownTeamId;
+          // Zeigt der Avatar links ein Foto (Spieler/Wechsel), gehört das
+          // Typ-Symbol wieder in den Titel. Nur ohne Spieler (Symbol-Kreis
+          // links) würde es sonst doppelt erscheinen.
+          final leadingIsPhoto = e.type == MatchEventType.substitution ||
+              resolvePlayer(e.playerId) != null;
           return Dismissible(
             key: ValueKey(e.id),
             direction: DismissDirection.endToStart,
@@ -1390,7 +1395,10 @@ class _EventLog extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(_describe(e),
+                          Text(
+                              leadingIsPhoto
+                                  ? '${e.type.symbol} ${_describe(e)}'
+                                  : _describe(e),
                               style: const TextStyle(
                                   fontWeight: FontWeight.w500, height: 1.2)),
                           ..._subtitleLine(context, e, own),
