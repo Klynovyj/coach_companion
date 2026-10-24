@@ -242,7 +242,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
     // Karteikarten: weniger auf einen Blick, kein endloses Scrollen.
     return DefaultTabController(
-      length: 6,
+      length: 7,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
@@ -270,6 +270,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   Tab(text: 'Abwesenheit'),
                   Tab(text: 'Karten'),
                   Tab(text: 'Tore'),
+                  Tab(text: 'Ereignisse'),
                   Tab(text: 'Notizen'),
                   Tab(text: 'Bewertungen'),
                 ],
@@ -289,6 +290,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     _fupaStatCard(context, state),
                     _goalsCard(context, state, df),
                   ]),
+                  _tabList([_eventsCard(context, state, df)]),
                   _tabList([_notesCard(context, state, df)]),
                   _tabList([_bewertungenCard(context, state, df)]),
                 ],
@@ -926,6 +928,77 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         },
       ),
     );
+  }
+
+  // -------------------------------------------------- Ereignis-Chronik
+  /// Alle dem Spieler zugeordneten Live-Ereignisse (Tore, Karten, Wechsel,
+  /// Großchance, Foul, Ecke, Freistoß, Elfmeter …) – chronologisch.
+  Widget _eventsCard(BuildContext context, AppState state, DateFormat df) {
+    return _SectionCard(
+      icon: Icons.timeline,
+      title: 'Ereignis-Chronik',
+      child: FutureBuilder<(List<MatchEvent>, Map<String, GameMatch>)>(
+        future: _loadEvents(state),
+        builder: (context, snap) {
+          if (!snap.hasData) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final matches = snap.data!.$2;
+          final events = [...snap.data!.$1]..sort((a, b) {
+              final ka = matches[a.matchId]?.kickoff ?? DateTime(1970);
+              final kb = matches[b.matchId]?.kickoff ?? DateTime(1970);
+              final c = kb.compareTo(ka);
+              if (c != 0) return c;
+              return b.minute.compareTo(a.minute);
+            });
+          if (events.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Noch keine Ereignisse erfasst.',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            );
+          }
+          return Column(
+            children: events.map((e) {
+              final m = matches[e.matchId];
+              final (symbol, label) = _eventLabel(e);
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Text(symbol, style: const TextStyle(fontSize: 20)),
+                title: Text(label),
+                subtitle: Text(_context(
+                  df: df,
+                  date: m?.kickoff,
+                  match: m,
+                  minuteLabel: e.minuteLabel,
+                  note: e.note,
+                )),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Symbol + Beschriftung eines Ereignisses aus Sicht dieses Spielers.
+  (String, String) _eventLabel(MatchEvent e) {
+    if (e.type == MatchEventType.goal &&
+        e.assistPlayerId == _player.id &&
+        e.playerId != _player.id) {
+      return ('🅰️', 'Vorlage');
+    }
+    if (e.type == MatchEventType.substitution) {
+      final ein = e.playerId == _player.id;
+      return (e.type.symbol, ein ? 'Wechsel ein' : 'Wechsel raus');
+    }
+    return (e.type.symbol, e.type.label);
   }
 
   // ----------------------------------------------------------------- Notizen
