@@ -38,10 +38,25 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
   bool get _hasNominations => _nominatedIds.isNotEmpty;
   bool get _hasLineup => _starterCount > 0;
 
+  late final AppState _app = context.read<AppState>();
+
   @override
   void initState() {
     super.initState();
+    // Live-Updates anderer Trainer (Realtime) sofort übernehmen (ohne erneuten
+    // Gegner-Import – nur Daten/Schritt-Status neu laden).
+    _app.addListener(_onChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load(initial: true));
+  }
+
+  void _onChanged() {
+    if (mounted) _load();
+  }
+
+  @override
+  void dispose() {
+    _app.removeListener(_onChanged);
+    super.dispose();
   }
 
   Future<void> _load({bool initial = false, bool force = false}) async {

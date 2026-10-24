@@ -29,10 +29,24 @@ class _NominationScreenState extends State<NominationScreen> {
   Map<String, NominationStatus> _status = {};
   bool _loading = true;
 
+  late final AppState _app = context.read<AppState>();
+
   @override
   void initState() {
     super.initState();
+    // Live-Updates anderer Trainer (Realtime) sofort übernehmen.
+    _app.addListener(_onChanged);
     _load();
+  }
+
+  void _onChanged() {
+    if (mounted) _load();
+  }
+
+  @override
+  void dispose() {
+    _app.removeListener(_onChanged);
+    super.dispose();
   }
 
   Future<void> _load() async {
