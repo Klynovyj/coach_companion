@@ -1170,10 +1170,22 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             children: talks.map((t) {
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.chat_bubble_outline),
-                title: Text(t.title),
+                leading: Checkbox(
+                  value: t.done,
+                  onChanged: (v) async {
+                    await state.saveTalk(t.copyWith(done: v ?? false));
+                    if (mounted) setState(() {});
+                  },
+                ),
+                title: Text(t.title,
+                    style: t.done
+                        ? const TextStyle(
+                            decoration: TextDecoration.lineThrough,
+                            color: Colors.grey)
+                        : null),
                 subtitle: Text([
                   df.format(t.scheduledAt),
+                  if (t.done) '✓ durchgeführt',
                   if (t.notes != null && t.notes!.isNotEmpty) '📝 Notiz',
                 ].join('  ·  ')),
                 trailing: PopupMenuButton<String>(

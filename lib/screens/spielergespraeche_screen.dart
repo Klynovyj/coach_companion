@@ -15,7 +15,9 @@ class TalkFormData {
   final String title;
   final DateTime scheduledAt;
   final String? notes;
-  const TalkFormData(this.playerId, this.title, this.scheduledAt, this.notes);
+  final bool done;
+  const TalkFormData(
+      this.playerId, this.title, this.scheduledAt, this.notes, this.done);
 }
 
 /// Formular zum Anlegen/Bearbeiten eines Spielergesprächs. [fixedPlayer] fixiert
@@ -72,6 +74,7 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
       title: data.title,
       scheduledAt: data.scheduledAt,
       notes: data.notes,
+      done: data.done,
     );
     if (mounted) setState(() {});
   }
@@ -87,6 +90,7 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
       scheduledAt: data.scheduledAt,
       notes: data.notes,
       clearNotes: data.notes == null,
+      done: data.done,
     ));
     if (mounted) setState(() {});
   }
@@ -155,18 +159,26 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
                         ? PlayerAvatar(player: p, radius: 20)
                         : const CircleAvatar(child: Icon(Icons.person)),
                     title: Text(t.title,
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: t.done
+                            ? const TextStyle(
+                                decoration: TextDecoration.lineThrough,
+                                color: Colors.grey)
+                            : null),
                     subtitle: Text([
                       p?.displayName ?? 'Spieler',
                       _df.format(t.scheduledAt),
+                      if (t.done) '✓ durchgeführt',
                       if (t.notes != null && t.notes!.isNotEmpty) '📝',
                     ].join('  ·  ')),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => _edit(
-                        state,
-                        t,
-                        players.values.toList(),
-                        p),
+                    trailing: Checkbox(
+                      value: t.done,
+                      onChanged: (v) =>
+                          state.saveTalk(t.copyWith(done: v ?? false)),
+                    ),
+                    onTap: () =>
+                        _edit(state, t, players.values.toList(), p),
                   ),
                 ),
               );
@@ -198,6 +210,7 @@ class _TalkFormPageState extends State<_TalkFormPage> {
   late final TextEditingController _notesCtrl;
   late DateTime _date;
   String? _playerId;
+  bool _done = false;
 
   final _df = DateFormat('EEE, dd.MM.yyyy  HH:mm', 'de_DE');
 
@@ -210,6 +223,7 @@ class _TalkFormPageState extends State<_TalkFormPage> {
     _date = e?.scheduledAt ??
         DateTime.now().add(const Duration(days: 1));
     _playerId = widget.fixedPlayer?.id ?? e?.playerId;
+    _done = e?.done ?? false;
   }
 
   @override
@@ -275,6 +289,7 @@ class _TalkFormPageState extends State<_TalkFormPage> {
         _titleCtrl.text.trim(),
         _date,
         notes.isEmpty ? null : notes,
+        _done,
       ),
     );
   }
@@ -366,7 +381,15 @@ class _TalkFormPageState extends State<_TalkFormPage> {
               alignLabelWithHint: true,
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 8),
+          SwitchListTile(
+            value: _done,
+            onChanged: (v) => setState(() => _done = v),
+            contentPadding: EdgeInsets.zero,
+            secondary: const Icon(Icons.check_circle_outline),
+            title: const Text('Gespräch durchgeführt'),
+          ),
+          const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: _save,
             icon: const Icon(Icons.check),

@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 25;
+  static const _dbVersion = 26;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -188,6 +188,13 @@ class AppDatabase {
     if (oldV < 25) {
       await db.execute(_playerTalksTableSql);
     }
+    // v25 -> v26: „durchgeführt"-Haken am Spielergespräch.
+    // Nur für DBs mit player_talks-Tabelle (ab v25); bei oldV < 25 kommt die
+    // Spalte bereits über _playerTalksTableSql.
+    if (oldV < 26 && oldV >= 25) {
+      await db.execute(
+          'ALTER TABLE player_talks ADD COLUMN done INTEGER NOT NULL DEFAULT 0');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -259,6 +266,7 @@ class AppDatabase {
         title TEXT NOT NULL,
         scheduled_at TEXT NOT NULL,
         notes TEXT,
+        done INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
       )

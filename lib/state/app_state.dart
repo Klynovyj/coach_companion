@@ -1165,6 +1165,7 @@ class AppState extends ChangeNotifier {
     required String title,
     required DateTime scheduledAt,
     String? notes,
+    bool done = false,
   }) async {
     await _repo.upsertTalk(PlayerTalk(
       id: _uuid.v4(),
@@ -1172,6 +1173,7 @@ class AppState extends ChangeNotifier {
       title: title.trim(),
       scheduledAt: scheduledAt,
       notes: notes,
+      done: done,
       createdAt: DateTime.now(),
     ));
     notifyListeners();

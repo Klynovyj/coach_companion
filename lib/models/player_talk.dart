@@ -12,6 +12,9 @@ class PlayerTalk {
   /// Notizen zum Gespräch (jederzeit nachtragbar).
   final String? notes;
 
+  /// Gespräch wurde geführt (durchgeführt-Haken).
+  final bool done;
+
   final DateTime createdAt;
 
   const PlayerTalk({
@@ -20,6 +23,7 @@ class PlayerTalk {
     required this.title,
     required this.scheduledAt,
     this.notes,
+    this.done = false,
     required this.createdAt,
   });
 
@@ -29,6 +33,7 @@ class PlayerTalk {
     DateTime? scheduledAt,
     String? notes,
     bool clearNotes = false,
+    bool? done,
   }) =>
       PlayerTalk(
         id: id,
@@ -36,6 +41,7 @@ class PlayerTalk {
         title: title ?? this.title,
         scheduledAt: scheduledAt ?? this.scheduledAt,
         notes: clearNotes ? null : (notes ?? this.notes),
+        done: done ?? this.done,
         createdAt: createdAt,
       );
 
@@ -45,6 +51,7 @@ class PlayerTalk {
         'title': title,
         'scheduled_at': scheduledAt.toIso8601String(),
         'notes': notes,
+        'done': done ? 1 : 0,
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -55,6 +62,7 @@ class PlayerTalk {
         scheduledAt: DateTime.tryParse(m['scheduled_at'] as String? ?? '') ??
             DateTime.now(),
         notes: m['notes'] as String?,
+        done: (m['done'] as int? ?? 0) == 1,
         createdAt:
             DateTime.tryParse(m['created_at'] as String? ?? '') ??
                 DateTime.now(),
