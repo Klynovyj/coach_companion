@@ -14,6 +14,7 @@ import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/team_event.dart';
+import '../models/player_talk.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import 'app_database.dart';
@@ -573,6 +574,31 @@ class CoachRepository {
     await db.update('todos', {'topic_id': null},
         where: 'topic_id = ?', whereArgs: [id]);
     await db.delete('todo_topics', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // --------------------------------------------------- Spielergespräche
+  Future<List<PlayerTalk>> getTalks() async {
+    final db = await _db;
+    final rows =
+        await db.query('player_talks', orderBy: 'scheduled_at DESC');
+    return rows.map(PlayerTalk.fromMap).toList();
+  }
+
+  Future<List<PlayerTalk>> getTalksForPlayer(String playerId) async {
+    final db = await _db;
+    final rows = await db.query('player_talks',
+        where: 'player_id = ?',
+        whereArgs: [playerId],
+        orderBy: 'scheduled_at DESC');
+    return rows.map(PlayerTalk.fromMap).toList();
+  }
+
+  Future<void> upsertTalk(PlayerTalk talk) =>
+      _upsertById('player_talks', talk.toMap());
+
+  Future<void> deleteTalk(String id) async {
+    final db = await _db;
+    await db.delete('player_talks', where: 'id = ?', whereArgs: [id]);
   }
 
   // ------------------------------------------------------------ Absences

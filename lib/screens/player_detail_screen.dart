@@ -16,6 +16,7 @@ import '../models/player_absence.dart';
 import '../models/player_note.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
+import '../models/player_talk.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
@@ -23,6 +24,7 @@ import '../widgets/rich_note_view.dart';
 import '../widgets/star_rating.dart';
 import 'live_match_screen.dart';
 import 'note_editor_screen.dart';
+import 'spielergespraeche_screen.dart';
 
 /// Spielerprofil – alles nach Kategorien geordnet und direkt im Profil
 /// bearbeitbar (Felder antippen, Änderungen werden sofort gespeichert).
@@ -243,7 +245,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
     // Karteikarten: weniger auf einen Blick, kein endloses Scrollen.
     return DefaultTabController(
-      length: 7,
+      length: 8,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
@@ -272,6 +274,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   Tab(text: 'Karten'),
                   Tab(text: 'Tore'),
                   Tab(text: 'Ereignisse'),
+                  Tab(text: 'Gespräche'),
                   Tab(text: 'Notizen'),
                   Tab(text: 'Bewertungen'),
                 ],
@@ -292,6 +295,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     _goalsCard(context, state, df),
                   ]),
                   _tabList([_eventsCard(context, state, df)]),
+                  _tabList([_talksCard(context, state)]),
                   _tabList([_notesCard(context, state, df)]),
                   _tabList([_bewertungenCard(context, state, df)]),
                 ],
@@ -1129,6 +1133,98 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       return (e.type.symbol, ein ? 'Wechsel ein' : 'Wechsel raus');
     }
     return (e.type.symbol, e.type.label);
+  }
+
+  // ------------------------------------------------- Spielergespräche
+  Widget _talksCard(BuildContext context, AppState state) {
+    final df = DateFormat('EEE, dd.MM.yyyy  HH:mm', 'de_DE');
+    return _SectionCard(
+      icon: Icons.record_voice_over,
+      title: 'Spielergespräche',
+      action: TextButton.icon(
+        onPressed: () => _planTalk(context, state),
+        icon: const Icon(Icons.add),
+        label: const Text('Planen'),
+      ),
+      child: FutureBuilder<List<PlayerTalk>>(
+        future: state.talksForPlayer(_player.id),
+        builder: (context, snap) {
+          if (!snap.hasData) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            );
+          }
+          final talks = snap.data!;
+          if (talks.isEmpty) {
+            return const Padding(
+              padding: EdgeInsets.all(8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Noch keine Gespräche geplant.',
+                    style: TextStyle(color: Colors.grey)),
+              ),
+            );
+          }
+          return Column(
+            children: talks.map((t) {
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.chat_bubble_outline),
+                title: Text(t.title),
+                subtitle: Text([
+                  df.format(t.scheduledAt),
+                  if (t.notes != null && t.notes!.isNotEmpty) '📝 Notiz',
+                ].join('  ·  ')),
+                trailing: PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'edit') _editTalk(context, state, t);
+                    if (v == 'delete') _deleteTalk(state, t);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
+                    PopupMenuItem(value: 'delete', child: Text('Löschen')),
+                  ],
+                ),
+                onTap: () => _editTalk(context, state, t),
+              );
+            }).toList(),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _planTalk(BuildContext context, AppState state) async {
+    final data = await showTalkForm(context,
+        fixedPlayer: _player, players: [_player]);
+    if (data == null || !mounted) return;
+    await state.addTalk(
+      playerId: _player.id,
+      title: data.title,
+      scheduledAt: data.scheduledAt,
+      notes: data.notes,
+    );
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _editTalk(
+      BuildContext context, AppState state, PlayerTalk t) async {
+    final data = await showTalkForm(context,
+        existing: t, fixedPlayer: _player, players: [_player]);
+    if (data == null || !mounted) return;
+    await state.saveTalk(t.copyWith(
+      title: data.title,
+      scheduledAt: data.scheduledAt,
+      notes: data.notes,
+      clearNotes: data.notes == null,
+    ));
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _deleteTalk(AppState state, PlayerTalk t) async {
+    await state.deleteTalk(t.id);
+    if (mounted) setState(() {});
   }
 
   // ----------------------------------------------------------------- Notizen

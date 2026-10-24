@@ -4,8 +4,8 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'nachholen_screen.dart';
 import 'schedule_screen.dart';
+import 'spielergespraeche_screen.dart';
 import 'squad_screen.dart';
-import 'termine_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -50,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ScheduleScreen(),
       SquadScreen(),
       NachholenScreen(),
-      TermineScreen(),
+      SpielergespraecheScreen(),
     ];
 
     // Navigation läuft über das Seitenmenü (☰) – keine untere Leiste mehr.

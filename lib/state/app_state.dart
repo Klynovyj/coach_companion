@@ -20,6 +20,7 @@ import '../models/team_event.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
+import '../models/player_talk.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import '../services/fupa/fupa_dtos.dart';
@@ -1150,6 +1151,39 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteTodoTopic(String id) async {
     await _repo.deleteTodoTopic(id);
+    notifyListeners();
+  }
+
+  // ----------------------------------------------------- Spielergespräche
+  Future<List<PlayerTalk>> talks() => _repo.getTalks();
+
+  Future<List<PlayerTalk>> talksForPlayer(String playerId) =>
+      _repo.getTalksForPlayer(playerId);
+
+  Future<void> addTalk({
+    required String playerId,
+    required String title,
+    required DateTime scheduledAt,
+    String? notes,
+  }) async {
+    await _repo.upsertTalk(PlayerTalk(
+      id: _uuid.v4(),
+      playerId: playerId,
+      title: title.trim(),
+      scheduledAt: scheduledAt,
+      notes: notes,
+      createdAt: DateTime.now(),
+    ));
+    notifyListeners();
+  }
+
+  Future<void> saveTalk(PlayerTalk talk) async {
+    await _repo.upsertTalk(talk);
+    notifyListeners();
+  }
+
+  Future<void> deleteTalk(String id) async {
+    await _repo.deleteTalk(id);
     notifyListeners();
   }
 

@@ -23,7 +23,7 @@ class AppDrawer extends StatelessWidget {
     (Icons.event_note, 'Spielplan'),
     (Icons.groups, 'Kader'),
     (Icons.playlist_add_check_circle, 'Nachholen'),
-    (Icons.event, 'Termine'),
+    (Icons.record_voice_over, 'Spielergespräche'),
   ];
 
   @override
