@@ -1,10 +1,20 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Für FuPa-Import und das Öffnen von Links benötigt. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Live-Spiel im Hintergrund (Vordergrund-Dienst, Datenübertragung). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC"/>
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="myCouch"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <!-- Vordergrund-Dienst für die Live-Spieluhr (flutter_foreground_task).
+             Namen nicht ändern. -->
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="dataSync"
+            android:exported="false" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

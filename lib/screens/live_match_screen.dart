@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/player.dart';
 import '../models/team.dart';
+import '../services/live_clock.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
@@ -93,6 +95,41 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   void _clearClock() {
     _state.repository.setSetting(_clockKey, null);
+  }
+
+  /// Baut den aktuellen Uhr-Zustand für die Hintergrund-Uhr (Benachrichtigung).
+  MatchClockData? _buildClock() {
+    final m = _match;
+    if (m == null) return null;
+    final label = switch (_phase) {
+      _Phase.firstHalf => '1. Halbzeit',
+      _Phase.halftime => 'Halbzeit (Pause)',
+      _Phase.secondHalf => '2. Halbzeit',
+      _Phase.finished => 'Abpfiff',
+      _Phase.notStarted => 'Anpfiff',
+    };
+    return MatchClockData(
+      running: _running,
+      baseElapsed: _elapsedSeconds,
+      startedAtMs: DateTime.now().millisecondsSinceEpoch,
+      half: _phase == _Phase.secondHalf ? 2 : 1,
+      phaseLabel: label,
+      ownName: _ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim',
+      oppName: _opponentTeam?.name ?? m.opponentName,
+      ownScore: m.ownScore,
+      oppScore: m.opponentScore,
+    );
+  }
+
+  /// Startet/aktualisiert die Hintergrund-Uhr (Android-Dienst / Windows-Tray).
+  Future<void> _startClock() async {
+    final d = _buildClock();
+    if (d != null) await LiveClock.start(d);
+  }
+
+  Future<void> _updateClock() async {
+    final d = _buildClock();
+    if (d != null) await LiveClock.update(d);
   }
 
   Future<void> _load() async {
@@ -193,6 +230,13 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             _running = wasRunning;
           });
           if (wasRunning) _startTimer();
+          // Hintergrund-Uhr (Benachrichtigung/Dienst) wieder aufsetzen,
+          // falls das Spiel noch läuft.
+          if (_phase == _Phase.firstHalf ||
+              _phase == _Phase.halftime ||
+              _phase == _Phase.secondHalf) {
+            await _startClock();
+          }
         }
       }
     }
@@ -204,6 +248,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       setState(() => _elapsedSeconds++);
       // Alle 10 Sekunden sichern (für korrekte Zeit bei Rückkehr).
       if (_elapsedSeconds % 10 == 0) _saveClock();
+      // Auf Desktop die Hintergrund-Uhr (Tray-Tooltip + Halbzeit/Abpfiff-
+      // Alarm) sekündlich nachführen; auf Android erledigt das der Dienst.
+      if (!Platform.isAndroid) _updateClock();
     });
   }
 
@@ -216,6 +263,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _match = match;
       _events = events;
     });
+    // Torstand in der Hintergrund-Benachrichtigung aktuell halten.
+    if (_phase == _Phase.firstHalf ||
+        _phase == _Phase.halftime ||
+        _phase == _Phase.secondHalf) {
+      await _updateClock();
+    }
   }
 
   Future<void> _logPhase(MatchEventType type, int minute, int extra) async {
@@ -240,6 +293,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     });
     _startTimer();
     _saveClock();
+    await _startClock();
     await _logPhase(MatchEventType.kickoff, 1, 0);
     await _refreshEvents();
   }
@@ -253,6 +307,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _running = false;
     });
     _saveClock();
+    await _updateClock();
     await _logPhase(MatchEventType.halftime, min, extra);
     await _refreshEvents();
   }
@@ -266,6 +321,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     });
     _startTimer();
     _saveClock();
+    await _startClock();
     await _logPhase(MatchEventType.secondHalfStart, 46, 0);
     await _refreshEvents();
   }
@@ -273,15 +329,15 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   /// Abpfiff: Spielende.
   Future<void> _finish() async {
     _timer?.cancel();
+    final state = context.read<AppState>();
     final (min, extra) = _footMinute;
     setState(() {
       _phase = _Phase.finished;
       _running = false;
     });
     _saveClock();
-    await context
-        .read<AppState>()
-        .setMatchStatus(widget.matchId, MatchStatus.finished);
+    await LiveClock.stop();
+    await state.setMatchStatus(widget.matchId, MatchStatus.finished);
     await _logPhase(MatchEventType.fulltime, min, extra);
     await _refreshEvents();
     // Kein automatischer Bewerten-Dialog nach dem Abpfiff – das Bewerten
@@ -798,6 +854,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     if (!mounted) return;
     if (choice.verlauf) {
       _clearClock();
+      await LiveClock.stop();
       setState(() {
         _phase = _Phase.notStarted;
         _elapsedSeconds = 0;

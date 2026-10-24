@@ -37,6 +37,10 @@ dependencies:
 
   # Spielerfoto wählen (Galerie/Datei; am Handy auch Kamera)
   image_picker: ^1.1.2
+  flutter_foreground_task: ^10.0.0
+  flutter_local_notifications: ^22.3.2
+  window_manager: ^0.5.2
+  tray_manager: ^0.5.3
 
 dev_dependencies:
   flutter_test:
@@ -60,3 +64,5 @@ flutter_launcher_icons:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/icon/tray_icon.ico

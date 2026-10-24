@@ -1,10 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
+import 'package:window_manager/window_manager.dart';
 
 import 'screens/home_screen.dart';
+import 'services/desktop_tray.dart';
+import 'services/live_clock.dart';
 import 'state/app_state.dart';
 import 'theme.dart';
 
@@ -12,8 +17,26 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('de_DE');
 
+  // Fenster auf Windows: Schließen minimiert in den Tray, damit die Live-Uhr
+  // im Hintergrund weiterläuft.
+  if (Platform.isWindows) {
+    await windowManager.ensureInitialized();
+    await windowManager.waitUntilReadyToShow(null, () async {
+      await windowManager.show();
+      await windowManager.focus();
+    });
+  }
+
+  // Hintergrund-Uhr (Android: Vordergrund-Dienst, Benachrichtigungen).
+  await LiveClock.initPlatform();
+
   final appState = AppState();
   await appState.init();
+
+  // Tray erst nach dem ersten Frame einrichten (braucht die Engine).
+  if (Platform.isWindows) {
+    await DesktopTray.instance.init();
+  }
 
   runApp(
     ChangeNotifierProvider.value(
