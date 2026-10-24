@@ -57,6 +57,7 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
   static final _df = DateFormat('EEE, dd.MM.yyyy  HH:mm', 'de_DE');
 
   late final TabController _tab = TabController(length: 3, vsync: this);
+  bool _groupByPlayerMode = false; // false = nach Datum, true = nach Spieler
 
   @override
   void dispose() {
@@ -205,59 +206,136 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
 
   Widget _talkList(AppState state, List<PlayerTalk> talks,
       Map<String, Player> players, String empty) {
-    if (talks.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(empty,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.grey)),
-        ),
-      );
-    }
-    return ListView.builder(
+    final groups = _grouped(talks, players);
+    return ListView(
       padding: const EdgeInsets.only(bottom: 88),
-      itemCount: talks.length,
-      itemBuilder: (context, i) {
-        final t = talks[i];
-        final p = players[t.playerId];
-        return Dismissible(
-          key: ValueKey(t.id),
-          direction: DismissDirection.endToStart,
-          background: Container(
-            color: Colors.red,
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 20),
-            child: const Icon(Icons.delete, color: Colors.white),
-          ),
-          onDismissed: (_) => state.deleteTalk(t.id),
-          child: Card(
-            child: ListTile(
-              leading: p != null
-                  ? PlayerAvatar(player: p, radius: 20)
-                  : const CircleAvatar(child: Icon(Icons.person)),
-              title: Text(t.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: t.done
-                      ? const TextStyle(
-                          decoration: TextDecoration.lineThrough,
-                          color: Colors.grey)
-                      : null),
-              subtitle: Text([
-                p?.displayName ?? 'Spieler',
-                _df.format(t.scheduledAt),
-                if (t.notes != null && t.notes!.isNotEmpty) '📝',
-              ].join('  ·  ')),
-              trailing: Checkbox(
-                value: t.done,
-                onChanged: (v) => _toggleDone(state, t, v ?? false),
-              ),
-              onTap: () => _edit(state, t, players.values.toList(), p),
+      children: [
+        _groupToggle(),
+        if (talks.isEmpty)
+          Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(empty,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey)),
+          )
+        else
+          for (final g in groups) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
+              child: Text(g.$1,
+                  style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(context).colorScheme.primary)),
             ),
+            for (final t in g.$2) _talkRow(state, t, players),
+          ],
+      ],
+    );
+  }
+
+  Widget _groupToggle() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: Row(
+        children: [
+          Text('Gruppieren:', style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(width: 8),
+          SegmentedButton<bool>(
+            style: const ButtonStyle(
+                visualDensity: VisualDensity.compact,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+            segments: const [
+              ButtonSegment(
+                  value: false,
+                  label: Text('Datum'),
+                  icon: Icon(Icons.event, size: 16)),
+              ButtonSegment(
+                  value: true,
+                  label: Text('Spieler'),
+                  icon: Icon(Icons.person, size: 16)),
+            ],
+            selected: {_groupByPlayerMode},
+            onSelectionChanged: (s) =>
+                setState(() => _groupByPlayerMode = s.first),
           ),
-        );
-      },
+        ],
+      ),
+    );
+  }
+
+  /// Gruppiert nach Datum (Reihenfolge der Liste) oder nach Spieler (alpha).
+  List<(String, List<PlayerTalk>)> _grouped(
+      List<PlayerTalk> talks, Map<String, Player> players) {
+    if (_groupByPlayerMode) {
+      final map = <String, List<PlayerTalk>>{};
+      for (final t in talks) {
+        map.putIfAbsent(t.playerId, () => []).add(t);
+      }
+      final keys = map.keys.toList()
+        ..sort((a, b) => (players[a]?.displayName ?? '')
+            .toLowerCase()
+            .compareTo((players[b]?.displayName ?? '').toLowerCase()));
+      return [
+        for (final k in keys)
+          (
+            players[k]?.displayName ?? 'Spieler',
+            map[k]!..sort((x, y) => y.scheduledAt.compareTo(x.scheduledAt)),
+          ),
+      ];
+    }
+    // Nach Datum: Reihenfolge der (bereits sortierten) Liste beibehalten.
+    final df = DateFormat('EEE, dd.MM.yyyy', 'de_DE');
+    final map = <String, List<PlayerTalk>>{};
+    final order = <String>[];
+    for (final t in talks) {
+      final d = t.scheduledAt;
+      final key = '${d.year}-${d.month}-${d.day}';
+      if (!map.containsKey(key)) {
+        map[key] = [];
+        order.add(key);
+      }
+      map[key]!.add(t);
+    }
+    return [for (final k in order) (df.format(map[k]!.first.scheduledAt), map[k]!)];
+  }
+
+  Widget _talkRow(AppState state, PlayerTalk t, Map<String, Player> players) {
+    final p = players[t.playerId];
+    return Dismissible(
+      key: ValueKey(t.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        color: Colors.red,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        child: const Icon(Icons.delete, color: Colors.white),
+      ),
+      onDismissed: (_) => state.deleteTalk(t.id),
+      child: Card(
+        child: ListTile(
+          leading: p != null
+              ? PlayerAvatar(player: p, radius: 20)
+              : const CircleAvatar(child: Icon(Icons.person)),
+          title: Text(t.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: t.done
+                  ? const TextStyle(
+                      decoration: TextDecoration.lineThrough,
+                      color: Colors.grey)
+                  : null),
+          subtitle: Text([
+            p?.displayName ?? 'Spieler',
+            _df.format(t.scheduledAt),
+            if (t.notes != null && t.notes!.isNotEmpty) '📝',
+          ].join('  ·  ')),
+          trailing: Checkbox(
+            value: t.done,
+            onChanged: (v) => _toggleDone(state, t, v ?? false),
+          ),
+          onTap: () => _edit(state, t, players.values.toList(), p),
+        ),
+      ),
     );
   }
 
