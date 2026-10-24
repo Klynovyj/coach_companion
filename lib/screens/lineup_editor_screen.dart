@@ -857,39 +857,38 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final role = isStarter ? 'start' : (onBench ? 'bank' : 'raus');
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
-      title: Row(
+      title:
+          Text(p.shortOrFullName, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: p.position == null ? null : Text(p.position!),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           _numberChip(p),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(p.shortOrFullName,
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+          const SizedBox(width: 6),
+          SegmentedButton<String>(
+            style: const ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+            segments: const [
+              ButtonSegment(value: 'start', label: Text('Start')),
+              ButtonSegment(value: 'bank', label: Text('Bank')),
+              ButtonSegment(value: 'raus', label: Text('Raus')),
+            ],
+            selected: {role},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) {
+              final v = s.first;
+              if (v == 'start') {
+                if (!isStarter) _addStarterDefault(p.id);
+              } else if (v == 'bank') {
+                _toBench(p.id);
+              } else {
+                _toPool(p.id);
+              }
+            },
           ),
         ],
-      ),
-      subtitle: p.position == null ? null : Text(p.position!),
-      trailing: SegmentedButton<String>(
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        segments: const [
-          ButtonSegment(value: 'start', label: Text('Start')),
-          ButtonSegment(value: 'bank', label: Text('Bank')),
-          ButtonSegment(value: 'raus', label: Text('Raus')),
-        ],
-        selected: {role},
-        showSelectedIcon: false,
-        onSelectionChanged: (s) {
-          final v = s.first;
-          if (v == 'start') {
-            if (!isStarter) _addStarterDefault(p.id);
-          } else if (v == 'bank') {
-            _toBench(p.id);
-          } else {
-            _toPool(p.id);
-          }
-        },
       ),
     );
   }
