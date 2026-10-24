@@ -56,12 +56,13 @@ class CloudService {
     final rows = await _c
         .from('team_members')
         .select(
-            'role, teams(id, name, short_name, invite_code, created_by, fupa_url, logo, material_duty)')
+            'role, can_ticker, teams(id, name, short_name, invite_code, created_by, fupa_url, logo, material_duty)')
         .eq('user_id', user!.id);
     return [
       for (final r in rows)
         {
           'role': r['role'],
+          'can_ticker': r['can_ticker'],
           ...(r['teams'] as Map<String, dynamic>),
         }
     ];
@@ -140,6 +141,11 @@ class CloudService {
           String teamId, String userId, String role) =>
       _c.rpc('set_member_role',
           params: {'t': teamId, 'target': userId, 'new_role': role});
+
+  /// Ticker-Recht eines Mitglieds setzen (nur Trainer; Live-Mitschreiben).
+  static Future<void> setTicker(String teamId, String userId, bool value) =>
+      _c.rpc('set_ticker',
+          params: {'t': teamId, 'target': userId, 'value': value});
 
   // ---------------------------------------------------------------- Kader
   static Future<List<Map<String, dynamic>>> players(String teamId) async {

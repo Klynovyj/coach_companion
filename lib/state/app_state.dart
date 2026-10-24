@@ -253,6 +253,8 @@ class AppState extends ChangeNotifier {
     if (!CloudService.ready || !CloudService.signedIn) return;
     _syncedTeamId = teamId;
     _teamChannels = CloudService.subscribeTeam(teamId, _onRemoteRowChange);
+    // Eigene Live-Rolle (Mitschreiben vs. Zuschauer) bestimmen.
+    refreshLiveRole();
     // Einmaliger Voll-Abgleich beim Start (fängt verpasste Änderungen).
     _refreshActiveTeamFromCloud(teamId);
     // FuPa (Spielplan/Ergebnisse) regelmäßig automatisch auffrischen.
@@ -263,6 +265,37 @@ class AppState extends ChangeNotifier {
         const Duration(hours: 6), (_) => maybeAutoFullRefresh());
     maybeAutoFullRefresh();
     maybeAutoRefreshFupa();
+  }
+
+  /// Darf der aktuelle Nutzer im Live-Spiel mitschreiben? Ohne aktives Cloud-
+  /// Team (rein lokal) immer true; mit Cloud-Team nur Trainer/Admin oder
+  /// Ticker-berechtigte Spieler. Zuschauer sehen den Ticker nur.
+  bool _canLiveEdit = true;
+  bool get canLiveEdit => _canLiveEdit;
+
+  Future<void> refreshLiveRole() async {
+    final teamId = _activeCloudTeamId;
+    if (teamId == null || !CloudService.ready || !CloudService.signedIn) {
+      if (!_canLiveEdit) {
+        _canLiveEdit = true;
+        notifyListeners();
+      }
+      return;
+    }
+    try {
+      final teams = await CloudService.myTeams();
+      final mine = teams.firstWhere((t) => t['id'] == teamId,
+          orElse: () => <String, dynamic>{});
+      final canEdit = mine['role'] == 'trainer' ||
+          mine['can_ticker'] == true ||
+          mine['created_by'] == CloudService.user?.id;
+      if (canEdit != _canLiveEdit) {
+        _canLiveEdit = canEdit;
+        notifyListeners();
+      }
+    } catch (_) {
+      // Bei Fehler Rechte nicht entziehen.
+    }
   }
 
   void _stopTeamSync() {

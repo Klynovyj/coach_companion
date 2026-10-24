@@ -724,6 +724,16 @@ class _CloudMembersScreenState extends State<CloudMembersScreen> {
     }
   }
 
+  Future<void> _setTicker(Map<String, dynamic> member, bool value) async {
+    try {
+      await CloudService.setTicker(
+          widget.teamId, member['user_id'] as String, value);
+      _reload();
+    } catch (e) {
+      _snack('Fehler: ${_clean(e)}');
+    }
+  }
+
   String _clean(Object e) =>
       e is PostgrestException ? e.message : e.toString();
 
@@ -784,6 +794,7 @@ class _CloudMembersScreenState extends State<CloudMembersScreen> {
                 _MemberTile(
                   member: m,
                   onSetRole: (role) => _setRole(m, role),
+                  onSetTicker: (v) => _setTicker(m, v),
                 ),
             ],
           );
@@ -794,10 +805,14 @@ class _CloudMembersScreenState extends State<CloudMembersScreen> {
 }
 
 class _MemberTile extends StatelessWidget {
-  const _MemberTile({required this.member, required this.onSetRole});
+  const _MemberTile(
+      {required this.member,
+      required this.onSetRole,
+      required this.onSetTicker});
 
   final Map<String, dynamic> member;
   final void Function(String role) onSetRole;
+  final void Function(bool value) onSetTicker;
 
   @override
   Widget build(BuildContext context) {
@@ -807,36 +822,52 @@ class _MemberTile extends StatelessWidget {
     final isMe = member['is_me'] == true;
     final isAdmin = member['is_admin'] == true; // Team-Ersteller
     final isTrainer = role == 'trainer' || isAdmin;
+    final canTicker = member['can_ticker'] == true;
     final shown = (name != null && name.isNotEmpty)
         ? name
         : (mail != null && mail.isNotEmpty
             ? mail
             : (isMe ? (CloudService.email ?? 'Unbekannt') : 'Unbekannt'));
     return Card(
-      child: ListTile(
-        leading: CircleAvatar(
-          child: Icon(isAdmin
-              ? Icons.shield
-              : (isTrainer ? Icons.sports : Icons.person)),
-        ),
-        title: Text(isMe ? '$shown (du)' : shown),
-        subtitle: Text(isAdmin
-            ? 'Admin · Ersteller'
-            : (isTrainer ? 'Trainer' : 'Spieler')),
-        trailing: isAdmin
-            // Der Admin (Ersteller) kann nicht herabgestuft werden.
-            ? Chip(label: Text(isMe ? 'Admin (du)' : 'Admin'))
-            : isMe
-                ? const Chip(label: Text('du'))
-                : (isTrainer
-                    ? OutlinedButton(
-                        onPressed: () => onSetRole('spieler'),
-                        child: const Text('Zu Spieler'),
-                      )
-                    : FilledButton.tonal(
-                        onPressed: () => onSetRole('trainer'),
-                        child: const Text('Zu Trainer'),
-                      )),
+      child: Column(
+        children: [
+          ListTile(
+            leading: CircleAvatar(
+              child: Icon(isAdmin
+                  ? Icons.shield
+                  : (isTrainer ? Icons.sports : Icons.person)),
+            ),
+            title: Text(isMe ? '$shown (du)' : shown),
+            subtitle: Text(isAdmin
+                ? 'Admin · Ersteller'
+                : (isTrainer ? 'Trainer' : 'Spieler')),
+            trailing: isAdmin
+                // Der Admin (Ersteller) kann nicht herabgestuft werden.
+                ? Chip(label: Text(isMe ? 'Admin (du)' : 'Admin'))
+                : isMe
+                    ? const Chip(label: Text('du'))
+                    : (isTrainer
+                        ? OutlinedButton(
+                            onPressed: () => onSetRole('spieler'),
+                            child: const Text('Zu Spieler'),
+                          )
+                        : FilledButton.tonal(
+                            onPressed: () => onSetRole('trainer'),
+                            child: const Text('Zu Trainer'),
+                          )),
+          ),
+          // Trainer/Admin schreiben immer mit. Für Spieler: Ticker-Recht
+          // vergeben (sonst nur Zuschauer im Live-Spiel).
+          if (!isTrainer && !isAdmin)
+            SwitchListTile(
+              value: canTicker,
+              onChanged: (v) => onSetTicker(v),
+              secondary: const Icon(Icons.edit_note),
+              dense: true,
+              title: const Text('Live-Ticker mitschreiben'),
+              subtitle: const Text('Sonst nur Zuschauer (Ticker lesen)'),
+            ),
+        ],
       ),
     );
   }

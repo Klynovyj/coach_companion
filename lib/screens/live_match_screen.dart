@@ -66,6 +66,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   int _baseElapsed = 0;
   int? _anchorMs;
 
+  // Berechtigte (Trainer/Ticker) können hier auf „nur zuschauen" umschalten.
+  bool _watchMode = false;
+
   static const _halfSeconds = 45 * 60;
   static const _fullSeconds = 90 * 60;
   static const _extraFirstEnd = 105 * 60;
@@ -103,6 +106,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     _state = context.read<AppState>();
     // Eingehende Live-Daten anderer Trainer (per Realtime) sofort anzeigen.
     _state.addListener(_onAppStateChanged);
+    // Eigene Live-Rolle (Mitschreiben vs. Zuschauer) frisch ermitteln.
+    _state.refreshLiveRole();
     _load();
   }
 
@@ -568,27 +573,59 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       return const Scaffold(body: Center(child: Text('Spiel nicht gefunden.')));
     }
 
+    // Darf dieser Nutzer mitschreiben? Zuschauer (und „nur zuschauen"-Modus)
+    // sehen nur den Ticker.
+    final canEdit = _state.canLiveEdit;
+    final editing = canEdit && !_watchMode;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Live-Spiel'),
         actions: [
+          if (canEdit)
+            IconButton(
+              tooltip: _watchMode
+                  ? 'Nur zuschauen – tippen zum Mitschreiben'
+                  : 'Mitschreiben – tippen für nur zuschauen',
+              icon: Icon(_watchMode ? Icons.visibility : Icons.edit_note),
+              onPressed: () => setState(() => _watchMode = !_watchMode),
+            ),
           IconButton(
             tooltip: 'Bericht teilen (WhatsApp)',
             icon: const Icon(Icons.share),
             onPressed: _shareReport,
           ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'reset') _resetMatch();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'reset', child: Text('Spiel zurücksetzen')),
-            ],
-          ),
+          if (editing)
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'reset') _resetMatch();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                    value: 'reset', child: Text('Spiel zurücksetzen')),
+              ],
+            ),
         ],
       ),
       body: Column(
         children: [
+          if (!canEdit)
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.visibility, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                        'Du schaust zu – du siehst nur den Ticker.',
+                        style: Theme.of(context).textTheme.bodySmall),
+                  ),
+                ],
+              ),
+            ),
           _Scoreboard(
             match: match,
             ownName: _ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim',
@@ -607,23 +644,25 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                     e.type == MatchEventType.soGoal ||
                     e.type == MatchEventType.soMiss),
           ),
-          _Controls(
-            phase: _phase,
-            onKickoff: _kickoff,
-            onHalftime: _halftime,
-            onSecondHalf: _startSecondHalf,
-            onFinish: _finish,
-            onExtra: _startExtra,
-            onExtraHalftime: _extraHalftime,
-            onExtraSecond: _startExtraSecond,
-            onShootout: _startShootout,
-          ),
+          if (editing)
+            _Controls(
+              phase: _phase,
+              onKickoff: _kickoff,
+              onHalftime: _halftime,
+              onSecondHalf: _startSecondHalf,
+              onFinish: _finish,
+              onExtra: _startExtra,
+              onExtraHalftime: _extraHalftime,
+              onExtraSecond: _startExtraSecond,
+              onShootout: _startShootout,
+            ),
           const Divider(height: 1),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(bottom: 16),
               children: [
-                if (_phase == _Phase.shootout) _shootoutPanel(context, match),
+                if (editing && _phase == _Phase.shootout)
+                  _shootoutPanel(context, match),
                 if (_phase != _Phase.shootout &&
                     _events.any((e) =>
                         e.type == MatchEventType.soGoal ||
@@ -643,7 +682,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                       ),
                     ),
                   ),
-                if (_phase != _Phase.shootout) ...[
+                if (editing && _phase != _Phase.shootout) ...[
                   _TeamActionBar(
                     label: _ownTeam?.name ?? 'Eigenes Team',
                     color: Theme.of(context).colorScheme.primary,
@@ -685,8 +724,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   ownTeamId: match.ownTeamId,
                   resolveName: _playerName,
                   resolvePlayer: _playerById,
-                  onDelete: _deleteEvent,
-                  onEdit: _editEvent,
+                  onDelete: editing ? _deleteEvent : null,
+                  onEdit: editing ? _editEvent : null,
                 ),
               ],
             ),
@@ -1667,8 +1706,11 @@ class _EventLog extends StatelessWidget {
   final String ownTeamId;
   final String Function(String?) resolveName;
   final Player? Function(String?) resolvePlayer;
-  final Future<void> Function(MatchEvent) onDelete;
-  final void Function(MatchEvent) onEdit;
+  final Future<void> Function(MatchEvent)? onDelete;
+  final void Function(MatchEvent)? onEdit;
+
+  /// Zuschauer-Modus: Ticker nur lesen (kein Löschen/Bearbeiten).
+  bool get _readOnly => onEdit == null;
 
   String _minuteLabel(MatchEvent e) =>
       e.minuteExtra > 0 ? '${e.minute}+${e.minuteExtra}' : "${e.minute}'";
@@ -1702,6 +1744,41 @@ class _EventLog extends StatelessWidget {
           // links) würde es sonst doppelt erscheinen.
           final leadingIsPhoto = e.type == MatchEventType.substitution ||
               resolvePlayer(e.playerId) != null;
+          final content = Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Minute oben links (wie im FuPa-Ticker).
+                _MinuteBadge(label: _minuteLabel(e), own: own),
+                const SizedBox(width: 10),
+                _eventAvatar(context, e, own),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                          leadingIsPhoto
+                              ? '${e.type.symbol} ${_describe(e)}'
+                              : _describe(e),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w500, height: 1.2)),
+                      ..._subtitleLine(context, e, own),
+                    ],
+                  ),
+                ),
+                if (!_readOnly)
+                  IconButton(
+                    tooltip: 'Korrigieren',
+                    icon: const Icon(Icons.more_vert),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () => onEdit!(e),
+                  ),
+              ],
+            ),
+          );
+          if (_readOnly) return content;
           return Dismissible(
             key: ValueKey(e.id),
             direction: DismissDirection.endToStart,
@@ -1711,42 +1788,10 @@ class _EventLog extends StatelessWidget {
               padding: const EdgeInsets.only(right: 20),
               child: const Icon(Icons.delete, color: Colors.white),
             ),
-            onDismissed: (_) => onDelete(e),
+            onDismissed: (_) => onDelete!(e),
             child: InkWell(
-              onTap: () => onEdit(e),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Minute oben links (wie im FuPa-Ticker).
-                    _MinuteBadge(label: _minuteLabel(e), own: own),
-                    const SizedBox(width: 10),
-                    _eventAvatar(context, e, own),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                              leadingIsPhoto
-                                  ? '${e.type.symbol} ${_describe(e)}'
-                                  : _describe(e),
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w500, height: 1.2)),
-                          ..._subtitleLine(context, e, own),
-                        ],
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: 'Korrigieren',
-                      icon: const Icon(Icons.more_vert),
-                      visualDensity: VisualDensity.compact,
-                      onPressed: () => onEdit(e),
-                    ),
-                  ],
-                ),
-              ),
+              onTap: () => onEdit!(e),
+              child: content,
             ),
           );
         }),
@@ -1765,7 +1810,7 @@ class _EventLog extends StatelessWidget {
       if (score.isNotEmpty) score,
     ].join('  ·  ');
     return InkWell(
-      onTap: () => onEdit(e),
+      onTap: _readOnly ? null : () => onEdit!(e),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         child: Row(
