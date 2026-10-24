@@ -5,12 +5,15 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
 import 'screens/home_screen.dart';
+import 'services/cloud_service.dart';
 import 'services/desktop_tray.dart';
 import 'services/live_clock.dart';
 import 'state/app_state.dart';
+import 'supabase_config.dart';
 import 'theme.dart';
 
 Future<void> main() async {
@@ -25,6 +28,21 @@ Future<void> main() async {
       await windowManager.show();
       await windowManager.focus();
     });
+  }
+
+  // Supabase (Mehrbenutzer/Cloud) – scheitert nie den App-Start.
+  if (SupabaseConfig.isConfigured) {
+    try {
+      await Supabase.initialize(
+        url: SupabaseConfig.url,
+        // Anon-JWT („public" Key); publishableKey wäre das neue Format.
+        // ignore: deprecated_member_use
+        anonKey: SupabaseConfig.anonKey,
+      );
+      CloudService.ready = true;
+    } catch (e) {
+      debugPrint('Supabase-Init fehlgeschlagen: $e');
+    }
   }
 
   // Hintergrund-Uhr (Android: Vordergrund-Dienst, Benachrichtigungen).

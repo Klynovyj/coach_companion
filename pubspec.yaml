@@ -43,6 +43,7 @@ dependencies:
   tray_manager: ^0.5.3
   package_info_plus: ^9.0.1
   open_filex: ^5.0.0
+  supabase_flutter: ^2.18.3
 
 dev_dependencies:
   flutter_test:
