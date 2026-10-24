@@ -77,7 +77,17 @@ String buildMatchReport({
       '${match.competition != null ? ' · ${match.competition}' : ''}');
 
   final sorted = [...events]..sort((a, b) => a.minute.compareTo(b.minute));
-  final goals = sorted.where((e) => e.type == MatchEventType.goal).toList();
+  // Tore inkl. verwandelter Elfmeter (werden als Elfmeter gekennzeichnet).
+  final goals = sorted
+      .where((e) =>
+          e.type == MatchEventType.goal || e.type == MatchEventType.penalty)
+      .toList();
+  // Elfmeter ohne Tor (verschossen/gehalten) – gehören ebenfalls ins Protokoll.
+  final penaltiesNoGoal = sorted
+      .where((e) =>
+          e.type == MatchEventType.penaltyMissed ||
+          e.type == MatchEventType.penaltySaved)
+      .toList();
   final cards = sorted
       .where((e) =>
           e.type == MatchEventType.yellowCard ||
@@ -93,7 +103,16 @@ String buildMatchReport({
       final assist = e.assistPlayerId != null
           ? ' (Vorlage: ${resolveName(e.assistPlayerId)})'
           : '';
-      b.writeln('${e.minuteLabel}  ${resolveName(e.playerId)}$assist');
+      final pen = e.type == MatchEventType.penalty ? ' (Elfmeter)' : '';
+      b.writeln('${e.minuteLabel}  ${resolveName(e.playerId)}$assist$pen');
+    }
+  }
+  if (penaltiesNoGoal.isNotEmpty) {
+    b.writeln('\nElfmeter (ohne Tor):');
+    for (final e in penaltiesNoGoal) {
+      final out =
+          e.type == MatchEventType.penaltyMissed ? 'verschossen' : 'gehalten';
+      b.writeln('${e.minuteLabel}  $out: ${resolveName(e.playerId)}');
     }
   }
   if (cards.isNotEmpty) {
