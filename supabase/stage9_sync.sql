@@ -6,6 +6,9 @@
 -- 1) Ball-/Materialdienst-Konfiguration (JSON) je Team.
 alter table public.teams add column if not exists material_duty text;
 
+-- 1b) Geburtsdatum der Spieler teilen (ISO-String; aus FuPa oder manuell).
+alter table public.players add column if not exists birthdate text;
+
 -- 2) Realtime für die Team-Zeile selbst (Kurzname/Name/Logo/Materialdienst).
 --    teams hat keine team_id-Spalte; die App abonniert per id-Filter.
 --    Die Lese-Policy "read teams" (is_team_member(id)) existiert bereits, damit

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/match.dart';
@@ -99,7 +100,88 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
     );
   }
 
-  String _matchLabel(GameMatch m) => 'vs ${m.opponentName}';
+  static final _dfMatch = DateFormat('dd.MM.yyyy', 'de_DE');
+
+  String _matchDate(GameMatch m) =>
+      m.kickoff == null ? '' : _dfMatch.format(m.kickoff!);
+
+  /// Label inkl. Datum: „vs Gegner · 18.10.2025".
+  String _matchLabel(GameMatch m) {
+    final d = _matchDate(m);
+    return d.isEmpty ? 'vs ${m.opponentName}' : 'vs ${m.opponentName}  ·  $d';
+  }
+
+  /// Durchsuchbares Auswahl-Sheet für das zu verknüpfende Spiel (mit Datum).
+  Future<void> _pickMatch() async {
+    final selected = await showModalBottomSheet<String?>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        var query = '';
+        return StatefulBuilder(
+          builder: (ctx, setSheet) {
+            final q = query.trim().toLowerCase();
+            final filtered = q.isEmpty
+                ? widget.matches
+                : widget.matches
+                    .where((m) =>
+                        m.opponentName.toLowerCase().contains(q) ||
+                        _matchDate(m).contains(q))
+                    .toList();
+            return Padding(
+              padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(ctx).viewInsets.bottom),
+              child: SizedBox(
+                height: MediaQuery.of(ctx).size.height * 0.7,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: TextField(
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          prefixIcon: Icon(Icons.search),
+                          hintText: 'Spiel suchen (Gegner oder Datum)…',
+                          border: OutlineInputBorder(),
+                          isDense: true,
+                        ),
+                        onChanged: (v) => setSheet(() => query = v),
+                      ),
+                    ),
+                    Expanded(
+                      child: ListView(
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.block),
+                            title: const Text('Kein Spiel'),
+                            onTap: () => Navigator.pop(ctx, '__none__'),
+                          ),
+                          const Divider(height: 1),
+                          for (final m in filtered)
+                            ListTile(
+                              selected: m.id == _matchId,
+                              leading: const Icon(Icons.sports_soccer),
+                              title: Text('vs ${m.opponentName}'),
+                              subtitle: _matchDate(m).isEmpty
+                                  ? null
+                                  : Text(_matchDate(m)),
+                              onTap: () => Navigator.pop(ctx, m.id),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    if (selected == null || !mounted) return;
+    setState(() => _matchId = selected == '__none__' ? null : selected);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -154,28 +236,42 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     onChanged: (v) => setState(() => _categoryId = v),
                   ),
           ),
-          // Spiel verknüpfen (optional)
+          // Spiel verknüpfen (optional) – durchsuchbares Sheet mit Datum.
           if (widget.matches.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-              child: DropdownButtonFormField<String?>(
-                initialValue:
-                    widget.matches.any((m) => m.id == _matchId) ? _matchId : null,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Spiel verknüpfen (optional)',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+            Builder(builder: (context) {
+              final linked = widget.matches
+                  .cast<GameMatch?>()
+                  .firstWhere((m) => m?.id == _matchId, orElse: () => null);
+              return Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: InkWell(
+                  onTap: _pickMatch,
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Spiel verknüpfen (optional)',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.sports_soccer, size: 20),
+                      suffixIcon: linked == null
+                          ? const Icon(Icons.search)
+                          : IconButton(
+                              icon: const Icon(Icons.clear),
+                              tooltip: 'Verknüpfung entfernen',
+                              onPressed: () => setState(() => _matchId = null),
+                            ),
+                    ),
+                    child: Text(
+                      linked == null ? 'Kein Spiel' : _matchLabel(linked),
+                      style: TextStyle(
+                        color: linked == null
+                            ? Theme.of(context).hintColor
+                            : null,
+                      ),
+                    ),
+                  ),
                 ),
-                items: [
-                  const DropdownMenuItem<String?>(
-                      value: null, child: Text('Kein Spiel')),
-                  ...widget.matches.map((m) => DropdownMenuItem<String?>(
-                      value: m.id, child: Text(_matchLabel(m)))),
-                ],
-                onChanged: (v) => setState(() => _matchId = v),
-              ),
-            ),
+              );
+            }),
           // Formatierungsleiste
           // Bewusst schlank: nur Fett/Kursiv/Unterstreichen, Listen & Haken –
           // kein Farbdialog, keine Überschriften/Einrückung/Ausrichtung.

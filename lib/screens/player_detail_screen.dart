@@ -1320,7 +1320,13 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                         child: Text([
                           df.format(n.createdAt),
                           if (n.matchId != null && matches[n.matchId] != null)
-                            'vs ${matches[n.matchId]!.opponentName}',
+                            () {
+                              final mm = matches[n.matchId]!;
+                              final d = mm.kickoff == null
+                                  ? ''
+                                  : ' (${DateFormat('dd.MM.yyyy', 'de_DE').format(mm.kickoff!)})';
+                              return 'vs ${mm.opponentName}$d';
+                            }(),
                         ].join('  ·  ')),
                       ),
                       trailing: const Icon(Icons.edit, size: 18),

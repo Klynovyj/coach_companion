@@ -350,8 +350,7 @@ class AppState extends ChangeNotifier {
       } else {
         switch (table) {
           case 'players':
-            await _repo.upsertRawById(
-                'players', _playerFromCloud(record, teamId, now).toMap());
+            await _applyCloudPlayer(record, teamId, now);
           case 'matches':
             final id = record['id'] as String?;
             if (id != null) {
@@ -431,8 +430,7 @@ class AppState extends ChangeNotifier {
       } catch (_) {}
       final players = await CloudService.players(teamId);
       for (final p in players) {
-        await _repo.upsertRawById('players',
-            _playerFromCloud(p, teamId, now).toMap());
+        await _applyCloudPlayer(p, teamId, now);
       }
       // Gegner VOR den Spielen (matches.opponent_team_id → teams-FK).
       await _pullOpponentsFromCloud(teamId);
@@ -727,7 +725,7 @@ class AppState extends ChangeNotifier {
     if (_activeCloudTeamId != cloudTeamId) return;
     final now = DateTime.now();
     for (final p in players) {
-      await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
+      await _applyCloudPlayer(p, cloudTeamId, now);
     }
     notifyListeners();
   }
@@ -741,9 +739,43 @@ class AppState extends ChangeNotifier {
         number: (p['number'] as num?)?.toInt(),
         position: p['position'] as String?,
         photoPath: p['photo'] as String?,
+        birthdate: DateTime.tryParse((p['birthdate'] as String?) ?? ''),
         source: DataSource.fupaApproved,
         createdAt: now,
       );
+
+  /// Geteilte Spielerfelder für die Cloud (Name/Nr/Position/Foto/Geburtsdatum).
+  /// Lokale Felder (Status, Kapitän, Positionen, Spitzname, aktiv) bleiben
+  /// geräteseitig und werden NICHT geteilt.
+  Map<String, dynamic> _playerCloudMap(Player p) => {
+        'id': p.id,
+        'first_name': p.firstName,
+        'last_name': p.lastName,
+        'number': p.number,
+        'position': p.position,
+        'photo': p.photoPath,
+        'birthdate': p.birthdate?.toIso8601String(),
+      };
+
+  /// Übernimmt einen Cloud-Spieler in den lokalen Cache, OHNE lokale Felder
+  /// (Status, Kapitän, Positionen, Spitzname, aktiv) zu überschreiben.
+  Future<void> _applyCloudPlayer(
+      Map<String, dynamic> record, String teamId, DateTime now) async {
+    final cp = _playerFromCloud(record, teamId, now);
+    final existing = await _repo.getPlayer(cp.id);
+    if (existing == null) {
+      await _repo.upsertPlayer(cp);
+      return;
+    }
+    await _repo.upsertPlayer(existing.copyWith(
+      firstName: cp.firstName,
+      lastName: cp.lastName,
+      number: cp.number,
+      position: cp.position,
+      photoPath: cp.photoPath,
+      birthdate: cp.birthdate,
+    ));
+  }
 
   GameMatch _matchFromCloud(Map<String, dynamic> m, String teamId, DateTime now) {
     final kickoffStr = m['kickoff'] as String?;
@@ -780,14 +812,7 @@ class AppState extends ChangeNotifier {
       final players = await _repo.getPlayers(team.id);
       final roster = [
         for (final p in players.where((p) => !p.isStaffOnly))
-          {
-            'id': p.id,
-            'first_name': p.firstName,
-            'last_name': p.lastName,
-            'number': p.number,
-            'position': p.position,
-            'photo': p.photoPath,
-          }
+          _playerCloudMap(p)
       ];
       await CloudService.uploadRoster(cloudTeam, roster);
       final matchRows = [
@@ -1018,6 +1043,17 @@ class AppState extends ChangeNotifier {
     await _repo.upsertPlayer(player);
     await _enforceCaptainUniqueness(player);
     notifyListeners();
+    // Geteilte Felder (Name/Nr/Position/Foto/Geburtsdatum) in die Cloud – nur
+    // für das eigene aktive Cloud-Team (lokale id == Cloud-id).
+    final cloudTeam = _activeCloudTeamId;
+    if (cloudTeam != null &&
+        player.teamId == cloudTeam &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.uploadRoster(cloudTeam, [_playerCloudMap(player)]);
+      } catch (_) {}
+    }
   }
 
   // ---------------------------------------------------------- Abwesenheiten

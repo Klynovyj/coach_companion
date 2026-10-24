@@ -336,6 +336,7 @@ exception when duplicate_object then null; end $$;
 -- (kein Storage). So laufen sie über den normalen Sync mit.
 
 alter table public.players add column if not exists photo text;         -- Spielerfoto (Data-URL)
+alter table public.players add column if not exists birthdate text;      -- Geburtsdatum (ISO)
 alter table public.teams   add column if not exists logo text;          -- eigenes Vereinslogo
 alter table public.teams   add column if not exists short_name text;    -- Kurzname
 alter table public.teams   add column if not exists material_duty text; -- Ball-/Materialdienst (JSON)
