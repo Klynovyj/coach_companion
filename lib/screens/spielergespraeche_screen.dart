@@ -145,6 +145,9 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen> {
             appBar: AppBar(
               title: const Text('Spielergespräche'),
               bottom: TabBar(
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white70,
+                indicatorColor: Colors.white,
                 tabs: [
                   Tab(text: 'Geplant (${planned.length})'),
                   Tab(text: 'Durchgeführt (${done.length})'),
