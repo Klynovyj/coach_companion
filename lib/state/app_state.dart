@@ -144,6 +144,54 @@ class AppState extends ChangeNotifier {
     );
   }
 
+  /// Lädt ein Cloud-Team komplett in den lokalen Cache (ersetzt bestehende
+  /// lokale Teamdaten). cloud-first: das lokale Abbild der geteilten Daten.
+  Future<void> downloadCloudTeam(
+    String cloudTeamId,
+    String name, {
+    required List<Map<String, dynamic>> players,
+    required List<Map<String, dynamic>> matches,
+  }) async {
+    await _repo.wipeTeams();
+    final now = DateTime.now();
+    await _repo.upsertTeam(Team(
+      id: cloudTeamId,
+      name: name,
+      isOwnTeam: true,
+      source: DataSource.fupaApproved,
+      createdAt: now,
+    ));
+    for (final p in players) {
+      await _repo.upsertPlayer(Player(
+        id: p['id'] as String,
+        teamId: cloudTeamId,
+        firstName: (p['first_name'] as String?) ?? '',
+        lastName: (p['last_name'] as String?) ?? '',
+        number: (p['number'] as num?)?.toInt(),
+        position: p['position'] as String?,
+        source: DataSource.fupaApproved,
+        createdAt: now,
+      ));
+    }
+    for (final m in matches) {
+      final kickoffStr = m['kickoff'] as String?;
+      await _repo.upsertMatch(GameMatch(
+        id: m['id'] as String,
+        ownTeamId: cloudTeamId,
+        opponentName: (m['opponent'] as String?) ?? 'Gegner',
+        kickoff:
+            kickoffStr == null ? null : DateTime.tryParse(kickoffStr)?.toLocal(),
+        venue: (m['venue'] == 'Auswärts') ? Venue.away : Venue.home,
+        ownScore: (m['own_score'] as num?)?.toInt() ?? 0,
+        opponentScore: (m['opponent_score'] as num?)?.toInt() ?? 0,
+        status: MatchStatus.fromKey(m['status'] as String?),
+        createdAt: now,
+      ));
+    }
+    await _reload();
+    notifyListeners();
+  }
+
   /// Lädt alles für das bereits verbundene Team erneut.
   Future<ConnectSummary> resyncOwnTeam({void Function(String)? onProgress}) async {
     final url = _ownTeam?.fupaUrl;

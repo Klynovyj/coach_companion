@@ -510,12 +510,48 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
   void _snack(String m) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
 
+  Future<void> _downloadToLocal() async {
+    final app = context.read<AppState>();
+    final navigator = Navigator.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(children: [
+          SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2)),
+          SizedBox(width: 16),
+          Expanded(child: Text('Team wird in diese App geladen …')),
+        ]),
+      ),
+    );
+    try {
+      final players = await CloudService.players(widget.teamId);
+      final matches = await CloudService.matches(widget.teamId);
+      await app.downloadCloudTeam(widget.teamId, widget.teamName,
+          players: players, matches: matches);
+      if (mounted) navigator.pop();
+      _snack('„${widget.teamName}" geladen: ${players.length} Spieler, '
+          '${matches.length} Spiele. Siehe Menü → Spielplan/Kader.');
+    } catch (e) {
+      if (mounted) navigator.pop();
+      _snack('Fehler: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.teamName),
         actions: [
+          IconButton(
+            tooltip: 'In diese App laden (Kader & Spielplan)',
+            icon: const Icon(Icons.cloud_download_outlined),
+            onPressed: _downloadToLocal,
+          ),
           if (widget.isTrainer)
             IconButton(
               tooltip: 'Kader & Spielplan hochladen',

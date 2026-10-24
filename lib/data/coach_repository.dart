@@ -101,6 +101,13 @@ class CoachRepository {
 
   Future<void> upsertTeam(Team team) => _upsertById('teams', team.toMap());
 
+  /// Leert alle lokalen Teamdaten (Teams → Spieler/Spiele/… via CASCADE).
+  /// Für den cloud-first-Cache: lokales Abbild eines Cloud-Teams neu aufbauen.
+  Future<void> wipeTeams() async {
+    final db = await _db;
+    await db.delete('teams');
+  }
+
   Future<void> deleteTeam(String id) async {
     final db = await _db;
     await db.delete('teams', where: 'id = ?', whereArgs: [id]);
