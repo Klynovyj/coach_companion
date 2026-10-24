@@ -820,6 +820,42 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     );
   }
 
+  /// Spitzname direkt aus der Aufstellung pflegen (leer = entfernen).
+  Future<void> _editNickname(Player p) async {
+    final ctrl = TextEditingController(text: p.nickname ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Spitzname'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.words,
+          decoration: InputDecoration(
+            labelText: 'Spitzname',
+            hintText: '${p.fullName} (leer = kein Spitzname)',
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    final state = context.read<AppState>();
+    final updated = result.isEmpty
+        ? p.copyWith(clearNickname: true)
+        : p.copyWith(nickname: result);
+    await state.updatePlayer(updated);
+    if (mounted) setState(() => _byId[p.id] = updated);
+  }
+
   Future<void> _editNumber(Player p) async {
     final ctrl = TextEditingController(text: _numberFor(p)?.toString() ?? '');
     final result = await showDialog<String>(
@@ -872,8 +908,19 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     ].join('  ·  ');
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
-      title:
-          Text(p.shortOrFullName, maxLines: 1, overflow: TextOverflow.ellipsis),
+      title: InkWell(
+        onTap: () => _editNickname(p),
+        child: Row(
+          children: [
+            Flexible(
+              child: Text(p.shortOrFullName,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.edit, size: 12, color: Theme.of(context).hintColor),
+          ],
+        ),
+      ),
       subtitle: sub.isEmpty ? null : Text(sub),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
