@@ -411,8 +411,7 @@ class AppState extends ChangeNotifier {
             // „zurückgesetzt" anderer Trainer immer übernehmen, damit ein
             // laufendes Spiel bei allen erscheint. FuPa-Schutz sitzt separat
             // in syncSchedule (locallyManaged wird dort geprüft).
-            await _repo.upsertRawById(
-                'matches', _matchFromCloud(record, teamId, now).toMap());
+            await _applyCloudMatch(record, teamId, now);
           case 'match_events':
             await _applyRemoteEvent(record, teamId, now);
           case 'player_stats':
@@ -491,8 +490,7 @@ class AppState extends ChangeNotifier {
       for (final m in matches) {
         // Cloud = geteilte Wahrheit (Status/Ergebnis/zurückgesetzt). So sieht
         // ein zuschauendes Gerät ein laufendes Spiel auch nach dem Aktivieren.
-        await _repo.upsertRawById('matches',
-            _matchFromCloud(m, teamId, now).toMap());
+        await _applyCloudMatch(m, teamId, now);
       }
       await _pullEventsFromCloud(teamId, replace: false);
       await _pullAuxFromCloud(teamId, replace: false);
@@ -897,6 +895,28 @@ class AppState extends ChangeNotifier {
       locallyManaged: m['locally_managed'] == true,
       createdAt: now,
     );
+  }
+
+  /// Übernimmt ein Cloud-Spiel in den lokalen Cache, ohne die Gegner-
+  /// Anreicherung (Logo, Team-Verknüpfung, FuPa-Link) mit null zu überschreiben
+  /// – ein reines Status-/Ergebnis-Update aus der Cloud trägt diese meist nicht
+  /// mit, sonst „verschwindet" z.B. das Gegner-Logo.
+  Future<void> _applyCloudMatch(
+      Map<String, dynamic> record, String teamId, DateTime now) async {
+    final cm = _matchFromCloud(record, teamId, now);
+    final existing = await _repo.getMatch(cm.id);
+    if (existing == null) {
+      await _repo.upsertRawById('matches', cm.toMap());
+      return;
+    }
+    final oppTeamId = cm.opponentTeamId ?? existing.opponentTeamId;
+    final merged = cm.copyWith(
+      opponentLogoPath: cm.opponentLogoPath ?? existing.opponentLogoPath,
+      opponentTeamId: oppTeamId,
+      opponentFupaUrl: cm.opponentFupaUrl ?? existing.opponentFupaUrl,
+      opponentImported: oppTeamId != null,
+    );
+    await _repo.upsertRawById('matches', merged.toMap());
   }
 
   /// Spiegelt den aktuellen Kader + Spielplan des aktiven Cloud-Teams nach
