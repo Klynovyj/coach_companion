@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../services/update_service.dart';
 import '../state/app_state.dart';
 import 'nachholen_screen.dart';
 import 'schedule_screen.dart';
@@ -36,6 +37,15 @@ class HomeNav extends InheritedWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _index = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    // Einmal beim Start auf App-Updates prüfen (nur Android, still).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) UpdateService.promptIfAvailable(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
