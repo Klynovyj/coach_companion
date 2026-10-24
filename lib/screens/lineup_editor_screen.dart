@@ -9,6 +9,7 @@ import '../models/enums.dart';
 import '../models/lineup.dart';
 import '../models/match.dart';
 import '../models/player.dart';
+import '../models/player_stat.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/pitch_field.dart';
@@ -47,6 +48,8 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   final Map<String, Player> _byId = {};
   // Abweichende Rückennummern für dieses Spiel (Spieler-ID → Nummer).
   Map<String, int> _matchNumbers = {};
+  // FuPa-Saisonstatistik je Spieler (für die Spielminuten), nach dedupKey.
+  Map<String, PlayerStat> _statByKey = {};
   List<Player> _nominated = [];
   final Map<String, Offset> _starters = {}; // playerId -> relative Position
   final Set<String> _bench = {};
@@ -72,6 +75,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final noms = await state.nominationsOf(widget.matchId);
     final entries = await state.lineupEntries(lineup.id);
     final matchNumbers = await state.matchNumbers(widget.matchId);
+    final statsList = await state.statsOf(widget.teamId);
+    final statByKey = <String, PlayerStat>{
+      for (final s in statsList)
+        '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}':
+            s,
+    };
 
     final nominated = players
         .where((p) => noms[p.id] == NominationStatus.zugesagt)
@@ -88,6 +97,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         ..addEntries(players.map((p) => MapEntry(p.id, p)));
       _nominated = pool;
       _matchNumbers = matchNumbers;
+      _statByKey = statByKey;
       _restricted = nominated.isNotEmpty;
       _starters.clear();
       _bench.clear();
@@ -855,11 +865,16 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final isStarter = _starters.containsKey(p.id);
     final onBench = _bench.contains(p.id);
     final role = isStarter ? 'start' : (onBench ? 'bank' : 'raus');
+    final stat = _statByKey[p.dedupKey];
+    final sub = [
+      if (p.position != null && p.position!.isNotEmpty) p.position!,
+      if (stat != null) '${stat.minutes} Min',
+    ].join('  ·  ');
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
       title:
           Text(p.shortOrFullName, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: p.position == null ? null : Text(p.position!),
+      subtitle: sub.isEmpty ? null : Text(sub),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
