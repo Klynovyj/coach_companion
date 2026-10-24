@@ -944,7 +944,9 @@ class AppState extends ChangeNotifier {
       table = await _importer.fetchStanding(leagueSlug);
     } catch (_) {}
     try {
-      form = await _importer.fetchTeamForm(leagueSlug, oppSlug, limit: 5);
+      // Mehr Spiele laden, damit die Niederlagen der ganzen Saison vorliegen;
+      // die „letzte 5"-Karte nimmt sich davon die ersten fünf.
+      form = await _importer.fetchTeamForm(leagueSlug, oppSlug, limit: 50);
     } catch (_) {}
     StandingRow? standing;
     for (final r in table) {

@@ -224,13 +224,14 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
     // Form (letzte 5 Spiele)
     if (_form.isNotEmpty) {
       final df = DateFormat('dd.MM.', 'de_DE');
+      final last5 = _form.take(5).toList();
       cards.add(_CardData(
         icon: Icons.timeline,
         color: const Color(0xFF00695C),
         title: 'Form – letzte 5 Spiele',
-        subtitle: _form.map((f) => f.result).join(' '),
+        subtitle: last5.map((f) => f.result).join(' '),
         rows: [
-          for (final f in _form)
+          for (final f in last5)
             _Row.form(
               date: f.date != null ? df.format(f.date!.toLocal()) : '—',
               venue: f.home ? 'H' : 'A',
@@ -240,6 +241,29 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
                   f.result == 'S' ? 1 : (f.result == 'N' ? -1 : 0),
             ),
         ],
+      ));
+
+      // Niederlagen (gegen wen + Ergebnis) – aus allen gespielten Spielen.
+      final losses = _form.where((f) => f.result == 'N').toList();
+      cards.add(_CardData(
+        icon: Icons.trending_down,
+        color: const Color(0xFFC62828),
+        title: 'Niederlagen',
+        subtitle: losses.isEmpty
+            ? 'Diese Saison noch ungeschlagen'
+            : '${losses.length} Niederlage${losses.length == 1 ? '' : 'n'}',
+        rows: losses.isEmpty
+            ? [_Row.text('Diese Saison noch ungeschlagen.')]
+            : [
+                for (final f in losses)
+                  _Row.form(
+                    date: f.date != null ? df.format(f.date!.toLocal()) : '—',
+                    venue: f.home ? 'H' : 'A',
+                    opponent: f.opponentName,
+                    result: '${f.ownGoals}:${f.oppGoals}',
+                    outcome: -1,
+                  ),
+              ],
       ));
     }
 
