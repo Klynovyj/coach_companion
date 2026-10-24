@@ -21,15 +21,13 @@ class CloudService {
 
   static Future<void> signUp(
       String email, String password, String displayName) async {
-    final res =
-        await _c.auth.signUp(email: email.trim(), password: password);
-    final u = res.user;
-    if (u != null) {
-      await _c.from('profiles').upsert({
-        'id': u.id,
-        'display_name': displayName.trim(),
-      });
-    }
+    // Name als Metadaten; profiles-Eintrag macht serverseitig ein Trigger
+    // (siehe supabase/schema.sql) – kein direkter Insert (RLS/Session).
+    await _c.auth.signUp(
+      email: email.trim(),
+      password: password,
+      data: {'display_name': displayName.trim()},
+    );
   }
 
   static Future<void> signOut() => _c.auth.signOut();
