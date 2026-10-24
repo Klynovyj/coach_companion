@@ -329,6 +329,28 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Manueller Voll-Import aus FuPa (Kader, Fotos, Logo, Spielplan, Statistik,
+  /// Geburtsdatum) – umgeht die 6h-Drossel. Für den „Jetzt aktualisieren"-
+  /// Button. [url] = Cloud-FuPa-Link des Teams (fällt sonst auf den lokalen
+  /// zurück). Gibt die Zusammenfassung zurück bzw. null, wenn kein Link/kein
+  /// aktives Cloud-Team.
+  Future<ConnectSummary?> refreshFromFupaNow(
+      {String? url, void Function(String)? onProgress}) async {
+    final link = (url != null && url.isNotEmpty) ? url : _ownTeam?.fupaUrl;
+    if (_activeCloudTeamId == null || link == null || link.isEmpty) return null;
+    if (_autoRefreshing) return null;
+    _autoRefreshing = true;
+    try {
+      final summary = await connectOwnTeam(link, onProgress: onProgress);
+      final nowIso = DateTime.now().toIso8601String();
+      await _repo.setSetting('last_fupa_full', nowIso);
+      await _repo.setSetting('last_fupa_autosync', nowIso);
+      return summary;
+    } finally {
+      _autoRefreshing = false;
+    }
+  }
+
   /// Realtime: GENAU die geänderte Zeile anwenden (sofortige Updates, kein
   /// Voll-Reload). Serialisiert, damit sich die Schreibzugriffe nicht überholen.
   void _onRemoteRowChange(

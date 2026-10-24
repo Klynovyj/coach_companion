@@ -290,6 +290,50 @@ class _TeamsViewState extends State<_TeamsView> {
     }
   }
 
+  /// Voller FuPa-Import jetzt (Kader, Fotos, Logo, Statistik, Geburtsdatum) –
+  /// umgeht die 6h-Drossel. Nur fürs aktive Trainer-Team mit FuPa-Link.
+  Future<void> _refreshFupa(Map<String, dynamic> team) async {
+    final app = context.read<AppState>();
+    final url = team['fupa_url'] as String?;
+    if (url == null || url.isEmpty) return;
+    final navigator = Navigator.of(context);
+    final status = ValueNotifier<String>('Starte Import …');
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => AlertDialog(
+        title: const Text('FuPa wird geladen …'),
+        content: ValueListenableBuilder<String>(
+          valueListenable: status,
+          builder: (_, s, _) => Row(
+            children: [
+              const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+              const SizedBox(width: 16),
+              Expanded(child: Text(s)),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      final summary =
+          await app.refreshFromFupaNow(url: url, onProgress: (p) => status.value = p);
+      if (mounted) navigator.pop();
+      _reload();
+      _snack(summary == null
+          ? 'Kein FuPa-Link hinterlegt.'
+          : 'Aktualisiert · ${summary.players} Spieler, ${summary.matches} Spiele.');
+    } catch (e) {
+      if (mounted) navigator.pop();
+      _snack('Fehler: $e');
+    } finally {
+      status.dispose();
+    }
+  }
+
   Future<void> _joinTeam() async {
     final code = await _prompt('Team beitreten', 'Einladungscode', 'z.B. a1b2c3d4');
     if (code == null || code.isEmpty) return;
@@ -522,6 +566,7 @@ class _TeamsViewState extends State<_TeamsView> {
                       isActive: t['id'] == activeId,
                       onActivate: () => _activate(t),
                       onMembers: () => _openMembers(t),
+                      onRefreshFupa: () => _refreshFupa(t),
                     ),
                 ],
               );
@@ -542,12 +587,16 @@ class _TeamCard extends StatelessWidget {
     required this.isActive,
     required this.onActivate,
     required this.onMembers,
+    required this.onRefreshFupa,
   });
 
   final Map<String, dynamic> team;
   final bool isActive;
   final VoidCallback onActivate;
   final VoidCallback onMembers;
+
+  /// Voller FuPa-Import jetzt (nur aktives Trainer-Team mit FuPa-Link).
+  final VoidCallback onRefreshFupa;
 
   @override
   Widget build(BuildContext context) {
@@ -556,33 +605,51 @@ class _TeamCard extends StatelessWidget {
     final isAdmin = team['created_by'] != null &&
         team['created_by'] == CloudService.user?.id;
     final isTrainer = team['role'] == 'trainer' || isAdmin;
+    final hasFupa = (team['fupa_url'] as String?)?.isNotEmpty == true;
     return Card(
-      child: ListTile(
-        leading: Icon(
-          isActive ? Icons.check_circle : Icons.shield_outlined,
-          color: isActive ? scheme.primary : null,
-        ),
-        title: Text((team['name'] as String?) ?? 'Team'),
-        subtitle: Text([
-          if (isAdmin)
-            'Admin · Code: ${team['invite_code']}'
-          else if (isTrainer)
-            'Trainer · Code: ${team['invite_code']}'
-          else
-            'Spieler',
-          if (isActive) 'aktiv',
-        ].join('  ·  ')),
-        onTap: isActive ? null : onActivate,
-        trailing: isActive
-            ? (isTrainer
-                ? OutlinedButton.icon(
-                    onPressed: onMembers,
-                    icon: const Icon(Icons.manage_accounts, size: 18),
-                    label: const Text('Mitglieder'),
-                  )
-                : null)
-            : FilledButton.tonal(
-                onPressed: onActivate, child: const Text('Aktivieren')),
+      child: Column(
+        children: [
+          ListTile(
+            leading: Icon(
+              isActive ? Icons.check_circle : Icons.shield_outlined,
+              color: isActive ? scheme.primary : null,
+            ),
+            title: Text((team['name'] as String?) ?? 'Team'),
+            subtitle: Text([
+              if (isAdmin)
+                'Admin · Code: ${team['invite_code']}'
+              else if (isTrainer)
+                'Trainer · Code: ${team['invite_code']}'
+              else
+                'Spieler',
+              if (isActive) 'aktiv',
+            ].join('  ·  ')),
+            onTap: isActive ? null : onActivate,
+            trailing: isActive
+                ? (isTrainer
+                    ? OutlinedButton.icon(
+                        onPressed: onMembers,
+                        icon: const Icon(Icons.manage_accounts, size: 18),
+                        label: const Text('Mitglieder'),
+                      )
+                    : null)
+                : FilledButton.tonal(
+                    onPressed: onActivate, child: const Text('Aktivieren')),
+          ),
+          // Nur auf dem aktiven Trainer-Team mit FuPa-Link: Voll-Import jetzt.
+          if (isActive && isTrainer && hasFupa)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: onRefreshFupa,
+                  icon: const Icon(Icons.cloud_sync, size: 18),
+                  label: const Text('Jetzt aus FuPa aktualisieren'),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
