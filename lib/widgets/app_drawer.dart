@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
@@ -10,6 +11,7 @@ import '../screens/live_match_screen.dart';
 import '../screens/material_duty_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/todos_screen.dart';
+import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import 'team_logo.dart';
 
@@ -37,7 +39,10 @@ class AppDrawer extends StatelessWidget {
 
     return Drawer(
       child: SafeArea(
-        child: ListView(
+        child: Column(
+          children: [
+            Expanded(
+              child: ListView(
           padding: EdgeInsets.zero,
           children: [
             DrawerHeader(
@@ -149,6 +154,10 @@ class AppDrawer extends StatelessWidget {
               label: 'Einstellungen',
               screen: const SettingsScreen(),
             ),
+                ],
+              ),
+            ),
+            const _DrawerFooter(),
           ],
         ),
       ),
@@ -170,6 +179,76 @@ class AppDrawer extends StatelessWidget {
         Navigator.pop(context); // Drawer schließen
         Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
       },
+    );
+  }
+}
+
+/// Fußzeile des Menüs: aktuell angemeldeter Nutzer + App-Version.
+class _DrawerFooter extends StatefulWidget {
+  const _DrawerFooter();
+
+  @override
+  State<_DrawerFooter> createState() => _DrawerFooterState();
+}
+
+class _DrawerFooterState extends State<_DrawerFooter> {
+  String _version = '';
+
+  @override
+  void initState() {
+    super.initState();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) {
+        setState(() =>
+            _version = 'Version ${info.version} (${info.buildNumber})');
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final signedIn = CloudService.signedIn;
+    final meta = CloudService.user?.userMetadata;
+    final name = (meta != null ? meta['display_name'] : null) as String?;
+    final who = !signedIn
+        ? 'Nicht angemeldet'
+        : (name != null && name.trim().isNotEmpty
+            ? name.trim()
+            : (CloudService.email ?? 'angemeldet'));
+    final subtle =
+        Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.8);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      decoration: BoxDecoration(
+        border:
+            Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(
+                  signedIn
+                      ? Icons.account_circle
+                      : Icons.account_circle_outlined,
+                  size: 16,
+                  color: subtle),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(who,
+                    style: TextStyle(fontSize: 12, color: subtle),
+                    overflow: TextOverflow.ellipsis),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Text(_version.isEmpty ? 'myCoach' : 'myCoach · $_version',
+              style: TextStyle(fontSize: 11, color: subtle)),
+        ],
+      ),
     );
   }
 }
