@@ -444,6 +444,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   events: _events,
                   ownTeamId: match.ownTeamId,
                   resolveName: _playerName,
+                  resolvePlayer: _playerById,
                   onDelete: _deleteEvent,
                   onEdit: _editEvent,
                 ),
@@ -496,6 +497,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final all = [..._ownPlayers, ..._opponentPlayers];
     final p = all.where((e) => e.id == playerId).firstOrNull;
     return p?.displayName ?? 'Spieler';
+  }
+
+  Player? _playerById(String? playerId) {
+    if (playerId == null) return null;
+    final all = [..._ownPlayers, ..._opponentPlayers];
+    return all.where((e) => e.id == playerId).firstOrNull;
   }
 
   // ------------------------------------------------- Ereignis-Erfassung
@@ -1247,6 +1254,7 @@ class _EventLog extends StatelessWidget {
     required this.events,
     required this.ownTeamId,
     required this.resolveName,
+    required this.resolvePlayer,
     required this.onDelete,
     required this.onEdit,
   });
@@ -1254,8 +1262,12 @@ class _EventLog extends StatelessWidget {
   final List<MatchEvent> events;
   final String ownTeamId;
   final String Function(String?) resolveName;
+  final Player? Function(String?) resolvePlayer;
   final Future<void> Function(MatchEvent) onDelete;
   final void Function(MatchEvent) onEdit;
+
+  String _minuteLabel(MatchEvent e) =>
+      e.minuteExtra > 0 ? '${e.minute}+${e.minuteExtra}' : "${e.minute}'";
 
   @override
   Widget build(BuildContext context) {
@@ -1291,27 +1303,38 @@ class _EventLog extends StatelessWidget {
               child: const Icon(Icons.delete, color: Colors.white),
             ),
             onDismissed: (_) => onDelete(e),
-            child: ListTile(
-              dense: true,
-              leading: CircleAvatar(
-                radius: 16,
-                backgroundColor: own
-                    ? Theme.of(context).colorScheme.primaryContainer
-                    : Theme.of(context).colorScheme.tertiaryContainer,
-                child: Text(
-                    e.minuteExtra > 0
-                        ? '${e.minute}+${e.minuteExtra}'
-                        : "${e.minute}'",
-                    style: const TextStyle(fontSize: 10)),
-              ),
-              title: Text('${e.type.symbol} ${_describe(e)}'),
-              subtitle: _rowSubtitle(e, own),
-              trailing: IconButton(
-                tooltip: 'Korrigieren',
-                icon: const Icon(Icons.more_vert),
-                onPressed: () => onEdit(e),
-              ),
+            child: InkWell(
               onTap: () => onEdit(e),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Minute oben links (wie im FuPa-Ticker).
+                    _MinuteBadge(label: _minuteLabel(e), own: own),
+                    const SizedBox(width: 10),
+                    _eventAvatar(context, e, own),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('${e.type.symbol} ${_describe(e)}',
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w500, height: 1.2)),
+                          ..._subtitleLine(context, e, own),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Korrigieren',
+                      icon: const Icon(Icons.more_vert),
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => onEdit(e),
+                    ),
+                  ],
+                ),
+              ),
             ),
           );
         }),
@@ -1389,13 +1412,84 @@ class _EventLog extends StatelessWidget {
 
   /// Untertitel im Ticker: Team + Notiz; beim Kommentar steht der Text schon
   /// im Titel, daher kein Untertitel.
-  Widget? _rowSubtitle(MatchEvent e, bool own) {
-    if (e.type == MatchEventType.comment) return null;
+  List<Widget> _subtitleLine(BuildContext context, MatchEvent e, bool own) {
+    if (e.type == MatchEventType.comment) return const [];
     final parts = [
       own ? 'Eigenes Team' : 'Gegner',
       if (e.note != null && e.note!.isNotEmpty) e.note!,
     ];
-    return Text(parts.join('  ·  '));
+    return [
+      Text(parts.join('  ·  '),
+          style: TextStyle(
+              fontSize: 12, color: Theme.of(context).colorScheme.outline)),
+    ];
+  }
+
+  /// Spielerfoto(s) für die Ticker-Zeile. Beim Wechsel beide Spieler mit
+  /// Pfeil (rein/raus) wie im FuPa-Ticker; sonst das Foto des Spielers.
+  Widget _eventAvatar(BuildContext context, MatchEvent e, bool own) {
+    const r = 18.0;
+    if (e.type == MatchEventType.substitution) {
+      final inP = resolvePlayer(e.playerId);
+      final outP = resolvePlayer(e.assistPlayerId);
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _avatarWithArrow(outP, Icons.arrow_downward, Colors.red),
+          const SizedBox(width: 3),
+          _avatarWithArrow(inP, Icons.arrow_upward, Colors.green),
+        ],
+      );
+    }
+    final p = resolvePlayer(e.playerId);
+    if (p != null) return PlayerAvatar(player: p, radius: r);
+    // Kein zugeordneter Spieler (Gegner-Tor, Ecke ohne Spieler, Kommentar …).
+    return CircleAvatar(
+      radius: r,
+      backgroundColor: own
+          ? Theme.of(context).colorScheme.primaryContainer
+          : Theme.of(context).colorScheme.tertiaryContainer,
+      child: Text(e.type.symbol, style: const TextStyle(fontSize: 16)),
+    );
+  }
+
+  Widget _avatarWithArrow(Player? p, IconData arrow, Color color) {
+    final avatar = p != null
+        ? PlayerAvatar(player: p, radius: 14)
+        : const CircleAvatar(radius: 14, child: Icon(Icons.person, size: 14));
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [avatar, Icon(arrow, size: 13, color: color)],
+    );
+  }
+}
+
+/// Minuten-Badge für die Ticker-Zeile (oben links).
+class _MinuteBadge extends StatelessWidget {
+  const _MinuteBadge({required this.label, required this.own});
+
+  final String label;
+  final bool own;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: own ? scheme.primaryContainer : scheme.tertiaryContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: own ? scheme.onPrimaryContainer : scheme.onTertiaryContainer,
+        ),
+      ),
+    );
   }
 }
 
