@@ -227,6 +227,8 @@ end $$;
 --  * set_member_role: Rolle eines Mitglieds ändern – nur Trainer, und das
 --    Team behält mindestens einen Trainer.
 
+-- Alte Signatur entfernen (Rückgabetyp änderte sich um die E-Mail-Spalte).
+drop function if exists public.list_team_members(uuid);
 create or replace function public.list_team_members(t uuid)
 returns table (user_id uuid, role text, display_name text, email text,
                is_me boolean)
