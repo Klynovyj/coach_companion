@@ -1606,8 +1606,12 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   Future<(List<MatchEvent>, Map<String, GameMatch>)> _loadEvents(
       AppState s) async {
     final events = await s.playerMatchEvents(_player.id);
+    // Kommentare, in denen der Spieler erwähnt wurde, mit aufnehmen.
+    final mentions = await s.mentionComments(_player.id);
+    final ids = events.map((e) => e.id).toSet();
+    final all = [...events, ...mentions.where((e) => !ids.contains(e.id))];
     final mm = await s.matchMap(_player.teamId);
-    return (events, mm);
+    return (all, mm);
   }
 
   /// Baut die Kontextzeile: Datum · vs Gegner · Minute · Notiz.

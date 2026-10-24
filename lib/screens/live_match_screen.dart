@@ -1011,9 +1011,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   }
 
   /// Vollbild-Seite: optionaler Spieler (mit Foto) + optionale Notiz.
-  Future<({String? playerId, String? note})?> _eventDetail(
-      MatchEventType type, List<Player> players) {
-    return Navigator.of(context).push<({String? playerId, String? note})>(
+  Future<({String? playerId, String? note, List<String> mentions})?>
+      _eventDetail(MatchEventType type, List<Player> players) {
+    return Navigator.of(context)
+        .push<({String? playerId, String? note, List<String> mentions})>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => _EventDetailPage(type: type, players: players),
@@ -1021,9 +1022,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     );
   }
 
-  /// Neutraler Freitext-Kommentar (ebenfalls als Vollbild-Seite).
+  /// Neutraler Freitext-Kommentar (ebenfalls als Vollbild-Seite). Erwähnte
+  /// Spieler werden verknüpft und erscheinen im jeweiligen Profil.
   Future<void> _addComment() async {
-    final detail = await _eventDetail(MatchEventType.comment, const []);
+    final detail =
+        await _eventDetail(MatchEventType.comment, _playersFor(true));
     if (detail == null ||
         detail.note == null ||
         detail.note!.isEmpty ||
@@ -1037,6 +1040,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           minuteExtra: _currentExtra,
           type: MatchEventType.comment,
           note: detail.note,
+          mentions: detail.mentions,
         );
     await _refreshEvents();
   }
@@ -1119,9 +1123,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   Future<void> _editEventDetail(MatchEvent e) async {
     final isComment = e.type == MatchEventType.comment;
     final own = e.teamId == _match?.ownTeamId;
-    final players = isComment ? <Player>[] : _onFieldPlayers(own);
+    final players = isComment ? _playersFor(true) : _onFieldPlayers(own);
     final detail = await Navigator.of(context)
-        .push<({String? playerId, String? note})>(
+        .push<({String? playerId, String? note, List<String> mentions})>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => _EventDetailPage(
@@ -1933,6 +1937,7 @@ class _EventDetailPage extends StatefulWidget {
 
 class _EventDetailPageState extends State<_EventDetailPage> {
   String? _selPlayer;
+  final List<String> _mentions = [];
   final _noteCtrl = TextEditingController();
 
   @override
@@ -1953,6 +1958,7 @@ class _EventDetailPageState extends State<_EventDetailPage> {
     Navigator.pop(context, (
       playerId: _selPlayer,
       note: note.isEmpty ? null : note,
+      mentions: List<String>.from(_mentions),
     ));
   }
 
@@ -1961,6 +1967,33 @@ class _EventDetailPageState extends State<_EventDetailPage> {
         selected: _selPlayer);
     if (res == null) return; // abgebrochen → unverändert
     setState(() => _selPlayer = res == _kPickNone ? null : res);
+  }
+
+  /// Spieler erwähnen: Namen an der Cursor-Position einfügen + verknüpfen.
+  Future<void> _mentionPlayer() async {
+    final res = await showPlayerPickSheet(context, widget.players);
+    if (res == null || res == _kPickNone) return;
+    final p = widget.players.where((x) => x.id == res).firstOrNull;
+    if (p == null) return;
+    final name = p.displayName;
+    final text = _noteCtrl.text;
+    var sel = _noteCtrl.selection;
+    var start = sel.start;
+    var end = sel.end;
+    if (start < 0 || end < 0) {
+      start = text.length;
+      end = text.length;
+    }
+    final needSpaceBefore = start > 0 && text[start - 1] != ' ';
+    final insert = '${needSpaceBefore ? ' ' : ''}$name ';
+    final newText = text.replaceRange(start, end, insert);
+    _noteCtrl.value = TextEditingValue(
+      text: newText,
+      selection: TextSelection.collapsed(offset: start + insert.length),
+    );
+    setState(() {
+      if (!_mentions.contains(p.id)) _mentions.add(p.id);
+    });
   }
 
   @override
@@ -2016,6 +2049,27 @@ class _EventDetailPageState extends State<_EventDetailPage> {
                 ],
               ),
               const SizedBox(height: 12),
+            ],
+            // Kommentar: Spieler erwähnen (Name an Cursor-Position einfügen).
+            if (isComment && widget.players.isNotEmpty) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _mentions.isEmpty
+                          ? 'Spieler erwähnen (optional)'
+                          : '${_mentions.length} erwähnt',
+                      style: Theme.of(context).textTheme.titleSmall,
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _mentionPlayer,
+                    icon: const Icon(Icons.alternate_email, size: 18),
+                    label: const Text('Erwähnen'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
             ],
             // Notiz – nimmt den restlichen Platz ein.
             Expanded(

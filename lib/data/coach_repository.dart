@@ -254,6 +254,34 @@ class CoachRepository {
     return rows.map(MatchEvent.fromMap).toList();
   }
 
+  /// Erwähnte Spieler eines Ereignisses setzen (ersetzt vorhandene).
+  Future<void> setEventMentions(
+      String eventId, List<String> playerIds) async {
+    final db = await _db;
+    await db.transaction((txn) async {
+      await txn.delete('event_mentions',
+          where: 'event_id = ?', whereArgs: [eventId]);
+      for (final pid in playerIds.toSet()) {
+        await txn.insert('event_mentions',
+            {'event_id': eventId, 'player_id': pid},
+            conflictAlgorithm: ConflictAlgorithm.ignore);
+      }
+    });
+  }
+
+  /// Kommentare, in denen der Spieler erwähnt wurde.
+  Future<List<MatchEvent>> getMentionComments(String playerId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT e.* FROM match_events e '
+      'JOIN event_mentions m ON m.event_id = e.id '
+      'WHERE m.player_id = ? AND e.type = ? '
+      'ORDER BY e.created_at DESC',
+      [playerId, MatchEventType.comment.storageKey],
+    );
+    return rows.map(MatchEvent.fromMap).toList();
+  }
+
   /// Zählt die Tore je Team für ein Spiel (Grundlage des Spielstands).
   Future<Map<String, int>> goalCountByTeam(String matchId) async {
     final db = await _db;

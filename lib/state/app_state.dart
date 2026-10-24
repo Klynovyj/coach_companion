@@ -626,6 +626,7 @@ class AppState extends ChangeNotifier {
     String? playerId,
     String? assistPlayerId,
     String? note,
+    List<String> mentions = const [],
   }) async {
     final eventId = _uuid.v4();
     await _repo.upsertEvent(MatchEvent(
@@ -640,6 +641,9 @@ class AppState extends ChangeNotifier {
       note: note,
       createdAt: DateTime.now(),
     ));
+    if (mentions.isNotEmpty) {
+      await _repo.setEventMentions(eventId, mentions);
+    }
 
     final cardType = CardType.fromEvent(type);
     if (cardType != null && playerId != null) {
@@ -682,6 +686,10 @@ class AppState extends ChangeNotifier {
 
   Future<List<MatchEvent>> playerMatchEvents(String playerId) =>
       _repo.getPlayerMatchEvents(playerId);
+
+  /// Kommentare, in denen der Spieler erwähnt wurde.
+  Future<List<MatchEvent>> mentionComments(String playerId) =>
+      _repo.getMentionComments(playerId);
 
   /// Spiele eines Teams als Map (matchId -> Spiel), zum Auflösen von Gegner/Datum.
   Future<Map<String, GameMatch>> matchMap(String teamId) async {

@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 26;
+  static const _dbVersion = 27;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -195,6 +195,10 @@ class AppDatabase {
       await db.execute(
           'ALTER TABLE player_talks ADD COLUMN done INTEGER NOT NULL DEFAULT 0');
     }
+    // v26 -> v27: Spieler in Ereignissen/Kommentaren erwähnen (n:m).
+    if (oldV < 27) {
+      await db.execute(_eventMentionsTableSql);
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -268,6 +272,17 @@ class AppDatabase {
         notes TEXT,
         done INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
+        FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+      )
+  ''';
+
+  // Erwähnte Spieler in einem Ereignis (v.a. Kommentare): n:m.
+  static const _eventMentionsTableSql = '''
+      CREATE TABLE event_mentions (
+        event_id TEXT NOT NULL,
+        player_id TEXT NOT NULL,
+        PRIMARY KEY (event_id, player_id),
+        FOREIGN KEY (event_id) REFERENCES match_events (id) ON DELETE CASCADE,
         FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
       )
   ''';
@@ -505,6 +520,7 @@ class AppDatabase {
     await db.execute(_todosTableSql);
     await db.execute(_todoTopicsTableSql);
     await db.execute(_playerTalksTableSql);
+    await db.execute(_eventMentionsTableSql);
     await db.execute(_playerAbsencesTableSql);
     await db.execute(
         'CREATE INDEX idx_absences_player ON player_absences (player_id)');
