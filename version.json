@@ -1,6 +1,6 @@
 {
-  "versionCode": 2,
-  "versionName": "1.1.0",
+  "versionCode": 3,
+  "versionName": "1.2.0",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Auto-Update: Die App schlägt neue Versionen beim Start selbst vor\n- Verlängerung (2×15) + Elfmeterschießen (Pokal)\n- Spielergespräche (Themen, Vorschläge, durchgeführt)\n- Live-Ereignisse: Ecke/Freistoß/Elfmeter/Foul/Großchance/Meckern, Kommentare mit Spieler-Erwähnung\n- Karten: kein zweites Gelb\n- viele Detailverbesserungen"
+  "notes": "Neuerungen:\n- Gemeinsam nutzen: Team-Konten, Trainer-Kollegen & Spieler in Echtzeit\n- Alles aus der Cloud: Kader, Spielplan, Nominierung, Aufstellung, Karten, Notizen, Bewertungen, Aufgaben, Gespräche, Abwesenheiten synchronisieren\n- Rollen: Mitglieder zu Trainer hochstufen\n- FuPa-Import landet direkt in der geteilten Cloud\n- Auto-Update über GitHub-Release\n- viele Detailverbesserungen"
 }
