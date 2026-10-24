@@ -42,6 +42,14 @@ class CloudService {
 
   static Future<void> signOut() => _c.auth.signOut();
 
+  /// Setzt den Anzeigenamen des angemeldeten Kontos – in der profiles-Tabelle
+  /// (für die Mitgliederliste sichtbar) und in den Auth-Metadaten (Kopfzeile).
+  static Future<void> setDisplayName(String name) async {
+    final n = name.trim();
+    await _c.from('profiles').update({'display_name': n}).eq('id', user!.id);
+    await _c.auth.updateUser(UserAttributes(data: {'display_name': n}));
+  }
+
   // ---------------------------------------------------------------- Teams
   /// Teams, in denen ich Mitglied bin (inkl. meiner Rolle).
   static Future<List<Map<String, dynamic>>> myTeams() async {

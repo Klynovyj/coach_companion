@@ -319,6 +319,59 @@ class _TeamsViewState extends State<_TeamsView> {
 
   String _err(Object e) => e is PostgrestException ? e.message : e.toString();
 
+  /// Eigenen Anzeigenamen (Vor- und Nachname) setzen – erscheint in der
+  /// Mitgliederliste bei allen und in der Kopfzeile.
+  Future<void> _editName() async {
+    final cur = CloudService.displayName ?? '';
+    final parts = cur.split(' ');
+    final first = TextEditingController(text: parts.isNotEmpty ? parts.first : '');
+    final last = TextEditingController(
+        text: parts.length > 1 ? parts.sublist(1).join(' ') : '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mein Name'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: first,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Vorname'),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: last,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(labelText: 'Nachname'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Speichern')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final name = [first.text.trim(), last.text.trim()]
+        .where((s) => s.isNotEmpty)
+        .join(' ');
+    if (name.isEmpty) return;
+    try {
+      await CloudService.setDisplayName(name);
+      if (mounted) setState(() {});
+      _snack('Name gespeichert.');
+    } catch (e) {
+      _snack('Fehler: ${_err(e)}');
+    }
+  }
+
   /// Macht ein Team zum aktiven Team (lädt es in den lokalen Cache + startet
   /// den Realtime-Sync). Ab dann laufen alle normalen App-Funktionen darüber.
   Future<void> _activate(Map<String, dynamic> team, {bool force = false}) async {
@@ -451,30 +504,38 @@ class _TeamsViewState extends State<_TeamsView> {
 
   @override
   Widget build(BuildContext context) {
-    final who = CloudService.displayName ?? CloudService.email ?? '—';
+    final scheme = Theme.of(context).colorScheme;
+    final name = CloudService.displayName;
+    final who = name ?? CloudService.email ?? '—';
     final activeId = context.watch<AppState>().activeCloudTeamId;
     return Column(
       children: [
-        Container(
-          width: double.infinity,
-          color: Theme.of(context).colorScheme.secondaryContainer,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              Icon(Icons.account_circle,
-                  size: 18,
-                  color: Theme.of(context).colorScheme.onSecondaryContainer),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Angemeldet als $who',
-                  style: TextStyle(
-                      color:
-                          Theme.of(context).colorScheme.onSecondaryContainer),
-                  overflow: TextOverflow.ellipsis,
-                ),
+        Material(
+          color: scheme.secondaryContainer,
+          child: InkWell(
+            onTap: _editName,
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: Row(
+                children: [
+                  Icon(Icons.account_circle,
+                      size: 18, color: scheme.onSecondaryContainer),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      name == null
+                          ? 'Angemeldet als $who · Name festlegen'
+                          : 'Angemeldet als $who',
+                      style: TextStyle(color: scheme.onSecondaryContainer),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Icon(Icons.edit,
+                      size: 16, color: scheme.onSecondaryContainer),
+                ],
               ),
-            ],
+            ),
           ),
         ),
         Padding(
