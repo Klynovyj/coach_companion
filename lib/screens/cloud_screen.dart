@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../services/cloud_service.dart';
+import '../state/app_state.dart';
 import '../widgets/app_drawer.dart';
 
 /// Einstieg in den Mehrbenutzer-Bereich (Supabase): Login → Teams → Spiele →
@@ -383,10 +385,67 @@ class _CloudTeamScreenState extends State<CloudTeamScreen> {
     ).then((_) => _reload());
   }
 
+  Future<void> _uploadRoster() async {
+    final app = context.read<AppState>();
+    final localTeam = app.ownTeam;
+    if (localTeam == null) {
+      _snack('Kein lokaler Kader vorhanden.');
+      return;
+    }
+    final players = await app.playersOf(localTeam.id);
+    final roster = [
+      for (final p in players.where((p) => !p.isStaffOnly))
+        {
+          'first_name': p.firstName,
+          'last_name': p.lastName,
+          'number': p.number,
+          'position': p.position,
+        }
+    ];
+    if (!mounted) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Kader hochladen'),
+        content: Text(
+            '${roster.length} Spieler aus deinem lokalen Kader in die Cloud '
+            'laden? Ersetzt den bisherigen Cloud-Kader dieses Teams.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Hochladen')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await CloudService.uploadRoster(widget.teamId, roster);
+      _snack('${roster.length} Spieler hochgeladen.');
+    } catch (e) {
+      _snack('Fehler: $e');
+    }
+  }
+
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.teamName)),
+      appBar: AppBar(
+        title: Text(widget.teamName),
+        actions: [
+          if (widget.isTrainer)
+            IconButton(
+              tooltip: 'Lokalen Kader hochladen',
+              icon: const Icon(Icons.cloud_upload_outlined),
+              onPressed: _uploadRoster,
+            ),
+        ],
+      ),
       floatingActionButton: widget.isTrainer
           ? FloatingActionButton.extended(
               onPressed: _newMatch,
@@ -458,6 +517,7 @@ class _CloudMatchScreenState extends State<CloudMatchScreen> {
   int _own = 0;
   int _opp = 0;
   List<Map<String, dynamic>> _events = [];
+  List<Map<String, dynamic>> _players = [];
   RealtimeChannel? _channel;
 
   @override
@@ -466,7 +526,65 @@ class _CloudMatchScreenState extends State<CloudMatchScreen> {
     _own = widget.match['own_score'] ?? 0;
     _opp = widget.match['opponent_score'] ?? 0;
     _load();
+    _loadPlayers();
     _channel = CloudService.subscribeEvents(_matchId, _load);
+  }
+
+  Future<void> _loadPlayers() async {
+    try {
+      final ps = await CloudService.players(widget.teamId);
+      if (mounted) setState(() => _players = ps);
+    } catch (_) {}
+  }
+
+  /// Spieler aus dem Cloud-Kader wählen. null = abgebrochen,
+  /// Record mit id=null/name=null = „ohne".
+  Future<({String? id, String? name})?> _pickCloudPlayer(String title) async {
+    if (_players.isEmpty) {
+      final t = await _askText('$title – Name (optional)');
+      if (t == _cancelled) return null;
+      return (id: null, name: (t == null || t.isEmpty) ? null : t);
+    }
+    return showModalBottomSheet<({String? id, String? name})>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7),
+          child: ListView(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Text(title,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+              ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.block)),
+                title: const Text('— ohne —'),
+                onTap: () => Navigator.pop(context, (id: null, name: null)),
+              ),
+              for (final p in _players)
+                ListTile(
+                  leading: CircleAvatar(child: Text('${p['number'] ?? ''}')),
+                  title: Text([p['first_name'], p['last_name']]
+                      .where((x) => x != null && '$x'.isNotEmpty)
+                      .join(' ')),
+                  subtitle: p['position'] != null ? Text('${p['position']}') : null,
+                  onTap: () => Navigator.pop(context, (
+                    id: p['id'] as String,
+                    name: [p['first_name'], p['last_name']]
+                        .where((x) => x != null && '$x'.isNotEmpty)
+                        .join(' '),
+                  )),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -484,33 +602,34 @@ class _CloudMatchScreenState extends State<CloudMatchScreen> {
   }
 
   Future<void> _addGoal(bool own) async {
-    final name = own ? await _askText('Torschütze (optional)') : null;
-    if (own && name == _cancelled) return;
+    ({String? id, String? name})? pick;
+    if (own) {
+      pick = await _pickCloudPlayer('Torschütze');
+      if (pick == null) return; // abgebrochen
+    }
     _own += own ? 1 : 0;
     _opp += own ? 0 : 1;
     await CloudService.addEvent(
       matchId: _matchId,
       teamId: widget.teamId,
       type: 'goal',
-      playerName: (name == null || name.isEmpty) ? null : name,
+      playerId: pick?.id,
+      playerName: pick?.name,
       note: own ? null : 'Gegner',
     );
     await CloudService.setScore(_matchId, _own, _opp);
     if (mounted) setState(() {});
   }
 
-  Future<void> _addSimple(String type, String label,
-      {bool askPlayer = true}) async {
-    String? player;
-    if (askPlayer) {
-      player = await _askText('$label – Spieler (optional)');
-      if (player == _cancelled) return;
-    }
+  Future<void> _addSimple(String type, String label) async {
+    final pick = await _pickCloudPlayer(label);
+    if (pick == null) return; // abgebrochen
     await CloudService.addEvent(
       matchId: _matchId,
       teamId: widget.teamId,
       type: type,
-      playerName: (player == null || player.isEmpty) ? null : player,
+      playerId: pick.id,
+      playerName: pick.name,
     );
   }
 

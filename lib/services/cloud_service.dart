@@ -71,6 +71,29 @@ class CloudService {
   static Future<void> joinTeam(String code) =>
       _c.rpc('join_team', params: {'code': code.trim()});
 
+  // ---------------------------------------------------------------- Kader
+  static Future<List<Map<String, dynamic>>> players(String teamId) async {
+    final rows = await _c
+        .from('players')
+        .select()
+        .eq('team_id', teamId)
+        .order('number', ascending: true)
+        .order('last_name', ascending: true);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// Ersetzt den Cloud-Kader eines Teams durch die übergebenen Spieler.
+  /// [roster] = Liste von {first_name,last_name,number,position}.
+  static Future<void> uploadRoster(
+      String teamId, List<Map<String, dynamic>> roster) async {
+    await _c.from('players').delete().eq('team_id', teamId);
+    if (roster.isEmpty) return;
+    final rows = [
+      for (final p in roster) {'team_id': teamId, ...p}
+    ];
+    await _c.from('players').insert(rows);
+  }
+
   // --------------------------------------------------------------- Spiele
   static Future<List<Map<String, dynamic>>> matches(String teamId) async {
     final rows = await _c
@@ -115,6 +138,7 @@ class CloudService {
     required String teamId,
     required String type,
     int minute = 0,
+    String? playerId,
     String? playerName,
     String? note,
   }) =>
@@ -123,6 +147,7 @@ class CloudService {
         'team_id': teamId,
         'type': type,
         'minute': minute,
+        'player_id': playerId,
         'player_name': playerName,
         'note': note,
         'created_by': user!.id,
