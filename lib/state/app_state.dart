@@ -23,6 +23,7 @@ import '../models/team.dart';
 import '../models/player_talk.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
+import '../services/cloud_service.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_persistence.dart';
 import '../services/material_duty.dart';
@@ -82,6 +83,11 @@ class AppState extends ChangeNotifier {
 
   Team? _ownTeam;
   Team? get ownTeam => _ownTeam;
+
+  /// Aktives Cloud-Team (lokale IDs == Cloud-IDs). Nur wenn gesetzt, werden
+  /// lokale Schreibzugriffe in die Cloud gespiegelt.
+  String? _activeCloudTeamId;
+  String? get activeCloudTeamId => _activeCloudTeamId;
 
   List<GameMatch> _matches = [];
   List<GameMatch> get matches => List.unmodifiable(_matches);
@@ -153,6 +159,7 @@ class AppState extends ChangeNotifier {
     required List<Map<String, dynamic>> matches,
   }) async {
     await _repo.wipeTeams();
+    _activeCloudTeamId = cloudTeamId; // ab jetzt Schreib-Sync in die Cloud
     final now = DateTime.now();
     await _repo.upsertTeam(Team(
       id: cloudTeamId,
@@ -710,7 +717,35 @@ class AppState extends ChangeNotifier {
     }
 
     await _recomputeScore(matchId);
+    await _mirrorEventToCloud(matchId, teamId, type, minute, playerId, note);
     notifyListeners();
+  }
+
+  /// Spiegelt ein neues Ereignis in die Cloud (nur bei aktivem Cloud-Team und
+  /// Verbindung; sonst still – der lokale Cache bleibt gültig).
+  Future<void> _mirrorEventToCloud(String matchId, String teamId,
+      MatchEventType type, int minute, String? playerId, String? note) async {
+    final cloudTeam = _activeCloudTeamId;
+    if (cloudTeam == null || !CloudService.ready || !CloudService.signedIn) {
+      return;
+    }
+    final isOwn = teamId == _ownTeam?.id;
+    try {
+      await CloudService.addEvent(
+        matchId: matchId,
+        teamId: cloudTeam,
+        type: type.storageKey,
+        minute: minute,
+        playerId: isOwn ? playerId : null,
+        note: note ?? (isOwn ? null : 'Gegner'),
+      );
+      final m = await _repo.getMatch(matchId);
+      if (m != null) {
+        await CloudService.setScore(matchId, m.ownScore, m.opponentScore);
+      }
+    } catch (_) {
+      // Offline/kein Cloud-Spiel – später synchronisieren.
+    }
   }
 
   Future<void> updateEvent(MatchEvent event) async {

@@ -264,10 +264,15 @@ class _TeamsViewState extends State<_TeamsView> {
       final team = await CloudService.createTeam(summary.teamName);
       await CloudService.uploadRoster(team['id'], roster);
       final added = await CloudService.uploadSchedule(team['id'], schedule);
+      // Zurückladen, damit lokale IDs == Cloud-IDs sind (Schreib-Sync).
+      final cloudPlayers = await CloudService.players(team['id']);
+      final cloudMatches = await CloudService.matches(team['id']);
+      await app.downloadCloudTeam(team['id'], summary.teamName,
+          players: cloudPlayers, matches: cloudMatches);
       if (mounted) navigator.pop(); // Fortschritt schließen
       _reload();
       _snack('„${summary.teamName}" angelegt · ${roster.length} Spieler, '
-          '$added Spiele in die Cloud.');
+          '$added Spiele · geteilt.');
     } catch (e) {
       if (mounted) navigator.pop();
       _snack('Fehler: $e');
