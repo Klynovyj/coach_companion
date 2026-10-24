@@ -109,8 +109,13 @@ class AppDrawer extends StatelessWidget {
                 selected: nav?.index == i,
                 trailing: i == 2 ? _NachholenBadge() : null,
                 onTap: () {
-                  Navigator.pop(context);
-                  nav?.onSelect(i);
+                  final navigator = Navigator.of(context);
+                  navigator.pop(); // Drawer schließen
+                  homeTabNotifier.value = i; // Start-Tab umschalten
+                  // Aus einer aufgeschobenen Seite zurück zur Startseite.
+                  if (nav == null) {
+                    navigator.popUntil((r) => r.isFirst);
+                  }
                 },
               ),
             const Divider(),

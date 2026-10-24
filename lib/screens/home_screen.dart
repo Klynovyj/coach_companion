@@ -35,16 +35,29 @@ class HomeNav extends InheritedWidget {
   bool updateShouldNotify(HomeNav old) => old.index != index;
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  int _index = 0;
+/// Gewählter Start-Tab. Global, damit das Menü den Tab auch aus aufgeschobenen
+/// Seiten heraus umschalten kann (danach zurück zur Startseite springen).
+final ValueNotifier<int> homeTabNotifier = ValueNotifier<int>(0);
 
+class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    homeTabNotifier.addListener(_onTabChanged);
     // Einmal beim Start auf App-Updates prüfen (nur Android, still).
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) UpdateService.promptIfAvailable(context);
     });
+  }
+
+  @override
+  void dispose() {
+    homeTabNotifier.removeListener(_onTabChanged);
+    super.dispose();
+  }
+
+  void _onTabChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
@@ -63,11 +76,12 @@ class _HomeScreenState extends State<HomeScreen> {
       SpielergespraecheScreen(),
     ];
 
+    final index = homeTabNotifier.value.clamp(0, pages.length - 1);
     // Navigation läuft über das Seitenmenü (☰) – keine untere Leiste mehr.
     return HomeNav(
-      index: _index,
-      onSelect: (i) => setState(() => _index = i),
-      child: Scaffold(body: pages[_index]),
+      index: index,
+      onSelect: (i) => homeTabNotifier.value = i,
+      child: Scaffold(body: pages[index]),
     );
   }
 }
