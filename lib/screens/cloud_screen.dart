@@ -425,83 +425,6 @@ class _TeamsViewState extends State<_TeamsView> {
     );
   }
 
-  /// Lädt den aktuellen lokalen Kader + Spielplan in die Cloud (nur sinnvoll
-  /// für das aktive Team, dessen Daten lokal vorliegen).
-  Future<void> _uploadData() async {
-    final app = context.read<AppState>();
-    final localTeam = app.ownTeam;
-    final cloudId = app.activeCloudTeamId;
-    if (localTeam == null || cloudId == null) {
-      _snack('Zuerst ein Team aktivieren.');
-      return;
-    }
-    final players = await app.playersOf(localTeam.id);
-    final roster = rosterMaps(players);
-    final schedule = scheduleMaps(app.matches);
-    if (!mounted) return;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Daten hochladen'),
-        content: Text(
-            '${roster.length} Spieler und ${schedule.length} Spiele in die '
-            'Cloud laden? Der Kader wird ersetzt; fehlende Spiele werden '
-            'ergänzt (bestehende/getrackte bleiben).'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Abbrechen')),
-          FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Hochladen')),
-        ],
-      ),
-    );
-    if (ok != true) return;
-    try {
-      await CloudService.uploadRoster(cloudId, roster);
-      final added = await CloudService.uploadSchedule(cloudId, schedule);
-      _snack('${roster.length} Spieler, $added Spiele hochgeladen.');
-    } catch (e) {
-      _snack('Fehler: ${_err(e)}');
-    }
-  }
-
-  /// Aktualisiert Kader + Spielplan des aktiven Teams aus FuPa (und teilt).
-  Future<void> _resyncFupa() async {
-    final app = context.read<AppState>();
-    final navigator = Navigator.of(context);
-    final status = ValueNotifier<String>('Aktualisiere aus FuPa …');
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => AlertDialog(
-        title: const Text('FuPa-Aktualisierung'),
-        content: ValueListenableBuilder<String>(
-          valueListenable: status,
-          builder: (_, s, _) => Row(children: [
-            const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2)),
-            const SizedBox(width: 16),
-            Expanded(child: Text(s)),
-          ]),
-        ),
-      ),
-    );
-    try {
-      final sum = await app.resyncOwnTeam(onProgress: (p) => status.value = p);
-      if (mounted) navigator.pop();
-      _snack('Aktualisiert: ${sum.players} Spieler, ${sum.matches} Spiele – geteilt.');
-    } catch (e) {
-      if (mounted) navigator.pop();
-      _snack('Fehler: ${_err(e)}');
-    } finally {
-      status.dispose();
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -587,10 +510,7 @@ class _TeamsViewState extends State<_TeamsView> {
                       team: t,
                       isActive: t['id'] == activeId,
                       onActivate: () => _activate(t),
-                      onReload: () => _activate(t, force: true),
                       onMembers: () => _openMembers(t),
-                      onUpload: _uploadData,
-                      onResyncFupa: _resyncFupa,
                     ),
                 ],
               );
@@ -602,89 +522,48 @@ class _TeamsViewState extends State<_TeamsView> {
   }
 }
 
-/// Kompakte Team-Karte in der Konto-&-Team-Liste. Beim aktiven Team werden die
-/// Verwaltungs-Aktionen (Mitglieder/Rollen, Hochladen, FuPa, neu laden) direkt
-/// als Buttons gezeigt; nicht-aktive Teams haben einen „Aktivieren"-Button.
+/// Kompakte Team-Karte: antippen = aktiv setzen. Beim aktiven Team (Trainer)
+/// gibt es den Zugang zu „Mitglieder & Rollen"; Spielplan/Kader/Ergebnisse
+/// halten sich automatisch aktuell (kein manuelles Synchronisieren).
 class _TeamCard extends StatelessWidget {
   const _TeamCard({
     required this.team,
     required this.isActive,
     required this.onActivate,
-    required this.onReload,
     required this.onMembers,
-    required this.onUpload,
-    required this.onResyncFupa,
   });
 
   final Map<String, dynamic> team;
   final bool isActive;
   final VoidCallback onActivate;
-  final VoidCallback onReload;
   final VoidCallback onMembers;
-  final VoidCallback onUpload;
-  final VoidCallback onResyncFupa;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final isTrainer = team['role'] == 'trainer';
-    final hasFupa = (team['fupa_url'] as String?)?.isNotEmpty ?? false;
     return Card(
-      child: Column(
-        children: [
-          ListTile(
-            leading: Icon(
-              isActive ? Icons.check_circle : Icons.shield_outlined,
-              color: isActive ? scheme.primary : null,
-            ),
-            title: Text((team['name'] as String?) ?? 'Team'),
-            subtitle: Text([
-              if (isTrainer)
-                'Trainer · Code: ${team['invite_code']}'
-              else
-                'Spieler',
-              if (isActive) 'aktiv',
-            ].join('  ·  ')),
-            onTap: isActive ? null : onActivate,
-            trailing: isActive
-                ? null
-                : FilledButton.tonal(
-                    onPressed: onActivate, child: const Text('Aktivieren')),
-          ),
-          if (isActive)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (isTrainer)
-                    OutlinedButton.icon(
-                      onPressed: onMembers,
-                      icon: const Icon(Icons.manage_accounts, size: 18),
-                      label: const Text('Mitglieder & Rollen'),
-                    ),
-                  if (isTrainer)
-                    OutlinedButton.icon(
-                      onPressed: onUpload,
-                      icon: const Icon(Icons.cloud_upload_outlined, size: 18),
-                      label: const Text('Hochladen'),
-                    ),
-                  if (isTrainer && hasFupa)
-                    OutlinedButton.icon(
-                      onPressed: onResyncFupa,
-                      icon: const Icon(Icons.sync, size: 18),
-                      label: const Text('Aus FuPa'),
-                    ),
-                  OutlinedButton.icon(
-                    onPressed: onReload,
-                    icon: const Icon(Icons.cloud_download_outlined, size: 18),
-                    label: const Text('Neu laden'),
-                  ),
-                ],
-              ),
-            ),
-        ],
+      child: ListTile(
+        leading: Icon(
+          isActive ? Icons.check_circle : Icons.shield_outlined,
+          color: isActive ? scheme.primary : null,
+        ),
+        title: Text((team['name'] as String?) ?? 'Team'),
+        subtitle: Text([
+          if (isTrainer) 'Trainer · Code: ${team['invite_code']}' else 'Spieler',
+          if (isActive) 'aktiv',
+        ].join('  ·  ')),
+        onTap: isActive ? null : onActivate,
+        trailing: isActive
+            ? (isTrainer
+                ? OutlinedButton.icon(
+                    onPressed: onMembers,
+                    icon: const Icon(Icons.manage_accounts, size: 18),
+                    label: const Text('Mitglieder'),
+                  )
+                : null)
+            : FilledButton.tonal(
+                onPressed: onActivate, child: const Text('Aktivieren')),
       ),
     );
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -240,8 +241,11 @@ class AppState extends ChangeNotifier {
   String? _syncedTeamId;
   bool _syncingRemote = false;
   bool _pendingRemote = false;
+  Timer? _fupaTimer;
+  bool _autoRefreshing = false;
 
-  /// Startet (oder behält) das Realtime-Abo für das aktive Cloud-Team.
+  /// Startet (oder behält) das Realtime-Abo + die periodische FuPa-Auffrischung
+  /// für das aktive Cloud-Team.
   void ensureTeamSync(String teamId) {
     if (_syncedTeamId == teamId && _teamChannel != null) return;
     _stopTeamSync();
@@ -249,13 +253,45 @@ class AppState extends ChangeNotifier {
     _syncedTeamId = teamId;
     _teamChannel =
         CloudService.subscribeTeam(teamId, () => _onRemoteChange(teamId));
+    // FuPa (Spielplan/Ergebnisse) regelmäßig automatisch auffrischen.
+    _fupaTimer = Timer.periodic(
+        const Duration(minutes: 30), (_) => maybeAutoRefreshFupa());
+    maybeAutoRefreshFupa();
   }
 
   void _stopTeamSync() {
     final ch = _teamChannel;
     _teamChannel = null;
     _syncedTeamId = null;
+    _fupaTimer?.cancel();
+    _fupaTimer = null;
     if (ch != null) CloudService.removeChannel(ch);
+  }
+
+  /// Frischt den Spielplan (inkl. Ergebnisse) des aktiven Cloud-Teams still aus
+  /// FuPa auf und spiegelt ihn in die Cloud – ohne Nutzeraktion, gedrosselt auf
+  /// höchstens alle 30 Minuten. Leichter Import (ohne Fotos).
+  Future<void> maybeAutoRefreshFupa() async {
+    if (_autoRefreshing) return;
+    final team = _ownTeam;
+    final url = team?.fupaUrl;
+    if (_activeCloudTeamId == null || url == null || url.isEmpty) return;
+    final last = await _repo.getSetting('last_fupa_autosync');
+    final lastT = last == null ? null : DateTime.tryParse(last);
+    if (lastT != null &&
+        DateTime.now().difference(lastT) < const Duration(minutes: 30)) {
+      return;
+    }
+    _autoRefreshing = true;
+    try {
+      await importSchedule(url); // Spielplan/Ergebnisse + pushTeamToCloud
+      await _repo.setSetting(
+          'last_fupa_autosync', DateTime.now().toIso8601String());
+    } catch (_) {
+      // Offline/FuPa-Fehler: später erneut.
+    } finally {
+      _autoRefreshing = false;
+    }
   }
 
   Future<void> _onRemoteChange(String teamId) async {
