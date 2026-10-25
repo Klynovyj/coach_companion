@@ -1,6 +1,6 @@
 {
-  "versionCode": 16,
-  "versionName": "1.3.11",
+  "versionCode": 17,
+  "versionName": "1.3.12",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Gegner-Logo bleibt erhalten (ein Status-Update überschreibt es nicht mehr)\n- Spiele behalten Spieltag/Wettbewerb und FuPa-Zuordnung (Ergebnisse landen zuverlässig am richtigen Spiel)\n- Aufstellung geht beim Teilen nicht mehr verloren (Sync-Race behoben)\n- kleinere Korrekturen in der Live-Erfassung"
+  "notes": "Neuerungen:\n- Live-Steuerung: nur wer das Spiel startet, bedient es; andere Trainer sehen wer steuert und können mit Bestätigung übernehmen\n- Live-Spiel/Abpfiff/Zurücksetzen erscheinen zuverlässig bei allen (zusätzlicher Abgleich alle 15s) + Info-Benachrichtigung, wenn ein Spiel live geht\n- FuPa-Statistik wieder da (neue FuPa-API)\n- Abwesenheit: Datum von/bis direkt eintippbar\n- Aufgaben: Themen ein-/ausklappen und Aufgaben per Drag&Drop ins Thema\n- weitere Korrekturen (Gegner-Logo, Aufstellung teilen, Spieltag/FuPa-Zuordnung)"
 }
