@@ -86,6 +86,7 @@ enum MatchEventType {
   save('save', 'Parade', '🧤'),
   shot('shot', 'Schuss', '👟'),
   longShot('long_shot', 'Distanzschuss', '🚀'),
+  header('header', 'Kopfball', '👤'),
   injury('injury', 'Verletzung', '🤕'),
   comment('comment', 'Kommentar', '💬'),
   // Team-neutrale Spielphasen-Marken (ohne Spieler).

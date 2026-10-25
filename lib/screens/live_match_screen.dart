@@ -1174,6 +1174,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     const types = [
       MatchEventType.shot,
       MatchEventType.longShot,
+      MatchEventType.header,
       MatchEventType.corner,
       MatchEventType.freeKick,
       MatchEventType.penalty,
@@ -1423,6 +1424,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         MatchEventType.save,
         MatchEventType.shot,
         MatchEventType.longShot,
+        MatchEventType.header,
         MatchEventType.injury,
       };
       if (needsPlayer.contains(newType)) {
@@ -1469,6 +1471,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ('Elfmeter gehalten', MatchEventType.penaltySaved),
       ('Schuss', MatchEventType.shot),
       ('Distanzschuss', MatchEventType.longShot),
+      ('Kopfball', MatchEventType.header),
       ('Ecke', MatchEventType.corner),
       ('Freistoß', MatchEventType.freeKick),
       ('Foul', MatchEventType.foul),
@@ -1654,6 +1657,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ('Eigentore', {MatchEventType.ownGoal}),
       ('Schüsse', {MatchEventType.shot}),
       ('Distanzschüsse', {MatchEventType.longShot}),
+      ('Kopfbälle', {MatchEventType.header}),
       ('Großchancen', {MatchEventType.bigChance}),
       ('Elfmeter', {
         MatchEventType.penalty,
@@ -2441,6 +2445,7 @@ class _EventLog extends StatelessWidget {
       case MatchEventType.save:
       case MatchEventType.shot:
       case MatchEventType.longShot:
+      case MatchEventType.header:
       case MatchEventType.injury:
         return e.playerId == null
             ? e.type.label
