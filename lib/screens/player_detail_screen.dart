@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
@@ -864,16 +865,30 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     return (team, stat, live);
   }
 
-  /// Gestaltete Spielerkarte oben im Profil (Foto, Nummer, Name + FuPa-Werte).
+  /// Spielerkarte oben im Profil als Flip-Karte: Vorderseite FuPa, Rückseite
+  /// Tracking. Umschalten per Reiter oder Antippen (3D-Dreh).
   Widget _playerCard(BuildContext context, AppState state) {
     return FutureBuilder<(Team?, PlayerStat?, Map<String, int>)>(
       future: _loadCardData(state),
-      builder: (context, snap) => _PlayerCardView(
-        player: _player,
-        team: snap.data?.$1,
-        stat: snap.data?.$2,
-        live: snap.data?.$3 ?? const {},
-      ),
+      builder: (context, snap) {
+        final team = snap.data?.$1;
+        final stat = snap.data?.$2;
+        final live = snap.data?.$3 ?? const <String, int>{};
+        return _FlipPlayerCard(
+          front: _PlayerCardView(
+              player: _player,
+              team: team,
+              stat: stat,
+              live: live,
+              section: _CardSide.fupa),
+          back: _PlayerCardView(
+              player: _player,
+              team: team,
+              stat: stat,
+              live: live,
+              section: _CardSide.tracking),
+        );
+      },
     );
   }
 
@@ -2101,7 +2116,11 @@ Future<CardDialogData?> showCardDialog(
 /// Gestaltete Spielerkarte (FuPa-Werte) im Vereins-Look – oben im Profil.
 class _PlayerCardView extends StatelessWidget {
   const _PlayerCardView(
-      {required this.player, this.team, this.stat, this.live = const {}});
+      {required this.player,
+      this.team,
+      this.stat,
+      this.live = const {},
+      this.section = _CardSide.both});
 
   final Player player;
   final Team? team;
@@ -2109,6 +2128,9 @@ class _PlayerCardView extends StatelessWidget {
 
   /// Tracking-Aktionen (Label → Anzahl) aus live getrackten Spielen.
   final Map<String, int> live;
+
+  /// Welche Statistik-Sektion gezeigt wird (für die Flip-Seiten bzw. das Bild).
+  final _CardSide section;
 
   static const _gold = Color(0xFFC9A24B);
 
@@ -2233,39 +2255,133 @@ class _PlayerCardView extends StatelessWidget {
           const SizedBox(height: 12),
           Container(height: 1, color: _gold.withValues(alpha: 0.4)),
           const SizedBox(height: 8),
-          _sectionLabel('FUPA · SAISON'),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _stat(Icons.directions_run, matches, 'Spiele'),
-              _stat(Icons.sports_soccer, goals, 'Tore'),
-              _stat(Icons.handshake, assists, 'Vorlagen'),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _stat(Icons.style, yellow, 'Gelb'),
-              _stat(Icons.style, red, 'Rot'),
-              _stat(Icons.timer, minutes, 'Minuten'),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(height: 1, color: _gold.withValues(alpha: 0.4)),
-          const SizedBox(height: 8),
-          _sectionLabel('TRACKING · LIVE'),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final e in trackingEntries) _liveChip(e.key, e.value),
-            ],
-          ),
+          if (section != _CardSide.tracking) ...[
+            _sectionLabel('FUPA · SAISON'),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _stat(Icons.directions_run, matches, 'Spiele'),
+                _stat(Icons.sports_soccer, goals, 'Tore'),
+                _stat(Icons.handshake, assists, 'Vorlagen'),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _stat(Icons.style, yellow, 'Gelb'),
+                _stat(Icons.style, red, 'Rot'),
+                _stat(Icons.timer, minutes, 'Minuten'),
+              ],
+            ),
+          ],
+          if (section == _CardSide.both) ...[
+            const SizedBox(height: 12),
+            Container(height: 1, color: _gold.withValues(alpha: 0.4)),
+            const SizedBox(height: 8),
+          ],
+          if (section != _CardSide.fupa) ...[
+            _sectionLabel('TRACKING · LIVE'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final e in trackingEntries) _liveChip(e.key, e.value),
+              ],
+            ),
+          ],
         ],
       ),
+    );
+  }
+}
+
+/// Welche Statistik-Sektion die Spielerkarte zeigt.
+enum _CardSide { both, fupa, tracking }
+
+/// Flip-Karte: Reiter FuPa/Tracking + 3D-Dreh beim Antippen.
+class _FlipPlayerCard extends StatefulWidget {
+  const _FlipPlayerCard({required this.front, required this.back});
+  final Widget front;
+  final Widget back;
+
+  @override
+  State<_FlipPlayerCard> createState() => _FlipPlayerCardState();
+}
+
+class _FlipPlayerCardState extends State<_FlipPlayerCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 450));
+  bool _front = true;
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  void _toggle() {
+    if (_front) {
+      _c.forward();
+    } else {
+      _c.reverse();
+    }
+    setState(() => _front = !_front);
+  }
+
+  void _show(bool front) {
+    if (front != _front) _toggle();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(value: true, label: Text('FuPa')),
+              ButtonSegment(value: false, label: Text('Tracking')),
+            ],
+            selected: {_front},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) => _show(s.first),
+          ),
+        ),
+        GestureDetector(
+          onTap: _toggle,
+          child: AnimatedBuilder(
+            animation: _c,
+            builder: (context, _) {
+              final angle = _c.value * math.pi;
+              final showFront = angle <= math.pi / 2;
+              final child = showFront
+                  ? widget.front
+                  : Transform(
+                      alignment: Alignment.center,
+                      transform: Matrix4.identity()..rotateY(math.pi),
+                      child: widget.back,
+                    );
+              return Transform(
+                alignment: Alignment.center,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.001)
+                  ..rotateY(angle),
+                child: child,
+              );
+            },
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 2),
+          child: Text('Tippen zum Drehen',
+              style: TextStyle(fontSize: 11, color: Colors.grey)),
+        ),
+      ],
     );
   }
 }
