@@ -1,6 +1,6 @@
 {
-  "versionCode": 23,
-  "versionName": "1.3.18",
+  "versionCode": 24,
+  "versionName": "1.3.19",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Spielbewertung pro Benutzer: jeder bewertet Spieler + Spiel-Gesamtnote, War-nicht-da-Option, nur bis 3 Tage nach Spielende; angezeigt wird der Schnitt\n- Spieler des Monats (Menue): Rangliste nach Schnitt, Kuerung + Hall of Fame\n- Spielerkarte als Flip-Karte: FuPa vorne, Tracking hinten (alle Aktionen als Balken), als Bild teilbar\n- Live-Spiel: TW-Button (Paraden), Aktion nachtraeglich aendern, Gegner-Karten/-Wechsel, neue Aktionen Schuss/Distanzschuss/Kopfball/Verletzung\n- Match-Dashboard + Gesamtstatistik (Wir vs Gegner) als Bild teilbar\n- Startelf-Grafik: Datum/Heim-Auswaerts/Gegner + optionales Gegner-Logo\n- Gegner-Analyse: Gegner-Liga-Tabelle, Spieler oeffnen FuPa"
+  "notes": "Neuerungen:\n- Karten & Sperren (Menue): Gelbe/Rote je Spieler (FuPa + eigene), Warnung ab der 5. Gelben, Sperre je Spieler eintragen; Warn-Badge in Nominierung, Kader und Aufstellung\n- Geburtstags-Benachrichtigungen: Erinnerung um 8:00 am Geburtstag fuer Spieler und Betreuer\n- Spielbewertung: eine geteilte Note je Spiel/Spieler (nicht mehr pro Benutzer)\n- FuPa Bester-Spieler-Abstimmung direkt aus der Bewertungs-Ansicht oeffnen\n- Live-Spiel: Zuschauen-Modus blendet die Eingaben komplett aus\n- Startelf-Grafik: Kopf und Spielerliste klarer getrennt"
 }
