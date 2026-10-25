@@ -23,6 +23,7 @@ import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/graphic_settings.dart';
+import '../models/match_rating.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -114,6 +115,7 @@ class AppState extends ChangeNotifier {
     'player_absences',
     'sponsors',
     'graphic_settings',
+    'match_ratings',
     // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
     // referenzierten lokalen match_events bereits vorhanden sind.
     'event_mentions',
@@ -2071,6 +2073,9 @@ class AppState extends ChangeNotifier {
     return {for (final r in list) r.playerId: r};
   }
 
+  /// Aktueller Benutzer (für pro-Benutzer-Bewertungen). Ohne Cloud „local".
+  String get _me => CloudService.userId ?? 'local';
+
   Future<void> setRating({
     required String matchId,
     required String playerId,
@@ -2078,13 +2083,16 @@ class AppState extends ChangeNotifier {
     String? note,
     bool keepNote = true,
   }) async {
+    final me = _me;
     final existing = await _repo.getRatings(matchId);
-    final prior =
-        existing.where((r) => r.playerId == playerId).firstOrNull;
+    final prior = existing
+        .where((r) => r.playerId == playerId && (r.userId ?? '') == me)
+        .firstOrNull;
     await _repo.upsertRating(PlayerRating(
       id: prior?.id ?? _uuid.v4(),
       matchId: matchId,
       playerId: playerId,
+      userId: me,
       rating: rating,
       note: note ?? (keepNote ? prior?.note : null),
       createdAt: prior?.createdAt ?? DateTime.now(),
@@ -2092,13 +2100,90 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Entfernt die Bewertung eines Spielers für ein Spiel (falls vorhanden).
+  /// Entfernt die EIGENE Bewertung eines Spielers für ein Spiel.
   Future<void> removeRating(String matchId, String playerId) async {
+    final me = _me;
     final existing = await _repo.getRatings(matchId);
-    for (final r in existing.where((r) => r.playerId == playerId)) {
+    for (final r in existing
+        .where((r) => r.playerId == playerId && (r.userId ?? '') == me)) {
       await _repo.deleteRating(r.id);
     }
     notifyListeners();
+  }
+
+  /// Schnitt + Anzahl je Spieler für ein Spiel (über alle Benutzer).
+  Future<Map<String, (double, int)>> ratingAverages(String matchId) =>
+      _repo.ratingAveragesForMatch(matchId);
+
+  // ------------------------------------------- Spiel-Gesamtnote/Abwesenheit
+  Future<List<MatchRating>> matchRatingsOf(String matchId) =>
+      _repo.getMatchRatings(matchId);
+
+  Future<MatchRating?> myMatchRating(String matchId) async {
+    final me = _me;
+    final list = await _repo.getMatchRatings(matchId);
+    return list.where((r) => (r.userId ?? '') == me).firstOrNull;
+  }
+
+  MatchRating _baseMatchRating(String matchId, MatchRating? mine) =>
+      mine ??
+      MatchRating(
+          id: _uuid.v4(),
+          matchId: matchId,
+          userId: _me,
+          createdAt: DateTime.now());
+
+  Future<void> setMatchRating(String matchId, double? rating) async {
+    final mine = await myMatchRating(matchId);
+    await _repo.upsertMatchRating(_baseMatchRating(matchId, mine)
+        .copyWith(userId: _me, rating: rating, clearRating: rating == null));
+    notifyListeners();
+  }
+
+  /// „War nicht da / bewerte nicht": setzt das Kennzeichen und entfernt (bei
+  /// true) die eigenen Spielerbewertungen dieses Spiels (zählen nicht mehr).
+  Future<void> setAbstain(String matchId, bool abstained) async {
+    final me = _me;
+    if (abstained) {
+      final rows = await _repo.getRatings(matchId);
+      for (final r in rows.where((r) => (r.userId ?? '') == me)) {
+        await _repo.deleteRating(r.id);
+      }
+    }
+    final mine = await myMatchRating(matchId);
+    await _repo.upsertMatchRating(
+        _baseMatchRating(matchId, mine).copyWith(userId: me, abstained: abstained));
+    notifyListeners();
+  }
+
+  /// (Schnitt der Spiel-Gesamtnote, Anzahl Noten, Anzahl Abwesende).
+  Future<(double?, int, int)> matchRatingSummary(String matchId) async {
+    final list = await _repo.getMatchRatings(matchId);
+    final notes = list.where((r) => r.rating != null).map((r) => r.rating!);
+    final abs = list.where((r) => r.abstained).length;
+    final avg =
+        notes.isEmpty ? null : notes.reduce((a, b) => a + b) / notes.length;
+    return (avg, notes.length, abs);
+  }
+
+  /// Ende der Bewertungs-Frist (Spielende + 3 Tage). Spielende = Abpfiff-
+  /// Ereignis (live getrackt) sonst Anpfiff + 2h. Null = keine Frist (kein
+  /// Anpfiff hinterlegt).
+  Future<DateTime?> ratingDeadline(String matchId) async {
+    final m = await _repo.getMatch(matchId);
+    final kickoff = m?.kickoff;
+    if (kickoff == null) return null;
+    final events = await _repo.getEvents(matchId);
+    DateTime? fulltime;
+    for (final e in events) {
+      if (e.type == MatchEventType.fulltime) {
+        if (fulltime == null || e.createdAt.isAfter(fulltime)) {
+          fulltime = e.createdAt;
+        }
+      }
+    }
+    final end = fulltime ?? kickoff.add(const Duration(hours: 2));
+    return end.add(const Duration(days: 3));
   }
 
   /// Bewertungen eines Spielers je Spiel (matchId -> Sterne) – fürs Nachholen
@@ -2106,9 +2191,10 @@ class AppState extends ChangeNotifier {
   Future<Map<String, double>> playerRatingsByMatch(String playerId) =>
       _repo.ratingsByPlayer(playerId);
 
-  /// Vollständige Bewertungen je Spiel (inkl. Kommentar) – fürs Profil.
+  /// Vollständige EIGENE Bewertungen je Spiel (inkl. Kommentar) – fürs Profil
+  /// (bearbeitbar ist nur die eigene Bewertung).
   Future<Map<String, PlayerRating>> playerRatingsFull(String playerId) =>
-      _repo.ratingsFullByPlayer(playerId);
+      _repo.ratingsFullByPlayer(playerId, userId: _me);
 
   /// Gesamtschnitt eines Spielers über alle Spiele: (Durchschnitt, Anzahl).
   Future<(double?, int)> ratingAverage(String playerId) =>

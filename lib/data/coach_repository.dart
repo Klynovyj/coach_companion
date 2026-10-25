@@ -15,6 +15,7 @@ import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/team_event.dart';
 import '../models/graphic_settings.dart';
+import '../models/match_rating.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -424,29 +425,60 @@ class CoachRepository {
     _syncDelete('player_ratings', {'id': id});
   }
 
-  /// Bewertungen eines Spielers je Spiel: matchId -> Sterne.
+  /// Bewertungen eines Spielers je Spiel: matchId -> Schnitt (über alle Benutzer).
   Future<Map<String, double>> ratingsByPlayer(String playerId) async {
     final db = await _db;
-    final rows = await db.query('player_ratings',
-        columns: ['match_id', 'rating'],
-        where: 'player_id = ?',
-        whereArgs: [playerId]);
+    final rows = await db.rawQuery(
+      'SELECT match_id, AVG(rating) AS a FROM player_ratings '
+      'WHERE player_id = ? GROUP BY match_id',
+      [playerId],
+    );
     return {
       for (final r in rows)
-        r['match_id'] as String: (r['rating'] as num).toDouble()
+        r['match_id'] as String: (r['a'] as num).toDouble()
     };
   }
 
-  /// Vollständige Bewertungen eines Spielers je Spiel (inkl. Kommentar).
-  Future<Map<String, PlayerRating>> ratingsFullByPlayer(
-      String playerId) async {
+  /// Vollständige Bewertungen eines Spielers je Spiel (inkl. Kommentar). Mit
+  /// [userId] nur die Zeilen dieses Benutzers (für die eigene Bearbeitung).
+  Future<Map<String, PlayerRating>> ratingsFullByPlayer(String playerId,
+      {String? userId}) async {
     final db = await _db;
-    final rows = await db.query('player_ratings',
-        where: 'player_id = ?', whereArgs: [playerId]);
+    final where = userId == null ? 'player_id = ?' : 'player_id = ? AND user_id = ?';
+    final args = userId == null ? [playerId] : [playerId, userId];
+    final rows =
+        await db.query('player_ratings', where: where, whereArgs: args);
     return {
       for (final r in rows) r['match_id'] as String: PlayerRating.fromMap(r)
     };
   }
+
+  /// Schnitt + Anzahl je Spieler für EIN Spiel (über alle Benutzer).
+  Future<Map<String, (double, int)>> ratingAveragesForMatch(
+      String matchId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT player_id AS pid, AVG(rating) AS a, COUNT(*) AS c '
+      'FROM player_ratings WHERE match_id = ? GROUP BY player_id',
+      [matchId],
+    );
+    return {
+      for (final r in rows)
+        r['pid'] as String:
+            ((r['a'] as num).toDouble(), (r['c'] as int?) ?? 0),
+    };
+  }
+
+  // ------------------------------------------------- Spiel-Gesamtbewertung
+  Future<List<MatchRating>> getMatchRatings(String matchId) async {
+    final db = await _db;
+    final rows = await db
+        .query('match_ratings', where: 'match_id = ?', whereArgs: [matchId]);
+    return rows.map(MatchRating.fromMap).toList();
+  }
+
+  Future<void> upsertMatchRating(MatchRating r) =>
+      _upsertById('match_ratings', r.toMap());
 
   /// Gesamt-Bewertung eines Spielers: (Durchschnitt, Anzahl). Durchschnitt
   /// ist null, wenn noch keine Bewertung vorliegt.

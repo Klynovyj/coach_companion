@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 32;
+  static const _dbVersion = 33;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -224,6 +224,16 @@ class AppDatabase {
       await db.execute(
           'ALTER TABLE graphic_settings ADD COLUMN show_opponent_logo INTEGER');
     }
+    // v32 -> v33: Bewertungen pro Benutzer + Spiel-Gesamtnote/Abwesenheit.
+    if (oldV < 33) {
+      await db.execute('ALTER TABLE player_ratings ADD COLUMN user_id TEXT');
+      await db.execute('DROP INDEX IF EXISTS idx_rating_match_player');
+      await db.execute(
+          'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
+      await db.execute(_matchRatingsTableSql);
+      await db.execute(
+          'CREATE UNIQUE INDEX idx_match_rating_user ON match_ratings (match_id, user_id)');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -406,6 +416,20 @@ class AppDatabase {
       )
   ''';
 
+  // Spiel-Gesamtnote + Abwesenheit je Benutzer (lokal ohne team_id).
+  static const _matchRatingsTableSql = '''
+      CREATE TABLE match_ratings (
+        id TEXT PRIMARY KEY,
+        match_id TEXT NOT NULL,
+        user_id TEXT,
+        rating REAL,
+        abstained INTEGER NOT NULL DEFAULT 0,
+        note TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (match_id) REFERENCES matches (id) ON DELETE CASCADE
+      )
+  ''';
+
   static const _playerStatsTableSql = '''
       CREATE TABLE player_stats (
         id TEXT PRIMARY KEY,
@@ -548,6 +572,7 @@ class AppDatabase {
         id TEXT PRIMARY KEY,
         match_id TEXT NOT NULL,
         player_id TEXT NOT NULL,
+        user_id TEXT,
         rating REAL NOT NULL,
         note TEXT,
         created_at TEXT NOT NULL,
@@ -556,7 +581,11 @@ class AppDatabase {
       )
     ''');
     await db.execute(
-        'CREATE UNIQUE INDEX idx_rating_match_player ON player_ratings (match_id, player_id)');
+        'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
+
+    await db.execute(_matchRatingsTableSql);
+    await db.execute(
+        'CREATE UNIQUE INDEX idx_match_rating_user ON match_ratings (match_id, user_id)');
 
     await db.execute(_playerStatsTableSql);
     await db.execute(

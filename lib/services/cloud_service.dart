@@ -410,6 +410,7 @@ class CloudService {
     'player_absences',
     'sponsors',
     'graphic_settings',
+    'match_ratings',
     'player_stats',
     'opponent_teams',
     'opponent_players',

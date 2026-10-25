@@ -127,6 +127,11 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
             ],
           ),
           actions: [
+            IconButton(
+              tooltip: 'Spieler & Spiel bewerten',
+              icon: const Icon(Icons.star_rate),
+              onPressed: _openRating,
+            ),
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'sync') _load(force: true);
