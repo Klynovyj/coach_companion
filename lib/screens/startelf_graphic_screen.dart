@@ -573,7 +573,9 @@ class _StartelfGraphic extends StatelessWidget {
               ],
               SizedBox(height: compact ? 8 : 10),
               _matchInfo(),
-              SizedBox(height: compact ? 6 : 10),
+              SizedBox(height: compact ? 12 : 18),
+              _divider(),
+              SizedBox(height: compact ? 12 : 16),
               Expanded(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
@@ -591,6 +593,20 @@ class _StartelfGraphic extends StatelessWidget {
       ],
     );
   }
+
+  /// Dünne Trennlinie zwischen Kopfbereich (Logo/Spielinfo) und Spielerliste.
+  Widget _divider() => Container(
+        height: 1.5,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(1),
+          gradient: LinearGradient(
+            colors: [
+              Colors.white.withValues(alpha: 0.35),
+              Colors.white.withValues(alpha: 0.08),
+            ],
+          ),
+        ),
+      );
 
   Widget _header() {
     return Row(
