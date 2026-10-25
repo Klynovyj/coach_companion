@@ -667,6 +667,50 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Einmalige Bereinigung: entfernt doppelte Gegnerspieler-Zeilen (gleicher
+  /// Name) und spiegelt den bereinigten Kader in die Cloud (ersetzend). Behält
+  /// je Spieler die FuPa-verlinkte/vollständigere Zeile. Gibt die Anzahl
+  /// entfernter Zeilen zurück. Doppelte Gegnerkader entstanden früher über
+  /// Cloud/mehrere Geräte (eine Zeile mit, eine ohne FuPa-ID).
+  Future<int> cleanupDuplicateOpponents() async {
+    final teams = await _repo.getTeams();
+    final cloudTeam = _activeCloudTeamId;
+    final canPush =
+        cloudTeam != null && CloudService.ready && CloudService.signedIn;
+    var removed = 0;
+    for (final t in teams.where((t) => !t.isOwnTeam)) {
+      final players = await _repo.getPlayers(t.id);
+      final deduped = dedupePlayersByName(players);
+      if (deduped.length == players.length) continue;
+      final keep = {for (final p in deduped) p.id};
+      for (final p in players) {
+        if (!keep.contains(p.id)) {
+          await _repo.deletePlayer(p.id);
+          removed++;
+        }
+      }
+      if (canPush) {
+        try {
+          await CloudService.uploadOpponentPlayers(cloudTeam, t.id, [
+            for (final p in deduped)
+              {
+                'id': p.id,
+                'first_name': p.firstName,
+                'last_name': p.lastName,
+                'number': p.number,
+                'position': p.position,
+                'photo': p.photoPath,
+              }
+          ]);
+        } catch (_) {
+          // Offline/keine Rechte – lokale Bereinigung bleibt gültig.
+        }
+      }
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
+
   /// Lädt geteilte Gegner-Teams + -Kader aus der Cloud in den lokalen Cache.
   /// Muss VOR den Spielen laufen (matches.opponent_team_id → teams-FK).
   Future<void> _pullOpponentsFromCloud(String teamId) async {
@@ -739,6 +783,9 @@ class AppState extends ChangeNotifier {
     if (_activeCloudTeamId != null) ensureTeamSync(_activeCloudTeamId!);
     // Geburtstags-Benachrichtigungen (neu) planen.
     unawaited(rescheduleBirthdayNotifications());
+    // Doppelte Gegnerspieler bereinigen (selbstheilend, bei sauberen Daten
+    // ein No-op). Räumt lokale Altlasten weg und spiegelt sie in die Cloud.
+    unawaited(cleanupDuplicateOpponents());
   }
 
   Future<void> _reload() async {
