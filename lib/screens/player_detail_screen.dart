@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -19,6 +21,7 @@ import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/player_talk.dart';
 import '../models/team.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/player_avatar.dart';
@@ -277,6 +280,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         appBar: AppBar(
           title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
           actions: [
+            IconButton(
+              tooltip: 'Statistik als Bild teilen',
+              icon: const Icon(Icons.share),
+              onPressed: _sharePlayerCard,
+            ),
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'delete') _deletePlayer();
@@ -805,25 +813,99 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   // -------------------------------------------------- FuPa-Saisonstatistik
-  /// Lädt Team (Logo/Name) + FuPa-Saisonstatistik für die Spielerkarte.
-  Future<(Team?, PlayerStat?)> _loadCardData(AppState s) async {
+  /// Lädt Team (Logo/Name) + FuPa-Saisonstatistik + live erfasste Aktionen
+  /// dieses Spielers für die Spielerkarte.
+  Future<(Team?, PlayerStat?, Map<String, int>)> _loadCardData(
+      AppState s) async {
     final team = await s.repository.getTeam(_player.teamId);
     // FuPa-Statistik bei Bedarf nachladen (Trainer-Gerät mit FuPa-Link).
     await s.ensureOwnStats(_player.teamId);
     final stat = await s.playerSeasonStat(_player.teamId, _player.dedupKey);
-    return (team, stat);
+    final events = await s.playerMatchEvents(_player.id);
+    int c(MatchEventType t) => events.where((e) => e.type == t).length;
+    final live = <String, int>{
+      'Schüsse': c(MatchEventType.shot),
+      'Distanzschüsse': c(MatchEventType.longShot),
+      'Kopfbälle': c(MatchEventType.header),
+      'Großchancen': c(MatchEventType.bigChance),
+      'Paraden': c(MatchEventType.save),
+      'Fouls': c(MatchEventType.foul),
+    };
+    return (team, stat, live);
   }
 
   /// Gestaltete Spielerkarte oben im Profil (Foto, Nummer, Name + FuPa-Werte).
   Widget _playerCard(BuildContext context, AppState state) {
-    return FutureBuilder<(Team?, PlayerStat?)>(
+    return FutureBuilder<(Team?, PlayerStat?, Map<String, int>)>(
       future: _loadCardData(state),
       builder: (context, snap) => _PlayerCardView(
         player: _player,
         team: snap.data?.$1,
         stat: snap.data?.$2,
+        live: snap.data?.$3 ?? const {},
       ),
     );
+  }
+
+  /// Teilt die Spieler-Statistikkarte als Bild (off-screen erfasst, da die Karte
+  /// nur im Profil-Tab gemountet ist).
+  Future<void> _sharePlayerCard() async {
+    final state = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final (team, stat, live) = await _loadCardData(state);
+    if (!mounted) return;
+    final surface = Theme.of(context).colorScheme.surface;
+    final card = Container(
+      width: 360,
+      color: surface,
+      padding: const EdgeInsets.all(8),
+      child: _PlayerCardView(
+          player: _player, team: team, stat: stat, live: live),
+    );
+    try {
+      final bytes = await _captureOffscreen(card);
+      if (bytes == null) return;
+      final name = _player.fullName.isEmpty ? 'Spieler' : _player.fullName;
+      final path = await shareOrSaveImage(bytes, 'Statistik_$name',
+          text: 'Statistik – $name');
+      if (path != null && mounted) {
+        messenger.showSnackBar(
+            SnackBar(content: Text('Als Bild gespeichert:\n$path')));
+      }
+    } catch (e) {
+      messenger
+          .showSnackBar(SnackBar(content: Text('Teilen fehlgeschlagen: $e')));
+    }
+  }
+
+  /// Rendert [child] unsichtbar (off-screen) und gibt ein PNG davon zurück.
+  Future<Uint8List?> _captureOffscreen(Widget child) async {
+    final key = GlobalKey();
+    final overlay = Overlay.of(context);
+    final entry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: -4000,
+        top: 0,
+        child: Material(
+          type: MaterialType.transparency,
+          child: RepaintBoundary(key: key, child: child),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      // Kurz warten, damit Foto/Logo (Image.memory) dekodiert und gemalt sind.
+      await Future.delayed(const Duration(milliseconds: 180));
+      final boundary =
+          key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+      final image = await boundary.toImage(pixelRatio: 3);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      return data?.buffer.asUint8List();
+    } finally {
+      entry.remove();
+    }
   }
 
   Widget _fupaStatCard(BuildContext context, AppState state) {
@@ -1988,13 +2070,34 @@ Future<CardDialogData?> showCardDialog(
 
 /// Gestaltete Spielerkarte (FuPa-Werte) im Vereins-Look – oben im Profil.
 class _PlayerCardView extends StatelessWidget {
-  const _PlayerCardView({required this.player, this.team, this.stat});
+  const _PlayerCardView(
+      {required this.player, this.team, this.stat, this.live = const {}});
 
   final Player player;
   final Team? team;
   final PlayerStat? stat;
 
+  /// Live erfasste Aktionen (Label → Anzahl), nur Werte > 0 werden gezeigt.
+  final Map<String, int> live;
+
   static const _gold = Color(0xFFC9A24B);
+
+  Widget _liveChip(String label, int value) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text.rich(TextSpan(children: [
+          TextSpan(
+              text: '$value ',
+              style: const TextStyle(
+                  color: _gold, fontWeight: FontWeight.bold, fontSize: 13)),
+          TextSpan(
+              text: label,
+              style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        ])),
+      );
 
   Widget _stat(IconData icon, int value, String label) => Column(
         children: [
@@ -2013,6 +2116,10 @@ class _PlayerCardView extends StatelessWidget {
     final matches = stat?.matches ?? 0;
     final goals = stat?.goals ?? 0;
     final assists = stat?.assists ?? 0;
+    final yellow = stat?.yellowCards ?? 0;
+    final red = (stat?.redCards ?? 0) + (stat?.yellowRedCards ?? 0);
+    final minutes = stat?.minutes ?? 0;
+    final liveEntries = live.entries.where((e) => e.value > 0).toList();
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       padding: const EdgeInsets.all(14),
@@ -2094,6 +2201,37 @@ class _PlayerCardView extends StatelessWidget {
               _stat(Icons.handshake, assists, 'Vorlagen'),
             ],
           ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              _stat(Icons.style, yellow, 'Gelb'),
+              _stat(Icons.style, red, 'Rot'),
+              _stat(Icons.timer, minutes, 'Minuten'),
+            ],
+          ),
+          if (liveEntries.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(height: 1, color: _gold.withValues(alpha: 0.4)),
+            const SizedBox(height: 8),
+            const Align(
+              alignment: Alignment.centerLeft,
+              child: Text('LIVE ERFASST',
+                  style: TextStyle(
+                      color: _gold,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1)),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final e in liveEntries) _liveChip(e.key, e.value),
+              ],
+            ),
+          ],
         ],
       ),
     );
