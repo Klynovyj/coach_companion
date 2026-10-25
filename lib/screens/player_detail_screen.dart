@@ -821,15 +821,45 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     // FuPa-Statistik bei Bedarf nachladen (Trainer-Gerät mit FuPa-Link).
     await s.ensureOwnStats(_player.teamId);
     final stat = await s.playerSeasonStat(_player.teamId, _player.dedupKey);
-    final events = await s.playerMatchEvents(_player.id);
-    int c(MatchEventType t) => events.where((e) => e.type == t).length;
+    // Tracking-Werte aus allen live getrackten Spielen (Spiele mit Phasen-Marke).
+    final all = await s.allEvents();
+    final tracked =
+        all.where((e) => e.type.isPhaseMarker).map((e) => e.matchId).toSet();
+    final pid = _player.id;
+    final mine = all
+        .where((e) =>
+            tracked.contains(e.matchId) &&
+            (e.playerId == pid || e.assistPlayerId == pid))
+        .toList();
+    int c(Set<MatchEventType> types, {bool assist = false}) => mine
+        .where((e) =>
+            types.contains(e.type) &&
+            (assist ? e.assistPlayerId == pid : e.playerId == pid))
+        .length;
     final live = <String, int>{
-      'Schüsse': c(MatchEventType.shot),
-      'Distanzschüsse': c(MatchEventType.longShot),
-      'Kopfbälle': c(MatchEventType.header),
-      'Großchancen': c(MatchEventType.bigChance),
-      'Paraden': c(MatchEventType.save),
-      'Fouls': c(MatchEventType.foul),
+      'Tore': c({MatchEventType.goal, MatchEventType.penalty}),
+      'Vorlagen':
+          c({MatchEventType.goal, MatchEventType.penalty}, assist: true),
+      'Schüsse': c({MatchEventType.shot}),
+      'Distanzschüsse': c({MatchEventType.longShot}),
+      'Kopfbälle': c({MatchEventType.header}),
+      'Großchancen': c({MatchEventType.bigChance}),
+      'Elfmeter': c({
+        MatchEventType.penalty,
+        MatchEventType.penaltyMissed,
+        MatchEventType.penaltySaved,
+      }),
+      'Ecken': c({MatchEventType.corner}),
+      'Freistöße': c({MatchEventType.freeKick}),
+      'Fouls': c({MatchEventType.foul}),
+      'Gelbe': c({MatchEventType.yellowCard}),
+      'Gelb-Rot': c({MatchEventType.secondYellow}),
+      'Rote': c({MatchEventType.redCard}),
+      'Paraden': c({MatchEventType.save}),
+      'Meckern': c({MatchEventType.meckern}),
+      'Verletzungen': c({MatchEventType.injury}),
+      'Wechsel':
+          mine.where((e) => e.type == MatchEventType.substitution).length,
     };
     return (team, stat, live);
   }
@@ -2077,10 +2107,20 @@ class _PlayerCardView extends StatelessWidget {
   final Team? team;
   final PlayerStat? stat;
 
-  /// Live erfasste Aktionen (Label → Anzahl), nur Werte > 0 werden gezeigt.
+  /// Tracking-Aktionen (Label → Anzahl) aus live getrackten Spielen.
   final Map<String, int> live;
 
   static const _gold = Color(0xFFC9A24B);
+
+  Widget _sectionLabel(String text) => Align(
+        alignment: Alignment.centerLeft,
+        child: Text(text,
+            style: const TextStyle(
+                color: _gold,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1)),
+      );
 
   Widget _liveChip(String label, int value) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -2119,7 +2159,7 @@ class _PlayerCardView extends StatelessWidget {
     final yellow = stat?.yellowCards ?? 0;
     final red = (stat?.redCards ?? 0) + (stat?.yellowRedCards ?? 0);
     final minutes = stat?.minutes ?? 0;
-    final liveEntries = live.entries.where((e) => e.value > 0).toList();
+    final trackingEntries = live.entries.toList();
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       padding: const EdgeInsets.all(14),
@@ -2192,7 +2232,9 @@ class _PlayerCardView extends StatelessWidget {
             ),
           const SizedBox(height: 12),
           Container(height: 1, color: _gold.withValues(alpha: 0.4)),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
+          _sectionLabel('FUPA · SAISON'),
+          const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -2210,28 +2252,18 @@ class _PlayerCardView extends StatelessWidget {
               _stat(Icons.timer, minutes, 'Minuten'),
             ],
           ),
-          if (liveEntries.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            Container(height: 1, color: _gold.withValues(alpha: 0.4)),
-            const SizedBox(height: 8),
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text('LIVE ERFASST',
-                  style: TextStyle(
-                      color: _gold,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1)),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final e in liveEntries) _liveChip(e.key, e.value),
-              ],
-            ),
-          ],
+          const SizedBox(height: 12),
+          Container(height: 1, color: _gold.withValues(alpha: 0.4)),
+          const SizedBox(height: 8),
+          _sectionLabel('TRACKING · LIVE'),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final e in trackingEntries) _liveChip(e.key, e.value),
+            ],
+          ),
         ],
       ),
     );
