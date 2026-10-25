@@ -2144,22 +2144,51 @@ class _PlayerCardView extends StatelessWidget {
                 letterSpacing: 1)),
       );
 
-  Widget _liveChip(String label, int value) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text.rich(TextSpan(children: [
-          TextSpan(
-              text: '$value ',
-              style: const TextStyle(
-                  color: _gold, fontWeight: FontWeight.bold, fontSize: 13)),
-          TextSpan(
-              text: label,
-              style: const TextStyle(color: Colors.white70, fontSize: 12)),
-        ])),
-      );
+  /// Eine Tracking-Zeile im Balken-Stil (wie die anderen Aktions-Statistiken):
+  /// Label, Balken (proportional zum höchsten Wert) und Zahl.
+  Widget _trackBar(String label, int value, int maxValue) {
+    final frac = maxValue <= 0 ? 0.0 : (value / maxValue).clamp(0.0, 1.0);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 108,
+            child: Text(label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Colors.white, fontSize: 13)),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Stack(
+                children: [
+                  Container(
+                      height: 10, color: Colors.white.withValues(alpha: 0.08)),
+                  FractionallySizedBox(
+                    widthFactor: frac == 0 ? 0.0 : frac,
+                    child: Container(height: 10, color: _gold),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 24,
+            child: Text('$value',
+                textAlign: TextAlign.right,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13)),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _stat(IconData icon, int value, String label) => Column(
         children: [
@@ -2182,6 +2211,8 @@ class _PlayerCardView extends StatelessWidget {
     final red = (stat?.redCards ?? 0) + (stat?.yellowRedCards ?? 0);
     final minutes = stat?.minutes ?? 0;
     final trackingEntries = live.entries.toList();
+    final maxTrack =
+        trackingEntries.fold<int>(0, (m, e) => e.value > m ? e.value : m);
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
       padding: const EdgeInsets.all(14),
@@ -2284,13 +2315,8 @@ class _PlayerCardView extends StatelessWidget {
           if (section != _CardSide.fupa) ...[
             _sectionLabel('TRACKING · LIVE'),
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final e in trackingEntries) _liveChip(e.key, e.value),
-              ],
-            ),
+            for (final e in trackingEntries)
+              _trackBar(e.key, e.value, maxTrack),
           ],
         ],
       ),
