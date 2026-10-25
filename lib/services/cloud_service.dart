@@ -411,6 +411,7 @@ class CloudService {
     'sponsors',
     'graphic_settings',
     'match_ratings',
+    'player_of_month',
     'player_stats',
     'opponent_teams',
     'opponent_players',

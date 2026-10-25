@@ -9,6 +9,7 @@ import '../models/enums.dart';
 import '../screens/home_screen.dart';
 import '../screens/live_match_screen.dart';
 import '../screens/material_duty_screen.dart';
+import '../screens/player_of_month_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/sponsors_screen.dart';
 import '../screens/todos_screen.dart';
@@ -149,6 +150,12 @@ class AppDrawer extends StatelessWidget {
                   );
                 },
               ),
+            _push(
+              context,
+              icon: Icons.emoji_events,
+              label: 'Spieler des Monats',
+              screen: const PlayerOfMonthScreen(),
+            ),
             _push(
               context,
               icon: Icons.handshake_outlined,

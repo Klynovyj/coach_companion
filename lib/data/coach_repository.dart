@@ -16,6 +16,7 @@ import '../models/team.dart';
 import '../models/team_event.dart';
 import '../models/graphic_settings.dart';
 import '../models/match_rating.dart';
+import '../models/player_of_month.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -479,6 +480,59 @@ class CoachRepository {
 
   Future<void> upsertMatchRating(MatchRating r) =>
       _upsertById('match_ratings', r.toMap());
+
+  // -------------------------------------------------- Spieler des Monats
+  /// Schnitt + Anzahl je Spieler für einen Kalendermonat („YYYY-MM"), über alle
+  /// Benutzer, anhand des Spieldatums (matches.kickoff).
+  Future<Map<String, (double, int)>> ratingAveragesForTeamInMonth(
+      String teamId, String yearMonth) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT r.player_id AS pid, AVG(r.rating) AS a, COUNT(*) AS c '
+      'FROM player_ratings r '
+      'JOIN players p ON p.id = r.player_id '
+      'JOIN matches m ON m.id = r.match_id '
+      'WHERE p.team_id = ? AND substr(m.kickoff,1,7) = ? '
+      'GROUP BY r.player_id',
+      [teamId, yearMonth],
+    );
+    return {
+      for (final r in rows)
+        r['pid'] as String:
+            ((r['a'] as num).toDouble(), (r['c'] as int?) ?? 0),
+    };
+  }
+
+  /// Monate (YYYY-MM, neueste zuerst), in denen bewertete Spiele liegen.
+  Future<List<String>> monthsWithRatings(String teamId) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT DISTINCT substr(m.kickoff,1,7) AS ym '
+      'FROM player_ratings r '
+      'JOIN players p ON p.id = r.player_id '
+      'JOIN matches m ON m.id = r.match_id '
+      'WHERE p.team_id = ? AND m.kickoff IS NOT NULL '
+      'ORDER BY ym DESC',
+      [teamId],
+    );
+    return [for (final r in rows) r['ym'] as String];
+  }
+
+  Future<List<PlayerOfMonth>> getPlayersOfMonth() async {
+    final db = await _db;
+    final rows =
+        await db.query('player_of_month', orderBy: 'year_month DESC');
+    return rows.map(PlayerOfMonth.fromMap).toList();
+  }
+
+  Future<void> upsertPlayerOfMonth(PlayerOfMonth p) =>
+      _upsertById('player_of_month', p.toMap());
+
+  Future<void> deletePlayerOfMonth(String id) async {
+    final db = await _db;
+    await db.delete('player_of_month', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('player_of_month', {'id': id});
+  }
 
   /// Gesamt-Bewertung eines Spielers: (Durchschnitt, Anzahl). Durchschnitt
   /// ist null, wenn noch keine Bewertung vorliegt.

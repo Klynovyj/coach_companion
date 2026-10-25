@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 33;
+  static const _dbVersion = 34;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -234,6 +234,12 @@ class AppDatabase {
       await db.execute(
           'CREATE UNIQUE INDEX idx_match_rating_user ON match_ratings (match_id, user_id)');
     }
+    // v33 -> v34: Spieler des Monats (Kürung je Monat).
+    if (oldV < 34) {
+      await db.execute(_playerOfMonthTableSql);
+      await db.execute(
+          'CREATE UNIQUE INDEX idx_potm_month ON player_of_month (year_month)');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -416,6 +422,16 @@ class AppDatabase {
       )
   ''';
 
+  // Spieler des Monats (teamweit, einer je Monat; lokal ohne team_id).
+  static const _playerOfMonthTableSql = '''
+      CREATE TABLE player_of_month (
+        id TEXT PRIMARY KEY,
+        year_month TEXT NOT NULL,
+        player_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+  ''';
+
   // Spiel-Gesamtnote + Abwesenheit je Benutzer (lokal ohne team_id).
   static const _matchRatingsTableSql = '''
       CREATE TABLE match_ratings (
@@ -586,6 +602,10 @@ class AppDatabase {
     await db.execute(_matchRatingsTableSql);
     await db.execute(
         'CREATE UNIQUE INDEX idx_match_rating_user ON match_ratings (match_id, user_id)');
+
+    await db.execute(_playerOfMonthTableSql);
+    await db.execute(
+        'CREATE UNIQUE INDEX idx_potm_month ON player_of_month (year_month)');
 
     await db.execute(_playerStatsTableSql);
     await db.execute(

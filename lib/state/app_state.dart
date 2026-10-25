@@ -24,6 +24,7 @@ import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/graphic_settings.dart';
 import '../models/match_rating.dart';
+import '../models/player_of_month.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -116,6 +117,7 @@ class AppState extends ChangeNotifier {
     'sponsors',
     'graphic_settings',
     'match_ratings',
+    'player_of_month',
     // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
     // referenzierten lokalen match_events bereits vorhanden sind.
     'event_mentions',
@@ -2114,6 +2116,56 @@ class AppState extends ChangeNotifier {
   /// Schnitt + Anzahl je Spieler für ein Spiel (über alle Benutzer).
   Future<Map<String, (double, int)>> ratingAverages(String matchId) =>
       _repo.ratingAveragesForMatch(matchId);
+
+  // -------------------------------------------------- Spieler des Monats
+  Future<List<String>> ratedMonths(String teamId) =>
+      _repo.monthsWithRatings(teamId);
+
+  /// Monats-Rangliste: bewertete Spieler nach Schnitt (dann Anzahl), danach die
+  /// übrigen Kaderspieler ohne Bewertung. avg == null = keine Bewertung.
+  Future<List<(Player, double?, int)>> monthRanking(
+      String teamId, String yearMonth) async {
+    final players =
+        (await playersOf(teamId)).where((p) => !p.isStaffOnly).toList();
+    final avgs = await _repo.ratingAveragesForTeamInMonth(teamId, yearMonth);
+    final rated = <(Player, double?, int)>[];
+    final unrated = <(Player, double?, int)>[];
+    for (final p in players) {
+      final a = avgs[p.id];
+      if (a != null) {
+        rated.add((p, a.$1, a.$2));
+      } else {
+        unrated.add((p, null, 0));
+      }
+    }
+    rated.sort((x, y) {
+      final c = (y.$2 ?? 0).compareTo(x.$2 ?? 0);
+      return c != 0 ? c : y.$3.compareTo(x.$3);
+    });
+    unrated.sort(
+        (x, y) => (x.$1.number ?? 9999).compareTo(y.$1.number ?? 9999));
+    return [...rated, ...unrated];
+  }
+
+  Future<List<PlayerOfMonth>> honorHistory() => _repo.getPlayersOfMonth();
+
+  Future<PlayerOfMonth?> honoredOf(String yearMonth) async {
+    for (final p in await _repo.getPlayersOfMonth()) {
+      if (p.yearMonth == yearMonth) return p;
+    }
+    return null;
+  }
+
+  Future<void> honorPlayerOfMonth(String yearMonth, String playerId) async {
+    final existing = await honoredOf(yearMonth);
+    await _repo.upsertPlayerOfMonth(PlayerOfMonth(
+      id: existing?.id ?? _uuid.v4(),
+      yearMonth: yearMonth,
+      playerId: playerId,
+      createdAt: existing?.createdAt ?? DateTime.now(),
+    ));
+    notifyListeners();
+  }
 
   // ------------------------------------------- Spiel-Gesamtnote/Abwesenheit
   Future<List<MatchRating>> matchRatingsOf(String matchId) =>
