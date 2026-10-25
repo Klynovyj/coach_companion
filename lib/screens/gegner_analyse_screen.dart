@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/enums.dart';
 import '../models/match.dart';
@@ -317,7 +318,8 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
           subtitle: 'Vermutlich neu im Kader (noch kein Saisonspiel)',
           rows: [
             for (final p in newcomers.take(12))
-              _Row.player(p, p.position ?? ''),
+              _Row.player(p, p.position ?? '',
+                  fupaUrl: _fupaPlayerUrl(p.externalId)),
           ],
         ));
       }
@@ -393,6 +395,7 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
             name: stats[i].fullName,
             value: value(stats[i]),
             highlight: highlightFirst && i == 0,
+            fupaUrl: _fupaPlayerUrl(stats[i].externalId),
           ),
       ],
     );
@@ -477,6 +480,20 @@ class _CardData {
   });
 }
 
+/// FuPa-Profil-URL aus der externen Spieler-ID (FuPa leitet `/player/ID`
+/// per 301 aufs Profil weiter). Null, wenn keine FuPa-ID vorhanden.
+String? _fupaPlayerUrl(String? externalId) {
+  final id = externalId?.trim();
+  if (id == null || id.isEmpty) return null;
+  return 'https://www.fupa.net/player/$id';
+}
+
+Future<void> _openFupa(String url) async {
+  try {
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+  } catch (_) {}
+}
+
 enum _RowKind { text, stat, player, duel, form, scouting, standing, table, kpis }
 
 class _Row {
@@ -487,6 +504,8 @@ class _Row {
   final String? name;
   final String? value;
   final bool highlight;
+  /// FuPa-Profil-URL des Spielers (Zeile wird dann anklickbar).
+  final String? fupaUrl;
   // Duell
   final String? date;
   final String? venue;
@@ -509,6 +528,7 @@ class _Row {
     this.name,
     this.value,
     this.highlight = false,
+    this.fupaUrl,
     this.date,
     this.venue,
     this.result,
@@ -534,6 +554,7 @@ class _Row {
     required String name,
     required String value,
     bool highlight = false,
+    String? fupaUrl,
   }) =>
       _Row._(
         kind: _RowKind.stat,
@@ -542,9 +563,14 @@ class _Row {
         name: name,
         value: value,
         highlight: highlight,
+        fupaUrl: fupaUrl,
       );
-  factory _Row.player(Player player, String value) =>
-      _Row._(kind: _RowKind.player, player: player, value: value);
+  factory _Row.player(Player player, String value, {String? fupaUrl}) =>
+      _Row._(
+          kind: _RowKind.player,
+          player: player,
+          value: value,
+          fupaUrl: fupaUrl);
   factory _Row.duel({
     required String date,
     required String venue,
@@ -669,53 +695,68 @@ class _AnalysisCardView extends StatelessWidget {
               style: Theme.of(context).textTheme.bodyLarge),
         );
       case _RowKind.stat:
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              CircleAvatar(
-                radius: 13,
-                backgroundColor: r.highlight
-                    ? Colors.amber.shade700
-                    : Theme.of(context).colorScheme.surfaceContainerHighest,
-                child: Text('${r.rank}',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: r.highlight ? Colors.white : null)),
-              ),
-              const SizedBox(width: 10),
-              if (r.player != null) ...[
-                PlayerAvatar(player: r.player!, radius: 16),
-                const SizedBox(width: 8),
+        return InkWell(
+          onTap: r.fupaUrl != null ? () => _openFupa(r.fupaUrl!) : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 13,
+                  backgroundColor: r.highlight
+                      ? Colors.amber.shade700
+                      : Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Text('${r.rank}',
+                      style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: r.highlight ? Colors.white : null)),
+                ),
+                const SizedBox(width: 10),
+                if (r.player != null) ...[
+                  PlayerAvatar(player: r.player!, radius: 16),
+                  const SizedBox(width: 8),
+                ],
+                Expanded(
+                  child: Text(r.name ?? r.player?.fullName ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontWeight:
+                              r.highlight ? FontWeight.bold : FontWeight.w500)),
+                ),
+                Text(r.value ?? '',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
+                if (r.fupaUrl != null) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.open_in_new,
+                      size: 15, color: Theme.of(context).hintColor),
+                ],
               ],
-              Expanded(
-                child: Text(r.name ?? r.player?.fullName ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        fontWeight:
-                            r.highlight ? FontWeight.bold : FontWeight.w500)),
-              ),
-              Text(r.value ?? '',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-            ],
+            ),
           ),
         );
       case _RowKind.player:
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Row(
-            children: [
-              PlayerAvatar(player: r.player!, radius: 16),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(r.player!.fullName,
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
-              ),
-              if ((r.value ?? '').isNotEmpty)
-                Text(r.value!,
-                    style: Theme.of(context).textTheme.bodySmall),
-            ],
+        return InkWell(
+          onTap: r.fupaUrl != null ? () => _openFupa(r.fupaUrl!) : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                PlayerAvatar(player: r.player!, radius: 16),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(r.player!.fullName,
+                      maxLines: 1, overflow: TextOverflow.ellipsis),
+                ),
+                if ((r.value ?? '').isNotEmpty)
+                  Text(r.value!, style: Theme.of(context).textTheme.bodySmall),
+                if (r.fupaUrl != null) ...[
+                  const SizedBox(width: 6),
+                  Icon(Icons.open_in_new,
+                      size: 15, color: Theme.of(context).hintColor),
+                ],
+              ],
+            ),
           ),
         );
       case _RowKind.duel:

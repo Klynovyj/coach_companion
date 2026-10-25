@@ -2137,20 +2137,18 @@ class AppState extends ChangeNotifier {
   /// Liga-Tabelle (komplett) + Platz + Form (letzte 5) des Gegners.
   Future<(StandingRow?, List<FormMatch>, List<StandingRow>)> opponentAnalysis(
       String ownTeamId, String opponentTeamId) async {
-    final own = await _repo.getTeam(ownTeamId);
     final opp = await _repo.getTeam(opponentTeamId);
     final oppSlug = FupaReduxImporter.teamSlugFromUrl(opp?.fupaUrl);
     const empty = (null, <FormMatch>[], <StandingRow>[]);
-    if (oppSlug == null) return empty;
-    // Liga-Slug aus Einstellungen (Cache) oder aus dem eigenen Team ableiten.
-    var leagueSlug = await _repo.getSetting('league_slug');
+    if (oppSlug == null || opp?.fupaUrl == null) return empty;
+    // Liga-Slug aus dem GEGNER ableiten (nicht aus unserer Liga – Pokalgegner
+    // spielen in einer anderen Liga). Je Gegner gecacht.
+    final cacheKey = 'league_slug_$opponentTeamId';
+    var leagueSlug = await _repo.getSetting(cacheKey);
     if (leagueSlug == null || leagueSlug.isEmpty) {
-      final url = own?.fupaUrl;
-      if (url != null) {
-        leagueSlug = await _importer.leagueSlugForTeam(url);
-        if (leagueSlug != null) {
-          await _repo.setSetting('league_slug', leagueSlug);
-        }
+      leagueSlug = await _importer.leagueSlugForTeam(opp!.fupaUrl!);
+      if (leagueSlug != null) {
+        await _repo.setSetting(cacheKey, leagueSlug);
       }
     }
     if (leagueSlug == null) return empty;
