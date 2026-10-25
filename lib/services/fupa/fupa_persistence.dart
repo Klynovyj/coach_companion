@@ -182,6 +182,7 @@ class FupaPersistence {
           competition: data.competition,
           matchday: data.matchday ?? match.matchday,
           externalId: data.externalId,
+          fupaMatchSlug: data.fupaMatchSlug ?? match.fupaMatchSlug,
           // Live/beendete/selbst verwaltete Spiele nicht zurücksetzen.
           status: !managed && data.finished && match.status != MatchStatus.live
               ? MatchStatus.finished
@@ -201,6 +202,7 @@ class FupaPersistence {
           competition: data.competition,
           matchday: data.matchday,
           externalId: data.externalId,
+          fupaMatchSlug: data.fupaMatchSlug,
           status: status ?? MatchStatus.scheduled,
           ownScore: data.finished ? (data.ownGoals ?? 0) : 0,
           opponentScore: data.finished ? (data.opponentGoals ?? 0) : 0,

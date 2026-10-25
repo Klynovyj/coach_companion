@@ -27,6 +27,10 @@ class GameMatch {
   /// Externer Bezeichner des Spiels aus der Importquelle.
   final String? externalId;
 
+  /// FuPa-Match-Slug (z.B. „post-sv-...-261025"), für den Link auf die
+  /// Spielseite (u.a. „Bester Spieler"-Abstimmung). Aus dem Spielplan-Import.
+  final String? fupaMatchSlug;
+
   final MatchStatus status;
 
   /// Endstand/Live-Stand – aus Tor-Ereignissen abgeleitet und hier
@@ -61,6 +65,7 @@ class GameMatch {
     this.competition,
     this.matchday,
     this.externalId,
+    this.fupaMatchSlug,
     this.status = MatchStatus.scheduled,
     this.ownScore = 0,
     this.opponentScore = 0,
@@ -81,6 +86,7 @@ class GameMatch {
     String? competition,
     int? matchday,
     String? externalId,
+    String? fupaMatchSlug,
     MatchStatus? status,
     int? ownScore,
     int? opponentScore,
@@ -102,6 +108,7 @@ class GameMatch {
       competition: competition ?? this.competition,
       matchday: matchday ?? this.matchday,
       externalId: externalId ?? this.externalId,
+      fupaMatchSlug: fupaMatchSlug ?? this.fupaMatchSlug,
       status: status ?? this.status,
       ownScore: ownScore ?? this.ownScore,
       opponentScore: opponentScore ?? this.opponentScore,
@@ -128,6 +135,7 @@ class GameMatch {
         'competition': competition,
         'matchday': matchday,
         'external_id': externalId,
+        'fupa_match_slug': fupaMatchSlug,
         'status': status.storageKey,
         'own_score': ownScore,
         'opponent_score': opponentScore,
@@ -150,6 +158,7 @@ class GameMatch {
         competition: m['competition'] as String?,
         matchday: m['matchday'] as int?,
         externalId: m['external_id'] as String?,
+        fupaMatchSlug: m['fupa_match_slug'] as String?,
         status: MatchStatus.fromKey(m['status'] as String?),
         ownScore: m['own_score'] as int? ?? 0,
         opponentScore: m['opponent_score'] as int? ?? 0,

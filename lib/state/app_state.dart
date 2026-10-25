@@ -969,6 +969,7 @@ class AppState extends ChangeNotifier {
       locallyManaged: m['locally_managed'] == true,
       liveController: m['live_controller'] as String?,
       liveControllerName: m['live_controller_name'] as String?,
+      fupaMatchSlug: m['fupa_match_slug'] as String?,
       createdAt: now,
     );
   }
@@ -1002,6 +1003,7 @@ class AppState extends ChangeNotifier {
       competition: cm.competition ?? existing.competition,
       matchday: cm.matchday ?? existing.matchday,
       externalId: cm.externalId ?? existing.externalId,
+      fupaMatchSlug: cm.fupaMatchSlug ?? existing.fupaMatchSlug,
     );
     await _repo.upsertRawById('matches', merged.toMap());
     // Zurücksetzen auf einem anderen Gerät (Status wechselt live/beendet →
@@ -1044,6 +1046,7 @@ class AppState extends ChangeNotifier {
             'opponent_score': m.opponentScore,
             'status': m.status.storageKey,
             'locally_managed': m.locallyManaged,
+            'fupa_match_slug': m.fupaMatchSlug,
           }
       ];
       await CloudService.upsertMatches(matchRows);

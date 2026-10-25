@@ -57,6 +57,9 @@ class ScheduledMatchData {
   final int? matchday;
   final String? externalId;
 
+  /// FuPa-Match-Slug (für den Link auf die FuPa-Spielseite).
+  final String? fupaMatchSlug;
+
   /// true = Spiel ist gespielt (Ergebnis vorhanden).
   final bool finished;
   final int? ownGoals;
@@ -73,6 +76,7 @@ class ScheduledMatchData {
     this.competition,
     this.matchday,
     this.externalId,
+    this.fupaMatchSlug,
     this.finished = false,
     this.ownGoals,
     this.opponentGoals,
@@ -89,6 +93,7 @@ class ScheduledMatchData {
         competition: competition,
         matchday: matchday,
         externalId: externalId,
+        fupaMatchSlug: fupaMatchSlug,
         finished: finished,
         ownGoals: ownGoals,
         opponentGoals: opponentGoals,

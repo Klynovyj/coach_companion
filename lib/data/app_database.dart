@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 35;
+  static const _dbVersion = 36;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -256,6 +256,10 @@ class AppDatabase {
       await db.execute('DROP INDEX IF EXISTS idx_rating_match_player_user');
       await db.execute(
           'CREATE UNIQUE INDEX idx_rating_match_player ON player_ratings (match_id, player_id)');
+    }
+    // v35 -> v36: FuPa-Match-Slug am Spiel (Link auf die FuPa-Spielseite).
+    if (oldV < 36) {
+      await db.execute('ALTER TABLE matches ADD COLUMN fupa_match_slug TEXT');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -537,6 +541,7 @@ class AppDatabase {
         competition TEXT,
         matchday INTEGER,
         external_id TEXT,
+        fupa_match_slug TEXT,
         status TEXT NOT NULL,
         own_score INTEGER NOT NULL DEFAULT 0,
         opponent_score INTEGER NOT NULL DEFAULT 0,

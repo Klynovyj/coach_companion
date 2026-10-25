@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/match.dart';
 import '../models/match_rating.dart';
@@ -167,6 +168,7 @@ class _RatingScreenState extends State<RatingScreen> {
         padding: const EdgeInsets.only(bottom: 24),
         children: [
           _fristBanner(context),
+          _fupaVoteCard(context, match),
           _matchNoteCard(context),
           SwitchListTile(
             secondary: const Icon(Icons.event_busy),
@@ -216,6 +218,40 @@ class _RatingScreenState extends State<RatingScreen> {
       child: Text('Bewerten möglich bis ${df.format(_deadline!.toLocal())}',
           style: Theme.of(context).textTheme.bodySmall),
     );
+  }
+
+  /// „Bester Spieler" bei FuPa: öffnet die FuPa-Spielseite (Elf-der-Woche-
+  /// Abstimmung). Nur sichtbar, wenn zum Spiel ein FuPa-Slug bekannt ist.
+  Widget _fupaVoteCard(BuildContext context, GameMatch match) {
+    final slug = match.fupaMatchSlug?.trim();
+    if (slug == null || slug.isEmpty) return const SizedBox.shrink();
+    final scheme = Theme.of(context).colorScheme;
+    final url = 'https://www.fupa.net/match/$slug/lineup';
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      color: scheme.primaryContainer,
+      child: ListTile(
+        leading: Icon(Icons.how_to_vote, color: scheme.onPrimaryContainer),
+        title: Text('Bester Spieler bei FuPa',
+            style: TextStyle(
+                fontWeight: FontWeight.w700,
+                color: scheme.onPrimaryContainer)),
+        subtitle: Text('Für die Elf der Woche abstimmen',
+            style: TextStyle(
+                color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
+        trailing: FilledButton(
+          onPressed: () => _openFupa(url),
+          child: const Text('Abstimmen'),
+        ),
+        onTap: () => _openFupa(url),
+      ),
+    );
+  }
+
+  Future<void> _openFupa(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {}
   }
 
   Widget _matchNoteCard(BuildContext context) {

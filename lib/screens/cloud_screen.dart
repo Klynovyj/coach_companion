@@ -33,6 +33,7 @@ List<Map<String, dynamic>> scheduleMaps(List<GameMatch> matches) => [
           'own_score': m.ownScore,
           'opponent_score': m.opponentScore,
           'status': m.status.storageKey,
+          'fupa_match_slug': m.fupaMatchSlug,
         }
     ];
 
