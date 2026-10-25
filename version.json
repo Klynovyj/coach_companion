@@ -1,6 +1,6 @@
 {
-  "versionCode": 20,
-  "versionName": "1.3.15",
+  "versionCode": 21,
+  "versionName": "1.3.16",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Startelf-Grafik fuers Teilen: Aufstellung als Bild im Instagram-Format (Story 9:16 oder Post 1:1), mit Farbverlauf oder eigenem Hintergrundfoto, per WhatsApp teilbar\n- Sponsoring: Logos und Haupt-Sponsor im Menue eintragen - erscheinen automatisch auf der Startelf-Grafik\n- Aufstellung: pro Spieler nur noch Start oder Bank\n- enthaelt alles aus 1.3.14 (Live-Erfassung fuer alle Trainer, Reset sofort auf allen Geraeten, Push bei geschlossener App)"
+  "notes": "Neuerungen:\n- Startelf-Grafik anpassbar: Titel (voller Vereinsname, editierbar), eigenes Logo, Hintergrundbild, Abdunkeln/Transparenz, Verlaufsfarben und Vorlagen - alles cloud-synchron\n- Torwart steht oben mit Position, Spieler mit Vor- und Nachnamen\n- Gegner-Karten im Live-Spiel erfassbar\n- WhatsApp-Spielbericht: vollstaendiger Ticker mit Icons und Bezeichnungen, ohne Laengenlimit\n- Sponsoren synchronisieren zuverlaessig ueber die Geraete\n- Aufstellung: pro Spieler nur Start oder Bank"
 }
