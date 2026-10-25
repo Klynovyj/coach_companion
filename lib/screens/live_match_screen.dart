@@ -686,7 +686,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ),
       body: Column(
         children: [
-          if (!canEdit)
+          if (!canEdit || _watchMode)
             _banner(
               context,
               Theme.of(context).colorScheme.secondaryContainer,
@@ -741,7 +741,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                     e.type == MatchEventType.soGoal ||
                     e.type == MatchEventType.soMiss),
           ),
-          if (canEdit)
+          if (canEdit && !_watchMode)
             _lock(
               editing,
               _Controls(
@@ -761,7 +761,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             child: ListView(
               padding: const EdgeInsets.only(bottom: 16),
               children: [
-                if (canEdit && _phase == _Phase.shootout)
+                if (canEdit && !_watchMode && _phase == _Phase.shootout)
                   _lock(canRecord, _shootoutPanel(context, match)),
                 if (_phase != _Phase.shootout &&
                     _events.any((e) =>
@@ -782,7 +782,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                       ),
                     ),
                   ),
-                if (canEdit && _phase != _Phase.shootout)
+                if (canEdit && !_watchMode && _phase != _Phase.shootout)
                   _lock(
                     canRecord,
                     Column(
