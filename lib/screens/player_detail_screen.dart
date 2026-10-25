@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -155,88 +156,112 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     String? initialNote,
   }) async {
     final df = DateFormat('dd.MM.yyyy', 'de_DE');
-    var from = initialFrom ?? DateTime.now();
-    var until = initialUntil ?? DateTime.now().add(const Duration(days: 7));
+    final from = initialFrom ?? DateTime.now();
+    final until = initialUntil ?? DateTime.now().add(const Duration(days: 7));
+    final fromCtrl = TextEditingController(text: df.format(from));
+    final untilCtrl = TextEditingController(text: df.format(until));
     final noteCtrl = TextEditingController(text: initialNote ?? '');
+
     return showDialog<(DateTime, DateTime, String?)>(
       context: context,
       builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: Text('${s.symbol} ${s.label}'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.event, size: 18),
-                      label: Text('Von: ${df.format(from)}'),
-                      onPressed: () async {
-                        final d = await showDatePicker(
-                          context: context,
-                          initialDate: from,
-                          firstDate: DateTime(from.year - 1),
-                          lastDate: DateTime(from.year + 2),
-                        );
-                        if (d != null) {
-                          setLocal(() {
-                            from = d;
-                            if (until.isBefore(from)) until = from;
-                          });
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      icon: const Icon(Icons.event_available, size: 18),
-                      label: Text('Bis: ${df.format(until)}'),
-                      onPressed: () async {
-                        final d = await showDatePicker(
-                          context: context,
-                          initialDate: until,
-                          firstDate: from,
-                          lastDate: DateTime(from.year + 2),
-                        );
-                        if (d != null) setLocal(() => until = d);
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              TextField(
-                controller: noteCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Grund (optional)',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+        builder: (context, setLocal) {
+          // Direkt eintippbares Datumsfeld (TT.MM.JJJJ) + Kalender als Option.
+          Widget dateField(
+              String label, IconData icon, TextEditingController ctrl) {
+            return TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              inputFormatters: [_DateInputFormatter()],
+              decoration: InputDecoration(
+                labelText: label,
+                hintText: 'TT.MM.JJJJ',
+                border: const OutlineInputBorder(),
+                isDense: true,
+                prefixIcon: Icon(icon, size: 18),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.calendar_month),
+                  tooltip: 'Kalender',
+                  onPressed: () async {
+                    final base = _parseDmy(ctrl.text) ?? DateTime.now();
+                    final d = await showDatePicker(
+                      context: context,
+                      initialDate: base,
+                      firstDate: DateTime(base.year - 2),
+                      lastDate: DateTime(base.year + 3),
+                    );
+                    if (d != null) setLocal(() => ctrl.text = df.format(d));
+                  },
                 ),
               ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Abbrechen')),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, (
-                from,
-                until,
-                noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim()
-              )),
-              child: const Text('Speichern'),
+            );
+          }
+
+          return AlertDialog(
+            title: Text('${s.symbol} ${s.label}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                dateField('Von', Icons.event, fromCtrl),
+                const SizedBox(height: 10),
+                dateField('Bis', Icons.event_available, untilCtrl),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: noteCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Grund (optional)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Abbrechen')),
+              FilledButton(
+                onPressed: () {
+                  final f = _parseDmy(fromCtrl.text);
+                  final u = _parseDmy(untilCtrl.text);
+                  final messenger = ScaffoldMessenger.of(context);
+                  if (f == null || u == null) {
+                    messenger.showSnackBar(const SnackBar(
+                        content:
+                            Text('Bitte Datum als TT.MM.JJJJ eingeben.')));
+                    return;
+                  }
+                  if (u.isBefore(f)) {
+                    messenger.showSnackBar(const SnackBar(
+                        content: Text('„Bis" darf nicht vor „Von" liegen.')));
+                    return;
+                  }
+                  Navigator.pop(context, (
+                    f,
+                    u,
+                    noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim()
+                  ));
+                },
+                child: const Text('Speichern'),
+              ),
+            ],
+          );
+        },
       ),
     );
+  }
+
+  /// Parst „TT.MM.JJJJ" zu einem Datum; null bei ungültiger Eingabe.
+  DateTime? _parseDmy(String s) {
+    final m = RegExp(r'^(\d{1,2})\.(\d{1,2})\.(\d{4})$').firstMatch(s.trim());
+    if (m == null) return null;
+    final d = int.parse(m.group(1)!);
+    final mo = int.parse(m.group(2)!);
+    final y = int.parse(m.group(3)!);
+    if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+    final dt = DateTime(y, mo, d);
+    if (dt.day != d || dt.month != mo) return null; // z.B. 31.02 abfangen
+    return dt;
   }
 
   @override
@@ -2071,6 +2096,26 @@ class _PlayerCardView extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Formatiert Ziffern beim Tippen automatisch als TT.MM.JJJJ.
+class _DateInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    var digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length > 8) digits = digits.substring(0, 8);
+    final b = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      if (i == 2 || i == 4) b.write('.');
+      b.write(digits[i]);
+    }
+    final text = b.toString();
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }
