@@ -60,7 +60,9 @@ Future<String?> shareOrSaveImage(
   return file.path;
 }
 
-/// Baut den Spielbericht-Text (Ergebnis, Tore, Karten, Wechsel).
+/// Baut den Spielbericht-Text: Kopf (Ergebnis/Infos) + VOLLSTÄNDIGER Ticker –
+/// alle Ereignisse chronologisch, so wie sie in der App stehen (Tore, Karten,
+/// Wechsel, Ecken/Freistöße/Elfmeter/Fouls, Kommentare und die Spielphasen).
 String buildMatchReport({
   required GameMatch match,
   required String ownName,
@@ -76,59 +78,83 @@ String buildMatchReport({
       '${match.kickoff != null ? ' · ${df.format(match.kickoff!.toLocal())}' : ''}'
       '${match.competition != null ? ' · ${match.competition}' : ''}');
 
-  final sorted = [...events]..sort((a, b) => a.minute.compareTo(b.minute));
-  // Tore inkl. verwandelter Elfmeter (werden als Elfmeter gekennzeichnet).
-  final goals = sorted
-      .where((e) =>
-          e.type == MatchEventType.goal || e.type == MatchEventType.penalty)
-      .toList();
-  // Elfmeter ohne Tor (verschossen/gehalten) – gehören ebenfalls ins Protokoll.
-  final penaltiesNoGoal = sorted
-      .where((e) =>
-          e.type == MatchEventType.penaltyMissed ||
-          e.type == MatchEventType.penaltySaved)
-      .toList();
-  final cards = sorted
-      .where((e) =>
-          e.type == MatchEventType.yellowCard ||
-          e.type == MatchEventType.secondYellow ||
-          e.type == MatchEventType.redCard)
-      .toList();
-  final subs =
-      sorted.where((e) => e.type == MatchEventType.substitution).toList();
+  // Chronologisch: Minute, dann Nachspielzeit, dann Erfassungszeitpunkt.
+  final sorted = [...events]..sort((a, c) {
+      final m = a.minute.compareTo(c.minute);
+      if (m != 0) return m;
+      final me = a.minuteExtra.compareTo(c.minuteExtra);
+      if (me != 0) return me;
+      return a.createdAt.compareTo(c.createdAt);
+    });
 
-  if (goals.isNotEmpty) {
-    b.writeln('\nTore:');
-    for (final e in goals) {
-      final assist = e.assistPlayerId != null
-          ? ' (Vorlage: ${resolveName(e.assistPlayerId)})'
-          : '';
-      final pen = e.type == MatchEventType.penalty ? ' (Elfmeter)' : '';
-      b.writeln('${e.minuteLabel}  ${resolveName(e.playerId)}$assist$pen');
-    }
-  }
-  if (penaltiesNoGoal.isNotEmpty) {
-    b.writeln('\nElfmeter (ohne Tor):');
-    for (final e in penaltiesNoGoal) {
-      final out =
-          e.type == MatchEventType.penaltyMissed ? 'verschossen' : 'gehalten';
-      b.writeln('${e.minuteLabel}  $out: ${resolveName(e.playerId)}');
-    }
-  }
-  if (cards.isNotEmpty) {
-    b.writeln('\nKarten:');
-    for (final e in cards) {
-      b.writeln('${e.minuteLabel}  ${e.type.label}: ${resolveName(e.playerId)}');
-    }
-  }
-  if (subs.isNotEmpty) {
-    b.writeln('\nWechsel:');
-    for (final e in subs) {
-      b.writeln(
-          '${e.minuteLabel}  ${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}');
+  String teamOf(MatchEvent e) =>
+      e.teamId == match.ownTeamId ? ownName : oppName;
+
+  if (sorted.isNotEmpty) {
+    b.writeln('\nTicker:');
+    for (final e in sorted) {
+      b.writeln(_tickerLine(e, match, ownName, oppName, teamOf, resolveName));
     }
   }
   return b.toString().trim();
+}
+
+/// Formatiert EIN Ereignis als Ticker-Zeile.
+String _tickerLine(
+  MatchEvent e,
+  GameMatch match,
+  String ownName,
+  String oppName,
+  String Function(MatchEvent) teamOf,
+  String Function(String?) resolveName,
+) {
+  final min = e.minuteLabel; // enthält bereits das '
+  final sym = e.type.symbol;
+  final note =
+      (e.note != null && e.note!.trim().isNotEmpty) ? ' – ${e.note!.trim()}' : '';
+  switch (e.type) {
+    case MatchEventType.goal:
+    case MatchEventType.penalty:
+      final assist = e.assistPlayerId != null
+          ? ' (Vorlage: ${resolveName(e.assistPlayerId)})'
+          : '';
+      final pen = e.type == MatchEventType.penalty ? ' [Elfmeter]' : '';
+      return '$min $sym Tor ${teamOf(e)} – ${resolveName(e.playerId)}$assist$pen';
+    case MatchEventType.ownGoal:
+      return '$min $sym Eigentor (${teamOf(e)}) – ${resolveName(e.playerId)}';
+    case MatchEventType.yellowCard:
+    case MatchEventType.secondYellow:
+    case MatchEventType.redCard:
+      return '$min $sym ${e.type.label}: ${resolveName(e.playerId)} (${teamOf(e)})';
+    case MatchEventType.substitution:
+      return '$min $sym Wechsel ${teamOf(e)}: '
+          '${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}';
+    case MatchEventType.comment:
+      return '$min $sym Kommentar${note.isEmpty ? '' : ': ${e.note!.trim()}'}';
+    case MatchEventType.penaltyMissed:
+    case MatchEventType.penaltySaved:
+    case MatchEventType.soGoal:
+    case MatchEventType.soMiss:
+      final pl = e.playerId != null ? ' – ${resolveName(e.playerId)}' : '';
+      return '$min $sym ${e.type.label} (${teamOf(e)})$pl';
+    default:
+      // Spielphasen (Anpfiff/Halbzeit/Abpfiff …) sind team-neutral.
+      if (e.type.isPhaseMarker) return '$min $sym ${e.type.label}';
+      // Ecke/Freistoß/Foul/Großchance/Meckern.
+      final pl = e.playerId != null ? ' – ${resolveName(e.playerId)}' : '';
+      return '$min $sym ${e.type.label} (${teamOf(e)})$pl$note';
+  }
+}
+
+/// Teilt reinen Text. Auf dem Handy über das System-Teilen-Menü (WhatsApp &
+/// Co. erscheinen) – ohne Längenlimit, sodass auch ein langer Ticker komplett
+/// ankommt. Auf dem Desktop über den wa.me-Link als Rückfall.
+Future<bool> shareText(String text) async {
+  if (Platform.isAndroid || Platform.isIOS) {
+    await SharePlus.instance.share(ShareParams(text: text));
+    return true;
+  }
+  return shareViaWhatsApp(text);
 }
 
 /// Baut den Nominierungs-Text (gruppiert nach Status).

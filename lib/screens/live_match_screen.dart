@@ -799,7 +799,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                           isOwn: false,
                           enabled: _actionsEnabled,
                           onGoal: () => _addGoal(ownSide: false),
-                          onCard: null,
+                          // Gegner-Karten erfassen (Spieler optional „Unbekannt").
+                          onCard: () => _addCard(ownSide: false),
                           onSub: null,
                           onEvent: () => _addOtherEvent(ownSide: false),
                         ),
@@ -1368,8 +1369,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       events: _events,
       resolveName: _playerName,
     );
-    final ok = await shareViaWhatsApp(text);
-    if (!ok) _snack('WhatsApp konnte nicht geöffnet werden.');
+    // Über das System-Teilen-Menü (Handy) – kein Längenlimit, der komplette
+    // Ticker kommt an; Desktop nutzt den wa.me-Link.
+    final ok = await shareText(text);
+    if (!ok) _snack('Teilen nicht möglich.');
   }
 
   // Spieler-Picker; Rückgabe: playerId, _pickUnknown, _pickNone oder _pickCancelled.
