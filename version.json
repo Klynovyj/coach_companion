@@ -1,6 +1,6 @@
 {
-  "versionCode": 25,
-  "versionName": "1.3.20",
+  "versionCode": 26,
+  "versionName": "1.3.21",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Live-Spiel: Aktionen nachtragen bei beendetem/pausiertem Spiel - Schalter Aktionen nachtragen, Minute wird beim Hinzufuegen abgefragt (Vorschlag 90)\n- Gesamtstatistik: Tore kommen jetzt aus dem echten Spielstand (identisch zum Match-Center), nicht mehr aus neu gezaehlten Ereignissen\n\nAus 1.3.19:\n- Karten & Sperren (Menue): Gelbe/Rote je Spieler, Warnung ab der 5. Gelben, Sperre je Spieler; Warn-Badge in Nominierung, Kader und Aufstellung\n- Geburtstags-Benachrichtigungen um 8:00 fuer Spieler und Betreuer\n- Spielbewertung: eine geteilte Note je Spiel/Spieler\n- FuPa Bester-Spieler-Abstimmung aus der Bewertungs-Ansicht\n- Live-Spiel: Zuschauen-Modus blendet die Eingaben aus\n- Startelf-Grafik: Kopf und Spielerliste klarer getrennt"
+  "notes": "Neuerungen:\n- Gegner-Analyse: doppelte Spieler im Gegnerkader werden automatisch bereinigt (lokal + Cloud); Kadergroesse stimmt wieder\n- Live-Spiel: Ereignis-Auswahl ist jetzt scrollbar (lange Liste war abgeschnitten)\n\nAus 1.3.20:\n- Live-Spiel: Aktionen nachtragen bei beendetem Spiel (Minute wird abgefragt)\n- Gesamtstatistik: Tore aus dem echten Spielstand\n\nAus 1.3.19:\n- Karten & Sperren (Menue) mit Warnung ab der 5. Gelben\n- Geburtstags-Benachrichtigungen um 8:00 fuer Spieler und Betreuer\n- Spielbewertung: eine geteilte Note je Spiel/Spieler\n- FuPa Bester-Spieler-Abstimmung aus der Bewertungs-Ansicht\n- Live-Spiel: Zuschauen-Modus blendet die Eingaben aus\n- Startelf-Grafik: Kopf und Spielerliste klarer getrennt"
 }
