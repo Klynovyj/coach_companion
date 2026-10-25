@@ -1167,12 +1167,15 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   /// Weitere Ereignisse: Typ wählen, optional Spieler + Notiz.
   Future<void> _addOtherEvent({required bool ownSide}) async {
     const types = [
+      MatchEventType.shot,
+      MatchEventType.longShot,
       MatchEventType.corner,
       MatchEventType.freeKick,
       MatchEventType.penalty,
       MatchEventType.foul,
       MatchEventType.bigChance,
       MatchEventType.meckern,
+      MatchEventType.injury,
     ];
     final type = await showModalBottomSheet<MatchEventType>(
       context: context,
@@ -1413,6 +1416,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         MatchEventType.penaltyMissed,
         MatchEventType.penaltySaved,
         MatchEventType.save,
+        MatchEventType.shot,
+        MatchEventType.longShot,
+        MatchEventType.injury,
       };
       if (needsPlayer.contains(newType)) {
         final players = ownSide ? _onFieldPlayers(true) : _opponentPlayers;
@@ -1456,12 +1462,15 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ('Elfmeter (Tor)', MatchEventType.penalty),
       ('Elfmeter verschossen', MatchEventType.penaltyMissed),
       ('Elfmeter gehalten', MatchEventType.penaltySaved),
+      ('Schuss', MatchEventType.shot),
+      ('Distanzschuss', MatchEventType.longShot),
       ('Ecke', MatchEventType.corner),
       ('Freistoß', MatchEventType.freeKick),
       ('Foul', MatchEventType.foul),
       ('Großchance', MatchEventType.bigChance),
       ('Meckern', MatchEventType.meckern),
       ('Parade', MatchEventType.save),
+      ('Verletzung', MatchEventType.injury),
       ('Kommentar', MatchEventType.comment),
     ];
     return showModalBottomSheet<MatchEventType>(
@@ -2247,6 +2256,9 @@ class _EventLog extends StatelessWidget {
       case MatchEventType.bigChance:
       case MatchEventType.meckern:
       case MatchEventType.save:
+      case MatchEventType.shot:
+      case MatchEventType.longShot:
+      case MatchEventType.injury:
         return e.playerId == null
             ? e.type.label
             : '${e.type.label} – ${resolveName(e.playerId)}';

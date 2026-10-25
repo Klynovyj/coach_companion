@@ -84,6 +84,9 @@ enum MatchEventType {
   bigChance('big_chance', 'Großchance', '✨'),
   meckern('meckern', 'Meckern', '🗣️'),
   save('save', 'Parade', '🧤'),
+  shot('shot', 'Schuss', '👟'),
+  longShot('long_shot', 'Distanzschuss', '🚀'),
+  injury('injury', 'Verletzung', '🤕'),
   comment('comment', 'Kommentar', '💬'),
   // Team-neutrale Spielphasen-Marken (ohne Spieler).
   kickoff('kickoff', 'Anpfiff', '🟢'),
