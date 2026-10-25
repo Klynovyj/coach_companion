@@ -82,9 +82,16 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
+  /// Beim Öffnen die FuPa-Statistik bei Bedarf nachladen (Trainer-Gerät mit
+  /// FuPa-Link), sonst aus dem (ggf. aus der Cloud gespiegelten) Cache.
+  Future<List<PlayerStat>> _loadStats(AppState state) async {
+    await state.ensureOwnStats(widget.teamId);
+    return state.statsOf(widget.teamId);
+  }
+
   Widget _playersView(AppState state) {
     return FutureBuilder<List<PlayerStat>>(
-      future: state.statsOf(widget.teamId),
+      future: _loadStats(state),
       builder: (context, snap) {
         if (!snap.hasData) {
           return const Center(child: CircularProgressIndicator());

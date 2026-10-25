@@ -148,6 +148,26 @@ void main() {
     });
   });
 
+  group('FupaReduxImporter.parsePlayerStatsJson', () {
+    test('liest die v1-API-Antwort (JSON-Array)', () {
+      const body = '[{"id":488521,"slug":"matthias-seifert-488521",'
+          '"firstName":"Matthias","lastName":"Seifert","matches":2,"goals":0,'
+          '"assists":1,"yellowCards":1,"yellowRedCards":0,"redCards":0,'
+          '"minutesPlayed":180,"topEleven":0},'
+          '{"id":2038273,"firstName":"Max","lastName":"Unger","matches":5,'
+          '"goals":3,"assists":2,"minutesPlayed":450,"redCards":1}]';
+      final stats = FupaReduxImporter.parsePlayerStatsJson(body);
+      expect(stats, hasLength(2));
+      expect(stats[0].lastName, 'Seifert');
+      expect(stats[0].minutes, 180);
+      expect(stats[0].assists, 1);
+      expect(stats[1].goals, 3);
+      expect(stats[1].minutes, 450);
+      expect(stats[1].redCards, 1);
+      expect(stats[1].externalId, '2038273');
+    });
+  });
+
   group('FupaReduxImporter.parseLeagueMatches', () {
     final items = [
       {

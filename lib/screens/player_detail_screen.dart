@@ -783,6 +783,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   /// Lädt Team (Logo/Name) + FuPa-Saisonstatistik für die Spielerkarte.
   Future<(Team?, PlayerStat?)> _loadCardData(AppState s) async {
     final team = await s.repository.getTeam(_player.teamId);
+    // FuPa-Statistik bei Bedarf nachladen (Trainer-Gerät mit FuPa-Link).
+    await s.ensureOwnStats(_player.teamId);
     final stat = await s.playerSeasonStat(_player.teamId, _player.dedupKey);
     return (team, stat);
   }
@@ -819,8 +821,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                    'Keine FuPa-Statistik. In den Einstellungen/Kader über '
-                    '„Statistik" importieren.',
+                    'Keine FuPa-Statistik. Über „Jetzt aus FuPa aktualisieren" '
+                    '(Einstellungen → Konto & Team) laden.',
                     style: TextStyle(color: Colors.grey)),
               ),
             );

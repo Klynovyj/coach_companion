@@ -463,19 +463,52 @@ class FupaReduxImporter {
     return '$y-07-01';
   }
 
-  /// Importiert die Spieler-Saison-Statistik (aus `/playerstats`).
+  /// Importiert die Spieler-Saison-Statistik. FuPa liefert sie nicht mehr
+  /// server-seitig im HTML (REDUX_DATA), sondern über die v1-API als JSON.
   Future<List<PlayerStatData>> importStats(String url) async {
     final trimmed = url.trim();
     if (!isTeamUrl(trimmed)) {
       throw FupaImportException(
           'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
     }
-    final statsUrl = _subPageUrlFor(trimmed, 'playerstats');
-    return parseTeamStatsHtml(await _fetchHtml(statsUrl));
+    final slug = _teamSlug(trimmed);
+    final body = await _fetchHtml(
+        'https://api.fupa.net/v1/teams/$slug/player-stats');
+    return parsePlayerStatsJson(body);
   }
 
-  /// Extrahiert die Statistik aus `dataHistory[].TeamPlayerStatsPage.season.players`.
-  /// Netzwerkfrei testbar.
+  /// Parst die FuPa-v1-API-Antwort (JSON-Array der Saison-Statistik). Testbar.
+  static List<PlayerStatData> parsePlayerStatsJson(String body) {
+    final decoded = jsonDecode(body);
+    if (decoded is! List) {
+      throw FupaImportException('Unerwartetes Statistik-Format von FuPa.');
+    }
+    int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
+    final out = <PlayerStatData>[];
+    for (final raw in decoded) {
+      if (raw is! Map) continue;
+      final first = (raw['firstName'] as String?)?.trim() ?? '';
+      final last = (raw['lastName'] as String?)?.trim() ?? '';
+      if (first.isEmpty && last.isEmpty) continue;
+      out.add(PlayerStatData(
+        externalId: (raw['id'] ?? raw['slug'])?.toString(),
+        firstName: first,
+        lastName: last,
+        matches: asInt(raw['matches']),
+        goals: asInt(raw['goals']),
+        assists: asInt(raw['assists']),
+        yellowCards: asInt(raw['yellowCards']),
+        yellowRedCards: asInt(raw['yellowRedCards']),
+        redCards: asInt(raw['redCards']),
+        minutes: asInt(raw['minutesPlayed']),
+        topEleven: asInt(raw['topEleven']),
+      ));
+    }
+    return out;
+  }
+
+  /// Veraltet: Statistik aus `dataHistory[].TeamPlayerStatsPage.season.players`
+  /// (FuPa rendert diese seit 2026 nicht mehr ins HTML). Für Altdaten/Tests.
   static List<PlayerStatData> parseTeamStatsHtml(String html) {
     final redux = _extractRedux(html);
     final dh = redux['dataHistory'];

@@ -1098,6 +1098,52 @@ class AppState extends ChangeNotifier {
 
   Future<List<PlayerStat>> statsOf(String teamId) => _repo.getStats(teamId);
 
+  /// Lädt die eigene FuPa-Saisonstatistik bei Bedarf nach (nur Gerät mit
+  /// FuPa-Link) und spiegelt sie in die Cloud – ohne auf den 6h-Voll-Import zu
+  /// warten. No-op, wenn schon Statistik vorhanden ist oder kein Link existiert.
+  Future<void> ensureOwnStats(String teamId) async {
+    final existing = await _repo.getStats(teamId);
+    if (existing.isNotEmpty) return;
+    final url = _ownTeam?.fupaUrl ?? (await _repo.getTeam(teamId))?.fupaUrl;
+    if (url == null || url.isEmpty) return;
+    try {
+      final n = await _importStatsInto(teamId, url);
+      if (n > 0) await _pushStatsToCloud(teamId);
+      notifyListeners();
+    } catch (_) {
+      // Statistik ist optional.
+    }
+  }
+
+  /// Spiegelt die lokale Statistik eines Teams in die Cloud (nur aktives Team).
+  Future<void> _pushStatsToCloud(String teamId) async {
+    if (_activeCloudTeamId != teamId ||
+        !CloudService.ready ||
+        !CloudService.signedIn) {
+      return;
+    }
+    final stats = await _repo.getStats(teamId);
+    try {
+      await CloudService.uploadStats(teamId, [
+        for (final s in stats)
+          {
+            'id': s.id,
+            'external_id': s.externalId,
+            'first_name': s.firstName,
+            'last_name': s.lastName,
+            'matches': s.matches,
+            'goals': s.goals,
+            'assists': s.assists,
+            'yellow_cards': s.yellowCards,
+            'yellow_red_cards': s.yellowRedCards,
+            'red_cards': s.redCards,
+            'minutes': s.minutes,
+            'top_eleven': s.topEleven,
+          }
+      ]);
+    } catch (_) {}
+  }
+
   // -------------------------------------------------------- Team / Players
   Future<Team> ensureOwnTeam() async {
     _ownTeam ??= await _repo.getOwnTeam();
