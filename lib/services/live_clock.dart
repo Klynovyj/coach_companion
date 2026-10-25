@@ -241,6 +241,10 @@ class LiveClock {
     }
   }
 
+  /// Einmalige Info-Benachrichtigung (z.B. „Live-Spiel läuft").
+  static Future<void> showInfo(String title, String body) =>
+      _showAlert(title, body);
+
   static Future<void> _showAlert(String title, String body) async {
     await _ensureFln();
     if (!_flnReady) return;

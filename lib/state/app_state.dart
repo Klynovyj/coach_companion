@@ -26,6 +26,7 @@ import '../models/player_talk.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import '../services/cloud_service.dart';
+import '../services/live_clock.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_persistence.dart';
 import '../services/material_duty.dart';
@@ -243,6 +244,7 @@ class AppState extends ChangeNotifier {
   Future<void> _applyQueue = Future.value(); // serialisiert per-Zeile-Updates
   Timer? _fupaTimer;
   Timer? _fullTimer;
+  Timer? _liveTimer;
   bool _autoRefreshing = false;
 
   /// Startet (oder behält) das Realtime-Abo + die periodische FuPa-Auffrischung
@@ -265,6 +267,50 @@ class AppState extends ChangeNotifier {
         const Duration(hours: 6), (_) => maybeAutoFullRefresh());
     maybeAutoFullRefresh();
     maybeAutoRefreshFupa();
+    // Status/Ergebnis (live gehen, Abpfiff, zurücksetzen) zuverlässig abgleichen
+    // – auch falls ein Realtime-Event verloren geht (z.B. Hintergrund/Android).
+    _liveTimer =
+        Timer.periodic(const Duration(seconds: 15), (_) => _pollMatchSync());
+    _pollMatchSync();
+  }
+
+  /// Gleicht Status + Ergebnis aller Spiele mit der Cloud ab (leichtgewichtig).
+  /// Fängt verlorene Realtime-Events: Live-Spiel/Abpfiff/Zurücksetzen erscheinen
+  /// so bei allen. Beim Wechsel auf „live" kommt eine Info-Benachrichtigung.
+  Future<void> _pollMatchSync() async {
+    final teamId = _activeCloudTeamId;
+    if (teamId == null || !CloudService.ready || !CloudService.signedIn) return;
+    try {
+      final rows = await CloudService.matchSyncRows(teamId);
+      var changed = false;
+      for (final r in rows) {
+        final id = r['id'] as String?;
+        if (id == null) continue;
+        final local = await _repo.getMatch(id);
+        if (local == null) continue;
+        final st = MatchStatus.fromKey(r['status'] as String?);
+        final own = (r['own_score'] as num?)?.toInt() ?? local.ownScore;
+        final opp = (r['opponent_score'] as num?)?.toInt() ?? local.opponentScore;
+        if (local.status == st &&
+            local.ownScore == own &&
+            local.opponentScore == opp) {
+          continue;
+        }
+        if (st == MatchStatus.live && local.status != MatchStatus.live) {
+          final name = (r['opponent'] as String?) ?? local.opponentName;
+          LiveClock.showInfo('Live-Spiel läuft', 'vs $name');
+        }
+        await _repo.upsertMatch(
+            local.copyWith(status: st, ownScore: own, opponentScore: opp));
+        changed = true;
+      }
+      if (changed) {
+        await _reload();
+        notifyListeners();
+      }
+    } catch (_) {
+      // Offline/Teilfehler – nächster Tick versucht es erneut.
+    }
   }
 
   /// Darf der aktuelle Nutzer im Live-Spiel mitschreiben? Ohne aktives Cloud-
@@ -306,6 +352,8 @@ class AppState extends ChangeNotifier {
     _fupaTimer = null;
     _fullTimer?.cancel();
     _fullTimer = null;
+    _liveTimer?.cancel();
+    _liveTimer = null;
     if (chs.isNotEmpty) CloudService.removeChannels(chs);
   }
 
@@ -905,6 +953,11 @@ class AppState extends ChangeNotifier {
       Map<String, dynamic> record, String teamId, DateTime now) async {
     final cm = _matchFromCloud(record, teamId, now);
     final existing = await _repo.getMatch(cm.id);
+    // Wechsel auf „live" (von einem anderen Gerät) → Info-Benachrichtigung.
+    if (cm.status == MatchStatus.live &&
+        (existing == null || existing.status != MatchStatus.live)) {
+      LiveClock.showInfo('Live-Spiel läuft', 'vs ${cm.opponentName}');
+    }
     if (existing == null) {
       await _repo.upsertRawById('matches', cm.toMap());
       return;

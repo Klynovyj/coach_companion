@@ -100,6 +100,16 @@ class CloudService {
   static Future<Map<String, dynamic>> teamById(String teamId) =>
       _c.from('teams').select().eq('id', teamId).single();
 
+  /// Leichter Abgleich von Status + Ergebnis aller Spiele (für den Live-/
+  /// Zurücksetzen-Poll – ohne Logos/Details).
+  static Future<List<Map<String, dynamic>>> matchSyncRows(String teamId) async {
+    final rows = await _c
+        .from('matches')
+        .select('id, status, own_score, opponent_score, opponent')
+        .eq('team_id', teamId);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
   /// Ersetzt die Cloud-Statistik eines Teams (delete + insert, ein Stand).
   static Future<void> uploadStats(
       String teamId, List<Map<String, dynamic>> rows) async {
