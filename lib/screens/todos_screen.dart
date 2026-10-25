@@ -24,6 +24,18 @@ class _TodosScreenState extends State<TodosScreen> {
   List<TodoResponsible> _quickResponsible = [];
   bool _showArchive = false;
 
+  /// Eingeklappte Abschnitte (Thema-ID bzw. '__none__' für „Ohne Thema").
+  final Set<String> _collapsed = {};
+  static const _noTopicKey = '__none__';
+
+  /// Verschiebt eine Aufgabe per Drag&Drop in ein anderes Thema (null = ohne).
+  Future<void> _moveTodo(AppState state, Todo t, String? topicId) async {
+    if (t.topicId == topicId) return;
+    await state.saveTodo(
+        t.copyWith(topicId: topicId, clearTopicId: topicId == null));
+    if (mounted) setState(() {});
+  }
+
   static final _dDate = DateFormat('dd.MM.yyyy', 'de_DE');
   static final _dDateTime = DateFormat('dd.MM.yyyy  HH:mm', 'de_DE');
 
@@ -284,11 +296,29 @@ class _TodosScreenState extends State<TodosScreen> {
       padding: const EdgeInsets.only(bottom: 12),
       children: [
         for (final topic in topics)
-          _topicSection(state, topic, byTopic[topic.id] ?? const [],
-              players, playerMap, topics),
-        if (noTopic.isNotEmpty)
-          _plainSection(
-              state, 'Ohne Thema', noTopic, playerMap),
+          _section(
+            state: state,
+            sectionKey: topic.id,
+            topicId: topic.id,
+            title: topic.title,
+            todos: byTopic[topic.id] ?? const [],
+            players: players,
+            playerMap: playerMap,
+            allTopics: topics,
+            topic: topic,
+          ),
+        // „Ohne Thema" immer zeigen – auch als Ablageziel zum Herausziehen.
+        _section(
+          state: state,
+          sectionKey: _noTopicKey,
+          topicId: null,
+          title: 'Ohne Thema',
+          todos: noTopic,
+          players: players,
+          playerMap: playerMap,
+          allTopics: topics,
+          topic: null,
+        ),
       ],
     );
   }
@@ -310,73 +340,101 @@ class _TodosScreenState extends State<TodosScreen> {
     );
   }
 
-  Widget _topicSection(
-    AppState state,
-    TodoTopic topic,
-    List<Todo> todos,
-    List<Player> players,
-    Map<String, Player> playerMap,
-    List<TodoTopic> allTopics,
-  ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          padding: const EdgeInsets.fromLTRB(16, 10, 4, 10),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(topic.title,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15)),
+  /// Ein-/ausklappbarer Abschnitt (Thema oder „Ohne Thema"), zugleich DragTarget
+  /// zum Hineinziehen von Aufgaben. Kopf antippen = ein-/ausklappen.
+  Widget _section({
+    required AppState state,
+    required String sectionKey,
+    required String? topicId,
+    required String title,
+    required List<Todo> todos,
+    required List<Player> players,
+    required Map<String, Player> playerMap,
+    required List<TodoTopic> allTopics,
+    TodoTopic? topic,
+  }) {
+    final collapsed = _collapsed.contains(sectionKey);
+    return DragTarget<Todo>(
+      onWillAcceptWithDetails: (d) => d.data.topicId != topicId,
+      onAcceptWithDetails: (d) => _moveTodo(state, d.data, topicId),
+      builder: (context, candidate, rejected) {
+        final scheme = Theme.of(context).colorScheme;
+        final highlight = candidate.isNotEmpty;
+        final actions = topic == null
+            ? const <Widget>[]
+            : <Widget>[
+                IconButton(
+                  tooltip: 'Aufgabe hinzufügen',
+                  icon: const Icon(Icons.add),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => _openTaskPage(state, players,
+                      topicId: topic.id, topics: allTopics),
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (v) {
+                    if (v == 'rename') _renameTopic(state, topic);
+                    if (v == 'delete') _deleteTopic(state, topic);
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(value: 'rename', child: Text('Umbenennen')),
+                    PopupMenuItem(
+                        value: 'delete', child: Text('Thema löschen')),
+                  ],
+                ),
+              ];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Material(
+              color: highlight
+                  ? scheme.primaryContainer
+                  : scheme.surfaceContainerHighest,
+              child: InkWell(
+                onTap: () => setState(() {
+                  if (collapsed) {
+                    _collapsed.remove(sectionKey);
+                  } else {
+                    _collapsed.add(sectionKey);
+                  }
+                }),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 4, 6),
+                  child: Row(
+                    children: [
+                      Icon(
+                          collapsed
+                              ? Icons.chevron_right
+                              : Icons.expand_more,
+                          size: 22),
+                      const SizedBox(width: 2),
+                      Expanded(
+                        child: Text('$title  (${todos.length})',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold, fontSize: 15)),
+                      ),
+                      ...actions,
+                    ],
+                  ),
+                ),
               ),
-              IconButton(
-                tooltip: 'Aufgabe hinzufügen',
-                icon: const Icon(Icons.add),
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _openTaskPage(state, players,
-                    topicId: topic.id, topics: allTopics),
-              ),
-              PopupMenuButton<String>(
-                onSelected: (v) {
-                  if (v == 'rename') _renameTopic(state, topic);
-                  if (v == 'delete') _deleteTopic(state, topic);
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'rename', child: Text('Umbenennen')),
-                  PopupMenuItem(value: 'delete', child: Text('Thema löschen')),
-                ],
-              ),
-            ],
-          ),
-        ),
-        if (todos.isEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Text('Noch keine Aufgaben in diesem Thema.',
-                style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
-          )
-        else
-          for (final t in todos) _todoTile(state, t, playerMap),
-      ],
-    );
-  }
-
-  Widget _plainSection(AppState state, String title, List<Todo> todos,
-      Map<String, Player> playerMap) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
-          child: Text(title,
-              style:
-                  const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        ),
-        for (final t in todos) _todoTile(state, t, playerMap),
-      ],
+            ),
+            if (!collapsed)
+              if (todos.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+                  child: Text(
+                    highlight
+                        ? 'Hier ablegen'
+                        : 'Noch keine Aufgaben – eine Aufgabe hierher ziehen.',
+                    style:
+                        TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                  ),
+                )
+              else
+                for (final t in todos) _todoTile(state, t, playerMap),
+          ],
+        );
+      },
     );
   }
 
@@ -421,7 +479,7 @@ class _TodosScreenState extends State<TodosScreen> {
           style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600)));
     }
 
-    return Dismissible(
+    final tile = Dismissible(
       key: ValueKey(t.id),
       direction: DismissDirection.endToStart,
       background: Container(
@@ -467,6 +525,41 @@ class _TodosScreenState extends State<TodosScreen> {
           ],
         ),
       ),
+    );
+
+    // Lange drücken und auf einen Thema-Kopf ziehen = Aufgabe dorthin verschieben.
+    return LongPressDraggable<Todo>(
+      data: t,
+      dragAnchorStrategy: pointerDragAnchorStrategy,
+      feedback: Material(
+        color: Colors.transparent,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 280),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.primaryContainer,
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.drag_indicator, size: 18),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(t.text,
+                  maxLines: 1, overflow: TextOverflow.ellipsis),
+            ),
+          ]),
+        ),
+      ),
+      childWhenDragging: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        alignment: Alignment.centerLeft,
+        child: Text(t.text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.grey.shade400)),
+      ),
+      child: tile,
     );
   }
 
