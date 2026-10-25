@@ -408,6 +408,7 @@ class CloudService {
     'todo_topics',
     'player_talks',
     'player_absences',
+    'sponsors',
     'player_stats',
     'opponent_teams',
     'opponent_players',

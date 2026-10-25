@@ -15,6 +15,7 @@ import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/team_event.dart';
 import '../models/player_talk.dart';
+import '../models/sponsor.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import 'app_database.dart';
@@ -709,6 +710,24 @@ class CoachRepository {
         where: 'topic_id = ?', whereArgs: [id]);
     await db.delete('todo_topics', where: 'id = ?', whereArgs: [id]);
     _syncDelete('todo_topics', {'id': id});
+  }
+
+  // ------------------------------------------------------------- Sponsoren
+  /// Sponsoren (teamweit) – Haupt-Sponsor zuerst, dann nach Reihenfolge.
+  Future<List<Sponsor>> getSponsors() async {
+    final db = await _db;
+    final rows = await db.query('sponsors',
+        orderBy: 'is_main DESC, sort_order ASC, name ASC');
+    return rows.map(Sponsor.fromMap).toList();
+  }
+
+  Future<void> upsertSponsor(Sponsor s) =>
+      _upsertById('sponsors', s.toMap());
+
+  Future<void> deleteSponsor(String id) async {
+    final db = await _db;
+    await db.delete('sponsors', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('sponsors', {'id': id});
   }
 
   // --------------------------------------------------- Spielergespräche

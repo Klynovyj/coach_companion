@@ -23,6 +23,7 @@ import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/player_talk.dart';
+import '../models/sponsor.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import '../services/cloud_service.dart';
@@ -110,6 +111,7 @@ class AppState extends ChangeNotifier {
     'todos',
     'player_talks',
     'player_absences',
+    'sponsors',
     // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
     // referenzierten lokalen match_events bereits vorhanden sind.
     'event_mentions',
@@ -2335,6 +2337,48 @@ class AppState extends ChangeNotifier {
 
   Future<void> deleteTodoTopic(String id) async {
     await _repo.deleteTodoTopic(id);
+    notifyListeners();
+  }
+
+  // -------------------------------------------------------------- Sponsoren
+  Future<List<Sponsor>> sponsors() => _repo.getSponsors();
+
+  /// Legt einen Sponsor an. Haupt-Sponsor ist exklusiv: ist [isMain] gesetzt,
+  /// werden bestehende Haupt-Sponsoren zurückgestuft.
+  Future<Sponsor> addSponsor(String name,
+      {String? logo, bool isMain = false}) async {
+    final list = await _repo.getSponsors();
+    if (isMain) {
+      for (final s in list.where((s) => s.isMain)) {
+        await _repo.upsertSponsor(s.copyWith(isMain: false));
+      }
+    }
+    final sponsor = Sponsor(
+      id: _uuid.v4(),
+      name: name.trim(),
+      logo: logo,
+      isMain: isMain,
+      sortOrder: list.length,
+    );
+    await _repo.upsertSponsor(sponsor);
+    notifyListeners();
+    return sponsor;
+  }
+
+  /// Speichert einen bearbeiteten Sponsor (hält den Haupt-Sponsor exklusiv).
+  Future<void> saveSponsor(Sponsor s) async {
+    if (s.isMain) {
+      final list = await _repo.getSponsors();
+      for (final other in list.where((o) => o.isMain && o.id != s.id)) {
+        await _repo.upsertSponsor(other.copyWith(isMain: false));
+      }
+    }
+    await _repo.upsertSponsor(s);
+    notifyListeners();
+  }
+
+  Future<void> deleteSponsor(String id) async {
+    await _repo.deleteSponsor(id);
     notifyListeners();
   }
 

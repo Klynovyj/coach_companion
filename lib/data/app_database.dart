@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 29;
+  static const _dbVersion = 30;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -211,6 +211,10 @@ class AppDatabase {
       await db
           .execute('ALTER TABLE matches ADD COLUMN live_controller_name TEXT');
     }
+    // v29 -> v30: Sponsoren (teamweit, für die Startelf-Grafik).
+    if (oldV < 30) {
+      await db.execute(_sponsorsTableSql);
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -362,6 +366,19 @@ class AppDatabase {
         updated_at TEXT NOT NULL,
         FOREIGN KEY (match_id) REFERENCES matches (id) ON DELETE CASCADE,
         FOREIGN KEY (player_id) REFERENCES players (id) ON DELETE CASCADE
+      )
+  ''';
+
+  // Sponsoren (teamweit) für die Startelf-Grafik. Logo als Base64-Data-URL.
+  // is_main = Haupt-Sponsor („Präsentiert von"). Lokal ohne team_id (Cache hält
+  // genau ein Team – wie die übrigen aux-Tabellen).
+  static const _sponsorsTableSql = '''
+      CREATE TABLE sponsors (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        logo TEXT,
+        is_main INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0
       )
   ''';
 
@@ -535,6 +552,7 @@ class AppDatabase {
     await db.execute(_todosTableSql);
     await db.execute(_todoTopicsTableSql);
     await db.execute(_playerTalksTableSql);
+    await db.execute(_sponsorsTableSql);
     await db.execute(_eventMentionsTableSql);
     await db.execute(_playerAbsencesTableSql);
     await db.execute(

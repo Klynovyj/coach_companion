@@ -15,6 +15,7 @@ import '../state/app_state.dart';
 import '../widgets/pitch_field.dart';
 import '../widgets/player_avatar.dart';
 import 'nomination_screen.dart';
+import 'startelf_graphic_screen.dart';
 
 /// Aufstellungs-Editor mit frei bespielbarem Feld (Spieler überall platzieren).
 /// Auswahl kommt aus den zugesagten Spielern. Die Formation dient nur als
@@ -286,6 +287,13 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                     const Text('Nur Kader & Infos – ohne Start/Bank'),
                 onTap: () => Navigator.pop(context, 'team'),
               ),
+              ListTile(
+                leading: const Icon(Icons.image),
+                title: const Text('Als Grafik (Story/Post)'),
+                subtitle:
+                    const Text('Startelf-Bild mit Sponsoren für Instagram/WhatsApp'),
+                onTap: () => Navigator.pop(context, 'graphic'),
+              ),
             ],
           ),
         ),
@@ -294,6 +302,8 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         await shareViaWhatsApp(_squadText());
       } else if (who == 'team' && mounted) {
         await _shareForTeam();
+      } else if (who == 'graphic' && mounted) {
+        await _shareAsGraphic();
       }
       return;
     }
@@ -320,6 +330,43 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       messenger.showSnackBar(
           SnackBar(content: Text('Teilen fehlgeschlagen: $e')));
     }
+  }
+
+  /// Öffnet die Startelf-Grafik (Instagram-Format) mit Startelf + Bank und den
+  /// hinterlegten Sponsoren. Spieler nach Rückennummer sortiert.
+  Future<void> _shareAsGraphic() async {
+    final team = _app.ownTeam;
+    int? numOf(String id) => _matchNumbers[id] ?? _byId[id]?.number;
+    int byNumber(String a, String b) {
+      final na = numOf(a), nb = numOf(b);
+      if (na == null && nb == null) {
+        return _byId[a]!.shortOrFullName.compareTo(_byId[b]!.shortOrFullName);
+      }
+      if (na == null) return 1; // ohne Nummer nach hinten
+      if (nb == null) return -1;
+      return na.compareTo(nb);
+    }
+
+    final starterIds = _starters.keys.where(_byId.containsKey).toList()
+      ..sort(byNumber);
+    final benchIds = _bench.where(_byId.containsKey).toList()..sort(byNumber);
+    final starters = [
+      for (final id in starterIds)
+        StartelfPlayer(numOf(id), _byId[id]!.shortOrFullName),
+    ];
+    final bench = [for (final id in benchIds) _byId[id]!.shortOrFullName];
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StartelfGraphicScreen(
+          teamName: team?.shortName ?? team?.name ?? widget.teamName,
+          teamLogo: team?.logoPath,
+          starters: starters,
+          benchNames: bench,
+        ),
+      ),
+    );
   }
 
   /// Kader als Text: Startelf + Ersatzbank, Namen alphabetisch sortiert.

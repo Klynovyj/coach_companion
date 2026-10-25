@@ -10,6 +10,7 @@ import '../screens/home_screen.dart';
 import '../screens/live_match_screen.dart';
 import '../screens/material_duty_screen.dart';
 import '../screens/settings_screen.dart';
+import '../screens/sponsors_screen.dart';
 import '../screens/todos_screen.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
@@ -148,6 +149,12 @@ class AppDrawer extends StatelessWidget {
                   );
                 },
               ),
+            _push(
+              context,
+              icon: Icons.handshake_outlined,
+              label: 'Sponsoring',
+              screen: const SponsorsScreen(),
+            ),
             _push(
               context,
               icon: Icons.settings_outlined,
