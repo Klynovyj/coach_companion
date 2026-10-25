@@ -12,11 +12,13 @@ import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
 
-/// Ein Spieler in der Startelf-Grafik (Nummer + Anzeigename).
+/// Ein Spieler in der Startelf-Grafik (Nummer + Anzeigename, optional eine
+/// Positionsangabe – z.B. „Torwart").
 class StartelfPlayer {
   final int? number;
   final String name;
-  const StartelfPlayer(this.number, this.name);
+  final String? position;
+  const StartelfPlayer(this.number, this.name, {this.position});
 }
 
 /// Erzeugt die teilbare Startelf-Grafik im Instagram-Format (Story 9:16 oder
@@ -403,9 +405,16 @@ class _StartelfGraphic extends StatelessWidget {
     );
     const nameStyle = TextStyle(
       color: Colors.white,
-      fontSize: 22,
+      fontSize: 21,
       fontWeight: FontWeight.w800,
       letterSpacing: 0.5,
+      height: 1.05,
+    );
+    final posStyle = TextStyle(
+      color: Colors.white.withValues(alpha: 0.7),
+      fontSize: 11,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1,
     );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -415,14 +424,21 @@ class _StartelfGraphic extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 3),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.baseline,
-              textBaseline: TextBaseline.alphabetic,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
                     width: 38,
                     child: Text(p.number?.toString() ?? '', style: numStyle)),
                 const SizedBox(width: 10),
-                Text(p.name.toUpperCase(), style: nameStyle),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(p.name.toUpperCase(), style: nameStyle),
+                    if (p.position != null && p.position!.isNotEmpty)
+                      Text(p.position!.toUpperCase(), style: posStyle),
+                  ],
+                ),
               ],
             ),
           ),

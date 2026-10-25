@@ -337,24 +337,37 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   Future<void> _shareAsGraphic() async {
     final team = _app.ownTeam;
     int? numOf(String id) => _matchNumbers[id] ?? _byId[id]?.number;
+    // Torwart erkennen (Positionsliste „TW" oder Freitext „Tor…/Keeper").
+    bool isGk(Player p) {
+      if (p.positions.any((x) => x.toUpperCase() == 'TW')) return true;
+      final pos = (p.position ?? '').toLowerCase();
+      return pos.contains('tor') || pos == 'tw' || pos.contains('keeper');
+    }
+
     int byNumber(String a, String b) {
       final na = numOf(a), nb = numOf(b);
       if (na == null && nb == null) {
-        return _byId[a]!.shortOrFullName.compareTo(_byId[b]!.shortOrFullName);
+        return _byId[a]!.fullName.compareTo(_byId[b]!.fullName);
       }
       if (na == null) return 1; // ohne Nummer nach hinten
       if (nb == null) return -1;
       return na.compareTo(nb);
     }
 
+    // Startelf: Torwart zuerst, danach nach Rückennummer.
     final starterIds = _starters.keys.where(_byId.containsKey).toList()
-      ..sort(byNumber);
+      ..sort((a, b) {
+        final ga = isGk(_byId[a]!), gb = isGk(_byId[b]!);
+        if (ga != gb) return ga ? -1 : 1;
+        return byNumber(a, b);
+      });
     final benchIds = _bench.where(_byId.containsKey).toList()..sort(byNumber);
     final starters = [
       for (final id in starterIds)
-        StartelfPlayer(numOf(id), _byId[id]!.shortOrFullName),
+        StartelfPlayer(numOf(id), _byId[id]!.fullName,
+            position: isGk(_byId[id]!) ? 'Torwart' : null),
     ];
-    final bench = [for (final id in benchIds) _byId[id]!.shortOrFullName];
+    final bench = [for (final id in benchIds) _byId[id]!.fullName];
     if (!mounted) return;
     await Navigator.push(
       context,
