@@ -22,6 +22,7 @@ import '../models/team_event.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
+import '../models/graphic_settings.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -112,6 +113,7 @@ class AppState extends ChangeNotifier {
     'player_talks',
     'player_absences',
     'sponsors',
+    'graphic_settings',
     // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
     // referenzierten lokalen match_events bereits vorhanden sind.
     'event_mentions',
@@ -2397,6 +2399,39 @@ class AppState extends ChangeNotifier {
       } catch (_) {
         // Offline/Teilfehler – beim nächsten Öffnen erneut.
       }
+    }
+  }
+
+  // -------------------------------------------------- Startelf-Grafik-Stil
+  /// Grafik-Einstellungen des aktiven Teams (oder Defaults, falls noch keine).
+  Future<GraphicSettings> graphicSettings() async {
+    final s = await _repo.getGraphicSettings();
+    return s ?? GraphicSettings(id: _activeCloudTeamId ?? 'local');
+  }
+
+  /// Speichert die Grafik-Einstellungen (id = Cloud-Team-id für eindeutige
+  /// Cloud-PK) und spiegelt sie in die Cloud.
+  Future<void> saveGraphicSettings(GraphicSettings s) async {
+    await _repo.saveGraphicSettings(s.copyWith(id: _activeCloudTeamId ?? 'local'));
+    notifyListeners();
+  }
+
+  /// Schiebt die lokale Grafik-Einstellung (erneut) in die Cloud und
+  /// normalisiert dabei die id auf die Team-id (für vor der Cloud-Tabelle
+  /// angelegte Einstellungen). No-op ohne aktives Cloud-Team.
+  Future<void> pushGraphicSettingsToCloud() async {
+    final team = _activeCloudTeamId;
+    if (team == null || !CloudService.ready || !CloudService.signedIn) return;
+    final s = await _repo.getGraphicSettings();
+    if (s == null) return;
+    if (s.id != team) {
+      // id angleichen (räumt lokal die alte Zeile weg) + Hook spiegelt in Cloud.
+      await _repo.saveGraphicSettings(s.copyWith(id: team));
+    } else {
+      try {
+        await CloudService.upsertRow(
+            'graphic_settings', {...s.toMap(), 'team_id': team});
+      } catch (_) {}
     }
   }
 

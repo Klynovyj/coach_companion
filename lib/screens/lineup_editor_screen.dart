@@ -373,7 +373,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => StartelfGraphicScreen(
-          teamName: team?.shortName ?? team?.name ?? widget.teamName,
+          // Offizieller (voller) Name als Default-Titel; in der Grafik frei
+          // anpassbar.
+          teamName: team?.name ?? widget.teamName,
           teamLogo: team?.logoPath,
           starters: starters,
           benchNames: bench,

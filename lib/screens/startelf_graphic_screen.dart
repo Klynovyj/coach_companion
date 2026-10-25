@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
+import '../models/graphic_settings.dart';
 import '../models/sponsor.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
@@ -22,8 +23,9 @@ class StartelfPlayer {
 }
 
 /// Erzeugt die teilbare Startelf-Grafik im Instagram-Format (Story 9:16 oder
-/// Post 1:1). Sponsoren (Haupt-Sponsor „Präsentiert von …" + Logo-Leiste)
-/// kommen aus der Sponsoring-Verwaltung und werden automatisch eingeblendet.
+/// Post 1:1). Titel, Logo und Hintergrund sind über ein „Grafik anpassen"-Panel
+/// einstellbar (teamweit, cloud-synchron). Sponsoren kommen aus der
+/// Sponsoring-Verwaltung.
 class StartelfGraphicScreen extends StatefulWidget {
   const StartelfGraphicScreen({
     super.key,
@@ -33,6 +35,8 @@ class StartelfGraphicScreen extends StatefulWidget {
     required this.benchNames,
   });
 
+  /// Default-Titel (offizieller Teamname) und Default-Logo – werden genutzt,
+  /// solange in den Grafik-Einstellungen nichts Eigenes hinterlegt ist.
   final String teamName;
   final String? teamLogo;
   final List<StartelfPlayer> starters;
@@ -43,15 +47,16 @@ class StartelfGraphicScreen extends StatefulWidget {
 }
 
 class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
-  static const _bgSettingKey = 'startelf_bg';
-
   final GlobalKey _boundaryKey = GlobalKey();
   bool _story = true; // true = Story 9:16, false = Post 1:1
   List<Sponsor> _sponsors = [];
-  String? _bg; // Hintergrundfoto (Data-URL), lokal gemerkt
-  bool _useBg = true; // Foto verwenden, wenn vorhanden
+  GraphicSettings _settings = const GraphicSettings(id: 'local');
   bool _loading = true;
   bool _sharing = false;
+
+  // Logische Zeichengrößen (× pixelRatio 3 = 1080×1920 bzw. 1080×1080).
+  static const double _storyW = 360, _storyH = 640;
+  static const double _postW = 360, _postH = 360;
 
   @override
   void initState() {
@@ -62,47 +67,262 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Future<void> _load() async {
     final state = context.read<AppState>();
     final sponsors = await state.sponsors();
-    final bg = await state.repository.getSetting(_bgSettingKey);
+    final settings = await state.graphicSettings();
     if (!mounted) return;
     setState(() {
       _sponsors = sponsors;
-      _bg = bg;
-      _useBg = bg != null;
+      _settings = settings;
       _loading = false;
     });
+    // Lokale Einstellung (evtl. vor Existenz der Cloud-Tabelle angelegt) in die
+    // Cloud nachschieben, damit sie auf anderen Geräten erscheint.
+    state.pushGraphicSettingsToCloud();
   }
 
-  Future<void> _pickBg() async {
+  // Effektive Anzeige-Werte (Einstellung überschreibt die Defaults).
+  String get _title =>
+      (_settings.title != null && _settings.title!.trim().isNotEmpty)
+          ? _settings.title!.trim()
+          : widget.teamName;
+  String? get _logo => _settings.logo ?? widget.teamLogo;
+
+  Sponsor? get _mainSponsor {
+    for (final s in _sponsors) {
+      if (s.isMain) return s;
+    }
+    return null;
+  }
+
+  List<Sponsor> get _barSponsors =>
+      _sponsors.where((s) => !s.isMain && s.logo != null).toList();
+
+  Future<String?> _pickImage({required bool asBackground}) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final file = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1600,
-        maxHeight: 1600,
-        imageQuality: 85,
+        maxWidth: asBackground ? 1080 : 600,
+        maxHeight: asBackground ? 1920 : 600,
+        imageQuality: asBackground ? 75 : 90,
       );
-      if (file == null) return;
+      if (file == null) return null;
       final bytes = await file.readAsBytes();
-      final dataUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
-      if (!mounted) return;
-      await context.read<AppState>().repository.setSetting(_bgSettingKey, dataUrl);
-      setState(() {
-        _bg = dataUrl;
-        _useBg = true;
-      });
+      final mime = asBackground ? 'image/jpeg' : 'image/png';
+      return 'data:$mime;base64,${base64Encode(bytes)}';
     } catch (e) {
-      messenger
-          .showSnackBar(SnackBar(content: Text('Bild konnte nicht geladen werden: $e')));
+      messenger.showSnackBar(
+          SnackBar(content: Text('Bild konnte nicht geladen werden: $e')));
+      return null;
     }
   }
 
-  Future<void> _removeBg() async {
-    await context.read<AppState>().repository.setSetting(_bgSettingKey, null);
+  Future<void> _openCustomize() async {
+    final titleCtrl = TextEditingController(text: _settings.title ?? '');
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void apply(GraphicSettings s) {
+            setState(() => _settings = s); // Live-Vorschau hinter dem Sheet
+            setSheet(() {});
+          }
+
+          return Padding(
+            padding:
+                EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.8,
+              maxChildSize: 0.95,
+              minChildSize: 0.5,
+              builder: (ctx, scroll) => ListView(
+                controller: scroll,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  const Text('Grafik anpassen',
+                      style:
+                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const SizedBox(height: 14),
+                  // Titel ------------------------------------------------
+                  TextField(
+                    controller: titleCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      labelText: 'Titel (Vereinsname)',
+                      hintText: widget.teamName,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => apply(_settings.copyWith(
+                        title: v.trim(), clearTitle: v.trim().isEmpty)),
+                  ),
+                  const SizedBox(height: 16),
+                  // Logo -------------------------------------------------
+                  _rowWithImage(
+                    label: 'Logo',
+                    preview: _logo,
+                    onPick: () async {
+                      final url = await _pickImage(asBackground: false);
+                      if (url != null) apply(_settings.copyWith(logo: url));
+                    },
+                    onClear: _settings.logo == null
+                        ? null
+                        : () => apply(_settings.copyWith(clearLogo: true)),
+                    clearLabel: 'Team-Logo',
+                  ),
+                  const SizedBox(height: 12),
+                  // Hintergrundbild -------------------------------------
+                  _rowWithImage(
+                    label: 'Hintergrundbild',
+                    preview: _settings.bgImage,
+                    onPick: () async {
+                      final url = await _pickImage(asBackground: true);
+                      if (url != null) apply(_settings.copyWith(bgImage: url));
+                    },
+                    onClear: _settings.bgImage == null
+                        ? null
+                        : () => apply(_settings.copyWith(clearBgImage: true)),
+                    clearLabel: 'Entfernen',
+                  ),
+                  const SizedBox(height: 16),
+                  // Abdunkeln / Transparenz -----------------------------
+                  Text(_settings.bgImage == null
+                      ? 'Abdunkeln (nur mit Hintergrundbild wirksam)'
+                      : 'Abdunkeln / Transparenz: ${_settings.overlayOpacity}%'),
+                  Slider(
+                    value: _settings.overlayOpacity.toDouble(),
+                    min: 0,
+                    max: 100,
+                    divisions: 20,
+                    label: '${_settings.overlayOpacity}%',
+                    onChanged: (v) =>
+                        apply(_settings.copyWith(overlayOpacity: v.round())),
+                  ),
+                  const SizedBox(height: 8),
+                  // Verlaufsfarben --------------------------------------
+                  const Text('Verlaufsfarbe oben'),
+                  const SizedBox(height: 6),
+                  _swatches(
+                    selected: _settings.gradTop,
+                    onPick: (hex) => apply(_settings.copyWith(gradTop: hex)),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Verlaufsfarbe unten'),
+                  const SizedBox(height: 6),
+                  _swatches(
+                    selected: _settings.gradBottom,
+                    onPick: (hex) => apply(_settings.copyWith(gradBottom: hex)),
+                  ),
+                  const SizedBox(height: 16),
+                  // Presets ---------------------------------------------
+                  const Text('Vorlagen'),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final p in _presets)
+                        ActionChip(
+                          avatar: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [_hex(p.$2), _hex(p.$3)],
+                              ),
+                            ),
+                          ),
+                          label: Text(p.$1),
+                          onPressed: () => apply(_settings.copyWith(
+                              gradTop: p.$2, gradBottom: p.$3)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Fertig'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    // Speichern + in die Cloud spiegeln.
     if (!mounted) return;
-    setState(() {
-      _bg = null;
-      _useBg = false;
-    });
+    final state = context.read<AppState>();
+    await state.saveGraphicSettings(_settings);
+    await state.pushGraphicSettingsToCloud();
+  }
+
+  Widget _rowWithImage({
+    required String label,
+    required String? preview,
+    required Future<void> Function() onPick,
+    required VoidCallback? onClear,
+    required String clearLabel,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          clipBehavior: Clip.antiAlias,
+          child: preview != null
+              ? Image.memory(TeamLogo.decode(preview) ?? Uint8List(0),
+                  fit: BoxFit.cover, errorBuilder: (_, _, _) => const Icon(Icons.image))
+              : Icon(Icons.image_outlined, color: Theme.of(context).hintColor),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+            child: Text(label,
+                style: const TextStyle(fontWeight: FontWeight.w600))),
+        if (onClear != null)
+          TextButton(onPressed: onClear, child: Text(clearLabel)),
+        OutlinedButton(onPressed: onPick, child: const Text('Wählen')),
+      ],
+    );
+  }
+
+  Widget _swatches({required String selected, required void Function(String) onPick}) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final hex in _palette)
+          GestureDetector(
+            onTap: () => onPick(hex),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: _hex(hex),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: selected.toUpperCase() == hex.toUpperCase()
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.black26,
+                  width: selected.toUpperCase() == hex.toUpperCase() ? 3 : 1,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   Future<void> _share() async {
@@ -114,14 +334,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           _boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return;
       final logicalWidth = _story ? _storyW : _postW;
-      // Exakt 1080 px breit → Story 1080×1920, Post 1080×1080.
       final image = await boundary.toImage(pixelRatio: 1080 / logicalWidth);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       if (data == null) return;
       final savedPath = await shareOrSaveImage(
         data.buffer.asUint8List(),
-        'Startelf_${widget.teamName}',
-        text: 'Startelf – ${widget.teamName}',
+        'Startelf_$_title',
+        text: 'Startelf – $_title',
       );
       if (savedPath != null && mounted) {
         messenger.showSnackBar(SnackBar(
@@ -136,20 +355,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
-  // Logische Zeichengrößen (× pixelRatio 3 = 1080×1920 bzw. 1080×1080).
-  static const double _storyW = 360, _storyH = 640;
-  static const double _postW = 360, _postH = 360;
-
-  Sponsor? get _mainSponsor {
-    for (final s in _sponsors) {
-      if (s.isMain) return s;
-    }
-    return null;
-  }
-
-  List<Sponsor> get _barSponsors =>
-      _sponsors.where((s) => !s.isMain && s.logo != null).toList();
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -161,30 +366,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       appBar: AppBar(
         title: const Text('Startelf-Grafik'),
         actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.image_outlined),
-            tooltip: 'Hintergrund',
-            onSelected: (v) {
-              if (v == 'pick') _pickBg();
-              if (v == 'remove') _removeBg();
-              if (v == 'gradient') setState(() => _useBg = false);
-              if (v == 'photo') setState(() => _useBg = true);
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'pick', child: Text('Hintergrundbild wählen')),
-              if (_bg != null)
-                PopupMenuItem(
-                    value: _useBg ? 'gradient' : 'photo',
-                    child: Text(_useBg ? 'Farbverlauf verwenden' : 'Foto verwenden')),
-              if (_bg != null)
-                const PopupMenuItem(value: 'remove', child: Text('Hintergrundbild entfernen')),
-            ],
+          IconButton(
+            tooltip: 'Grafik anpassen',
+            icon: const Icon(Icons.tune),
+            onPressed: _openCustomize,
           ),
         ],
       ),
       body: Column(
         children: [
-          // Format-Umschalter.
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
             child: SegmentedButton<bool>(
@@ -209,13 +399,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                       width: w,
                       height: h,
                       child: _StartelfGraphic(
-                        teamName: widget.teamName,
-                        teamLogo: widget.teamLogo,
+                        title: _title,
+                        logo: _logo,
                         starters: widget.starters,
                         benchNames: widget.benchNames,
                         mainSponsor: _mainSponsor,
                         barSponsors: _barSponsors,
-                        background: _useBg ? _bg : null,
+                        bgImage: _settings.bgImage,
+                        gradTop: _hex(_settings.gradTop),
+                        gradBottom: _hex(_settings.gradBottom),
+                        overlayOpacity: _settings.overlayOpacity / 100,
                         compact: !_story,
                       ),
                     ),
@@ -249,95 +442,123 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   }
 }
 
+// Kuratierte Farbpalette für die Verlaufsfarben.
+const _palette = <String>[
+  '#0E3325', '#15603F', '#0B6B43', '#064E3B', '#0C4A6E', '#1E3A8A',
+  '#111827', '#1F2937', '#000000', '#7F1D1D', '#92400E', '#3F3F46',
+];
+
+// Fertige Verlauf-Vorlagen (Name, oben, unten).
+const _presets = <(String, String, String)>[
+  ('Dunkelgrün', '#0E3325', '#15603F'),
+  ('Vereinsgrün', '#0B6B43', '#0E3D28'),
+  ('Schwarz', '#1F2937', '#000000'),
+  ('Nacht', '#0C4A6E', '#111827'),
+  ('Weinrot', '#7F1D1D', '#111827'),
+];
+
+Color _hex(String h) {
+  var s = h.replaceAll('#', '').trim();
+  if (s.length == 6) s = 'FF$s';
+  return Color(int.tryParse(s, radix: 16) ?? 0xFF0E3325);
+}
+
 /// Die eigentliche Grafik in fester logischer Größe (wird per RepaintBoundary
 /// in ein PNG exportiert).
 class _StartelfGraphic extends StatelessWidget {
   const _StartelfGraphic({
-    required this.teamName,
-    required this.teamLogo,
+    required this.title,
+    required this.logo,
     required this.starters,
     required this.benchNames,
     required this.mainSponsor,
     required this.barSponsors,
-    required this.background,
+    required this.bgImage,
+    required this.gradTop,
+    required this.gradBottom,
+    required this.overlayOpacity,
     required this.compact,
   });
 
-  final String teamName;
-  final String? teamLogo;
+  final String title;
+  final String? logo;
   final List<StartelfPlayer> starters;
   final List<String> benchNames;
   final Sponsor? mainSponsor;
   final List<Sponsor> barSponsors;
-  final String? background; // Data-URL oder null (Farbverlauf)
+  final String? bgImage;
+  final Color gradTop;
+  final Color gradBottom;
+  final double overlayOpacity; // 0..1
   final bool compact;
-
-  static const _green1 = Color(0xFF0E3325);
-  static const _green2 = Color(0xFF15603F);
 
   @override
   Widget build(BuildContext context) {
-    final bgBytes = TeamLogo.decode(background);
+    final bgBytes = TeamLogo.decode(bgImage);
     final pad = compact ? 16.0 : 20.0;
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_green1, _green2],
-        ),
-      ),
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          if (bgBytes != null) ...[
-            Image.memory(bgBytes, fit: BoxFit.cover, gaplessPlayback: true),
-            // Abdunkeln, damit die weiße Schrift lesbar bleibt.
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xE60E3325), Color(0xF215603F)],
-                ),
-              ),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // Basis-Verlauf (sichtbar ohne Hintergrundbild).
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [gradTop, gradBottom],
             ),
-          ],
-          Padding(
-            padding: EdgeInsets.fromLTRB(pad, pad, pad, pad),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _header(),
-                if (mainSponsor != null) ...[
-                  SizedBox(height: compact ? 8 : 12),
-                  _presentedBy(mainSponsor!),
+          ),
+        ),
+        if (bgBytes != null) ...[
+          Image.memory(bgBytes, fit: BoxFit.cover, gaplessPlayback: true),
+          // Verlauf als Tönung/Abdunkelung über dem Foto.
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  gradTop.withValues(alpha: overlayOpacity),
+                  gradBottom.withValues(alpha: overlayOpacity),
                 ],
-                SizedBox(height: compact ? 8 : 14),
-                Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topCenter,
-                    child: _lineupBlock(),
-                  ),
-                ),
-                if (barSponsors.isNotEmpty) ...[
-                  SizedBox(height: compact ? 6 : 10),
-                  _sponsorBar(),
-                ],
-              ],
+              ),
             ),
           ),
         ],
-      ),
+        Padding(
+          padding: EdgeInsets.all(pad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(),
+              if (mainSponsor != null) ...[
+                SizedBox(height: compact ? 8 : 12),
+                _presentedBy(mainSponsor!),
+              ],
+              SizedBox(height: compact ? 8 : 14),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.topCenter,
+                  child: _lineupBlock(),
+                ),
+              ),
+              if (barSponsors.isNotEmpty) ...[
+                SizedBox(height: compact ? 6 : 10),
+                _sponsorBar(),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 
   Widget _header() {
     return Row(
       children: [
-        if (teamLogo != null) ...[
-          TeamLogo(logoPath: teamLogo, size: compact ? 34 : 44),
+        if (logo != null) ...[
+          TeamLogo(logoPath: logo, size: compact ? 34 : 44),
           const SizedBox(width: 10),
         ],
         Expanded(
@@ -345,7 +566,7 @@ class _StartelfGraphic extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                teamName.toUpperCase(),
+                title.toUpperCase(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -355,11 +576,11 @@ class _StartelfGraphic extends StatelessWidget {
                   letterSpacing: 0.5,
                 ),
               ),
-              Text(
+              const Text(
                 'STARTELF',
                 style: TextStyle(
                   color: Colors.white,
-                  fontSize: compact ? 26 : 32,
+                  fontSize: 30,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.5,
                   height: 1.0,
@@ -375,7 +596,6 @@ class _StartelfGraphic extends StatelessWidget {
   Widget _presentedBy(Sponsor s) {
     final logoBytes = TeamLogo.decode(s.logo);
     return Row(
-      mainAxisAlignment: MainAxisAlignment.start,
       children: [
         Text('PRÄSENTIERT VON',
             style: TextStyle(
@@ -492,8 +712,6 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  // Logo auf weißem Chip (viele Logos sind transparent und wären auf dunklem
-  // Grund unsichtbar).
   Widget _logoChip(Uint8List bytes, {required double height}) {
     return Container(
       height: height,
@@ -502,11 +720,7 @@ class _StartelfGraphic extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(5),
       ),
-      child: Image.memory(
-        bytes,
-        fit: BoxFit.contain,
-        gaplessPlayback: true,
-      ),
+      child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
     );
   }
 }

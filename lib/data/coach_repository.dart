@@ -14,6 +14,7 @@ import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/team_event.dart';
+import '../models/graphic_settings.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -728,6 +729,22 @@ class CoachRepository {
     final db = await _db;
     await db.delete('sponsors', where: 'id = ?', whereArgs: [id]);
     _syncDelete('sponsors', {'id': id});
+  }
+
+  // --------------------------------------------------- Startelf-Grafik-Stil
+  /// Die (einzige) Grafik-Einstellung des aktiven Teams, oder null.
+  Future<GraphicSettings?> getGraphicSettings() async {
+    final db = await _db;
+    final rows = await db.query('graphic_settings', limit: 1);
+    return rows.isEmpty ? null : GraphicSettings.fromMap(rows.first);
+  }
+
+  Future<void> saveGraphicSettings(GraphicSettings s) async {
+    final db = await _db;
+    // Singleton je Team: evtl. alte Zeile mit anderer id lokal entfernen (ohne
+    // Sync, damit keine fremde Cloud-Zeile gelöscht wird).
+    await db.delete('graphic_settings', where: 'id != ?', whereArgs: [s.id]);
+    await _upsertById('graphic_settings', s.toMap()); // Hook → Cloud-Upsert
   }
 
   // --------------------------------------------------- Spielergespräche
