@@ -29,6 +29,7 @@ import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
+import '../services/birthday_notifications.dart';
 import '../services/cloud_service.dart';
 import '../services/live_clock.dart';
 import '../services/push_service.dart';
@@ -736,6 +737,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     // Realtime-Sync fortsetzen, falls ein Cloud-Team aktiv ist (und bereit).
     if (_activeCloudTeamId != null) ensureTeamSync(_activeCloudTeamId!);
+    // Geburtstags-Benachrichtigungen (neu) planen.
+    unawaited(rescheduleBirthdayNotifications());
   }
 
   Future<void> _reload() async {
@@ -746,6 +749,21 @@ class AppState extends ChangeNotifier {
   Future<void> refresh() async {
     await _reload();
     notifyListeners();
+  }
+
+  /// Plant lokale Geburtstags-Benachrichtigungen (8:00 am Geburtstag) für alle
+  /// aktiven Spieler + Betreuer mit Geburtsdatum neu. Best effort, nur Android.
+  Future<void> rescheduleBirthdayNotifications() async {
+    final team = _ownTeam;
+    if (team == null) return;
+    try {
+      final people = (await _repo.getPlayers(team.id))
+          .where((p) => p.active && p.birthdate != null)
+          .toList();
+      await BirthdayNotifications.reschedule(people);
+    } catch (e) {
+      debugPrint('Geburtstage neu planen: $e');
+    }
   }
 
   @override
@@ -784,6 +802,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     // Falls dieses Team ein Cloud-Team ist: Aktualisierung direkt teilen.
     await pushTeamToCloud();
+    // Kader kann sich geändert haben → Geburtstage neu planen.
+    unawaited(rescheduleBirthdayNotifications());
     return ConnectSummary(
       teamName: team.name,
       players: playerData.length,
@@ -837,6 +857,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
     // Ab jetzt Änderungen dieses Teams überall live übernehmen.
     ensureTeamSync(cloudTeamId);
+    // Geburtstage des neu geladenen Kaders planen.
+    unawaited(rescheduleBirthdayNotifications());
   }
 
   /// Aktualisiert den lokalen Cache mit frischen Cloud-Spielen – ohne Wipe,

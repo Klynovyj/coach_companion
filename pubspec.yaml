@@ -39,6 +39,8 @@ dependencies:
   image_picker: ^1.1.2
   flutter_foreground_task: ^10.0.0
   flutter_local_notifications: ^22.3.2
+  # Zeitzone für geplante Geburtstags-Benachrichtigungen (zonedSchedule).
+  timezone: ^0.11.2
   window_manager: ^0.5.2
   tray_manager: ^0.5.3
   package_info_plus: ^9.0.1
