@@ -144,6 +144,25 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
   void _snack(String msg) =>
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
+  /// Zweizeiliger Tab: Beschriftung oben, Anzahl darunter – passt auch auf
+  /// schmale Handy-Breiten, statt einzeilig abgeschnitten zu werden.
+  Tab _countTab(String label, int count) => Tab(
+        height: 54,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(label,
+                style: const TextStyle(fontSize: 13),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 2),
+            Text('$count',
+                style:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -175,10 +194,11 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
                 labelColor: Colors.white,
                 unselectedLabelColor: Colors.white70,
                 indicatorColor: Colors.white,
+                labelPadding: const EdgeInsets.symmetric(horizontal: 4),
                 tabs: [
-                  Tab(text: 'Geplant (${planned.length})'),
-                  Tab(text: 'Durchgeführt (${done.length})'),
-                  Tab(text: 'Vorschläge (${suggestions.length})'),
+                  _countTab('Geplant', planned.length),
+                  _countTab('Durchgeführt', done.length),
+                  _countTab('Vorschläge', suggestions.length),
                 ],
               ),
             ),
