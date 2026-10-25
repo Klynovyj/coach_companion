@@ -1,4 +1,7 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
@@ -46,6 +49,7 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
     ('Wechsel', {MatchEventType.substitution}),
   ];
 
+  final GlobalKey _statsKey = GlobalKey();
   List<MatchEvent> _events = [];
   // Nur wirklich live getrackte Spiele: solche mit mindestens einer Phasen-
   // Marke (Anpfiff/Halbzeit/Abpfiff …). Spiele mit nur vereinzelten Rest-/
@@ -86,22 +90,30 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
 
   int get _matchCount => _trackedMatchIds.length;
 
-  Future<void> _share() async {
-    final name = _team?.shortName ?? _team?.name ?? 'Wir';
-    final b = StringBuffer();
-    b.writeln('📊 Saison-Statistik');
-    b.writeln('$name – $_matchCount Spiele');
-    b.writeln('(Wir : Gegner)');
-    b.writeln();
-    for (final r in _rows) {
-      final o = _count(true, r.$2), g = _count(false, r.$2);
-      if (o == 0 && g == 0) continue;
-      b.writeln('${r.$1}: $o : $g');
+  void _snack(String msg) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
     }
-    final ok = await shareText(b.toString().trim());
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Teilen nicht möglich.')));
+  }
+
+  /// Teilt die Gesamtstatistik als Bild (RepaintBoundary → PNG → WhatsApp).
+  Future<void> _share() async {
+    final name = _team?.shortName ?? _team?.name ?? 'Team';
+    try {
+      final b =
+          _statsKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (b == null) return;
+      final image = await b.toImage(pixelRatio: 2.5);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return;
+      final path = await shareOrSaveImage(
+        data.buffer.asUint8List(),
+        'Gesamtstatistik_$name',
+        text: 'Gesamtstatistik – $name',
+      );
+      if (path != null) _snack('Als Bild gespeichert:\n$path');
+    } catch (e) {
+      _snack('Teilen fehlgeschlagen: $e');
     }
   }
 
@@ -125,9 +137,15 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
-          : ListView(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              children: [
+          : SingleChildScrollView(
+              child: RepaintBoundary(
+                key: _statsKey,
+                child: Container(
+                  color: scheme.surface,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                 Column(
                   children: [
                     if (_team?.logoPath != null) ...[
@@ -175,7 +193,10 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
                       ownColor: scheme.primary,
                       oppColor: _oppColor,
                     ),
-              ],
+                    ],
+                  ),
+                ),
+              ),
             ),
     );
   }

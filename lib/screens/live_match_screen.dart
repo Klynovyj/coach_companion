@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
@@ -1703,75 +1705,89 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         maxChildSize: 0.95,
         minChildSize: 0.4,
         builder: (ctx, scroll) {
-          // Statistik als kompakten Text (Wir : Gegner) teilen; 0:0-Zeilen weg.
+          final boundaryKey = GlobalKey();
+          // Statistik als Bild teilen (RepaintBoundary → PNG → WhatsApp).
           Future<void> shareStats() async {
-            final b = StringBuffer();
-            b.writeln('📊 Statistik');
-            b.writeln(
-                '$ownName ${match.ownScore}:${match.opponentScore} $oppName');
-            b.writeln('(Wir : Gegner)');
-            b.writeln();
-            for (final r in rows) {
-              final o = count(true, r.$2), g = count(false, r.$2);
-              if (o == 0 && g == 0) continue;
-              b.writeln('${r.$1}: $o : $g');
+            final nav = Navigator.of(ctx);
+            try {
+              final b = boundaryKey.currentContext?.findRenderObject()
+                  as RenderRepaintBoundary?;
+              if (b == null) return;
+              final image = await b.toImage(pixelRatio: 2.5);
+              final data =
+                  await image.toByteData(format: ui.ImageByteFormat.png);
+              if (data == null) return;
+              nav.pop();
+              final path = await shareOrSaveImage(
+                data.buffer.asUint8List(),
+                'Statistik_$ownName',
+                text: 'Statistik – $ownName',
+              );
+              if (path != null && mounted) _snack('Als Bild gespeichert:\n$path');
+            } catch (e) {
+              if (mounted) _snack('Teilen fehlgeschlagen: $e');
             }
-            Navigator.pop(ctx);
-            final ok = await shareText(b.toString().trim());
-            if (!ok && mounted) _snack('Teilen nicht möglich.');
           }
 
-          return ListView(
-            controller: scroll,
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-            children: [
-            Row(
+          final content = Container(
+            color: scheme.surface,
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            child: Column(
               children: [
-                const SizedBox(width: 40),
-                const Expanded(
-                  child: Center(
-                    child: Text('Statistik',
-                        style: TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
-                  ),
+                const Text('Statistik',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(child: _dashTeam(_ownTeam?.logoPath, ownName)),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: Text(
+                        '${match.ownScore} : ${match.opponentScore}',
+                        style: const TextStyle(
+                            fontSize: 28, fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                    Expanded(
+                      child: _dashTeam(
+                          _opponentTeam?.logoPath ?? match.opponentLogoPath,
+                          oppName),
+                    ),
+                  ],
                 ),
-                IconButton(
-                  tooltip: 'Teilen (WhatsApp)',
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _dashLegend('Wir', scheme.primary),
+                    _dashLegend('Gegner', oppColor),
+                  ],
+                ),
+                const Divider(height: 20),
+                for (final r in rows)
+                  _dashStatRow(r.$1, count(true, r.$2), count(false, r.$2),
+                      scheme.primary, oppColor),
+              ],
+            ),
+          );
+
+          return Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Als Bild teilen (WhatsApp)',
                   icon: const Icon(Icons.share),
                   onPressed: shareStats,
                 ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(child: _dashTeam(_ownTeam?.logoPath, ownName)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    '${match.ownScore} : ${match.opponentScore}',
-                    style: const TextStyle(
-                        fontSize: 28, fontWeight: FontWeight.bold),
-                  ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  controller: scroll,
+                  child: RepaintBoundary(key: boundaryKey, child: content),
                 ),
-                Expanded(
-                  child: _dashTeam(
-                      _opponentTeam?.logoPath ?? match.opponentLogoPath,
-                      oppName)),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _dashLegend('Wir', scheme.primary),
-                _dashLegend('Gegner', oppColor),
-              ],
-            ),
-            const Divider(height: 20),
-            for (final r in rows)
-              _dashStatRow(r.$1, count(true, r.$2), count(false, r.$2),
-                  scheme.primary, oppColor),
+              ),
             ],
           );
         },
