@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 34;
+  static const _dbVersion = 35;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -239,6 +239,23 @@ class AppDatabase {
       await db.execute(_playerOfMonthTableSql);
       await db.execute(
           'CREATE UNIQUE INDEX idx_potm_month ON player_of_month (year_month)');
+    }
+    // v34 -> v35: Spielerbewertung wieder EINE je Spiel/Spieler (nicht pro
+    // Benutzer). Mehrfach-/Alt-Zeilen deduplizieren (jüngste behalten).
+    if (oldV < 35) {
+      await db.execute('''
+        DELETE FROM player_ratings WHERE rowid NOT IN (
+          SELECT rowid FROM player_ratings pr WHERE NOT EXISTS (
+            SELECT 1 FROM player_ratings p2
+            WHERE p2.match_id = pr.match_id AND p2.player_id = pr.player_id
+              AND (p2.created_at > pr.created_at
+                   OR (p2.created_at = pr.created_at AND p2.rowid > pr.rowid))
+          )
+        )
+      ''');
+      await db.execute('DROP INDEX IF EXISTS idx_rating_match_player_user');
+      await db.execute(
+          'CREATE UNIQUE INDEX idx_rating_match_player ON player_ratings (match_id, player_id)');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -597,7 +614,7 @@ class AppDatabase {
       )
     ''');
     await db.execute(
-        'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
+        'CREATE UNIQUE INDEX idx_rating_match_player ON player_ratings (match_id, player_id)');
 
     await db.execute(_matchRatingsTableSql);
     await db.execute(

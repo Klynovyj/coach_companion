@@ -442,13 +442,10 @@ class CoachRepository {
 
   /// Vollständige Bewertungen eines Spielers je Spiel (inkl. Kommentar). Mit
   /// [userId] nur die Zeilen dieses Benutzers (für die eigene Bearbeitung).
-  Future<Map<String, PlayerRating>> ratingsFullByPlayer(String playerId,
-      {String? userId}) async {
+  Future<Map<String, PlayerRating>> ratingsFullByPlayer(String playerId) async {
     final db = await _db;
-    final where = userId == null ? 'player_id = ?' : 'player_id = ? AND user_id = ?';
-    final args = userId == null ? [playerId] : [playerId, userId];
-    final rows =
-        await db.query('player_ratings', where: where, whereArgs: args);
+    final rows = await db
+        .query('player_ratings', where: 'player_id = ?', whereArgs: [playerId]);
     return {
       for (final r in rows) r['match_id'] as String: PlayerRating.fromMap(r)
     };

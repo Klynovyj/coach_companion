@@ -2085,16 +2085,13 @@ class AppState extends ChangeNotifier {
     String? note,
     bool keepNote = true,
   }) async {
-    final me = _me;
     final existing = await _repo.getRatings(matchId);
-    final prior = existing
-        .where((r) => r.playerId == playerId && (r.userId ?? '') == me)
-        .firstOrNull;
+    final prior = existing.where((r) => r.playerId == playerId).firstOrNull;
     await _repo.upsertRating(PlayerRating(
       id: prior?.id ?? _uuid.v4(),
       matchId: matchId,
       playerId: playerId,
-      userId: me,
+      userId: _me,
       rating: rating,
       note: note ?? (keepNote ? prior?.note : null),
       createdAt: prior?.createdAt ?? DateTime.now(),
@@ -2102,12 +2099,10 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Entfernt die EIGENE Bewertung eines Spielers für ein Spiel.
+  /// Entfernt die (geteilte) Bewertung eines Spielers für ein Spiel.
   Future<void> removeRating(String matchId, String playerId) async {
-    final me = _me;
     final existing = await _repo.getRatings(matchId);
-    for (final r in existing
-        .where((r) => r.playerId == playerId && (r.userId ?? '') == me)) {
+    for (final r in existing.where((r) => r.playerId == playerId)) {
       await _repo.deleteRating(r.id);
     }
     notifyListeners();
@@ -2192,19 +2187,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// „War nicht da / bewerte nicht": setzt das Kennzeichen und entfernt (bei
-  /// true) die eigenen Spielerbewertungen dieses Spiels (zählen nicht mehr).
+  /// „War nicht da / bewerte nicht": setzt nur das Kennzeichen auf der eigenen
+  /// Spiel-Gesamtnote. Die (geteilten) Spielerbewertungen bleiben unberührt.
   Future<void> setAbstain(String matchId, bool abstained) async {
-    final me = _me;
-    if (abstained) {
-      final rows = await _repo.getRatings(matchId);
-      for (final r in rows.where((r) => (r.userId ?? '') == me)) {
-        await _repo.deleteRating(r.id);
-      }
-    }
     final mine = await myMatchRating(matchId);
-    await _repo.upsertMatchRating(
-        _baseMatchRating(matchId, mine).copyWith(userId: me, abstained: abstained));
+    await _repo.upsertMatchRating(_baseMatchRating(matchId, mine)
+        .copyWith(userId: _me, abstained: abstained));
     notifyListeners();
   }
 
@@ -2243,10 +2231,10 @@ class AppState extends ChangeNotifier {
   Future<Map<String, double>> playerRatingsByMatch(String playerId) =>
       _repo.ratingsByPlayer(playerId);
 
-  /// Vollständige EIGENE Bewertungen je Spiel (inkl. Kommentar) – fürs Profil
-  /// (bearbeitbar ist nur die eigene Bewertung).
+  /// Vollständige Bewertungen je Spiel (inkl. Kommentar) – fürs Profil.
+  /// Pro Spiel gibt es genau eine geteilte Bewertung.
   Future<Map<String, PlayerRating>> playerRatingsFull(String playerId) =>
-      _repo.ratingsFullByPlayer(playerId, userId: _me);
+      _repo.ratingsFullByPlayer(playerId);
 
   /// Gesamtschnitt eines Spielers über alle Spiele: (Durchschnitt, Anzahl).
   Future<(double?, int)> ratingAverage(String playerId) =>
