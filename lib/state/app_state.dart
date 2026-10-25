@@ -291,17 +291,27 @@ class AppState extends ChangeNotifier {
         final st = MatchStatus.fromKey(r['status'] as String?);
         final own = (r['own_score'] as num?)?.toInt() ?? local.ownScore;
         final opp = (r['opponent_score'] as num?)?.toInt() ?? local.opponentScore;
+        final ctrl = r['live_controller'] as String?;
+        final ctrlName = r['live_controller_name'] as String?;
+        final ctrlChanged = (local.liveController ?? '') != (ctrl ?? '');
         if (local.status == st &&
             local.ownScore == own &&
-            local.opponentScore == opp) {
+            local.opponentScore == opp &&
+            !ctrlChanged) {
           continue;
         }
         if (st == MatchStatus.live && local.status != MatchStatus.live) {
           final name = (r['opponent'] as String?) ?? local.opponentName;
           LiveClock.showInfo('Live-Spiel läuft', 'vs $name');
         }
-        await _repo.upsertMatch(
-            local.copyWith(status: st, ownScore: own, opponentScore: opp));
+        await _repo.upsertMatch(local.copyWith(
+          status: st,
+          ownScore: own,
+          opponentScore: opp,
+          liveController: ctrl,
+          liveControllerName: ctrlName,
+          clearController: ctrl == null,
+        ));
         changed = true;
       }
       if (changed) {
@@ -941,6 +951,8 @@ class AppState extends ChangeNotifier {
       opponentScore: (m['opponent_score'] as num?)?.toInt() ?? 0,
       status: MatchStatus.fromKey(m['status'] as String?),
       locallyManaged: m['locally_managed'] == true,
+      liveController: m['live_controller'] as String?,
+      liveControllerName: m['live_controller_name'] as String?,
       createdAt: now,
     );
   }
@@ -1909,6 +1921,8 @@ class AppState extends ChangeNotifier {
           // Ab jetzt selbst verwaltet – FuPa setzt das Spiel nicht wieder
           // auf „beendet" (sonst käme es sofort zurück ins Nachholen).
           locallyManaged: true,
+          // Live-Steuerung freigeben.
+          clearController: true,
         ));
       }
       // Cloud: Ereignisse + zugehörige Karten dieses Spiels leeren, Stand 0:0.
@@ -1923,6 +1937,8 @@ class AppState extends ChangeNotifier {
             'own_score': 0,
             'opponent_score': 0,
             'locally_managed': true,
+            'live_controller': null,
+            'live_controller_name': null,
           });
         } catch (_) {}
       }
@@ -1962,17 +1978,56 @@ class AppState extends ChangeNotifier {
   Future<void> setMatchStatus(String matchId, MatchStatus status) async {
     final match = await _repo.getMatch(matchId);
     if (match == null) return;
-    await _repo.upsertMatch(match.copyWith(status: status));
+    // Beim Live-Gehen wird der Starter zum Controller (falls noch keiner ist);
+    // beim Abpfiff wird die Steuerung wieder freigegeben.
+    final noController =
+        match.liveController == null || match.liveController!.isEmpty;
+    final becomeController = status == MatchStatus.live && noController;
+    final releaseController = status == MatchStatus.finished;
+    await _repo.upsertMatch(match.copyWith(
+      status: status,
+      liveController: becomeController ? CloudService.userId : null,
+      liveControllerName: becomeController ? CloudService.myName : null,
+      clearController: releaseController,
+    ));
     await _reload();
     notifyListeners();
-    // Status (z.B. „live"/„beendet") teilen, damit das Live-Spiel bei allen
-    // sichtbar ist (Menü „Live-Spiel läuft") und mitgeschrieben werden kann.
+    // Status (z.B. „live"/„beendet") + Controller teilen, damit das Live-Spiel
+    // bei allen sichtbar ist und klar ist, wer steuert.
     if (_activeCloudTeamId != null &&
         CloudService.ready &&
         CloudService.signedIn) {
       try {
-        await CloudService.updateMatch(
-            matchId, {'status': status.storageKey});
+        await CloudService.updateMatch(matchId, {
+          'status': status.storageKey,
+          if (becomeController) 'live_controller': CloudService.userId,
+          if (becomeController) 'live_controller_name': CloudService.myName,
+          if (releaseController) 'live_controller': null,
+          if (releaseController) 'live_controller_name': null,
+        });
+      } catch (_) {}
+    }
+  }
+
+  /// Übernimmt die Steuerung des Live-Spiels (anderer Trainer, mit Bestätigung
+  /// in der UI). Setzt den Controller auf den aktuellen Nutzer.
+  Future<void> takeOverLiveControl(String matchId) async {
+    final match = await _repo.getMatch(matchId);
+    if (match == null) return;
+    await _repo.upsertMatch(match.copyWith(
+      liveController: CloudService.userId,
+      liveControllerName: CloudService.myName,
+    ));
+    await _reload();
+    notifyListeners();
+    if (_activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateMatch(matchId, {
+          'live_controller': CloudService.userId,
+          'live_controller_name': CloudService.myName,
+        });
       } catch (_) {}
     }
   }

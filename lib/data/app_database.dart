@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 28;
+  static const _dbVersion = 29;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -204,6 +204,12 @@ class AppDatabase {
     if (oldV < 28) {
       await db.execute(
           'ALTER TABLE matches ADD COLUMN locally_managed INTEGER NOT NULL DEFAULT 0');
+    }
+    // v28 -> v29: Live-Steuerung – wer steuert gerade das Live-Spiel.
+    if (oldV < 29) {
+      await db.execute('ALTER TABLE matches ADD COLUMN live_controller TEXT');
+      await db
+          .execute('ALTER TABLE matches ADD COLUMN live_controller_name TEXT');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -438,6 +444,8 @@ class AppDatabase {
         opponent_score INTEGER NOT NULL DEFAULT 0,
         opponent_imported INTEGER NOT NULL DEFAULT 0,
         locally_managed INTEGER NOT NULL DEFAULT 0,
+        live_controller TEXT,
+        live_controller_name TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (own_team_id) REFERENCES teams (id) ON DELETE CASCADE,
         FOREIGN KEY (opponent_team_id) REFERENCES teams (id) ON DELETE SET NULL

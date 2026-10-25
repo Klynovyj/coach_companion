@@ -384,6 +384,8 @@ alter table public.matches add column if not exists opponent_logo text; -- Gegne
 -- „selbst verwaltet" (zurückgesetzt/live): FuPa-Import überschreibt es nicht –
 -- geteilt, damit der Reset auf allen Geräten hält.
 alter table public.matches add column if not exists locally_managed boolean not null default false;
+alter table public.matches add column if not exists live_controller text;      -- Live-Steuerung: User-ID
+alter table public.matches add column if not exists live_controller_name text; -- Live-Steuerung: Name
 
 -- Realtime für die Team-Zeile selbst (Kurzname/Name/Logo/Materialdienst).
 -- teams hat keine team_id; die App abonniert per id-Filter. Lese-Policy

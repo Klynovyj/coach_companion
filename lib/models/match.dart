@@ -41,6 +41,12 @@ class GameMatch {
   /// live getrackt). Dann überschreibt der FuPa-Import Status/Ergebnis NICHT.
   final bool locallyManaged;
 
+  /// User-ID des Trainers, der das Live-Spiel aktuell steuert (null = niemand).
+  final String? liveController;
+
+  /// Anzeigename des steuernden Trainers (denormalisiert).
+  final String? liveControllerName;
+
   final DateTime createdAt;
 
   const GameMatch({
@@ -60,6 +66,8 @@ class GameMatch {
     this.opponentScore = 0,
     this.opponentImported = false,
     this.locallyManaged = false,
+    this.liveController,
+    this.liveControllerName,
     required this.createdAt,
   });
 
@@ -78,6 +86,9 @@ class GameMatch {
     int? opponentScore,
     bool? opponentImported,
     bool? locallyManaged,
+    String? liveController,
+    String? liveControllerName,
+    bool clearController = false,
   }) {
     return GameMatch(
       id: id,
@@ -96,6 +107,11 @@ class GameMatch {
       opponentScore: opponentScore ?? this.opponentScore,
       opponentImported: opponentImported ?? this.opponentImported,
       locallyManaged: locallyManaged ?? this.locallyManaged,
+      liveController:
+          clearController ? null : (liveController ?? this.liveController),
+      liveControllerName: clearController
+          ? null
+          : (liveControllerName ?? this.liveControllerName),
       createdAt: createdAt,
     );
   }
@@ -117,6 +133,8 @@ class GameMatch {
         'opponent_score': opponentScore,
         'opponent_imported': opponentImported ? 1 : 0,
         'locally_managed': locallyManaged ? 1 : 0,
+        'live_controller': liveController,
+        'live_controller_name': liveControllerName,
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -137,6 +155,8 @@ class GameMatch {
         opponentScore: m['opponent_score'] as int? ?? 0,
         opponentImported: (m['opponent_imported'] as int? ?? 0) == 1,
         locallyManaged: (m['locally_managed'] as int? ?? 0) == 1,
+        liveController: m['live_controller'] as String?,
+        liveControllerName: m['live_controller_name'] as String?,
         createdAt:
             DateTime.tryParse(m['created_at'] as String? ?? '') ??
                 DateTime.now(),

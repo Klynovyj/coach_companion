@@ -11,6 +11,7 @@ import '../models/player.dart';
 import '../models/team.dart';
 import '../services/live_clock.dart';
 import '../services/share_service.dart';
+import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/reset_dialog.dart';
@@ -569,6 +570,58 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     return '$m:$s';
   }
 
+  /// Schmaler Hinweisstreifen oben im Live-Screen.
+  Widget _banner(
+      BuildContext context, Color color, IconData icon, String text) {
+    return Container(
+      width: double.infinity,
+      color: color,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(text, style: Theme.of(context).textTheme.bodySmall)),
+        ],
+      ),
+    );
+  }
+
+  /// Graut die Bedienung aus und sperrt sie, wenn der Nutzer nicht der
+  /// Controller ist (für andere Trainer sichtbar, aber inaktiv).
+  Widget _lock(bool enabled, Widget child) {
+    return IgnorePointer(
+      ignoring: !enabled,
+      child: Opacity(opacity: enabled ? 1 : 0.45, child: child),
+    );
+  }
+
+  /// Übernimmt die Live-Steuerung (mit Bestätigung).
+  Future<void> _takeOverControl() async {
+    final prev = _match?.liveControllerName ?? 'Der bisherige Trainer';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Steuerung übernehmen?'),
+        content: Text(
+            'Du übernimmst die Live-Steuerung. $prev kann das Spiel dann nicht '
+            'mehr bedienen.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Übernehmen')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _state.takeOverLiveControl(widget.matchId);
+    await _refreshEvents();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -582,7 +635,13 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     // Darf dieser Nutzer mitschreiben? Zuschauer (und „nur zuschauen"-Modus)
     // sehen nur den Ticker.
     final canEdit = _state.canLiveEdit;
-    final editing = canEdit && !_watchMode;
+    // Live-Steuerung: Nur der Controller (Starter bzw. Übernehmer) bedient das
+    // Spiel. Ist noch keiner gesetzt, darf jeder Berechtigte starten.
+    final controller = match.liveController;
+    final hasController = controller != null && controller.isNotEmpty;
+    final iAmController = !hasController || controller == CloudService.userId;
+    final othersControl = hasController && controller != CloudService.userId;
+    final editing = canEdit && iAmController && !_watchMode;
 
     return Scaffold(
       appBar: AppBar(
@@ -616,21 +675,40 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       body: Column(
         children: [
           if (!canEdit)
+            _banner(
+              context,
+              Theme.of(context).colorScheme.secondaryContainer,
+              Icons.visibility,
+              'Du schaust zu – du siehst nur den Ticker.',
+            )
+          else if (othersControl)
             Container(
               width: double.infinity,
-              color: Theme.of(context).colorScheme.secondaryContainer,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              color: Theme.of(context).colorScheme.errorContainer,
+              padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
               child: Row(
                 children: [
-                  const Icon(Icons.visibility, size: 16),
+                  const Icon(Icons.lock_outline, size: 18),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                        'Du schaust zu – du siehst nur den Ticker.',
-                        style: Theme.of(context).textTheme.bodySmall),
+                      '${match.liveControllerName ?? 'Ein Trainer'} steuert das Spiel',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _takeOverControl,
+                    child: const Text('Übernehmen'),
                   ),
                 ],
               ),
+            )
+          else if (hasController && iAmController)
+            _banner(
+              context,
+              Theme.of(context).colorScheme.primaryContainer,
+              Icons.sports,
+              'Du steuerst das Spiel.',
             ),
           _Scoreboard(
             match: match,
@@ -650,25 +728,28 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                     e.type == MatchEventType.soGoal ||
                     e.type == MatchEventType.soMiss),
           ),
-          if (editing)
-            _Controls(
-              phase: _phase,
-              onKickoff: _kickoff,
-              onHalftime: _halftime,
-              onSecondHalf: _startSecondHalf,
-              onFinish: _finish,
-              onExtra: _startExtra,
-              onExtraHalftime: _extraHalftime,
-              onExtraSecond: _startExtraSecond,
-              onShootout: _startShootout,
+          if (canEdit)
+            _lock(
+              editing,
+              _Controls(
+                phase: _phase,
+                onKickoff: _kickoff,
+                onHalftime: _halftime,
+                onSecondHalf: _startSecondHalf,
+                onFinish: _finish,
+                onExtra: _startExtra,
+                onExtraHalftime: _extraHalftime,
+                onExtraSecond: _startExtraSecond,
+                onShootout: _startShootout,
+              ),
             ),
           const Divider(height: 1),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(bottom: 16),
               children: [
-                if (editing && _phase == _Phase.shootout)
-                  _shootoutPanel(context, match),
+                if (canEdit && _phase == _Phase.shootout)
+                  _lock(editing, _shootoutPanel(context, match)),
                 if (_phase != _Phase.shootout &&
                     _events.any((e) =>
                         e.type == MatchEventType.soGoal ||
@@ -688,42 +769,52 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                       ),
                     ),
                   ),
-                if (editing && _phase != _Phase.shootout) ...[
-                  _TeamActionBar(
-                    label: _ownTeam?.name ?? 'Eigenes Team',
-                    color: Theme.of(context).colorScheme.primary,
-                    isOwn: true,
-                    // Erst nach Anpfiff (während einer Halbzeit) erfassbar.
-                    enabled: _actionsEnabled,
-                    onGoal: () => _addGoal(ownSide: true),
-                    onCard: () => _addCard(ownSide: true),
-                    onSub: () => _addSub(ownSide: true),
-                    onEvent: () => _addOtherEvent(ownSide: true),
-                  ),
-                  _TeamActionBar(
-                    label: match.opponentName,
-                    color: const Color(0xFFB26A00), // Gegner klar abgesetzt
-                    isOwn: false,
-                    enabled: _actionsEnabled,
-                    onGoal: () => _addGoal(ownSide: false),
-                    // Gegner: nur Tore für den Spielstand – keine Karten/Wechsel.
-                    onCard: null,
-                    onSub: null,
-                    onEvent: () => _addOtherEvent(ownSide: false),
-                  ),
-                  const SizedBox(height: 8),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _actionsEnabled ? _addComment : null,
-                        icon: const Icon(Icons.chat_bubble_outline, size: 18),
-                        label: const Text('Kommentar'),
-                      ),
+                if (canEdit && _phase != _Phase.shootout)
+                  _lock(
+                    editing,
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _TeamActionBar(
+                          label: _ownTeam?.name ?? 'Eigenes Team',
+                          color: Theme.of(context).colorScheme.primary,
+                          isOwn: true,
+                          // Erst nach Anpfiff (während einer HZ) erfassbar.
+                          enabled: _actionsEnabled,
+                          onGoal: () => _addGoal(ownSide: true),
+                          onCard: () => _addCard(ownSide: true),
+                          onSub: () => _addSub(ownSide: true),
+                          onEvent: () => _addOtherEvent(ownSide: true),
+                        ),
+                        _TeamActionBar(
+                          label: match.opponentName,
+                          color: const Color(0xFFB26A00),
+                          isOwn: false,
+                          enabled: _actionsEnabled,
+                          onGoal: () => _addGoal(ownSide: false),
+                          onCard: null,
+                          onSub: null,
+                          onEvent: () => _addOtherEvent(ownSide: false),
+                        ),
+                        const SizedBox(height: 8),
+                        Padding(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 12),
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              onPressed:
+                                  _actionsEnabled ? _addComment : null,
+                              icon: const Icon(Icons.chat_bubble_outline,
+                                  size: 18),
+                              label: const Text('Kommentar'),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ],
                 const SizedBox(height: 8),
                 _EventLog(
                   events: _events,

@@ -19,6 +19,17 @@ class CloudService {
   /// E-Mail des angemeldeten Kontos.
   static String? get email => user?.email;
 
+  /// Eigene User-ID (für Live-Steuerung u.a.).
+  static String? get userId => user?.id;
+
+  /// Anzeigename des angemeldeten Nutzers (Name, sonst E-Mail).
+  static String? get myName {
+    final meta = user?.userMetadata;
+    final n = (meta != null ? meta['display_name'] : null) as String?;
+    if (n != null && n.trim().isNotEmpty) return n.trim();
+    return email;
+  }
+
   /// Anzeigename (aus den Registrierungs-Metadaten), falls hinterlegt.
   static String? get displayName {
     final n = user?.userMetadata?['display_name'];
@@ -105,7 +116,8 @@ class CloudService {
   static Future<List<Map<String, dynamic>>> matchSyncRows(String teamId) async {
     final rows = await _c
         .from('matches')
-        .select('id, status, own_score, opponent_score, opponent')
+        .select('id, status, own_score, opponent_score, opponent, '
+            'live_controller, live_controller_name')
         .eq('team_id', teamId);
     return List<Map<String, dynamic>>.from(rows);
   }
