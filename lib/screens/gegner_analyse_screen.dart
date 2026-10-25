@@ -64,7 +64,9 @@ class _GegnerAnalyseScreenState extends State<GegnerAnalyseScreen> {
     final s = context.read<AppState>();
     // Statistik bei Bedarf automatisch nachladen (fixt „Noch keine Statistik").
     await s.ensureOpponentStats(widget.opponentTeamId);
-    final players = await s.playersOf(widget.opponentTeamId);
+    // Gegnerkader kann über Cloud/mehrere Geräte doppelte Zeilen je Spieler
+    // haben (eine mit, eine ohne FuPa-ID) – fürs Anzeigen zusammenführen.
+    final players = dedupePlayersByName(await s.playersOf(widget.opponentTeamId));
     final stats = await s.statsOf(widget.opponentTeamId);
     final markers = await s.scoutMarkersForTeam(widget.opponentTeamId);
     final comments = await s.scoutCommentsForTeam(widget.opponentTeamId);

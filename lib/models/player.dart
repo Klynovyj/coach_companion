@@ -221,6 +221,35 @@ class Player {
       );
 }
 
+/// Führt doppelte Spielerzeilen desselben Namens zu einer zusammen – bevorzugt
+/// die Zeile mit FuPa-ID (externalId) und sonst mehr Infos (Nummer/Position).
+/// Reihenfolge bleibt erhalten. Nötig v.a. bei Gegnerkadern, wo sich über die
+/// Cloud/mehrere Geräte zwei Zeilen pro Spieler sammeln können.
+List<Player> dedupePlayersByName(List<Player> players) {
+  final byKey = <String, Player>{};
+  final order = <String>[];
+  bool richer(Player a, Player b) {
+    final ax = a.externalId != null && a.externalId!.isNotEmpty;
+    final bx = b.externalId != null && b.externalId!.isNotEmpty;
+    if (ax != bx) return ax; // Zeile mit FuPa-ID gewinnt.
+    final an = (a.number != null ? 1 : 0) + (a.position != null ? 1 : 0);
+    final bn = (b.number != null ? 1 : 0) + (b.position != null ? 1 : 0);
+    return an >= bn;
+  }
+
+  for (final p in players) {
+    final key = p.dedupKey;
+    final existing = byKey[key];
+    if (existing == null) {
+      byKey[key] = p;
+      order.add(key);
+    } else if (richer(p, existing)) {
+      byKey[key] = p;
+    }
+  }
+  return [for (final k in order) byKey[k]!];
+}
+
 /// Vordefinierte Positionen für die Mehrfachauswahl im Spielerprofil.
 const List<String> kPositionOptions = [
   'TW',

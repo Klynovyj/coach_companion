@@ -281,8 +281,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             final n = matchNumbers[p.id];
             return n == null ? p : p.copyWith(number: n);
           }).toList();
-    final oppPlayers =
-        opp == null ? <Player>[] : await state.playersOf(opp.id);
+    // Gegnerkader kann doppelte Zeilen je Spieler haben (Cloud/mehrere Geräte)
+    // – fürs Erfassen/Auswählen zusammenführen.
+    final oppPlayers = opp == null
+        ? <Player>[]
+        : dedupePlayersByName(await state.playersOf(opp.id));
     final events = await state.eventsOf(widget.matchId);
     final noms = await state.nominationsOf(widget.matchId);
     // Startelf aus der Aufstellung (für Wechsel: Feld vs Bank).

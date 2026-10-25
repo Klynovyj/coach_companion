@@ -65,8 +65,15 @@ class FupaPersistence {
               : match.nickname,
         );
         await _repo.upsertPlayer(updated);
+        // Maps mitführen, damit ein doppelter Eintrag im selben Import (z.B.
+        // derselbe Spieler einmal mit, einmal ohne FuPa-ID) nicht als neue
+        // Zeile landet, sondern diese aktualisiert.
+        byName[updated.dedupKey] = updated;
+        if (updated.externalId != null && updated.externalId!.isNotEmpty) {
+          byExternal[updated.externalId!] = updated;
+        }
       } else {
-        await _repo.upsertPlayer(Player(
+        final created = Player(
           id: _uuid.v4(),
           teamId: teamId,
           firstName: data.firstName.trim(),
@@ -80,7 +87,12 @@ class FupaPersistence {
           nickname: data.nickname,
           source: source,
           createdAt: DateTime.now(),
-        ));
+        );
+        await _repo.upsertPlayer(created);
+        byName[created.dedupKey] = created;
+        if (created.externalId != null && created.externalId!.isNotEmpty) {
+          byExternal[created.externalId!] = created;
+        }
         added++;
       }
     }
