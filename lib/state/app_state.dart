@@ -1632,6 +1632,9 @@ class AppState extends ChangeNotifier {
   // ----------------------------------------------------------------- Events
   Future<List<MatchEvent>> eventsOf(String matchId) => _repo.getEvents(matchId);
 
+  /// Alle Ereignisse aller Spiele (für die Saison-Gesamtstatistik).
+  Future<List<MatchEvent>> allEvents() => _repo.getAllEvents();
+
   /// Fügt ein Ereignis hinzu und aktualisiert bei Toren den Spielstand.
   /// Karten-Ereignisse mit bekanntem Spieler werden zusätzlich in den
   /// Spieler-Kartenverlauf übernommen (verknüpft über die Ereignis-ID).

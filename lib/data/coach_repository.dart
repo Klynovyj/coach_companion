@@ -310,6 +310,14 @@ class CoachRepository {
     return rows.map(MatchEvent.fromMap).toList();
   }
 
+  /// Alle Ereignisse aller Spiele (für die Saison-Gesamtstatistik). Der lokale
+  /// Cache hält genau ein Team, daher gehören alle Ereignisse zu unseren Spielen.
+  Future<List<MatchEvent>> getAllEvents() async {
+    final db = await _db;
+    final rows = await db.query('match_events');
+    return rows.map(MatchEvent.fromMap).toList();
+  }
+
   Future<void> upsertEvent(MatchEvent event) async {
     final db = await _db;
     await db.insert('match_events', event.toMap(),

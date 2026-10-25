@@ -9,6 +9,7 @@ import '../widgets/app_drawer.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/ui_bits.dart';
 import 'match_center_screen.dart';
+import 'season_stats_screen.dart';
 
 class ScheduleScreen extends StatefulWidget {
   const ScheduleScreen({super.key});
@@ -72,6 +73,14 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       appBar: AppBar(
         title: const Text('Spielplan'),
         actions: [
+          IconButton(
+            tooltip: 'Gesamtstatistik',
+            icon: const Icon(Icons.leaderboard),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const SeasonStatsScreen()),
+            ),
+          ),
           IconButton(
             tooltip: 'Zum nächsten Spiel',
             icon: const Icon(Icons.today),
