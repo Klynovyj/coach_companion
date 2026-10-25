@@ -47,6 +47,10 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
   ];
 
   List<MatchEvent> _events = [];
+  // Nur wirklich live getrackte Spiele: solche mit mindestens einer Phasen-
+  // Marke (Anpfiff/Halbzeit/Abpfiff …). Spiele mit nur vereinzelten Rest-/
+  // Altdaten (z.B. ein paar Tore ohne Anpfiff) zählen nicht mit.
+  Set<String> _trackedMatchIds = {};
   Team? _team;
   bool _loading = true;
 
@@ -62,6 +66,10 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
     if (!mounted) return;
     setState(() {
       _events = events;
+      _trackedMatchIds = events
+          .where((e) => e.type.isPhaseMarker)
+          .map((e) => e.matchId)
+          .toSet();
       _team = state.ownTeam;
       _loading = false;
     });
@@ -71,12 +79,12 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
 
   int _count(bool own, Set<MatchEventType> types) => _events
       .where((e) =>
+          _trackedMatchIds.contains(e.matchId) &&
           types.contains(e.type) &&
           (own ? e.teamId == _ownTeamId : e.teamId != _ownTeamId))
       .length;
 
-  int get _matchCount =>
-      _events.map((e) => e.matchId).toSet().length;
+  int get _matchCount => _trackedMatchIds.length;
 
   Future<void> _share() async {
     final name = _team?.shortName ?? _team?.name ?? 'Wir';
