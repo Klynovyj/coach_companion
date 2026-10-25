@@ -1321,6 +1321,15 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   : 'Text/Spieler ändern'),
               onTap: () => Navigator.pop(context, 'edit'),
             ),
+            // Aktion (Typ) ändern – nicht für Phasen-Marken / Elfmeterschießen.
+            if (!e.type.isPhaseMarker &&
+                e.type != MatchEventType.soGoal &&
+                e.type != MatchEventType.soMiss)
+              ListTile(
+                leading: const Icon(Icons.swap_horizontal_circle_outlined),
+                title: const Text('Aktion ändern'),
+                onTap: () => Navigator.pop(context, 'action'),
+              ),
             ListTile(
               leading: const Icon(Icons.timer),
               title: const Text('Minute ändern'),
@@ -1340,6 +1349,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       await _deleteEvent(e);
     } else if (action == 'edit') {
       await _editEventDetail(e);
+    } else if (action == 'action') {
+      await _changeEventType(e);
     } else if (action == 'minute') {
       final ctrl = TextEditingController(text: '${e.minute}');
       final newMin = await showDialog<int>(
@@ -1368,6 +1379,157 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         await _refreshEvents();
       }
     }
+  }
+
+  /// Ändert die Aktion (Typ) eines Ereignisses nachträglich – inkl. Team
+  /// (Eigenes/Gegner) und optional direkter Spielerauswahl. Spielstand und
+  /// Cloud-Sync aktualisieren sich automatisch über updateEvent.
+  Future<void> _changeEventType(MatchEvent e) async {
+    final newType = await _pickEventType();
+    if (newType == null || !mounted) return;
+
+    final isComment = newType == MatchEventType.comment;
+    var teamId = e.teamId;
+    var ownSide = e.teamId == _match!.ownTeamId;
+    var playerId = e.playerId;
+
+    if (isComment) {
+      // Kommentar ist team-neutral (eigenes Team), ohne Spieler.
+      teamId = _teamIdFor(true);
+    } else {
+      final side = await _pickSide(defaultOwn: ownSide);
+      if (side == null || !mounted) return;
+      final teamChanged = side != ownSide;
+      ownSide = side;
+      teamId = _teamIdFor(ownSide);
+
+      const needsPlayer = {
+        MatchEventType.goal,
+        MatchEventType.ownGoal,
+        MatchEventType.yellowCard,
+        MatchEventType.secondYellow,
+        MatchEventType.redCard,
+        MatchEventType.penalty,
+        MatchEventType.penaltyMissed,
+        MatchEventType.penaltySaved,
+        MatchEventType.save,
+      };
+      if (needsPlayer.contains(newType)) {
+        final players = ownSide ? _onFieldPlayers(true) : _opponentPlayers;
+        final res = await _pickPlayer(
+            title: 'Spieler', players: players, allowUnknown: true);
+        if (res != _pickCancelled) {
+          playerId = res == _pickUnknown ? null : res;
+        } else if (teamChanged) {
+          playerId = null; // Abbruch + Team gewechselt → alter Spieler passt nicht
+        }
+      } else if (teamChanged) {
+        playerId = null;
+      }
+    }
+    if (!mounted) return;
+
+    final updated = MatchEvent(
+      id: e.id,
+      matchId: e.matchId,
+      teamId: teamId,
+      minute: e.minute,
+      minuteExtra: e.minuteExtra,
+      type: newType,
+      playerId: playerId,
+      assistPlayerId: e.assistPlayerId,
+      note: e.note,
+      createdAt: e.createdAt,
+    );
+    await context.read<AppState>().updateEvent(updated);
+    await _refreshEvents();
+  }
+
+  /// Auswahl des neuen Ereignistyps (ohne Wechsel/Phasen/Elfmeterschießen).
+  Future<MatchEventType?> _pickEventType() {
+    const entries = <(String, MatchEventType)>[
+      ('Tor', MatchEventType.goal),
+      ('Eigentor', MatchEventType.ownGoal),
+      ('Gelbe Karte', MatchEventType.yellowCard),
+      ('Gelb-Rote Karte', MatchEventType.secondYellow),
+      ('Rote Karte', MatchEventType.redCard),
+      ('Elfmeter (Tor)', MatchEventType.penalty),
+      ('Elfmeter verschossen', MatchEventType.penaltyMissed),
+      ('Elfmeter gehalten', MatchEventType.penaltySaved),
+      ('Ecke', MatchEventType.corner),
+      ('Freistoß', MatchEventType.freeKick),
+      ('Foul', MatchEventType.foul),
+      ('Großchance', MatchEventType.bigChance),
+      ('Meckern', MatchEventType.meckern),
+      ('Parade', MatchEventType.save),
+      ('Kommentar', MatchEventType.comment),
+    ];
+    return showModalBottomSheet<MatchEventType>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Aktion wählen',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+            const Divider(height: 1),
+            for (final en in entries)
+              ListTile(
+                leading:
+                    Text(en.$2.symbol, style: const TextStyle(fontSize: 20)),
+                title: Text(en.$1),
+                onTap: () => Navigator.pop(context, en.$2),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Team-Auswahl (Eigenes Team / Gegner). Rückgabe: true = eigenes Team.
+  Future<bool?> _pickSide({required bool defaultOwn}) {
+    final ownName = _ownTeam?.shortName ?? _ownTeam?.name ?? 'Eigenes Team';
+    final oppName = _opponentTeam?.name ?? _match?.opponentName ?? 'Gegner';
+    return showModalBottomSheet<bool>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Team',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.home),
+              title: Text(ownName),
+              trailing: defaultOwn ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(context, true),
+            ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: Text(oppName),
+              trailing: !defaultOwn ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(context, false),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Ereignis-Text (und bei Nicht-Kommentaren den Spieler) nachträglich ändern.
