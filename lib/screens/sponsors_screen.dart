@@ -212,24 +212,53 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
           ? const Center(child: CircularProgressIndicator())
           : _sponsors.isEmpty
               ? _empty(context)
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 88),
+              : Column(
                   children: [
                     const Padding(
                       padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
                       child: Text(
-                        'Diese Logos erscheinen automatisch auf der Startelf-Grafik.',
+                        'Diese Logos erscheinen automatisch auf der Startelf-Grafik. '
+                        'Ziehen zum Sortieren – Haupt-Sponsor bleibt oben.',
                         style: TextStyle(fontSize: 12.5, color: Colors.grey),
                       ),
                     ),
-                    for (final s in _sponsors) _row(s),
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        padding: const EdgeInsets.only(bottom: 88),
+                        buildDefaultDragHandles: false,
+                        itemCount: _sponsors.length,
+                        onReorder: _onReorder,
+                        itemBuilder: (ctx, i) => _row(_sponsors[i], i),
+                      ),
+                    ),
                   ],
                 ),
     );
   }
 
-  Widget _row(Sponsor s) {
+  /// Neue Reihenfolge übernehmen. Haupt-Sponsor bleibt immer oben (Index 0).
+  Future<void> _onReorder(int oldIndex, int newIndex) async {
+    if (newIndex > oldIndex) newIndex -= 1;
+    final hasMain = _sponsors.isNotEmpty && _sponsors.first.isMain;
+    final minIndex = hasMain ? 1 : 0;
+    if (oldIndex < minIndex) return; // Haupt-Sponsor nicht verschieben
+    if (newIndex < minIndex) newIndex = minIndex;
+    final list = [..._sponsors];
+    final moved = list.removeAt(oldIndex);
+    list.insert(newIndex, moved);
+    setState(() => _sponsors = list);
+    await _app.reorderSponsors(list);
+  }
+
+  Widget _row(Sponsor s, int index) {
+    final handle = s.isMain
+        ? Icon(Icons.push_pin, size: 18, color: Theme.of(context).hintColor)
+        : ReorderableDragStartListener(
+            index: index,
+            child: Icon(Icons.drag_handle, color: Theme.of(context).hintColor),
+          );
     return ListTile(
+      key: ValueKey(s.id),
       leading: SizedBox(
         width: 44,
         height: 44,
@@ -240,14 +269,20 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
       title: Text(s.name),
       subtitle: s.isMain ? const Text('Haupt-Sponsor · Präsentiert von') : null,
       onTap: () => _editSponsor(existing: s),
-      trailing: PopupMenuButton<String>(
-        onSelected: (v) {
-          if (v == 'edit') _editSponsor(existing: s);
-          if (v == 'delete') _delete(s);
-        },
-        itemBuilder: (_) => const [
-          PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
-          PopupMenuItem(value: 'delete', child: Text('Löschen')),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          handle,
+          PopupMenuButton<String>(
+            onSelected: (v) {
+              if (v == 'edit') _editSponsor(existing: s);
+              if (v == 'delete') _delete(s);
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
+              PopupMenuItem(value: 'delete', child: Text('Löschen')),
+            ],
+          ),
         ],
       ),
     );

@@ -2384,6 +2384,18 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Übernimmt eine neue Reihenfolge der Sponsoren (sort_order = Listenindex).
+  /// Nur geänderte Zeilen werden geschrieben; eine Benachrichtigung am Ende.
+  Future<void> reorderSponsors(List<Sponsor> ordered) async {
+    for (var i = 0; i < ordered.length; i++) {
+      final s = ordered[i];
+      if (s.sortOrder != i) {
+        await _repo.upsertSponsor(s.copyWith(sortOrder: i));
+      }
+    }
+    notifyListeners();
+  }
+
   /// Schiebt alle lokalen Sponsoren (erneut) in die Cloud. Nötig für Sponsoren,
   /// die angelegt wurden, bevor die Cloud-Tabelle existierte – deren einmaliger
   /// Mirror-Push schlug damals still fehl und wird sonst nie wiederholt.
