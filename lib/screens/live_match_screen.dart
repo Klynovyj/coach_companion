@@ -1702,13 +1702,45 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         initialChildSize: 0.8,
         maxChildSize: 0.95,
         minChildSize: 0.4,
-        builder: (ctx, scroll) => ListView(
-          controller: scroll,
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-          children: [
-            const Center(
-              child: Text('Statistik',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        builder: (ctx, scroll) {
+          // Statistik als kompakten Text (Wir : Gegner) teilen; 0:0-Zeilen weg.
+          Future<void> shareStats() async {
+            final b = StringBuffer();
+            b.writeln('📊 Statistik');
+            b.writeln(
+                '$ownName ${match.ownScore}:${match.opponentScore} $oppName');
+            b.writeln('(Wir : Gegner)');
+            b.writeln();
+            for (final r in rows) {
+              final o = count(true, r.$2), g = count(false, r.$2);
+              if (o == 0 && g == 0) continue;
+              b.writeln('${r.$1}: $o : $g');
+            }
+            Navigator.pop(ctx);
+            final ok = await shareText(b.toString().trim());
+            if (!ok && mounted) _snack('Teilen nicht möglich.');
+          }
+
+          return ListView(
+            controller: scroll,
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            children: [
+            Row(
+              children: [
+                const SizedBox(width: 40),
+                const Expanded(
+                  child: Center(
+                    child: Text('Statistik',
+                        style: TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16)),
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Teilen (WhatsApp)',
+                  icon: const Icon(Icons.share),
+                  onPressed: shareStats,
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             Row(
@@ -1740,8 +1772,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             for (final r in rows)
               _dashStatRow(r.$1, count(true, r.$2), count(false, r.$2),
                   scheme.primary, oppColor),
-          ],
-        ),
+            ],
+          );
+        },
       ),
     );
   }
