@@ -127,6 +127,9 @@ String _tickerLine(
     case MatchEventType.redCard:
       return '$min $sym ${e.type.label}: ${resolveName(e.playerId)} (${teamOf(e)})';
     case MatchEventType.substitution:
+      if (e.playerId == null && e.assistPlayerId == null) {
+        return '$min $sym Wechsel ${teamOf(e)}';
+      }
       return '$min $sym Wechsel ${teamOf(e)}: '
           '${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}';
     case MatchEventType.comment:

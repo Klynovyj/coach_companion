@@ -807,7 +807,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                           onGoal: () => _addGoal(ownSide: false),
                           // Gegner-Karten erfassen (Spieler optional „Unbekannt").
                           onCard: () => _addCard(ownSide: false),
-                          onSub: null,
+                          // Gegner-Wechsel ohne Spielerauswahl (kein Gegner-Kader).
+                          onSub: () => _addSub(ownSide: false),
                           onSave: () => _addSave(ownSide: false),
                           onEvent: () => _addOtherEvent(ownSide: false),
                         ),
@@ -1045,6 +1046,22 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   Future<void> _addSub({required bool ownSide}) async {
     final state = context.read<AppState>();
+    // Gegner-Wechsel: kein Gegner-Kader → ohne Spielerauswahl, nur als Eintrag
+    // (optional mit Notiz, wie beim Gegner-Tor).
+    if (!ownSide) {
+      final n = await _askNote();
+      if (!n.proceed || !mounted) return;
+      await state.addEvent(
+        matchId: widget.matchId,
+        teamId: _teamIdFor(false),
+        minute: _currentMinute,
+        minuteExtra: _currentExtra,
+        type: MatchEventType.substitution,
+        note: n.note,
+      );
+      await _refreshEvents();
+      return;
+    }
     final players = _playersFor(ownSide);
     if (players.isEmpty) {
       _snack('Kein Kader vorhanden – Spieler zuerst ergänzen.');
@@ -2418,6 +2435,7 @@ class _EventLog extends StatelessWidget {
       case MatchEventType.ownGoal:
         return 'Eigentor – ${resolveName(e.playerId)}';
       case MatchEventType.substitution:
+        if (e.playerId == null && e.assistPlayerId == null) return 'Wechsel';
         return 'Wechsel – ${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}';
       case MatchEventType.yellowCard:
         return 'Gelbe Karte – ${resolveName(e.playerId)}';
