@@ -209,6 +209,21 @@ class _SquadListViewState extends State<SquadListView> {
             const SizedBox(width: 6),
             Text(p.status.symbol, style: const TextStyle(fontSize: 13)),
           ],
+          if (p.suspendedGames > 0) ...[
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.error,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text('⛔ ${p.suspendedGames}',
+                  style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white)),
+            ),
+          ],
           if (p.isStarter) ...[
             const SizedBox(width: 6),
             Container(

@@ -182,14 +182,37 @@ class _NominationScreenState extends State<NominationScreen> {
   }
 
   Widget _row(Player p) {
+    final suspended = p.suspendedGames > 0;
+    final pos = p.position;
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
-      title: Text(p.fullName),
-      subtitle: p.position == null ? null : Text(p.position!),
+      title: Row(
+        children: [
+          Flexible(child: Text(p.fullName)),
+          if (suspended) ...[
+            const SizedBox(width: 8),
+            _suspendedBadge(context, p.suspendedGames),
+          ],
+        ],
+      ),
+      subtitle: pos == null ? null : Text(pos),
       trailing: AvailabilityChoices(
         current: _statusOf(p),
         onChanged: (s) => _set(p, s),
       ),
+    );
+  }
+
+  Widget _suspendedBadge(BuildContext context, int games) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.error,
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text('⛔ Gesperrt · $games',
+          style: const TextStyle(
+              color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
     );
   }
 }

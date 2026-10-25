@@ -1019,6 +1019,21 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             ),
             const SizedBox(width: 4),
             Icon(Icons.edit, size: 12, color: Theme.of(context).hintColor),
+            if (p.suspendedGames > 0) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.error,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text('⛔ ${p.suspendedGames}',
+                    style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white)),
+              ),
+            ],
           ],
         ),
       ),

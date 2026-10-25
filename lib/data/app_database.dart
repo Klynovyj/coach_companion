@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 36;
+  static const _dbVersion = 37;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -260,6 +260,11 @@ class AppDatabase {
     // v35 -> v36: FuPa-Match-Slug am Spiel (Link auf die FuPa-Spielseite).
     if (oldV < 36) {
       await db.execute('ALTER TABLE matches ADD COLUMN fupa_match_slug TEXT');
+    }
+    // v36 -> v37: Sperren-Zähler am Spieler (noch abzusitzende Spiele).
+    if (oldV < 37) {
+      await db.execute(
+          'ALTER TABLE players ADD COLUMN suspended_games INTEGER NOT NULL DEFAULT 0');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -522,6 +527,7 @@ class AppDatabase {
         photo_path TEXT,
         source TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1,
+        suspended_games INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
       )

@@ -886,6 +886,7 @@ class AppState extends ChangeNotifier {
             .toList(),
         wishPosition: p['wish_position'] as String?,
         staffRole: p['staff_role'] as String?,
+        suspendedGames: (p['suspended_games'] as num?)?.toInt() ?? 0,
         source: DataSource.fupaApproved,
         createdAt: now,
       );
@@ -908,6 +909,7 @@ class AppState extends ChangeNotifier {
         'positions': p.positions.join(','),
         'wish_position': p.wishPosition,
         'staff_role': p.staffRole,
+        'suspended_games': p.suspendedGames,
       };
 
   /// Übernimmt einen Cloud-Spieler in den lokalen Cache. Felder werden nur
@@ -946,6 +948,7 @@ class AppState extends ChangeNotifier {
           .toList(),
       wishPosition: record['wish_position'] as String?,
       staffRole: record['staff_role'] as String?,
+      suspendedGames: (record['suspended_games'] as num?)?.toInt(),
     ));
   }
 
@@ -1380,6 +1383,50 @@ class AppState extends ChangeNotifier {
       if (key == dedupKey) return s;
     }
     return null;
+  }
+
+  // ---------------------------------------------------- Karten & Sperren
+  /// Karten-Übersicht je Feldspieler: FuPa-Saisonkarten + eigene erfasste
+  /// Karten. Für die „Karten & Sperren"-Ansicht. Gesperrte zuerst, dann nach
+  /// FuPa-Gelben absteigend.
+  Future<List<PlayerCardSummary>> cardSummaries(String teamId) async {
+    await ensureOwnStats(teamId);
+    final players =
+        (await _repo.getPlayers(teamId)).where((p) => !p.isStaffOnly).toList();
+    final stats = await _repo.getStats(teamId);
+    final byKey = <String, PlayerStat>{
+      for (final s in stats)
+        '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}':
+            s
+    };
+    final out = <PlayerCardSummary>[];
+    for (final p in players) {
+      final stat = byKey[p.dedupKey];
+      final cards = await _repo.getCards(p.id);
+      int own(CardType t) => cards.where((c) => c.type == t).length;
+      out.add(PlayerCardSummary(
+        player: p,
+        fupaYellow: stat?.yellowCards ?? 0,
+        fupaYellowRed: stat?.yellowRedCards ?? 0,
+        fupaRed: stat?.redCards ?? 0,
+        ownYellow: own(CardType.yellow),
+        ownYellowRed: own(CardType.yellowRed),
+        ownRed: own(CardType.red),
+      ));
+    }
+    out.sort((a, b) {
+      final sa = a.player.suspendedGames > 0 ? 1 : 0;
+      final sb = b.player.suspendedGames > 0 ? 1 : 0;
+      if (sa != sb) return sb - sa;
+      return b.fupaYellow.compareTo(a.fupaYellow);
+    });
+    return out;
+  }
+
+  /// Setzt die Anzahl noch abzusitzender Spiele einer Sperre (0 = frei).
+  Future<void> setSuspendedGames(Player p, int games) async {
+    await _repo.upsertPlayer(p.copyWith(suspendedGames: games < 0 ? 0 : games));
+    notifyListeners();
   }
 
   /// Setzt Spieler, deren Abwesenheit abgelaufen ist, automatisch auf „Fit".
@@ -2772,4 +2819,35 @@ class AppState extends ChangeNotifier {
 
 extension _FirstOrNull<E> on Iterable<E> {
   E? get firstOrNull => isEmpty ? null : first;
+}
+
+/// Karten-Übersicht eines Spielers: FuPa-Saisonkarten + eigene erfasste Karten.
+class PlayerCardSummary {
+  final Player player;
+  final int fupaYellow;
+  final int fupaYellowRed;
+  final int fupaRed;
+  final int ownYellow;
+  final int ownYellowRed;
+  final int ownRed;
+
+  const PlayerCardSummary({
+    required this.player,
+    required this.fupaYellow,
+    required this.fupaYellowRed,
+    required this.fupaRed,
+    required this.ownYellow,
+    required this.ownYellowRed,
+    required this.ownRed,
+  });
+
+  /// Warnung ab der 5. Gelben (feste Schwelle): noch X bis zur Sperre.
+  static const yellowThreshold = 5;
+  int get yellowToBan {
+    final r = yellowThreshold - (fupaYellow % yellowThreshold);
+    return r == yellowThreshold ? 0 : r;
+  }
+
+  /// true = FuPa-Gelbe hat ein Vielfaches der Schwelle erreicht (Sperre fällig).
+  bool get yellowBanDue => fupaYellow > 0 && fupaYellow % yellowThreshold == 0;
 }

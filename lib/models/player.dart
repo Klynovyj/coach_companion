@@ -57,6 +57,10 @@ class Player {
   /// false = gilt aktuell als nicht im Kader (z.B. abgemeldet).
   final bool active;
 
+  /// Anzahl noch abzusitzender Spiele einer Sperre (0 = nicht gesperrt).
+  /// Manuell gepflegt (Gelb-Rot/Rot/Verbandsstrafe), vom Trainer heruntergezählt.
+  final int suspendedGames;
+
   final DateTime createdAt;
 
   const Player({
@@ -78,6 +82,7 @@ class Player {
     this.photoPath,
     this.source = DataSource.manual,
     this.active = true,
+    this.suspendedGames = 0,
     required this.createdAt,
   });
 
@@ -136,6 +141,7 @@ class Player {
     bool clearPhotoPath = false,
     DataSource? source,
     bool? active,
+    int? suspendedGames,
   }) {
     return Player(
       id: id,
@@ -157,6 +163,7 @@ class Player {
       photoPath: clearPhotoPath ? null : (photoPath ?? this.photoPath),
       source: source ?? this.source,
       active: active ?? this.active,
+      suspendedGames: suspendedGames ?? this.suspendedGames,
       createdAt: createdAt,
     );
   }
@@ -180,6 +187,7 @@ class Player {
         'photo_path': photoPath,
         'source': source.storageKey,
         'active': active ? 1 : 0,
+        'suspended_games': suspendedGames,
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -206,6 +214,7 @@ class Player {
         photoPath: m['photo_path'] as String?,
         source: DataSource.fromKey(m['source'] as String?),
         active: (m['active'] as int? ?? 1) == 1,
+        suspendedGames: m['suspended_games'] as int? ?? 0,
         createdAt:
             DateTime.tryParse(m['created_at'] as String? ?? '') ??
                 DateTime.now(),

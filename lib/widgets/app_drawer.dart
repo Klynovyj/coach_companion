@@ -6,6 +6,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
+import '../screens/cards_suspensions_screen.dart';
 import '../screens/home_screen.dart';
 import '../screens/live_match_screen.dart';
 import '../screens/material_duty_screen.dart';
@@ -155,6 +156,12 @@ class AppDrawer extends StatelessWidget {
               icon: Icons.emoji_events,
               label: 'Spieler des Monats',
               screen: const PlayerOfMonthScreen(),
+            ),
+            _push(
+              context,
+              icon: Icons.style_outlined,
+              label: 'Karten & Sperren',
+              screen: const CardsSuspensionsScreen(),
             ),
             _push(
               context,
