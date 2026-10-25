@@ -12,6 +12,7 @@ import 'screens/home_screen.dart';
 import 'services/cloud_service.dart';
 import 'services/desktop_tray.dart';
 import 'services/live_clock.dart';
+import 'services/push_service.dart';
 import 'state/app_state.dart';
 import 'supabase_config.dart';
 import 'theme.dart';
@@ -48,8 +49,14 @@ Future<void> main() async {
   // Hintergrund-Uhr (Android: Vordergrund-Dienst, Benachrichtigungen).
   await LiveClock.initPlatform();
 
+  // Push-Benachrichtigungen (FCM) – nur Android.
+  await PushService.initPlatform();
+
   final appState = AppState();
   await appState.init();
+
+  // FCM-Token registrieren (wenn angemeldet; sonst No-op).
+  PushService.registerToken();
 
   // Tray erst nach dem ersten Frame einrichten (braucht die Engine).
   if (Platform.isWindows) {

@@ -43,3 +43,7 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# FCM/Firebase Secrets (nicht committen)
+fcm-service-account.json
+*firebase-adminsdk*.json

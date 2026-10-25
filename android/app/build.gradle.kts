@@ -6,6 +6,8 @@ plugins {
     id("kotlin-android")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+    // Firebase (FCM).
+    id("com.google.gms.google-services")
 }
 
 // Release-Signatur aus android/key.properties (nicht im Repo; wird im

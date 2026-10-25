@@ -27,6 +27,7 @@ import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import '../services/cloud_service.dart';
 import '../services/live_clock.dart';
+import '../services/push_service.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/fupa/fupa_persistence.dart';
 import '../services/material_duty.dart';
@@ -257,6 +258,8 @@ class AppState extends ChangeNotifier {
     _teamChannels = CloudService.subscribeTeam(teamId, _onRemoteRowChange);
     // Eigene Live-Rolle (Mitschreiben vs. Zuschauer) bestimmen.
     refreshLiveRole();
+    // FCM-Token registrieren (jetzt sicher angemeldet).
+    PushService.registerToken();
     // Einmaliger Voll-Abgleich beim Start (fängt verpasste Änderungen).
     _refreshActiveTeamFromCloud(teamId);
     // FuPa (Spielplan/Ergebnisse) regelmäßig automatisch auffrischen.
@@ -2006,6 +2009,12 @@ class AppState extends ChangeNotifier {
           if (releaseController) 'live_controller_name': null,
         });
       } catch (_) {}
+      // Geht das Spiel live, Push an alle Team-Mitglieder (auch bei
+      // geschlossener App) über die Edge-Function.
+      if (status == MatchStatus.live && match.status != MatchStatus.live) {
+        CloudService.notifyLive(
+            _activeCloudTeamId!, matchId, match.opponentName);
+      }
     }
   }
 

@@ -111,6 +111,28 @@ class CloudService {
   static Future<Map<String, dynamic>> teamById(String teamId) =>
       _c.from('teams').select().eq('id', teamId).single();
 
+  /// FCM-Token dieses Geräts/Nutzers hinterlegen (für Push).
+  static Future<void> upsertDeviceToken(String token) =>
+      _c.from('device_tokens').upsert({
+        'token': token,
+        'user_id': user!.id,
+        'platform': 'android',
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'token');
+
+  /// Push an alle Team-Mitglieder (außer dem Auslöser) auslösen, wenn ein Spiel
+  /// live geht (Edge-Function „notify-live"). Fehler werden geschluckt.
+  static Future<void> notifyLive(
+      String teamId, String matchId, String opponent) async {
+    try {
+      await _c.functions.invoke('notify-live', body: {
+        'team_id': teamId,
+        'match_id': matchId,
+        'opponent': opponent,
+      });
+    } catch (_) {}
+  }
+
   /// Leichter Abgleich von Status + Ergebnis aller Spiele (für den Live-/
   /// Zurücksetzen-Poll – ohne Logos/Details).
   static Future<List<Map<String, dynamic>>> matchSyncRows(String teamId) async {
