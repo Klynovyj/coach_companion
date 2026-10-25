@@ -652,6 +652,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       appBar: AppBar(
         title: const Text('Live-Spiel'),
         actions: [
+          IconButton(
+            tooltip: 'Dashboard (Statistik)',
+            icon: const Icon(Icons.leaderboard),
+            onPressed: _openDashboard,
+          ),
           if (canEdit)
             IconButton(
               tooltip: _watchMode
@@ -1623,6 +1628,184 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     // Ticker kommt an; Desktop nutzt den wa.me-Link.
     final ok = await shareText(text);
     if (!ok) _snack('Teilen nicht möglich.');
+  }
+
+  // ------------------------------------------------------------- Dashboard
+  /// Statistik-Übersicht (Wir vs. Gegner) als Bottom-Sheet. Zählt die
+  /// erfassten Aktionen je Seite aus den aktuellen Ereignissen (Snapshot).
+  Future<void> _openDashboard() async {
+    final match = _match;
+    if (match == null) return;
+    final scheme = Theme.of(context).colorScheme;
+    const oppColor = Color(0xFFB26A00);
+    final ownName = _ownTeam?.shortName ?? _ownTeam?.name ?? 'Wir';
+    final oppName = _opponentTeam?.name ?? match.opponentName;
+
+    int count(bool own, Set<MatchEventType> types) => _events
+        .where((e) =>
+            types.contains(e.type) &&
+            (own
+                ? e.teamId == match.ownTeamId
+                : e.teamId != match.ownTeamId))
+        .length;
+
+    const rows = <(String, Set<MatchEventType>)>[
+      ('Tore', {MatchEventType.goal, MatchEventType.penalty}),
+      ('Eigentore', {MatchEventType.ownGoal}),
+      ('Schüsse', {MatchEventType.shot}),
+      ('Distanzschüsse', {MatchEventType.longShot}),
+      ('Großchancen', {MatchEventType.bigChance}),
+      ('Elfmeter', {
+        MatchEventType.penalty,
+        MatchEventType.penaltyMissed,
+        MatchEventType.penaltySaved,
+      }),
+      ('Ecken', {MatchEventType.corner}),
+      ('Freistöße', {MatchEventType.freeKick}),
+      ('Fouls', {MatchEventType.foul}),
+      ('Gelbe Karten', {MatchEventType.yellowCard}),
+      ('Gelb-Rote Karten', {MatchEventType.secondYellow}),
+      ('Rote Karten', {MatchEventType.redCard}),
+      ('Paraden', {MatchEventType.save}),
+      ('Meckern', {MatchEventType.meckern}),
+      ('Verletzungen', {MatchEventType.injury}),
+      ('Wechsel', {MatchEventType.substitution}),
+    ];
+
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.8,
+        maxChildSize: 0.95,
+        minChildSize: 0.4,
+        builder: (ctx, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          children: [
+            const Center(
+              child: Text('Statistik',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _dashTeam(_ownTeam?.logoPath, ownName)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(
+                    '${match.ownScore} : ${match.opponentScore}',
+                    style: const TextStyle(
+                        fontSize: 28, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Expanded(
+                  child: _dashTeam(
+                      _opponentTeam?.logoPath ?? match.opponentLogoPath,
+                      oppName)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _dashLegend('Wir', scheme.primary),
+                _dashLegend('Gegner', oppColor),
+              ],
+            ),
+            const Divider(height: 20),
+            for (final r in rows)
+              _dashStatRow(r.$1, count(true, r.$2), count(false, r.$2),
+                  scheme.primary, oppColor),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _dashTeam(String? logo, String name) => Column(
+        children: [
+          if (logo != null) ...[
+            TeamLogo(logoPath: logo, size: 36),
+            const SizedBox(height: 4),
+          ],
+          Text(name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
+      );
+
+  Widget _dashLegend(String label, Color c) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 12,
+            height: 12,
+            decoration: BoxDecoration(
+                color: c, borderRadius: BorderRadius.circular(3)),
+          ),
+          const SizedBox(width: 6),
+          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ],
+      );
+
+  Widget _dashStatRow(String label, int own, int opp, Color ownC, Color oppC) {
+    final total = own + opp;
+    const numStyle = TextStyle(fontWeight: FontWeight.bold, fontSize: 16);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        children: [
+          Text(label,
+              style:
+                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              SizedBox(
+                  width: 34,
+                  child: Text('$own',
+                      textAlign: TextAlign.right, style: numStyle)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: total == 0 ? 1 : own,
+                        child: Container(
+                            height: 10,
+                            color: total == 0
+                                ? ownC.withValues(alpha: 0.2)
+                                : ownC),
+                      ),
+                      Expanded(
+                        flex: total == 0 ? 1 : opp,
+                        child: Container(
+                            height: 10,
+                            color: total == 0
+                                ? oppC.withValues(alpha: 0.2)
+                                : oppC),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              SizedBox(
+                  width: 34,
+                  child: Text('$opp',
+                      textAlign: TextAlign.left, style: numStyle)),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   // Spieler-Picker; Rückgabe: playerId, _pickUnknown, _pickNone oder _pickCancelled.
