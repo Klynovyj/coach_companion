@@ -72,6 +72,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   // Berechtigte (Trainer/Ticker) können hier auf „nur zuschauen" umschalten.
   bool _watchMode = false;
 
+  // „Nachtragen": bei beendetem/pausiertem Spiel Aktionen mit gewählter Minute
+  // erfassen. Minute wird beim Hinzufügen abgefragt und hier kurz überlagert.
+  bool _addLater = false;
+  int? _ovMinute;
+  int _ovExtra = 0;
+
   static const _halfSeconds = 45 * 60;
   static const _fullSeconds = 90 * 60;
   static const _extraFirstEnd = 105 * 60;
@@ -98,8 +104,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     }
   }
 
-  int get _currentMinute => _footMinute.$1;
-  int get _currentExtra => _footMinute.$2;
+  int get _currentMinute => _ovMinute ?? _footMinute.$1;
+  int get _currentExtra => _ovMinute != null ? _ovExtra : _footMinute.$2;
+
+  /// „Nachtragen" ist aktiv: Modus an, aber keine laufende Halbzeit (und kein
+  /// Zuschauen). Dann sind die Aktions-Buttons nutzbar und fragen die Minute ab.
+  bool get _nachtragen => _addLater && !_actionsEnabled && !_watchMode;
 
   late final AppState _state;
 
@@ -789,30 +799,45 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Nachtragen-Schalter: bei beendetem/pausiertem Spiel
+                        // Aktionen mit abgefragter Minute erfassen.
+                        if (!_actionsEnabled &&
+                            _phase != _Phase.notStarted)
+                          SwitchListTile(
+                            dense: true,
+                            secondary: const Icon(Icons.edit_calendar),
+                            title: const Text('Aktionen nachtragen'),
+                            subtitle: const Text(
+                                'Minute wird beim Hinzufügen abgefragt'),
+                            value: _addLater,
+                            onChanged: (v) => setState(() => _addLater = v),
+                          ),
                         _TeamActionBar(
                           label: _ownTeam?.name ?? 'Eigenes Team',
                           color: Theme.of(context).colorScheme.primary,
                           isOwn: true,
-                          // Erst nach Anpfiff (während einer HZ) erfassbar.
-                          enabled: _actionsEnabled,
-                          onGoal: () => _addGoal(ownSide: true),
-                          onCard: () => _addCard(ownSide: true),
-                          onSub: () => _addSub(ownSide: true),
-                          onSave: () => _addSave(ownSide: true),
-                          onEvent: () => _addOtherEvent(ownSide: true),
+                          // Während einer HZ, oder im Nachtragen-Modus.
+                          enabled: _actionsEnabled || _nachtragen,
+                          onGoal: () => _act(() => _addGoal(ownSide: true)),
+                          onCard: () => _act(() => _addCard(ownSide: true)),
+                          onSub: () => _act(() => _addSub(ownSide: true)),
+                          onSave: () => _act(() => _addSave(ownSide: true)),
+                          onEvent: () =>
+                              _act(() => _addOtherEvent(ownSide: true)),
                         ),
                         _TeamActionBar(
                           label: match.opponentName,
                           color: const Color(0xFFB26A00),
                           isOwn: false,
-                          enabled: _actionsEnabled,
-                          onGoal: () => _addGoal(ownSide: false),
+                          enabled: _actionsEnabled || _nachtragen,
+                          onGoal: () => _act(() => _addGoal(ownSide: false)),
                           // Gegner-Karten erfassen (Spieler optional „Unbekannt").
-                          onCard: () => _addCard(ownSide: false),
+                          onCard: () => _act(() => _addCard(ownSide: false)),
                           // Gegner-Wechsel ohne Spielerauswahl (kein Gegner-Kader).
-                          onSub: () => _addSub(ownSide: false),
-                          onSave: () => _addSave(ownSide: false),
-                          onEvent: () => _addOtherEvent(ownSide: false),
+                          onSub: () => _act(() => _addSub(ownSide: false)),
+                          onSave: () => _act(() => _addSave(ownSide: false)),
+                          onEvent: () =>
+                              _act(() => _addOtherEvent(ownSide: false)),
                         ),
                         const SizedBox(height: 8),
                         Padding(
@@ -821,8 +846,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                           child: SizedBox(
                             width: double.infinity,
                             child: OutlinedButton.icon(
-                              onPressed:
-                                  _actionsEnabled ? _addComment : null,
+                              onPressed: (_actionsEnabled || _nachtragen)
+                                  ? () => _act(_addComment)
+                                  : null,
                               icon: const Icon(Icons.chat_bubble_outline,
                                   size: 18),
                               label: const Text('Kommentar'),
@@ -869,12 +895,88 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       _phase == _Phase.extraFirstHalf ||
       _phase == _Phase.extraSecondHalf;
 
+  /// Führt eine Erfassungs-Aktion aus. Im Nachtragen-Modus wird zuerst die
+  /// Minute abgefragt und für die Dauer der Aktion als Spielminute überlagert.
+  Future<void> _act(Future<void> Function() add) async {
+    if (!_nachtragen) {
+      await add();
+      return;
+    }
+    final at = await _askMinute();
+    if (at == null || !mounted) return;
+    _ovMinute = at.$1;
+    _ovExtra = at.$2;
+    try {
+      await add();
+    } finally {
+      _ovMinute = null;
+      _ovExtra = 0;
+    }
+  }
+
+  /// Fragt die Spielminute (+ optionale Nachspielzeit) fürs Nachtragen ab.
+  /// Vorbelegt mit 90'. Gibt (Minute, Nachspielzeit) zurück oder null.
+  Future<(int, int)?> _askMinute() async {
+    final minCtrl = TextEditingController(text: '90');
+    final extraCtrl = TextEditingController();
+    final result = await showDialog<(int, int)>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Minute der Aktion'),
+        content: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 90,
+              child: TextField(
+                controller: minCtrl,
+                keyboardType: TextInputType.number,
+                autofocus: true,
+                decoration: const InputDecoration(labelText: 'Minute'),
+              ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 90,
+              child: TextField(
+                controller: extraCtrl,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: '+ (optional)'),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen')),
+          FilledButton(
+            onPressed: () {
+              final m = int.tryParse(minCtrl.text.trim());
+              if (m == null) return;
+              final ex = int.tryParse(extraCtrl.text.trim()) ?? 0;
+              Navigator.pop(context, (m, ex < 0 ? 0 : ex));
+            },
+            child: const Text('Weiter'),
+          ),
+        ],
+      ),
+    );
+    return result;
+  }
+
   /// Eigene Spieler, die aktuell auf dem Feld stehen (für Tor/Karte).
   List<Player> _onFieldPlayers(bool ownSide) {
     if (!ownSide) return _opponentPlayers;
     final ids = _onFieldIds;
     return _ownPlayers.where((p) => ids.contains(p.id)).toList();
   }
+
+  /// Auswahl-Pool für Tor/Karte: im Nachtragen-Modus alle nominierten Spieler
+  /// (jemand kann früher getroffen/verwarnt und später ausgewechselt worden
+  /// sein), sonst nur die aktuell auf dem Feld stehenden.
+  List<Player> _pickPool(bool ownSide) =>
+      _nachtragen ? _playersFor(ownSide) : _onFieldPlayers(ownSide);
 
   /// Spieler, die in diesem Spiel Rot oder Gelb-Rot gesehen haben – vom Platz
   /// gestellt, dürfen nicht mehr mitspielen (kein Tor/Karte, nicht ein-/aus-
@@ -975,8 +1077,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       return;
     }
 
-    // Nur Spieler, die aktuell auf dem Feld sind (Bank kann nicht treffen).
-    final players = _onFieldPlayers(ownSide);
+    // Nur Spieler, die aktuell auf dem Feld sind (Bank kann nicht treffen) –
+    // beim Nachtragen alle Nominierten.
+    final players = _pickPool(ownSide);
     // Eigenes Tor: Torschütze direkt wählen (oder "Unbekannt").
     final scorer = await _pickPlayer(
       title: 'Torschütze',
@@ -1014,8 +1117,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   Future<void> _addCard({required bool ownSide}) async {
     final state = context.read<AppState>();
-    // Karte nur für Spieler auf dem Feld.
-    final players = _onFieldPlayers(ownSide);
+    // Karte für Spieler auf dem Feld – beim Nachtragen alle Nominierten.
+    final players = _pickPool(ownSide);
     final player = await _pickPlayer(
       title: 'Spieler',
       players: players,
