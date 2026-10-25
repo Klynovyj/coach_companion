@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 31;
+  static const _dbVersion = 32;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -219,6 +219,11 @@ class AppDatabase {
     if (oldV < 31) {
       await db.execute(_graphicSettingsTableSql);
     }
+    // v31 -> v32: optionales Gegner-Logo auf der Startelf-Grafik.
+    if (oldV < 32) {
+      await db.execute(
+          'ALTER TABLE graphic_settings ADD COLUMN show_opponent_logo INTEGER');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -396,7 +401,8 @@ class AppDatabase {
         bg_image TEXT,
         grad_top TEXT,
         grad_bottom TEXT,
-        overlay_opacity INTEGER
+        overlay_opacity INTEGER,
+        show_opponent_logo INTEGER
       )
   ''';
 

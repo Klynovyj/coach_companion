@@ -368,6 +368,8 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             position: isGk(_byId[id]!) ? 'Torwart' : null),
     ];
     final bench = [for (final id in benchIds) _byId[id]!.fullName];
+    // Spielinfos (Datum/Heim-Auswärts/Gegner) fürs Grafik-Banner.
+    final match = await _app.getMatch(widget.matchId);
     if (!mounted) return;
     await Navigator.push(
       context,
@@ -379,6 +381,10 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           teamLogo: team?.logoPath,
           starters: starters,
           benchNames: bench,
+          matchDate: match?.kickoff,
+          isHome: match?.venue == Venue.home,
+          opponentName: match?.opponentName ?? '',
+          opponentLogo: match?.opponentLogoPath,
         ),
       ),
     );

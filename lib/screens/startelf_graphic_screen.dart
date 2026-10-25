@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/graphic_settings.dart';
@@ -33,6 +34,10 @@ class StartelfGraphicScreen extends StatefulWidget {
     required this.teamLogo,
     required this.starters,
     required this.benchNames,
+    this.matchDate,
+    this.isHome = true,
+    this.opponentName = '',
+    this.opponentLogo,
   });
 
   /// Default-Titel (offizieller Teamname) und Default-Logo – werden genutzt,
@@ -41,6 +46,12 @@ class StartelfGraphicScreen extends StatefulWidget {
   final String? teamLogo;
   final List<StartelfPlayer> starters;
   final List<String> benchNames;
+
+  /// Spielinfos fürs Banner.
+  final DateTime? matchDate;
+  final bool isHome;
+  final String opponentName;
+  final String? opponentLogo;
 
   @override
   State<StartelfGraphicScreen> createState() => _StartelfGraphicScreenState();
@@ -185,7 +196,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         : () => apply(_settings.copyWith(clearBgImage: true)),
                     clearLabel: 'Entfernen',
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  // Gegner-Logo ------------------------------------------
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Gegner-Logo anzeigen'),
+                    subtitle: const Text('Logo des Gegners neben „vs …"'),
+                    value: _settings.showOpponentLogo,
+                    onChanged: widget.opponentLogo == null
+                        ? null
+                        : (v) => apply(_settings.copyWith(showOpponentLogo: v)),
+                  ),
+                  const SizedBox(height: 8),
                   // Abdunkeln / Transparenz -----------------------------
                   Text(_settings.bgImage == null
                       ? 'Abdunkeln (nur mit Hintergrundbild wirksam)'
@@ -409,6 +431,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         gradTop: _hex(_settings.gradTop),
                         gradBottom: _hex(_settings.gradBottom),
                         overlayOpacity: _settings.overlayOpacity / 100,
+                        matchDate: widget.matchDate,
+                        isHome: widget.isHome,
+                        opponentName: widget.opponentName,
+                        opponentLogo: _settings.showOpponentLogo
+                            ? widget.opponentLogo
+                            : null,
                         compact: !_story,
                       ),
                     ),
@@ -477,6 +505,10 @@ class _StartelfGraphic extends StatelessWidget {
     required this.gradTop,
     required this.gradBottom,
     required this.overlayOpacity,
+    required this.matchDate,
+    required this.isHome,
+    required this.opponentName,
+    required this.opponentLogo,
     required this.compact,
   });
 
@@ -490,6 +522,10 @@ class _StartelfGraphic extends StatelessWidget {
   final Color gradTop;
   final Color gradBottom;
   final double overlayOpacity; // 0..1
+  final DateTime? matchDate;
+  final bool isHome;
+  final String opponentName;
+  final String? opponentLogo; // null = nicht anzeigen
   final bool compact;
 
   @override
@@ -535,7 +571,9 @@ class _StartelfGraphic extends StatelessWidget {
                 SizedBox(height: compact ? 8 : 12),
                 _presentedBy(mainSponsor!),
               ],
-              SizedBox(height: compact ? 8 : 14),
+              SizedBox(height: compact ? 8 : 10),
+              _matchInfo(),
+              SizedBox(height: compact ? 6 : 10),
               Expanded(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
@@ -612,6 +650,55 @@ class _StartelfGraphic extends StatelessWidget {
                   color: Colors.white,
                   fontSize: compact ? 13 : 15,
                   fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  /// Spielinfo-Zeile: Heim/Auswärts, Datum und darunter der Gegner („vs …")
+  /// mit optionalem Gegner-Logo.
+  Widget _matchInfo() {
+    final line1 = <String>[isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL'];
+    if (matchDate != null) {
+      line1.add(
+          DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(matchDate!.toLocal()));
+    }
+    final oppBytes = TeamLogo.decode(opponentLogo);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          line1.join('  ·  '),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.8),
+            fontSize: compact ? 10 : 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+          ),
+        ),
+        if (opponentName.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              if (oppBytes != null) ...[
+                _logoChip(oppBytes, height: compact ? 20 : 24),
+                const SizedBox(width: 8),
+              ],
+              Flexible(
+                child: Text(
+                  'vs ${opponentName.toUpperCase()}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: compact ? 13 : 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
