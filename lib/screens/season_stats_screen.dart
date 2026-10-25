@@ -55,6 +55,11 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
   // Marke (Anpfiff/Halbzeit/Abpfiff …). Spiele mit nur vereinzelten Rest-/
   // Altdaten (z.B. ein paar Tore ohne Anpfiff) zählen nicht mit.
   Set<String> _trackedMatchIds = {};
+  // Tore aus dem gecachten (kanonischen) Spielstand der getrackten Spiele –
+  // identisch zum Match-Center. Nicht aus Ereignissen neu gezählt, damit die
+  // Gesamtstatistik nicht durch verwaiste/doppelte Tor-Ereignisse abweicht.
+  int _goalsOwn = 0;
+  int _goalsOpp = 0;
   Team? _team;
   bool _loading = true;
 
@@ -68,12 +73,23 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
     final state = context.read<AppState>();
     final events = await state.allEvents();
     if (!mounted) return;
+    final tracked = events
+        .where((e) => e.type.isPhaseMarker)
+        .map((e) => e.matchId)
+        .toSet();
+    var gOwn = 0;
+    var gOpp = 0;
+    for (final m in state.matches) {
+      if (tracked.contains(m.id)) {
+        gOwn += m.ownScore;
+        gOpp += m.opponentScore;
+      }
+    }
     setState(() {
       _events = events;
-      _trackedMatchIds = events
-          .where((e) => e.type.isPhaseMarker)
-          .map((e) => e.matchId)
-          .toSet();
+      _trackedMatchIds = tracked;
+      _goalsOwn = gOwn;
+      _goalsOpp = gOpp;
       _team = state.ownTeam;
       _loading = false;
     });
@@ -121,9 +137,8 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final name = _team?.name ?? 'Eigenes Team';
-    final ownGoals = _count(true, {MatchEventType.goal, MatchEventType.penalty});
-    final oppGoals =
-        _count(false, {MatchEventType.goal, MatchEventType.penalty});
+    final ownGoals = _goalsOwn;
+    final oppGoals = _goalsOpp;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gesamtstatistik'),
@@ -188,8 +203,9 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
                   for (final r in _rows)
                     StatCompareRow(
                       label: r.$1,
-                      own: _count(true, r.$2),
-                      opp: _count(false, r.$2),
+                      // „Tore" aus dem kanonischen Spielstand, Rest aus Ereignissen.
+                      own: r.$1 == 'Tore' ? _goalsOwn : _count(true, r.$2),
+                      opp: r.$1 == 'Tore' ? _goalsOpp : _count(false, r.$2),
                       ownColor: scheme.primary,
                       oppColor: _oppColor,
                     ),
