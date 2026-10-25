@@ -1260,6 +1260,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     const types = ['Distanzschuss', 'Schuss', '1-gegen-1', 'Kopfball'];
     return showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1274,16 +1275,24 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               ),
             ),
             const Divider(height: 1),
-            for (final t in types)
-              ListTile(
-                leading: const Text('🧤', style: TextStyle(fontSize: 20)),
-                title: Text(t),
-                onTap: () => Navigator.pop(context, t),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final t in types)
+                    ListTile(
+                      leading:
+                          const Text('🧤', style: TextStyle(fontSize: 20)),
+                      title: Text(t),
+                      onTap: () => Navigator.pop(context, t),
+                    ),
+                  ListTile(
+                    leading: const Icon(Icons.block, size: 20),
+                    title: const Text('Ohne Angabe'),
+                    onTap: () => Navigator.pop(context, ''),
+                  ),
+                ],
               ),
-            ListTile(
-              leading: const Icon(Icons.block, size: 20),
-              title: const Text('Ohne Angabe'),
-              onTap: () => Navigator.pop(context, ''),
             ),
           ],
         ),
@@ -1307,6 +1316,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     ];
     final type = await showModalBottomSheet<MatchEventType>(
       context: context,
+      isScrollControlled: true,
       builder: (_) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1321,12 +1331,20 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               ),
             ),
             const Divider(height: 1),
-            for (final t in types)
-              ListTile(
-                leading: Text(t.symbol, style: const TextStyle(fontSize: 20)),
-                title: Text(t.label),
-                onTap: () => Navigator.pop(context, t),
+            Flexible(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  for (final t in types)
+                    ListTile(
+                      leading:
+                          Text(t.symbol, style: const TextStyle(fontSize: 20)),
+                      title: Text(t.label),
+                      onTap: () => Navigator.pop(context, t),
+                    ),
+                ],
               ),
+            ),
           ],
         ),
       ),
@@ -1339,7 +1357,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       if (outcome == null || !mounted) return;
       resolved = outcome;
     }
-    final detail = await _eventDetail(resolved, _onFieldPlayers(ownSide));
+    final detail = await _eventDetail(resolved, _pickPool(ownSide));
     if (detail == null || !mounted) return;
     await context.read<AppState>().addEvent(
           matchId: widget.matchId,
