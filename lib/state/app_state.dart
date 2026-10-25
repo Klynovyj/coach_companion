@@ -315,6 +315,11 @@ class AppState extends ChangeNotifier {
           liveControllerName: ctrlName,
           clearController: ctrl == null,
         ));
+        // Reset eines anderen Geräts (→ „angesetzt"): lokalen Verlauf leeren,
+        // damit die Live-Uhr/Ticker auch ohne Realtime-DELETE zurückgehen.
+        if (st == MatchStatus.scheduled && local.status != MatchStatus.scheduled) {
+          await _repo.resetMatchEvents(id);
+        }
         changed = true;
       }
       if (changed) {
@@ -991,6 +996,14 @@ class AppState extends ChangeNotifier {
       externalId: cm.externalId ?? existing.externalId,
     );
     await _repo.upsertRawById('matches', merged.toMap());
+    // Zurücksetzen auf einem anderen Gerät (Status wechselt live/beendet →
+    // „angesetzt"): lokalen Verlauf (Ereignisse + Karten) sofort leeren, damit
+    // Ticker und Live-Uhr bei allen zurückgehen – nicht nur auf die
+    // unzuverlässigen Realtime-DELETEs angewiesen.
+    if (cm.status == MatchStatus.scheduled &&
+        existing.status != MatchStatus.scheduled) {
+      await _repo.resetMatchEvents(cm.id);
+    }
   }
 
   /// Spiegelt den aktuellen Kader + Spielplan des aktiven Cloud-Teams nach

@@ -1,6 +1,6 @@
 {
-  "versionCode": 18,
-  "versionName": "1.3.13",
+  "versionCode": 19,
+  "versionName": "1.3.14",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Push-Benachrichtigung: Wenn ein Spiel live geht, bekommen alle eine Info – auch bei geschlossener App (sobald die Server-Einrichtung steht)\n- enthält außerdem alles aus 1.3.12 (Live-Steuerung, zuverlässiger Live-Sync, FuPa-Statistik u.a.)"
+  "notes": "Neuerungen:\n- Live-Erfassung jetzt fuer alle Trainer: Tor, Karte, Wechsel, Ereignis, Gegner-Tor und Kommentar koennen alle nutzen - nur Anpfiff/Halbzeit/Abpfiff bleibt beim Steuernden\n- Spiel zuruecksetzen wirkt jetzt sofort bei allen Geraeten (Ticker und Live-Uhr gehen ueberall zurueck)\n- enthaelt alles aus 1.3.13 (Push bei geschlossener App, Live-Steuerung, zuverlaessiger Live-Sync, FuPa-Statistik)"
 }
