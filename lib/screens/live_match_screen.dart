@@ -641,7 +641,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final hasController = controller != null && controller.isNotEmpty;
     final iAmController = !hasController || controller == CloudService.userId;
     final othersControl = hasController && controller != CloudService.userId;
+    // Nur die Phasen-Leiste (Anpfiff/Halbzeit/Abpfiff …) ist dem Controller
+    // vorbehalten.
     final editing = canEdit && iAmController && !_watchMode;
+    // Erfassen (Tor/Karte/Wechsel/Ereignis/Kommentar + Ticker bearbeiten) darf
+    // jeder berechtigte Trainer – unabhängig davon, wer die Phasen steuert.
+    final canRecord = canEdit && !_watchMode;
 
     return Scaffold(
       appBar: AppBar(
@@ -692,7 +697,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '${match.liveControllerName ?? 'Ein Trainer'} steuert das Spiel',
+                      '${match.liveControllerName ?? 'Ein Trainer'} steuert Anpfiff/Halbzeit – '
+                      'erfassen kannst du trotzdem',
                       style: const TextStyle(fontWeight: FontWeight.w600),
                     ),
                   ),
@@ -708,7 +714,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               context,
               Theme.of(context).colorScheme.primaryContainer,
               Icons.sports,
-              'Du steuerst das Spiel.',
+              'Du steuerst Anpfiff/Halbzeit.',
             ),
           _Scoreboard(
             match: match,
@@ -749,7 +755,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               padding: const EdgeInsets.only(bottom: 16),
               children: [
                 if (canEdit && _phase == _Phase.shootout)
-                  _lock(editing, _shootoutPanel(context, match)),
+                  _lock(canRecord, _shootoutPanel(context, match)),
                 if (_phase != _Phase.shootout &&
                     _events.any((e) =>
                         e.type == MatchEventType.soGoal ||
@@ -771,7 +777,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   ),
                 if (canEdit && _phase != _Phase.shootout)
                   _lock(
-                    editing,
+                    canRecord,
                     Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -821,8 +827,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   ownTeamId: match.ownTeamId,
                   resolveName: _playerName,
                   resolvePlayer: _playerById,
-                  onDelete: editing ? _deleteEvent : null,
-                  onEdit: editing ? _editEvent : null,
+                  onDelete: canRecord ? _deleteEvent : null,
+                  onEdit: canRecord ? _editEvent : null,
                 ),
               ],
             ),

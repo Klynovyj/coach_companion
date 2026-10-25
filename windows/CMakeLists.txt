@@ -2,6 +2,12 @@
 cmake_minimum_required(VERSION 3.14)
 project(coach_companion LANGUAGES CXX)
 
+# Das mitgelieferte Firebase-C++-SDK (für firebase_core, nur Android genutzt)
+# ruft cmake_minimum_required mit einer Version < 3.5 auf; CMake >= 4 lehnt das
+# sonst ab. Dieser Mindest-Policy-Wert wird an die Unterverzeichnisse vererbt und
+# lässt den Windows-Build ohne Umgebungsvariable durchlaufen.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
 # The name of the executable created for the application. Change this to change
 # the on-disk name of your application.
 set(BINARY_NAME "coach_companion")
