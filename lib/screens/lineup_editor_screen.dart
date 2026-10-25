@@ -929,7 +929,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   Widget _listRow(Player p) {
     final isStarter = _starters.containsKey(p.id);
     final onBench = _bench.contains(p.id);
-    final role = isStarter ? 'start' : (onBench ? 'bank' : 'raus');
+    // Nur Start oder Bank wählbar. Noch nicht eingeteilte (verfügbare) Spieler
+    // haben keine Auswahl, bis Start/Bank getippt wird.
+    final selected = <String>{
+      if (isStarter) 'start' else if (onBench) 'bank',
+    };
     final stat = _statByKey[p.dedupKey];
     final sub = [
       if (p.position != null && p.position!.isNotEmpty) p.position!,
@@ -964,18 +968,17 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             segments: const [
               ButtonSegment(value: 'start', label: Text('Start')),
               ButtonSegment(value: 'bank', label: Text('Bank')),
-              ButtonSegment(value: 'raus', label: Text('Raus')),
             ],
-            selected: {role},
+            selected: selected,
+            emptySelectionAllowed: true,
             showSelectedIcon: false,
             onSelectionChanged: (s) {
+              if (s.isEmpty) return;
               final v = s.first;
               if (v == 'start') {
                 if (!isStarter) _addStarterDefault(p.id);
               } else if (v == 'bank') {
                 _toBench(p.id);
-              } else {
-                _toPool(p.id);
               }
             },
           ),
