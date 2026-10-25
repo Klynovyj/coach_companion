@@ -2382,6 +2382,24 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Schiebt alle lokalen Sponsoren (erneut) in die Cloud. Nötig für Sponsoren,
+  /// die angelegt wurden, bevor die Cloud-Tabelle existierte – deren einmaliger
+  /// Mirror-Push schlug damals still fehl und wird sonst nie wiederholt.
+  /// Idempotent (Upsert per id). No-op ohne aktives Cloud-Team.
+  Future<void> pushSponsorsToCloud() async {
+    final team = _activeCloudTeamId;
+    if (team == null || !CloudService.ready || !CloudService.signedIn) return;
+    final list = await _repo.getSponsors();
+    for (final s in list) {
+      try {
+        await CloudService.upsertRow(
+            'sponsors', {...s.toMap(), 'team_id': team});
+      } catch (_) {
+        // Offline/Teilfehler – beim nächsten Öffnen erneut.
+      }
+    }
+  }
+
   // ----------------------------------------------------- Spielergespräche
   Future<List<PlayerTalk>> talks() => _repo.getTalks();
 

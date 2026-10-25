@@ -19,17 +19,33 @@ class SponsorsScreen extends StatefulWidget {
 }
 
 class _SponsorsScreenState extends State<SponsorsScreen> {
+  late final AppState _app = context.read<AppState>();
   List<Sponsor> _sponsors = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
+    // Live aktualisieren, wenn per Realtime Sponsoren anderer Geräte ankommen.
+    _app.addListener(_onChanged);
     _load();
+    // Lokale Sponsoren (evtl. vor Existenz der Cloud-Tabelle angelegt) in die
+    // Cloud nachschieben, damit sie auf anderen Geräten erscheinen.
+    _app.pushSponsorsToCloud();
+  }
+
+  @override
+  void dispose() {
+    _app.removeListener(_onChanged);
+    super.dispose();
+  }
+
+  void _onChanged() {
+    if (mounted) _load();
   }
 
   Future<void> _load() async {
-    final list = await context.read<AppState>().sponsors();
+    final list = await _app.sponsors();
     if (!mounted) return;
     setState(() {
       _sponsors = list;
