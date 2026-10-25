@@ -791,6 +791,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                           onGoal: () => _addGoal(ownSide: true),
                           onCard: () => _addCard(ownSide: true),
                           onSub: () => _addSub(ownSide: true),
+                          onSave: () => _addSave(ownSide: true),
                           onEvent: () => _addOtherEvent(ownSide: true),
                         ),
                         _TeamActionBar(
@@ -802,6 +803,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                           // Gegner-Karten erfassen (Spieler optional „Unbekannt").
                           onCard: () => _addCard(ownSide: false),
                           onSub: null,
+                          onSave: () => _addSave(ownSide: false),
                           onEvent: () => _addOtherEvent(ownSide: false),
                         ),
                         const SizedBox(height: 8),
@@ -1083,6 +1085,83 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       );
     }
     await _refreshEvents();
+  }
+
+  /// Ist der Spieler ein Torwart? (Positionsliste „TW" oder Freitext „Tor…").
+  bool _isGoalkeeper(Player p) {
+    if (p.positions.any((x) => x.toUpperCase() == 'TW')) return true;
+    final pos = (p.position ?? '').toLowerCase();
+    return pos.contains('tor') || pos == 'tw' || pos.contains('keeper');
+  }
+
+  /// Torwart-Parade (TW): wählt automatisch den aktuellen Torwart (sonst
+  /// Spielerauswahl) und fragt danach die Schussart ab.
+  Future<void> _addSave({required bool ownSide}) async {
+    final state = context.read<AppState>();
+    final players = ownSide ? _onFieldPlayers(true) : _opponentPlayers;
+    final keepers = players.where(_isGoalkeeper).toList();
+    String? playerId;
+    if (keepers.length == 1) {
+      playerId = keepers.first.id; // genau ein Torwart → automatisch
+    } else {
+      final res = await _pickPlayer(
+        title: 'Torwart',
+        players: keepers.isNotEmpty ? keepers : players,
+        allowUnknown: true,
+      );
+      if (res == _pickCancelled) return;
+      playerId = res == _pickUnknown ? null : res;
+    }
+    if (!mounted) return;
+    final shot = await _askSaveType();
+    if (shot == null) return; // abgebrochen
+    await state.addEvent(
+      matchId: widget.matchId,
+      teamId: _teamIdFor(ownSide),
+      minute: _currentMinute,
+      minuteExtra: _currentExtra,
+      type: MatchEventType.save,
+      playerId: playerId,
+      note: shot.isEmpty ? null : shot,
+    );
+    await _refreshEvents();
+  }
+
+  /// Schussart einer Parade. Rückgabe: Schussart, '' für „Ohne Angabe", null
+  /// bei Abbruch.
+  Future<String?> _askSaveType() {
+    const types = ['Distanzschuss', 'Schuss', '1-gegen-1', 'Kopfball'];
+    return showModalBottomSheet<String>(
+      context: context,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Parade – Schussart',
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ),
+            ),
+            const Divider(height: 1),
+            for (final t in types)
+              ListTile(
+                leading: const Text('🧤', style: TextStyle(fontSize: 20)),
+                title: Text(t),
+                onTap: () => Navigator.pop(context, t),
+              ),
+            ListTile(
+              leading: const Icon(Icons.block, size: 20),
+              title: const Text('Ohne Angabe'),
+              onTap: () => Navigator.pop(context, ''),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Weitere Ereignisse: Typ wählen, optional Spieler + Notiz.
@@ -1669,6 +1748,7 @@ class _TeamActionBar extends StatelessWidget {
     required this.onGoal,
     this.onCard,
     this.onSub,
+    this.onSave,
     this.onEvent,
     this.enabled = true,
     this.isOwn = true,
@@ -1679,6 +1759,9 @@ class _TeamActionBar extends StatelessWidget {
   final VoidCallback onGoal;
   final VoidCallback? onCard;
   final VoidCallback? onSub;
+
+  /// Torwart-Parade (TW-Button).
+  final VoidCallback? onSave;
 
   /// Weitere Ereignisse (Ecke/Freistoß/Elfmeter/Foul/Großchance).
   final VoidCallback? onEvent;
@@ -1791,6 +1874,17 @@ class _TeamActionBar extends StatelessWidget {
                           style: outStyle,
                           child: _actionChild(
                               const Icon(Icons.swap_horiz, size: 20), 'Wechsel'),
+                        ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: onSave == null
+                      ? const SizedBox.shrink()
+                      : OutlinedButton(
+                          onPressed: enabled ? onSave : null,
+                          style: outStyle,
+                          child: _actionChild(
+                              const Icon(Icons.sports_handball, size: 20), 'TW'),
                         ),
                 ),
               ],
@@ -1990,6 +2084,7 @@ class _EventLog extends StatelessWidget {
       case MatchEventType.foul:
       case MatchEventType.bigChance:
       case MatchEventType.meckern:
+      case MatchEventType.save:
         return e.playerId == null
             ? e.type.label
             : '${e.type.label} – ${resolveName(e.playerId)}';

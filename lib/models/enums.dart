@@ -83,6 +83,7 @@ enum MatchEventType {
   foul('foul', 'Foul', '⚠️'),
   bigChance('big_chance', 'Großchance', '✨'),
   meckern('meckern', 'Meckern', '🗣️'),
+  save('save', 'Parade', '🧤'),
   comment('comment', 'Kommentar', '💬'),
   // Team-neutrale Spielphasen-Marken (ohne Spieler).
   kickoff('kickoff', 'Anpfiff', '🟢'),
