@@ -15,12 +15,16 @@ class PlayerPhoto extends StatelessWidget {
     this.size = 44,
     this.radius = 10,
     this.showStatus = true,
+    this.cornerFraction = 0.5,
   });
 
   final Player player;
   final double size;
   final double radius;
   final bool showStatus;
+
+  /// Kantenlänge der Status-Ecke als Anteil der Fotogröße (0.5 = halbe Seite).
+  final double cornerFraction;
 
   @override
   Widget build(BuildContext context) {
@@ -60,7 +64,10 @@ class PlayerPhoto extends StatelessWidget {
               Positioned(
                 left: 0,
                 top: 0,
-                child: StatusCorner(status: status, size: size * 0.5),
+                child: StatusCorner(
+                  status: status,
+                  size: size * cornerFraction,
+                ),
               ),
           ],
         ),

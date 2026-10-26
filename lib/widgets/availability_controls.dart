@@ -20,13 +20,13 @@ Color availabilityColor(NominationStatus s) {
 
 /// Farbe je Spieler-Verfügbarkeitsstatus (Stammdaten).
 Color playerStatusColor(PlayerStatus s) => switch (s) {
-      PlayerStatus.fit => const Color(0xFF2E7D32),
-      PlayerStatus.verletzt => const Color(0xFFEF6C00),
-      PlayerStatus.krank => const Color(0xFFFF8F00),
-      PlayerStatus.gesperrt => const Color(0xFFC62828),
-      PlayerStatus.urlaub => const Color(0xFF1565C0),
-      PlayerStatus.inaktiv => const Color(0xFF9E9E9E),
-    };
+  PlayerStatus.fit => const Color(0xFF2E7D32), // Grün
+  PlayerStatus.verletzt => const Color(0xFFD32F2F), // Rot (wie das Kreuz)
+  PlayerStatus.krank => const Color(0xFFEF6C00), // Orange
+  PlayerStatus.gesperrt => const Color(0xFF6A1B9A), // Violett
+  PlayerStatus.urlaub => const Color(0xFF1565C0), // Blau
+  PlayerStatus.inaktiv => const Color(0xFF757575), // Grau
+};
 
 /// Drei runde Status-Buttons (Zu / Unsicher / Ab). Erneutes Tippen auf den
 /// aktiven Status setzt zurück auf „offen".
@@ -97,8 +97,10 @@ class AvailabilitySummary extends StatelessWidget {
           children: [
             CircleAvatar(radius: 5, backgroundColor: c),
             const SizedBox(width: 6),
-            Text('${counts[s] ?? 0} $label',
-                style: TextStyle(color: c, fontWeight: FontWeight.w600)),
+            Text(
+              '${counts[s] ?? 0} $label',
+              style: TextStyle(color: c, fontWeight: FontWeight.w600),
+            ),
           ],
         ),
       );

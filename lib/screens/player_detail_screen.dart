@@ -26,7 +26,6 @@ import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/injury_icon.dart';
-import '../widgets/player_avatar.dart';
 import '../widgets/player_photo.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/rich_note_view.dart';
@@ -2677,136 +2676,126 @@ class _PlayerCardView extends StatelessWidget {
       0,
       (m, e) => e.value > m ? e.value : m,
     );
-    final status = player.status;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      child: ClipRRect(
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
-        child: Stack(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                gradient: const LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [Color(0xFF14130F), Color(0xFF2A2621)],
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF14130F), Color(0xFF2A2621)],
+        ),
+        border: Border.all(color: _gold, width: 1.5),
+      ),
+      child: Column(
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (team?.logoPath != null)
+                TeamLogo(logoPath: team!.logoPath, size: 34)
+              else
+                const SizedBox(width: 34),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  team?.name ?? '',
+                  style: const TextStyle(
+                    color: _gold,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                border: Border.all(color: _gold, width: 1.5),
               ),
-              child: Column(
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      if (team?.logoPath != null)
-                        TeamLogo(logoPath: team!.logoPath, size: 34)
-                      else
-                        const SizedBox(width: 34),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          team?.name ?? '',
-                          style: const TextStyle(
-                            color: _gold,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      Container(
-                        width: 40,
-                        height: 40,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white70, width: 2),
-                        ),
-                        child: Text(
-                          player.number?.toString() ?? '–',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                    ],
+              Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white70, width: 2),
+                ),
+                child: Text(
+                  player.number?.toString() ?? '–',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
                   ),
-                  const SizedBox(height: 12),
-                  PlayerAvatar(player: player, radius: 54),
-                  const SizedBox(height: 10),
-                  if (player.firstName.isNotEmpty)
-                    Text(
-                      player.firstName,
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                      ),
-                    ),
-                  Text(
-                    player.lastName.toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.5,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-                  if (player.position != null && player.position!.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        player.position!,
-                        style: const TextStyle(color: _gold, fontSize: 12),
-                      ),
-                    ),
-                  const SizedBox(height: 12),
-                  Container(height: 1, color: _gold.withValues(alpha: 0.4)),
-                  const SizedBox(height: 8),
-                  if (section != _CardSide.tracking) ...[
-                    _sectionLabel('FUPA · SAISON'),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _stat(Icons.directions_run, matches, 'Spiele'),
-                        _stat(Icons.sports_soccer, goals, 'Tore'),
-                        _stat(Icons.handshake, assists, 'Vorlagen'),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _stat(Icons.style, yellow, 'Gelb'),
-                        _stat(Icons.style, red, 'Rot'),
-                        _stat(Icons.timer, minutes, 'Minuten'),
-                      ],
-                    ),
-                  ],
-                  if (section == _CardSide.both) ...[
-                    const SizedBox(height: 12),
-                    Container(height: 1, color: _gold.withValues(alpha: 0.4)),
-                    const SizedBox(height: 8),
-                  ],
-                  if (section != _CardSide.fupa) ...[
-                    _sectionLabel('TRACKING · LIVE'),
-                    const SizedBox(height: 8),
-                    for (final e in trackingEntries)
-                      _trackBar(e.key, e.value, maxTrack),
-                  ],
-                ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          PlayerPhoto(
+            player: player,
+            size: 116,
+            radius: 16,
+            cornerFraction: 0.34,
+          ),
+          const SizedBox(height: 10),
+          if (player.firstName.isNotEmpty)
+            Text(
+              player.firstName,
+              style: const TextStyle(color: Colors.white70, fontSize: 14),
+            ),
+          Text(
+            player.lastName.toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          if (player.position != null && player.position!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                player.position!,
+                style: const TextStyle(color: _gold, fontSize: 12),
               ),
             ),
-            if (status != PlayerStatus.fit)
-              Positioned(left: 0, top: 0, child: StatusCorner(status: status)),
+          const SizedBox(height: 12),
+          Container(height: 1, color: _gold.withValues(alpha: 0.4)),
+          const SizedBox(height: 8),
+          if (section != _CardSide.tracking) ...[
+            _sectionLabel('FUPA · SAISON'),
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _stat(Icons.directions_run, matches, 'Spiele'),
+                _stat(Icons.sports_soccer, goals, 'Tore'),
+                _stat(Icons.handshake, assists, 'Vorlagen'),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _stat(Icons.style, yellow, 'Gelb'),
+                _stat(Icons.style, red, 'Rot'),
+                _stat(Icons.timer, minutes, 'Minuten'),
+              ],
+            ),
           ],
-        ),
+          if (section == _CardSide.both) ...[
+            const SizedBox(height: 12),
+            Container(height: 1, color: _gold.withValues(alpha: 0.4)),
+            const SizedBox(height: 8),
+          ],
+          if (section != _CardSide.fupa) ...[
+            _sectionLabel('TRACKING · LIVE'),
+            const SizedBox(height: 8),
+            for (final e in trackingEntries)
+              _trackBar(e.key, e.value, maxTrack),
+          ],
+        ],
       ),
     );
   }
