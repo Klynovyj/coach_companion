@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../models/player.dart';
 import '../models/player_talk.dart';
 import '../state/app_state.dart';
-import '../widgets/app_drawer.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/player_picker_page.dart';
 
@@ -212,7 +211,6 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
             .toList();
 
         return Scaffold(
-          drawer: const AppDrawer(),
           appBar: AppBar(
             title: const Text('Spielergespräche'),
             bottom: TabBar(

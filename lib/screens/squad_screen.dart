@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
-import '../widgets/app_drawer.dart';
 import '../widgets/squad_list_view.dart';
 import '../widgets/team_logo.dart';
 import 'stats_screen.dart';
@@ -17,7 +16,6 @@ class SquadScreen extends StatelessWidget {
     final team = state.ownTeam;
 
     return Scaffold(
-      drawer: const AppDrawer(),
       appBar: AppBar(
         title: Row(
           children: [
@@ -26,8 +24,12 @@ class SquadScreen extends StatelessWidget {
               const SizedBox(width: 8),
             ],
             Flexible(
-                child: Text(team?.name ?? 'Mein Kader',
-                    maxLines: 1, overflow: TextOverflow.ellipsis)),
+              child: Text(
+                team?.name ?? 'Mein Kader',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
           ],
         ),
         actions: [
@@ -57,7 +59,6 @@ class SquadScreen extends StatelessWidget {
             ),
     );
   }
-
 }
 
 class _NoTeam extends StatelessWidget {

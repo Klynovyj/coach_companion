@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
-import '../widgets/app_drawer.dart';
 import 'rating_summary_screen.dart';
 
 /// Übersicht aller Spiele mit Bewertungs-Schnitt → antippen öffnet die
@@ -50,7 +49,6 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      drawer: const AppDrawer(),
       appBar: AppBar(title: const Text('Auswertung')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())

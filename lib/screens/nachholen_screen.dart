@@ -3,7 +3,6 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
-import '../widgets/app_drawer.dart';
 import 'match_center_screen.dart';
 import 'rating_screen.dart';
 
@@ -20,7 +19,6 @@ class NachholenScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Nachholen')),
-      drawer: const AppDrawer(),
       body: FutureBuilder<List<NachholenItem>>(
         future: state.nachholen(),
         builder: (context, snap) {
@@ -28,12 +26,15 @@ class NachholenScreen extends StatelessWidget {
             return const Center(child: CircularProgressIndicator());
           }
           final items = snap.data!;
-          final ratings =
-              items.where((i) => i.kind == NachholenKind.rating).toList();
-          final noms =
-              items.where((i) => i.kind == NachholenKind.nomination).toList();
-          final lineups =
-              items.where((i) => i.kind == NachholenKind.lineup).toList();
+          final ratings = items
+              .where((i) => i.kind == NachholenKind.rating)
+              .toList();
+          final noms = items
+              .where((i) => i.kind == NachholenKind.nomination)
+              .toList();
+          final lineups = items
+              .where((i) => i.kind == NachholenKind.lineup)
+              .toList();
 
           return ListView(
             padding: const EdgeInsets.only(bottom: 24),
@@ -77,16 +78,19 @@ class NachholenScreen extends StatelessWidget {
   }
 
   Widget _allClear(BuildContext context) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
-        child: Column(
-          children: [
-            Icon(Icons.check_circle,
-                size: 48, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(height: 8),
-            const Text('Alles erledigt 🎉', textAlign: TextAlign.center),
-          ],
+    padding: const EdgeInsets.fromLTRB(16, 32, 16, 8),
+    child: Column(
+      children: [
+        Icon(
+          Icons.check_circle,
+          size: 48,
+          color: Theme.of(context).colorScheme.primary,
         ),
-      );
+        const SizedBox(height: 8),
+        const Text('Alles erledigt 🎉', textAlign: TextAlign.center),
+      ],
+    ),
+  );
 
   Widget _section(
     BuildContext context, {
@@ -108,14 +112,18 @@ class NachholenScreen extends StatelessWidget {
               padding: const EdgeInsets.only(right: 8),
               child: Row(
                 children: [
-                  Icon(icon,
-                      size: 18, color: Theme.of(context).colorScheme.primary),
+                  Icon(
+                    icon,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                   const SizedBox(width: 8),
-                  Text(title,
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  Text(
+                    title,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const Spacer(),
                   _countBadge(context, items.length),
                 ],
@@ -125,10 +133,12 @@ class NachholenScreen extends StatelessWidget {
               ListTile(
                 contentPadding: const EdgeInsets.only(right: 8),
                 title: Text(i.title),
-                subtitle: Text([
-                  if (i.kickoff != null) df.format(i.kickoff!.toLocal()),
-                  i.detail,
-                ].join('  ·  ')),
+                subtitle: Text(
+                  [
+                    if (i.kickoff != null) df.format(i.kickoff!.toLocal()),
+                    i.detail,
+                  ].join('  ·  '),
+                ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => onTap(i),
               ),
@@ -139,15 +149,18 @@ class NachholenScreen extends StatelessWidget {
   }
 
   Widget _countBadge(BuildContext context, int n) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primary,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text('$n',
-            style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 12)),
-      );
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    decoration: BoxDecoration(
+      color: Theme.of(context).colorScheme.primary,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Text(
+      '$n',
+      style: TextStyle(
+        color: Theme.of(context).colorScheme.onPrimary,
+        fontWeight: FontWeight.bold,
+        fontSize: 12,
+      ),
+    ),
+  );
 }

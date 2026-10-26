@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/team_event.dart';
 import '../state/app_state.dart';
-import '../widgets/app_drawer.dart';
 import '../widgets/ui_bits.dart';
 import 'event_detail_screen.dart';
 
@@ -18,7 +17,6 @@ class TermineScreen extends StatelessWidget {
     final df = DateFormat("HH:mm 'Uhr'", 'de_DE');
 
     return Scaffold(
-      drawer: const AppDrawer(),
       appBar: AppBar(title: const Text('Termine')),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _addEvent(context),
@@ -69,26 +67,35 @@ class TermineScreen extends StatelessWidget {
                       children: [
                         DateBlock(date: e.date),
                         const SizedBox(width: 12),
-                        Text(e.type.symbol, style: const TextStyle(fontSize: 22)),
+                        Text(
+                          e.type.symbol,
+                          style: const TextStyle(fontSize: 22),
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(e.title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w700, fontSize: 15)),
+                              Text(
+                                e.title,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 15,
+                                ),
+                              ),
                               const SizedBox(height: 2),
-                              Text([
-                                e.type.label,
-                                df.format(e.date),
-                                if (e.location != null) e.location!,
-                              ].join('  ·  '),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.bodySmall),
+                              Text(
+                                [
+                                  e.type.label,
+                                  df.format(e.date),
+                                  if (e.location != null) e.location!,
+                                ].join('  ·  '),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
                             ],
                           ),
                         ),
@@ -109,12 +116,12 @@ class TermineScreen extends StatelessWidget {
     final data = await showEventDialog(context);
     if (data == null || !context.mounted) return;
     await context.read<AppState>().addTeamEvent(
-          title: data.title,
-          type: data.type,
-          date: data.date,
-          location: data.location,
-          note: data.note,
-        );
+      title: data.title,
+      type: data.type,
+      date: data.date,
+      location: data.location,
+      note: data.note,
+    );
   }
 }
 
@@ -125,12 +132,19 @@ class EventDialogData {
   final String? location;
   final String? note;
   const EventDialogData(
-      this.title, this.type, this.date, this.location, this.note);
+    this.title,
+    this.type,
+    this.date,
+    this.location,
+    this.note,
+  );
 }
 
 /// Termin anlegen/bearbeiten als Vollbild-Formular (statt engem Popup).
-Future<EventDialogData?> showEventDialog(BuildContext context,
-    {TeamEvent? existing}) {
+Future<EventDialogData?> showEventDialog(
+  BuildContext context, {
+  TeamEvent? existing,
+}) {
   return Navigator.push<EventDialogData>(
     context,
     MaterialPageRoute(
@@ -189,14 +203,22 @@ class _EventFormPageState extends State<_EventFormPage> {
       initialTime: TimeOfDay.fromDateTime(_date),
     );
     if (!mounted) return;
-    setState(() => _date =
-        DateTime(d.year, d.month, d.day, t?.hour ?? 18, t?.minute ?? 0));
+    setState(
+      () => _date = DateTime(
+        d.year,
+        d.month,
+        d.day,
+        t?.hour ?? 18,
+        t?.minute ?? 0,
+      ),
+    );
   }
 
   void _save() {
     if (_titleCtrl.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Bitte einen Titel eingeben.')));
+        const SnackBar(content: Text('Bitte einen Titel eingeben.')),
+      );
       return;
     }
     Navigator.pop(
@@ -217,12 +239,7 @@ class _EventFormPageState extends State<_EventFormPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(editing ? 'Termin bearbeiten' : 'Termin anlegen'),
-        actions: [
-          TextButton(
-            onPressed: _save,
-            child: const Text('Speichern'),
-          ),
-        ],
+        actions: [TextButton(onPressed: _save, child: const Text('Speichern'))],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -245,10 +262,12 @@ class _EventFormPageState extends State<_EventFormPage> {
               border: OutlineInputBorder(),
             ),
             items: TeamEventType.values
-                .map((t) => DropdownMenuItem(
-                      value: t,
-                      child: Text('${t.symbol}  ${t.label}'),
-                    ))
+                .map(
+                  (t) => DropdownMenuItem(
+                    value: t,
+                    child: Text('${t.symbol}  ${t.label}'),
+                  ),
+                )
                 .toList(),
             onChanged: (v) => setState(() => _type = v ?? _type),
           ),

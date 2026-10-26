@@ -5,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
-import '../widgets/app_drawer.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/ui_bits.dart';
 import 'match_center_screen.dart';
@@ -32,10 +31,12 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
   /// Index des nächsten (bevorstehenden) Spiels; alles vergangen -> letztes.
   int _nextIndex(List<GameMatch> matches) {
     final now = DateTime.now();
-    final idx = matches.indexWhere((m) =>
-        m.status == MatchStatus.live ||
-        m.kickoff == null ||
-        m.kickoff!.isAfter(now));
+    final idx = matches.indexWhere(
+      (m) =>
+          m.status == MatchStatus.live ||
+          m.kickoff == null ||
+          m.kickoff!.isAfter(now),
+    );
     return idx < 0 ? matches.length - 1 : idx;
   }
 
@@ -46,15 +47,20 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _didInitialScroll = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scrollCtrl.hasClients) return;
-      final rough =
-          (idx * 88.0).clamp(0.0, _scrollCtrl.position.maxScrollExtent);
+      final rough = (idx * 88.0).clamp(
+        0.0,
+        _scrollCtrl.position.maxScrollExtent,
+      );
       _scrollCtrl.jumpTo(rough);
       // Nach dem groben Sprung präzise oben ausrichten.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         final ctx = _nextKey.currentContext;
         if (ctx != null) {
-          Scrollable.ensureVisible(ctx,
-              alignment: 0.0, duration: Duration.zero);
+          Scrollable.ensureVisible(
+            ctx,
+            alignment: 0.0,
+            duration: Duration.zero,
+          );
         }
       });
     });
@@ -69,7 +75,6 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     _scheduleInitialScroll(nextIdx, matches.length);
 
     return Scaffold(
-      drawer: const AppDrawer(),
       appBar: AppBar(
         title: const Text('Spielplan'),
         actions: [
@@ -89,9 +94,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 : () {
                     final ctx = _nextKey.currentContext;
                     if (ctx != null) {
-                      Scrollable.ensureVisible(ctx,
-                          alignment: 0.0,
-                          duration: const Duration(milliseconds: 300));
+                      Scrollable.ensureVisible(
+                        ctx,
+                        alignment: 0.0,
+                        duration: const Duration(milliseconds: 300),
+                      );
                     }
                   },
           ),
@@ -122,9 +129,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     // Beim Öffnen: Gegner sicherstellen (import oder Platzhalter).
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => MatchCenterScreen(matchId: match.id),
-      ),
+      MaterialPageRoute(builder: (_) => MatchCenterScreen(matchId: match.id)),
     );
   }
 
@@ -136,11 +141,11 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
     );
     if (result == null || !context.mounted) return;
     final match = await context.read<AppState>().addMatch(
-          opponentName: result.opponent,
-          kickoff: result.kickoff,
-          venue: result.venue,
-          competition: result.competition,
-        );
+      opponentName: result.opponent,
+      kickoff: result.kickoff,
+      venue: result.venue,
+      competition: result.competition,
+    );
     if (!context.mounted) return;
     await Navigator.push(
       context,
@@ -150,36 +155,49 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
 }
 
 class _MatchCard extends StatelessWidget {
-  const _MatchCard(
-      {super.key, required this.match, required this.df, required this.onTap});
+  const _MatchCard({
+    super.key,
+    required this.match,
+    required this.df,
+    required this.onTap,
+  });
   final GameMatch match;
   final DateFormat df;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final played = match.status != MatchStatus.scheduled ||
+    final played =
+        match.status != MatchStatus.scheduled ||
         match.ownScore != 0 ||
         match.opponentScore != 0;
     final live = match.status == MatchStatus.live;
 
     Widget trailing;
     if (live) {
-      trailing = Column(mainAxisSize: MainAxisSize.min, children: [
-        Text('${match.ownScore}:${match.opponentScore}',
-            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20)),
-        const Pill(text: 'LIVE', color: Colors.red, filled: true),
-      ]);
+      trailing = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '${match.ownScore}:${match.opponentScore}',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 20),
+          ),
+          const Pill(text: 'LIVE', color: Colors.red, filled: true),
+        ],
+      );
     } else if (played) {
       final win = match.ownScore > match.opponentScore;
       final draw = match.ownScore == match.opponentScore;
       final c = win
           ? const Color(0xFF2E7D32)
           : draw
-              ? const Color(0xFF9E9E9E)
-              : const Color(0xFFC62828);
-      trailing =
-          Pill(text: '${match.ownScore}:${match.opponentScore}', color: c, filled: true);
+          ? const Color(0xFF9E9E9E)
+          : const Color(0xFFC62828);
+      trailing = Pill(
+        text: '${match.ownScore}:${match.opponentScore}',
+        color: c,
+        filled: true,
+      );
     } else {
       trailing = Pill(
         text: match.venue == Venue.home ? 'Heim' : 'Auswärts',
@@ -209,25 +227,31 @@ class _MatchCard extends StatelessWidget {
                     Row(
                       children: [
                         Flexible(
-                          child: Text(match.opponentName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w700, fontSize: 15)),
+                          child: Text(
+                            match.opponentName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 6),
                         _matchSourceBadge(context, match),
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text([
-                      if (match.kickoff != null)
-                        df.format(match.kickoff!.toLocal()),
-                      if (match.competition != null) match.competition!,
-                    ].join('  ·  '),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodySmall),
+                    Text(
+                      [
+                        if (match.kickoff != null)
+                          df.format(match.kickoff!.toLocal()),
+                        if (match.competition != null) match.competition!,
+                      ].join('  ·  '),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ],
                 ),
               ),
@@ -243,18 +267,26 @@ class _MatchCard extends StatelessWidget {
   /// Herkunfts-Badge: „FuPa" für importierte Spiele, „Manuell" für selbst
   /// angelegte. FuPa erkennbar an externer ID bzw. dem FuPa-Match-Slug.
   Widget _matchSourceBadge(BuildContext context, GameMatch match) {
-    final isFupa = (match.externalId != null && match.externalId!.isNotEmpty) ||
+    final isFupa =
+        (match.externalId != null && match.externalId!.isNotEmpty) ||
         (match.fupaMatchSlug != null && match.fupaMatchSlug!.isNotEmpty);
     final bg = isFupa
         ? const Color(0xFF138A54)
         : Theme.of(context).colorScheme.outline;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
-      child: Text(isFupa ? 'FuPa' : 'Manuell',
-          style: const TextStyle(
-              fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        isFupa ? 'FuPa' : 'Manuell',
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 }
@@ -324,8 +356,7 @@ class _NewMatchSheetState extends State<_NewMatchSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Neues Spiel',
-              style: Theme.of(context).textTheme.titleLarge),
+          Text('Neues Spiel', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),
           TextField(
             controller: _opp,
@@ -344,15 +375,16 @@ class _NewMatchSheetState extends State<_NewMatchSheet> {
           OutlinedButton.icon(
             onPressed: _pickDate,
             icon: const Icon(Icons.schedule),
-            label: Text(_kickoff == null
-                ? 'Anstoßzeit wählen'
-                : df.format(_kickoff!)),
+            label: Text(
+              _kickoff == null ? 'Anstoßzeit wählen' : df.format(_kickoff!),
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _comp,
-            decoration:
-                const InputDecoration(labelText: 'Wettbewerb (optional)'),
+            decoration: const InputDecoration(
+              labelText: 'Wettbewerb (optional)',
+            ),
           ),
           const SizedBox(height: 16),
           FilledButton(
