@@ -6,6 +6,7 @@ import '../models/player.dart';
 import '../models/player_of_month.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import 'player_of_month_graphic_screen.dart';
 
 /// Spieler des Monats: pro Kalendermonat eine Rangliste der Spieler nach
 /// Bewertungs-Schnitt; der Trainer kürt (final) einen Spieler, mit Historie.
@@ -88,8 +89,7 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
     return DateFormat('MMMM yyyy', 'de_DE').format(DateTime(y, m));
   }
 
-  String _name(String playerId) =>
-      _byId[playerId]?.fullName ?? 'Spieler';
+  String _name(String playerId) => _byId[playerId]?.fullName ?? 'Spieler';
 
   Future<void> _honor() async {
     final rated = _ranking.where((e) => e.$2 != null).toList();
@@ -104,8 +104,10 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
           children: [
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: Text('Spieler des Monats küren',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              child: Text(
+                'Spieler des Monats küren',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
             ),
             const Divider(height: 1),
             for (final e in _ranking.where((e) => e.$2 != null))
@@ -127,6 +129,38 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
     await _loadMonth();
   }
 
+  /// Öffnet die teilbare Grafik/Urkunde für den gekürten Spieler des Monats.
+  void _openExport() {
+    final honored = _honored, month = _month;
+    if (honored == null || month == null) return;
+    final player = _byId[honored.playerId];
+    if (player == null) return;
+    // Ø-Note + Anzahl aus der Monats-Rangliste (null, falls unbewertet).
+    double? avg;
+    var count = 0;
+    for (final e in _ranking) {
+      if (e.$1.id == player.id) {
+        avg = e.$2;
+        count = e.$3;
+        break;
+      }
+    }
+    final team = _app.ownTeam;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerOfMonthGraphicScreen(
+          player: player,
+          yearMonth: month,
+          avg: avg,
+          ratedCount: count,
+          teamName: team?.name ?? team?.shortName ?? 'Mannschaft',
+          teamLogo: team?.logoPath,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -134,41 +168,46 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _teamId == null
-              ? const Center(child: Text('Keine Mannschaft.'))
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 24),
-                  children: [
-                    _monthSelector(),
-                    _honorCard(),
-                    const Divider(height: 1),
-                    if (_ranking.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text('Noch keine Spieler/Bewertungen.',
-                            textAlign: TextAlign.center),
-                      )
-                    else
-                      for (var i = 0; i < _ranking.length; i++)
-                        _rankRow(i, _ranking[i]),
-                    if (_history.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      const Padding(
-                        padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-                        child: Text('Hall of Fame',
-                            style: TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 15)),
+          ? const Center(child: Text('Keine Mannschaft.'))
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                _monthSelector(),
+                _honorCard(),
+                const Divider(height: 1),
+                if (_ranking.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Noch keine Spieler/Bewertungen.',
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else
+                  for (var i = 0; i < _ranking.length; i++)
+                    _rankRow(i, _ranking[i]),
+                if (_history.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+                    child: Text(
+                      'Hall of Fame',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
                       ),
-                      for (final h in _history)
-                        ListTile(
-                          dense: true,
-                          leading: const Text('🏆',
-                              style: TextStyle(fontSize: 20)),
-                          title: Text(_name(h.playerId)),
-                          trailing: Text(_monthLabel(h.yearMonth)),
-                        ),
-                    ],
-                  ],
-                ),
+                    ),
+                  ),
+                  for (final h in _history)
+                    ListTile(
+                      dense: true,
+                      leading: const Text('🏆', style: TextStyle(fontSize: 20)),
+                      title: Text(_name(h.playerId)),
+                      trailing: Text(_monthLabel(h.yearMonth)),
+                    ),
+                ],
+              ],
+            ),
     );
   }
 
@@ -200,8 +239,7 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
   }
 
   Widget _honorCard() {
-    final honoredPlayer =
-        _honored == null ? null : _byId[_honored!.playerId];
+    final honoredPlayer = _honored == null ? null : _byId[_honored!.playerId];
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
       color: _gold.withValues(alpha: 0.12),
@@ -215,23 +253,40 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Spieler des Monats',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Spieler des Monats',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   Text(
                     honoredPlayer != null
                         ? honoredPlayer.fullName
                         : (_honored != null
-                            ? _name(_honored!.playerId)
-                            : 'Noch nicht gekürt'),
+                              ? _name(_honored!.playerId)
+                              : 'Noch nicht gekürt'),
                     style: const TextStyle(fontSize: 16),
                   ),
                 ],
               ),
             ),
-            FilledButton.icon(
-              onPressed: _ranking.any((e) => e.$2 != null) ? _honor : null,
-              icon: const Icon(Icons.emoji_events, size: 18),
-              label: Text(_honored == null ? 'Küren' : 'Ändern'),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                FilledButton.icon(
+                  onPressed: _ranking.any((e) => e.$2 != null) ? _honor : null,
+                  icon: const Icon(Icons.emoji_events, size: 18),
+                  label: Text(_honored == null ? 'Küren' : 'Ändern'),
+                ),
+                if (_honored != null &&
+                    _byId.containsKey(_honored!.playerId)) ...[
+                  const SizedBox(height: 4),
+                  TextButton.icon(
+                    onPressed: _openExport,
+                    icon: const Icon(Icons.ios_share, size: 18),
+                    label: const Text('Teilen / Urkunde'),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
@@ -254,18 +309,24 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
             children: [
               SizedBox(
                 width: 22,
-                child: Text(rank?.toString() ?? '–',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: top ? _gold : Theme.of(context).hintColor)),
+                child: Text(
+                  rank?.toString() ?? '–',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: top ? _gold : Theme.of(context).hintColor,
+                  ),
+                ),
               ),
               PlayerAvatar(player: p, radius: 15),
             ],
           ),
         ),
-        title: Text(p.fullName,
-            style: TextStyle(
-                fontWeight: top ? FontWeight.bold : FontWeight.normal)),
+        title: Text(
+          p.fullName,
+          style: TextStyle(
+            fontWeight: top ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
         subtitle: avg == null ? const Text('keine Bewertung') : null,
         trailing: avg == null
             ? (isHonored ? const Text('🏆') : null)
@@ -275,8 +336,10 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
                   if (isHonored) const Text('🏆  '),
                   Icon(Icons.star, size: 16, color: Colors.amber.shade700),
                   const SizedBox(width: 2),
-                  Text('${avg.toStringAsFixed(1)} ($count)',
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text(
+                    '${avg.toStringAsFixed(1)} ($count)',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ],
               ),
       ),

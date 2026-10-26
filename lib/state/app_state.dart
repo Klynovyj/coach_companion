@@ -2747,6 +2747,62 @@ class AppState extends ChangeNotifier {
     return [...rated, ...unrated];
   }
 
+  /// Monats-Statistik eines Spielers aus den live getrackten Spielen (mit
+  /// Anpfiff-Marke), deren Anpfiff im [yearMonth] (YYYY-MM) der eigenen
+  /// Mannschaft liegt. Für die Spieler-des-Monats-Urkunde/-Grafik.
+  Future<PlayerMonthStats> playerMonthStats(
+    String teamId,
+    String yearMonth,
+    String playerId,
+  ) async {
+    final events = await allEvents();
+    // Getrackte Spiele = Matches mit einer Phasen-Marke (wie Gesamtstatistik).
+    final trackedIds = events
+        .where((e) => e.type.isPhaseMarker)
+        .map((e) => e.matchId)
+        .toSet();
+    // Davon nur eigene Spiele dieses Monats.
+    final monthMatchIds = <String>{};
+    for (final m in matches) {
+      if (!trackedIds.contains(m.id)) continue;
+      if (m.ownTeamId != teamId) continue;
+      final d = (m.kickoff ?? m.createdAt).toLocal();
+      final ym =
+          '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
+      if (ym == yearMonth) monthMatchIds.add(m.id);
+    }
+    var goals = 0, assists = 0, yellow = 0, secondYellow = 0, red = 0;
+    final playedIn = <String>{};
+    for (final e in events) {
+      if (!monthMatchIds.contains(e.matchId)) continue;
+      final isOwn = e.teamId == teamId;
+      final mine = isOwn && e.playerId == playerId;
+      final myAssist = isOwn && e.assistPlayerId == playerId;
+      if (mine || myAssist) playedIn.add(e.matchId);
+      if (mine &&
+          (e.type == MatchEventType.goal || e.type == MatchEventType.penalty)) {
+        goals++;
+      }
+      if (myAssist &&
+          (e.type == MatchEventType.goal || e.type == MatchEventType.penalty)) {
+        assists++;
+      }
+      if (mine) {
+        if (e.type == MatchEventType.yellowCard) yellow++;
+        if (e.type == MatchEventType.secondYellow) secondYellow++;
+        if (e.type == MatchEventType.redCard) red++;
+      }
+    }
+    return PlayerMonthStats(
+      games: playedIn.length,
+      goals: goals,
+      assists: assists,
+      yellow: yellow,
+      secondYellow: secondYellow,
+      red: red,
+    );
+  }
+
   Future<List<PlayerOfMonth>> honorHistory() => _repo.getPlayersOfMonth();
 
   Future<PlayerOfMonth?> honoredOf(String yearMonth) async {
@@ -3576,4 +3632,29 @@ class PlayerCardSummary {
 
   /// true = FuPa-Gelbe hat ein Vielfaches der Schwelle erreicht (Sperre fällig).
   bool get yellowBanDue => fupaYellow > 0 && fupaYellow % yellowThreshold == 0;
+}
+
+/// Monats-Kennzahlen eines Spielers aus live getrackten Spielen (ein Monat).
+class PlayerMonthStats {
+  final int games;
+  final int goals;
+  final int assists;
+  final int yellow;
+  final int secondYellow;
+  final int red;
+  const PlayerMonthStats({
+    this.games = 0,
+    this.goals = 0,
+    this.assists = 0,
+    this.yellow = 0,
+    this.secondYellow = 0,
+    this.red = 0,
+  });
+
+  /// Rote Karten gesamt (direkt Rot + Gelb-Rot).
+  int get redTotal => red + secondYellow;
+
+  /// true = es gibt überhaupt etwas Zählbares zum Anzeigen.
+  bool get hasAny =>
+      games > 0 || goals > 0 || assists > 0 || yellow > 0 || redTotal > 0;
 }
