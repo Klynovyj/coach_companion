@@ -673,6 +673,19 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
   /// Antippbarer Status-Chip (öffnet die Status-Auswahl).
   Widget _statusMenu(BuildContext context, Player p) {
+    final leading = p.status == PlayerStatus.verletzt
+        ? const InjuryCross(size: 14)
+        : Text(p.status.symbol, style: const TextStyle(fontSize: 12));
+    // Spieler (Nicht-Trainer): Status nur anzeigen, nicht änderbar.
+    if (!context.read<AppState>().isTrainerHere) {
+      return _editChip(
+        context,
+        leading: leading,
+        label: p.status.label,
+        side: playerStatusColor(p.status),
+        editable: false,
+      );
+    }
     return PopupMenuButton<PlayerStatus>(
       tooltip: 'Status ändern',
       onSelected: _setStatus,
@@ -695,9 +708,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       ],
       child: _editChip(
         context,
-        leading: p.status == PlayerStatus.verletzt
-            ? const InjuryCross(size: 14)
-            : Text(p.status.symbol, style: const TextStyle(fontSize: 12)),
+        leading: leading,
         label: p.status.label,
         side: playerStatusColor(p.status),
       ),
@@ -735,9 +746,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     Widget? leading,
     required String label,
     required Color side,
+    bool editable = true,
   }) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(10, 5, 6, 5),
+      padding: EdgeInsets.fromLTRB(10, 5, editable ? 6 : 10, 5),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: side),
@@ -748,7 +760,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         children: [
           if (leading != null) ...[leading, const SizedBox(width: 6)],
           Text(label),
-          const Icon(Icons.arrow_drop_down, size: 18),
+          if (editable) const Icon(Icons.arrow_drop_down, size: 18),
         ],
       ),
     );

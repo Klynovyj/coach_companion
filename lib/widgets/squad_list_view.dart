@@ -434,10 +434,7 @@ class _SquadListViewState extends State<SquadListView> {
                 ),
                 for (final s in PlayerStatus.values)
                   ChoiceChip(
-                    avatar: Text(
-                      s.symbol,
-                      style: const TextStyle(fontSize: 12),
-                    ),
+                    avatar: StatusBadge(status: s, size: 18),
                     label: Text('${s.label} (${countOf(s)})'),
                     selected: _statusFilter == s,
                     onSelected: (_) => setState(
