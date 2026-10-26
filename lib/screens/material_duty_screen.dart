@@ -771,7 +771,60 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
   }
 
   // ── Teilen ──────────────────────────────────────────────────────────
+  /// Teilen-Icon: Auswahl, was per WhatsApp geteilt wird.
   Future<void> _share() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.groups),
+              title: const Text('Gruppen posten (Info)'),
+              subtitle: const Text('Nur die Gruppen-Einteilung'),
+              onTap: () => Navigator.pop(context, 'groups'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.list_alt),
+              title: const Text('Kompletter Plan'),
+              subtitle:
+                  const Text('Diese Woche + Gruppen + nächste Wochen + Regeln'),
+              onTap: () => Navigator.pop(context, 'full'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final text = choice == 'groups' ? _groupsMessage() : _fullMessage();
+    final ok = await shareViaWhatsApp(text);
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Teilen nicht möglich.')));
+    }
+  }
+
+  /// Nur die Gruppen-Einteilung als Info (ohne Wochenplan).
+  String _groupsMessage() {
+    final groups = _groups;
+    final b = StringBuffer();
+    b.writeln('Ball-/Materialdienst – ${widget.teamName}');
+    b.writeln('Gruppen:');
+    for (var g = 0; g < groups.length; g++) {
+      b.writeln('Gruppe ${g + 1}: '
+          '${groups[g].map((p) => p.fullName).join(', ')}');
+    }
+    if (_config!.rules.trim().isNotEmpty) {
+      b.writeln('');
+      b.writeln('Regeln: ${_config!.rules.trim()}');
+    }
+    return b.toString().trim();
+  }
+
+  /// Kompletter Plan: diese Woche + Gruppen + nächste Wochen + Regeln.
+  String _fullMessage() {
     final groups = _groups;
     final schedule = _schedule;
     final b = StringBuffer();
@@ -798,11 +851,7 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
       b.writeln('');
       b.writeln('Regeln: ${_config!.rules.trim()}');
     }
-    final ok = await shareViaWhatsApp(b.toString().trim());
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Teilen nicht möglich.')));
-    }
+    return b.toString().trim();
   }
 }
 
