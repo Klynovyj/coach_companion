@@ -1,6 +1,6 @@
 {
-  "versionCode": 29,
-  "versionName": "1.3.24",
+  "versionCode": 30,
+  "versionName": "1.3.25",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Spielbewertung wieder pro Trainer: jeder bewertet eigenstaendig, angezeigt wird der Schnitt ueber alle Trainer (Sync verbessert)\n- Spielerprofil: Gesamt- und laufende Monats-Note im Kopf; Karte in eigenem Reiter, Rolle & Startelf in den Stammdaten\n- Bewertungen-Liste zeigt nur beendete Spiele (zurueckgesetzte fallen raus)\n- Nachholen: offene Bewertung wird pro Trainer geprueft\n\nAus 1.3.23:\n- Statistik: Status-Ansicht (Kaderstatus); Materialdienst: Teilen-Auswahl\n\nWichtig (Cloud): im Supabase-SQL-Editor stage24 und stage23 ausfuehren, damit Bewertungen pro Trainer und die Herkunfts-Badges auf allen Geraeten stimmen."
+  "notes": "Neuerungen:\n- Live-Ticker im Chat-Stil: eigene Aktionen links, Gegner rechts - auf einen Blick unterscheidbar\n- Kommentar-Button fest an der Fussleiste (scrollt nicht mehr mit)\n\nAus 1.3.24:\n- Spielbewertung pro Trainer (Schnitt ueber alle), Profil-Umbau (Karte-Reiter, Gesamt/Monat-Note, Rolle & Startelf in den Stammdaten), Bewertungen zeigen nur beendete Spiele\n\nWichtig (Cloud): im Supabase-SQL-Editor stage24 und stage23 ausfuehren."
 }
