@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -15,6 +16,7 @@ import '../models/sponsor.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import 'photo_crop_screen.dart';
 
 /// Ausgabeformate für den Spieler des Monats.
 enum _Fmt { post, story, urkunde }
@@ -34,9 +36,9 @@ extension _FmtX on _Fmt {
   };
 
   double get targetWidth => switch (this) {
-    _Fmt.post => 1080, // 1080×1080
-    _Fmt.story => 1080, // 1080×1920
-    _Fmt.urkunde => 1748, // ≈1748×2472 (210 dpi)
+    _Fmt.post => 1350, // 1350×1350
+    _Fmt.story => 1350, // 1350×2400
+    _Fmt.urkunde => 2480, // ≈2480×3508 (A4 @ 300 dpi)
   };
 
   String get fileSuffix => switch (this) {
@@ -96,6 +98,18 @@ class _PlayerOfMonthGraphicScreenState
   bool _showRating = true; // Bewertungen (Ø-Note)
   bool _showMonth = true; // meine Monatsdaten (live getrackt)
   bool _showFupa = true; // FuPa-Saison
+
+  // Spieler (lokal veränderbar – z.B. neues Foto) und editierbarer Text.
+  late Player _player = widget.player;
+  String? _honorText;
+
+  String get _defaultHonor =>
+      'wird für herausragende Leistungen im Monat $_monthLabel zum '
+      'Spieler des Monats ernannt.';
+  String get _effectiveHonor =>
+      (_honorText != null && _honorText!.trim().isNotEmpty)
+      ? _honorText!.trim()
+      : _defaultHonor;
 
   @override
   void initState() {
@@ -165,6 +179,7 @@ class _PlayerOfMonthGraphicScreenState
 
   Future<void> _openCustomize() async {
     final titleCtrl = TextEditingController(text: _settings.title ?? '');
+    final honorCtrl = TextEditingController(text: _effectiveHonor);
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -239,6 +254,29 @@ class _PlayerOfMonthGraphicScreenState
                         clearTitle: v.trim().isEmpty,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 16),
+                  // Urkunden-Text – jederzeit frei eingebbar.
+                  TextField(
+                    controller: honorCtrl,
+                    minLines: 2,
+                    maxLines: 4,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: InputDecoration(
+                      labelText: 'Urkunden-Text',
+                      helperText: 'Erscheint auf der Urkunde unter dem Namen',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        tooltip: 'Auf Standardtext zurücksetzen',
+                        icon: const Icon(Icons.restart_alt),
+                        onPressed: () {
+                          honorCtrl.text = _defaultHonor;
+                          setState(() => _honorText = null);
+                          setSheet(() {});
+                        },
+                      ),
+                    ),
+                    onChanged: (v) => setState(() => _honorText = v),
                   ),
                   const SizedBox(height: 16),
                   _rowWithImage(
@@ -466,11 +504,11 @@ class _PlayerOfMonthGraphicScreenState
       );
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       if (data == null) return;
-      final safeName = widget.player.fullName.replaceAll(' ', '-');
+      final safeName = _player.fullName.replaceAll(' ', '-');
       final savedPath = await shareOrSaveImage(
         data.buffer.asUint8List(),
         'SpielerDesMonats_${safeName}_${widget.yearMonth}_${_fmt.fileSuffix}',
-        text: 'Spieler des Monats $_monthLabel – ${widget.player.fullName}',
+        text: 'Spieler des Monats $_monthLabel – ${_player.fullName}',
       );
       if (savedPath != null && mounted) {
         messenger.showSnackBar(
@@ -489,6 +527,91 @@ class _PlayerOfMonthGraphicScreenState
     }
   }
 
+  /// Lädt ein Spielerfoto (Galerie oder Kamera), schneidet es quadratisch zu und
+  /// speichert es als eigenes Foto (hohe Auflösung), teamweit/cloud-synchron.
+  Future<void> _changePhoto() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined),
+              title: const Text('Aus Galerie wählen'),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined),
+              title: const Text('Foto aufnehmen'),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+            if (_player.hasCustomPhoto)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text('Eigenes Foto entfernen'),
+                onTap: () => Navigator.pop(ctx, 'remove'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (choice == 'remove') {
+      final updated = _player.copyWith(
+        clearCustomPhoto: true,
+        useCustomPhoto: false,
+      );
+      await context.read<AppState>().updatePlayer(updated);
+      if (mounted) setState(() => _player = updated);
+      return;
+    }
+    try {
+      final file = await ImagePicker().pickImage(
+        source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 92,
+      );
+      if (file == null) return;
+      final raw = await file.readAsBytes();
+      if (!mounted) return;
+      final cropped = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => PhotoCropScreen(imageBytes: raw),
+        ),
+      );
+      if (cropped == null || !mounted) return;
+      final dataUrl = _encodeSquareJpeg(cropped);
+      final updated = _player.copyWith(
+        customPhoto: dataUrl,
+        useCustomPhoto: true,
+      );
+      await context.read<AppState>().updatePlayer(updated);
+      if (mounted) setState(() => _player = updated);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Foto konnte nicht geladen werden: $e')),
+      );
+    }
+  }
+
+  /// Quadratisches Foto auf max. 1024 px (hohe Auflösung) als JPEG-Data-URL.
+  String _encodeSquareJpeg(Uint8List input) {
+    final decoded = img.decodeImage(input);
+    if (decoded == null) {
+      return 'data:image/jpeg;base64,${base64Encode(input)}';
+    }
+    final sized = decoded.width > 1024
+        ? img.copyResize(decoded, width: 1024, height: 1024)
+        : decoded;
+    final jpg = img.encodeJpg(sized, quality: 90);
+    return 'data:image/jpeg;base64,${base64Encode(jpg)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -497,10 +620,11 @@ class _PlayerOfMonthGraphicScreenState
     final size = _fmt.logical;
     final graphic = _fmt == _Fmt.urkunde
         ? _UrkundeGraphic(
-            player: widget.player,
+            player: _player,
             teamName: _title,
             teamLogo: _logo,
             monthLabel: _monthLabel,
+            honorText: _effectiveHonor,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
             month: _month,
@@ -511,7 +635,7 @@ class _PlayerOfMonthGraphicScreenState
             showFupa: _showFupa,
           )
         : _SocialGraphic(
-            player: widget.player,
+            player: _player,
             teamName: _title,
             teamLogo: _logo,
             monthLabel: _monthLabel,
@@ -533,6 +657,11 @@ class _PlayerOfMonthGraphicScreenState
       appBar: AppBar(
         title: const Text('Spieler des Monats – teilen'),
         actions: [
+          IconButton(
+            tooltip: 'Spielerfoto (Galerie/Kamera)',
+            icon: const Icon(Icons.add_a_photo_outlined),
+            onPressed: _changePhoto,
+          ),
           IconButton(
             tooltip: 'Grafik anpassen',
             icon: const Icon(Icons.tune),
@@ -1021,6 +1150,7 @@ class _UrkundeGraphic extends StatelessWidget {
     required this.teamName,
     required this.teamLogo,
     required this.monthLabel,
+    required this.honorText,
     required this.avg,
     required this.ratedCount,
     required this.month,
@@ -1035,6 +1165,7 @@ class _UrkundeGraphic extends StatelessWidget {
   final String teamName;
   final String? teamLogo;
   final String monthLabel;
+  final String honorText;
   final double? avg;
   final int ratedCount;
   final PlayerMonthStats month;
@@ -1147,11 +1278,10 @@ class _UrkundeGraphic extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Text(
-            'wird für herausragende Leistungen im Monat $monthLabel zum '
-            'Spieler des Monats ernannt.',
+            honorText,
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: _ink.withValues(alpha: 0.7),
+              color: _ink.withValues(alpha: 0.72),
               fontSize: 12.5,
               height: 1.45,
             ),
@@ -1217,30 +1347,30 @@ class _UrkundeGraphic extends StatelessWidget {
             title.toUpperCase(),
             style: const TextStyle(
               color: _gold,
-              fontSize: 11,
+              fontSize: 9.5,
               fontWeight: FontWeight.w900,
               letterSpacing: 1,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           for (final r in rows)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
+              padding: const EdgeInsets.symmetric(vertical: 1),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
                     r.$1,
                     style: TextStyle(
-                      color: _ink.withValues(alpha: 0.75),
-                      fontSize: 12,
+                      color: _ink.withValues(alpha: 0.7),
+                      fontSize: 10,
                     ),
                   ),
                   Text(
                     r.$2,
                     style: const TextStyle(
                       color: _ink,
-                      fontSize: 12,
+                      fontSize: 10,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -1277,10 +1407,10 @@ class _UrkundeGraphic extends StatelessWidget {
     ];
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: const Color(0xFFF5F6F5),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: _line),
       ),
       child: IntrinsicHeight(
