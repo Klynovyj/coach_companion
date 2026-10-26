@@ -78,7 +78,7 @@ class NachholenItem {
 /// Gegner-Sync und stellt der UI alle Operationen bereit.
 class AppState extends ChangeNotifier {
   AppState({CoachRepository? repository})
-      : _repo = repository ?? CoachRepository() {
+    : _repo = repository ?? CoachRepository() {
     // Jede team-relevante Schreiboperation in die Cloud spiegeln.
     _repo.onCloudSync = _onRepoWrite;
   }
@@ -140,8 +140,11 @@ class AppState extends ChangeNotifier {
   };
 
   /// Spiegelt eine Schreiboperation des Repositorys in die Cloud (best effort).
-  void _onRepoWrite(String table, Map<String, Object?>? upsertRow,
-      Map<String, Object?>? deleteFilter) {
+  void _onRepoWrite(
+    String table,
+    Map<String, Object?>? upsertRow,
+    Map<String, Object?>? deleteFilter,
+  ) {
     // Pulls nutzen hook-freie Roh-Methoden; jede Hook-Auslösung ist also eine
     // echte Nutzer-/App-Eingabe und MUSS gespiegelt werden (nicht blockieren).
     final team = _activeCloudTeamId;
@@ -149,11 +152,16 @@ class AppState extends ChangeNotifier {
     if (!_auxTableSet.contains(table)) return;
     if (upsertRow != null) {
       final row = <String, dynamic>{...upsertRow, 'team_id': team};
-      CloudService.upsertRow(table, row, onConflict: _auxOnConflict[table])
-          .catchError((_) {});
+      CloudService.upsertRow(
+        table,
+        row,
+        onConflict: _auxOnConflict[table],
+      ).catchError((_) {});
     } else if (deleteFilter != null) {
-      CloudService.deleteWhere(table, Map<String, dynamic>.from(deleteFilter))
-          .catchError((_) {});
+      CloudService.deleteWhere(
+        table,
+        Map<String, dynamic>.from(deleteFilter),
+      ).catchError((_) {});
     }
   }
 
@@ -197,8 +205,10 @@ class AppState extends ChangeNotifier {
   /// Lädt die Cloud-Ereignisse eines Teams in den lokalen Cache. Gegner-
   /// Ereignisse (is_opponent) werden dem lokalen Gegner-Team des Spiels
   /// zugeordnet; fehlt es, wird das Ereignis übersprungen.
-  Future<void> _pullEventsFromCloud(String teamId,
-      {required bool replace}) async {
+  Future<void> _pullEventsFromCloud(
+    String teamId, {
+    required bool replace,
+  }) async {
     if (!CloudService.ready || !CloudService.signedIn) return;
     final ownId = _ownTeam?.id ?? teamId;
     List<Map<String, dynamic>> rows;
@@ -277,16 +287,22 @@ class AppState extends ChangeNotifier {
     _refreshActiveTeamFromCloud(teamId);
     // FuPa (Spielplan/Ergebnisse) regelmäßig automatisch auffrischen.
     _fupaTimer = Timer.periodic(
-        const Duration(minutes: 30), (_) => maybeAutoRefreshFupa());
+      const Duration(minutes: 30),
+      (_) => maybeAutoRefreshFupa(),
+    );
     // Voll-Import (Kader, Fotos, Logos, Statistik) seltener.
     _fullTimer = Timer.periodic(
-        const Duration(hours: 6), (_) => maybeAutoFullRefresh());
+      const Duration(hours: 6),
+      (_) => maybeAutoFullRefresh(),
+    );
     maybeAutoFullRefresh();
     maybeAutoRefreshFupa();
     // Status/Ergebnis (live gehen, Abpfiff, zurücksetzen) zuverlässig abgleichen
     // – auch falls ein Realtime-Event verloren geht (z.B. Hintergrund/Android).
-    _liveTimer =
-        Timer.periodic(const Duration(seconds: 15), (_) => _pollMatchSync());
+    _liveTimer = Timer.periodic(
+      const Duration(seconds: 15),
+      (_) => _pollMatchSync(),
+    );
     _pollMatchSync();
   }
 
@@ -306,7 +322,8 @@ class AppState extends ChangeNotifier {
         if (local == null) continue;
         final st = MatchStatus.fromKey(r['status'] as String?);
         final own = (r['own_score'] as num?)?.toInt() ?? local.ownScore;
-        final opp = (r['opponent_score'] as num?)?.toInt() ?? local.opponentScore;
+        final opp =
+            (r['opponent_score'] as num?)?.toInt() ?? local.opponentScore;
         final ctrl = r['live_controller'] as String?;
         final ctrlName = r['live_controller_name'] as String?;
         final ctrlChanged = (local.liveController ?? '') != (ctrl ?? '');
@@ -320,17 +337,20 @@ class AppState extends ChangeNotifier {
           final name = (r['opponent'] as String?) ?? local.opponentName;
           LiveClock.showInfo('Live-Spiel läuft', 'vs $name');
         }
-        await _repo.upsertMatch(local.copyWith(
-          status: st,
-          ownScore: own,
-          opponentScore: opp,
-          liveController: ctrl,
-          liveControllerName: ctrlName,
-          clearController: ctrl == null,
-        ));
+        await _repo.upsertMatch(
+          local.copyWith(
+            status: st,
+            ownScore: own,
+            opponentScore: opp,
+            liveController: ctrl,
+            liveControllerName: ctrlName,
+            clearController: ctrl == null,
+          ),
+        );
         // Reset eines anderen Geräts (→ „angesetzt"): lokalen Verlauf leeren,
         // damit die Live-Uhr/Ticker auch ohne Realtime-DELETE zurückgehen.
-        if (st == MatchStatus.scheduled && local.status != MatchStatus.scheduled) {
+        if (st == MatchStatus.scheduled &&
+            local.status != MatchStatus.scheduled) {
           await _repo.resetMatchEvents(id);
         }
         changed = true;
@@ -350,29 +370,62 @@ class AppState extends ChangeNotifier {
   bool _canLiveEdit = true;
   bool get canLiveEdit => _canLiveEdit;
 
+  /// Rolle im aktiven Cloud-Team: true = Trainer/Admin (voller Zugriff), false =
+  /// Spieler (nur Ansicht). Ohne aktives Cloud-Team (rein lokal) immer true.
+  bool _isTrainerHere = true;
+  bool get isTrainerHere => _isTrainerHere;
+
+  /// Die mit dem eigenen Konto verknüpften Spieler-IDs im aktiven Cloud-Team
+  /// (für die Spieler-Sicht, z.B. eigene Gespräche). Leer bei Trainer/lokal.
+  List<String> _myPlayerIds = const [];
+  List<String> get myPlayerIds => List.unmodifiable(_myPlayerIds);
+
   Future<void> refreshLiveRole() async {
     final teamId = _activeCloudTeamId;
     if (teamId == null || !CloudService.ready || !CloudService.signedIn) {
-      if (!_canLiveEdit) {
+      if (!_canLiveEdit || !_isTrainerHere || _myPlayerIds.isNotEmpty) {
         _canLiveEdit = true;
+        _isTrainerHere = true;
+        _myPlayerIds = const [];
         notifyListeners();
       }
       return;
     }
     try {
       final teams = await CloudService.myTeams();
-      final mine = teams.firstWhere((t) => t['id'] == teamId,
-          orElse: () => <String, dynamic>{});
-      final canEdit = mine['role'] == 'trainer' ||
-          mine['can_ticker'] == true ||
-          mine['created_by'] == CloudService.user?.id;
-      if (canEdit != _canLiveEdit) {
-        _canLiveEdit = canEdit;
-        notifyListeners();
+      final mine = teams.firstWhere(
+        (t) => t['id'] == teamId,
+        orElse: () => <String, dynamic>{},
+      );
+      final isAdmin = mine['created_by'] == CloudService.user?.id;
+      final isTrainer = mine['role'] == 'trainer' || isAdmin;
+      final canEdit = isTrainer || mine['can_ticker'] == true;
+      // Eigene Spieler-Zuordnung nur für Spieler laden (Trainer sehen alles).
+      List<String> myPlayers = const [];
+      if (!isTrainer) {
+        try {
+          myPlayers = await CloudService.myPlayerIds(teamId);
+        } catch (_) {}
       }
+      final changed =
+          canEdit != _canLiveEdit ||
+          isTrainer != _isTrainerHere ||
+          !_sameIds(myPlayers, _myPlayerIds);
+      _canLiveEdit = canEdit;
+      _isTrainerHere = isTrainer;
+      _myPlayerIds = myPlayers;
+      if (changed) notifyListeners();
     } catch (_) {
       // Bei Fehler Rechte nicht entziehen.
     }
+  }
+
+  bool _sameIds(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
   }
 
   void _stopTeamSync() {
@@ -406,7 +459,9 @@ class AppState extends ChangeNotifier {
     try {
       await importSchedule(url); // Spielplan/Ergebnisse + pushTeamToCloud
       await _repo.setSetting(
-          'last_fupa_autosync', DateTime.now().toIso8601String());
+        'last_fupa_autosync',
+        DateTime.now().toIso8601String(),
+      );
     } catch (_) {
       // Offline/FuPa-Fehler: später erneut.
     } finally {
@@ -446,8 +501,10 @@ class AppState extends ChangeNotifier {
   /// Button. [url] = Cloud-FuPa-Link des Teams (fällt sonst auf den lokalen
   /// zurück). Gibt die Zusammenfassung zurück bzw. null, wenn kein Link/kein
   /// aktives Cloud-Team.
-  Future<ConnectSummary?> refreshFromFupaNow(
-      {String? url, void Function(String)? onProgress}) async {
+  Future<ConnectSummary?> refreshFromFupaNow({
+    String? url,
+    void Function(String)? onProgress,
+  }) async {
     final link = (url != null && url.isNotEmpty) ? url : _ownTeam?.fupaUrl;
     if (_activeCloudTeamId == null || link == null || link.isEmpty) return null;
     if (_autoRefreshing) return null;
@@ -466,14 +523,20 @@ class AppState extends ChangeNotifier {
   /// Realtime: GENAU die geänderte Zeile anwenden (sofortige Updates, kein
   /// Voll-Reload). Serialisiert, damit sich die Schreibzugriffe nicht überholen.
   void _onRemoteRowChange(
-      String table, String eventType, Map<String, dynamic> record) {
+    String table,
+    String eventType,
+    Map<String, dynamic> record,
+  ) {
     _applyQueue = _applyQueue
         .then((_) => _applyRemoteChange(table, eventType, record))
         .catchError((_) {});
   }
 
   Future<void> _applyRemoteChange(
-      String table, String eventType, Map<String, dynamic> record) async {
+    String table,
+    String eventType,
+    Map<String, dynamic> record,
+  ) async {
     final teamId = _activeCloudTeamId;
     if (teamId == null) return;
     final now = DateTime.now();
@@ -521,7 +584,10 @@ class AppState extends ChangeNotifier {
 
   /// Wendet ein einzelnes Cloud-Ereignis lokal an (Eigen/Gegner-Zuordnung).
   Future<void> _applyRemoteEvent(
-      Map<String, dynamic> r, String teamId, DateTime now) async {
+    Map<String, dynamic> r,
+    String teamId,
+    DateTime now,
+  ) async {
     String? localTeam;
     if (r['is_opponent'] == true) {
       final m = await _repo.getMatch(r['match_id'] as String);
@@ -584,24 +650,29 @@ class AppState extends ChangeNotifier {
   /// Übernimmt eine Cloud-Team-Zeile (Name/Kurzname/Logo + Materialdienst-JSON)
   /// in den lokalen Cache des eigenen Teams. fupa_url wird bewusst NICHT
   /// gespiegelt, damit nur das Trainer-Gerät mit Link automatisch importiert.
-  Future<void> _applyCloudTeamRow(
-      Map<String, dynamic> t, String teamId) async {
+  Future<void> _applyCloudTeamRow(Map<String, dynamic> t, String teamId) async {
     final existing = await _repo.getTeam(teamId);
     if (existing != null) {
       final name = t['name'] as String?;
       final shortName = t['short_name'] as String?;
       final logo = t['logo'] as String?;
-      await _repo.upsertTeam(existing.copyWith(
-        name: (name == null || name.isEmpty) ? existing.name : name,
-        shortName: (shortName == null || shortName.isEmpty) ? null : shortName,
-        logoPath: (logo == null || logo.isEmpty) ? null : logo,
-      ));
+      await _repo.upsertTeam(
+        existing.copyWith(
+          name: (name == null || name.isEmpty) ? existing.name : name,
+          shortName: (shortName == null || shortName.isEmpty)
+              ? null
+              : shortName,
+          logoPath: (logo == null || logo.isEmpty) ? null : logo,
+        ),
+      );
     }
     // Ball-/Materialdienst-Konfiguration (JSON) lokal spiegeln.
     if (t.containsKey('material_duty')) {
       final md = t['material_duty'] as String?;
       await _repo.setSetting(
-          'material_duty_$teamId', (md == null || md.isEmpty) ? null : md);
+        'material_duty_$teamId',
+        (md == null || md.isEmpty) ? null : md,
+      );
     }
   }
 
@@ -626,7 +697,7 @@ class AppState extends ChangeNotifier {
             redCards: (r['red_cards'] as num?)?.toInt() ?? 0,
             minutes: (r['minutes'] as num?)?.toInt() ?? 0,
             topEleven: (r['top_eleven'] as num?)?.toInt() ?? 0,
-          )
+          ),
       ];
       await _repo.replaceStats(teamId, stats);
     } catch (_) {}
@@ -663,7 +734,7 @@ class AppState extends ChangeNotifier {
             'number': p.number,
             'position': p.position,
             'photo': p.photoPath,
-          }
+          },
       ]);
       await CloudService.updateMatch(matchId, {'opponent_team_id': oppId});
     } catch (_) {
@@ -704,7 +775,7 @@ class AppState extends ChangeNotifier {
                 'number': p.number,
                 'position': p.position,
                 'photo': p.photoPath,
-              }
+              },
           ]);
         } catch (_) {
           // Offline/keine Rechte – lokale Bereinigung bleibt gültig.
@@ -748,8 +819,10 @@ class AppState extends ChangeNotifier {
           'created_at': now.toIso8601String(),
         });
       }
-      final players =
-          await CloudService.fetchForTeam('opponent_players', teamId);
+      final players = await CloudService.fetchForTeam(
+        'opponent_players',
+        teamId,
+      );
       for (final p in players) {
         try {
           await _repo.upsertRawById('players', {
@@ -772,8 +845,10 @@ class AppState extends ChangeNotifier {
   List<GameMatch> _matches = [];
   List<GameMatch> get matches => List.unmodifiable(_matches);
 
-  late final OpponentSyncService opponentSync =
-      OpponentSyncService(repository: _repo, importer: _importer);
+  late final OpponentSyncService opponentSync = OpponentSyncService(
+    repository: _repo,
+    importer: _importer,
+  );
 
   // ------------------------------------------------------------- Lifecycle
   Future<void> init() async {
@@ -811,9 +886,9 @@ class AppState extends ChangeNotifier {
     final team = _ownTeam;
     if (team == null) return;
     try {
-      final people = (await _repo.getPlayers(team.id))
-          .where((p) => p.active && p.birthdate != null)
-          .toList();
+      final people = (await _repo.getPlayers(
+        team.id,
+      )).where((p) => p.active && p.birthdate != null).toList();
       await BirthdayNotifications.reschedule(people);
     } catch (e) {
       debugPrint('Geburtstage neu planen: $e');
@@ -829,15 +904,18 @@ class AppState extends ChangeNotifier {
   // ----------------------------------------------------------- FuPa-Import
   /// Verbindet das eigene Team über einen FuPa-Teamlink und lädt alles:
   /// Vereinsdaten + Logo, Kader + Fotos, Spielplan + Ergebnisse, Statistik.
-  Future<ConnectSummary> connectOwnTeam(String url,
-      {void Function(String)? onProgress}) async {
+  Future<ConnectSummary> connectOwnTeam(
+    String url, {
+    void Function(String)? onProgress,
+  }) async {
     onProgress?.call('Mannschaft & Kader werden geladen …');
     final teamImport = await _importer.importTeam(url);
     final team = await _persist.saveOwnTeam(url, teamImport);
 
     onProgress?.call('Spielerfotos werden geladen …');
-    final playerData =
-        await _importer.toPlayerDataWithPhotos(teamImport.players);
+    final playerData = await _importer.toPlayerDataWithPhotos(
+      teamImport.players,
+    );
     await _persist.syncPlayers(team.id, playerData, DataSource.fupaApproved);
 
     onProgress?.call('Spielplan wird geladen (ganze Saison) …');
@@ -882,16 +960,18 @@ class AppState extends ChangeNotifier {
     _activeCloudTeamId = cloudTeamId; // ab jetzt Schreib-Sync in die Cloud
     await _repo.setSetting('active_cloud_team', cloudTeamId);
     final now = DateTime.now();
-    await _repo.upsertTeam(Team(
-      id: cloudTeamId,
-      name: name,
-      shortName: (shortName == null || shortName.isEmpty) ? null : shortName,
-      isOwnTeam: true,
-      source: DataSource.fupaApproved,
-      fupaUrl: (fupaUrl == null || fupaUrl.isEmpty) ? null : fupaUrl,
-      logoPath: (logoPath == null || logoPath.isEmpty) ? null : logoPath,
-      createdAt: now,
-    ));
+    await _repo.upsertTeam(
+      Team(
+        id: cloudTeamId,
+        name: name,
+        shortName: (shortName == null || shortName.isEmpty) ? null : shortName,
+        isOwnTeam: true,
+        source: DataSource.fupaApproved,
+        fupaUrl: (fupaUrl == null || fupaUrl.isEmpty) ? null : fupaUrl,
+        logoPath: (logoPath == null || logoPath.isEmpty) ? null : logoPath,
+        createdAt: now,
+      ),
+    );
     for (final p in players) {
       await _repo.upsertPlayer(_playerFromCloud(p, cloudTeamId, now));
     }
@@ -919,7 +999,9 @@ class AppState extends ChangeNotifier {
   /// nur ergänzend/überschreibend (für Realtime-Auto-Sync). Wirkt nur, wenn
   /// dieses Team das aktive Cloud-Team ist.
   Future<void> syncCloudMatchesToCache(
-      String cloudTeamId, List<Map<String, dynamic>> matches) async {
+    String cloudTeamId,
+    List<Map<String, dynamic>> matches,
+  ) async {
     if (_activeCloudTeamId != cloudTeamId) return;
     final now = DateTime.now();
     for (final m in matches) {
@@ -932,7 +1014,9 @@ class AppState extends ChangeNotifier {
   /// Aktualisiert den lokalen Kader-Cache mit frischen Cloud-Spielern – ohne
   /// Wipe. Wirkt nur, wenn dieses Team das aktive Cloud-Team ist.
   Future<void> syncCloudPlayersToCache(
-      String cloudTeamId, List<Map<String, dynamic>> players) async {
+    String cloudTeamId,
+    List<Map<String, dynamic>> players,
+  ) async {
     if (_activeCloudTeamId != cloudTeamId) return;
     final now = DateTime.now();
     for (final p in players) {
@@ -941,67 +1025,72 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Player _playerFromCloud(Map<String, dynamic> p, String teamId, DateTime now) =>
-      Player(
-        id: p['id'] as String,
-        teamId: teamId,
-        firstName: (p['first_name'] as String?) ?? '',
-        lastName: (p['last_name'] as String?) ?? '',
-        number: (p['number'] as num?)?.toInt(),
-        position: p['position'] as String?,
-        photoPath: p['photo'] as String?,
-        birthdate: DateTime.tryParse((p['birthdate'] as String?) ?? ''),
-        status: PlayerStatus.fromKey(p['status'] as String?),
-        captainRole: CaptainRole.fromKey(p['captain_role'] as String?),
-        active: (p['active'] as bool?) ?? true,
-        nickname: p['nickname'] as String?,
-        positions: ((p['positions'] as String?) ?? '')
-            .split(',')
-            .map((s) => s.trim())
-            .where((s) => s.isNotEmpty)
-            .toList(),
-        wishPosition: p['wish_position'] as String?,
-        staffRole: p['staff_role'] as String?,
-        suspendedGames: (p['suspended_games'] as num?)?.toInt() ?? 0,
-        suspensionCompetition: p['suspension_competition'] as String?,
-        suspensionFrom:
-            DateTime.tryParse(p['suspension_from'] as String? ?? ''),
-        // Herkunft aus der Cloud übernehmen; Altzeilen ohne Spalte = FuPa.
-        source: p['source'] != null
-            ? DataSource.fromKey(p['source'] as String?)
-            : DataSource.fupaApproved,
-        createdAt: now,
-      );
+  Player _playerFromCloud(
+    Map<String, dynamic> p,
+    String teamId,
+    DateTime now,
+  ) => Player(
+    id: p['id'] as String,
+    teamId: teamId,
+    firstName: (p['first_name'] as String?) ?? '',
+    lastName: (p['last_name'] as String?) ?? '',
+    number: (p['number'] as num?)?.toInt(),
+    position: p['position'] as String?,
+    photoPath: p['photo'] as String?,
+    birthdate: DateTime.tryParse((p['birthdate'] as String?) ?? ''),
+    status: PlayerStatus.fromKey(p['status'] as String?),
+    captainRole: CaptainRole.fromKey(p['captain_role'] as String?),
+    active: (p['active'] as bool?) ?? true,
+    nickname: p['nickname'] as String?,
+    positions: ((p['positions'] as String?) ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList(),
+    wishPosition: p['wish_position'] as String?,
+    staffRole: p['staff_role'] as String?,
+    suspendedGames: (p['suspended_games'] as num?)?.toInt() ?? 0,
+    suspensionCompetition: p['suspension_competition'] as String?,
+    suspensionFrom: DateTime.tryParse(p['suspension_from'] as String? ?? ''),
+    // Herkunft aus der Cloud übernehmen; Altzeilen ohne Spalte = FuPa.
+    source: p['source'] != null
+        ? DataSource.fromKey(p['source'] as String?)
+        : DataSource.fupaApproved,
+    createdAt: now,
+  );
 
   /// Geteilte Spielerfelder für die Cloud. Der Kader ist mannschaftsweit
   /// geteilt: Name, Nr., Position(en), Foto, Geburtsdatum, Status (inkl.
   /// Deaktivierung), Kapitän, Spitzname, Wunsch-/Aktuelle Positionen, Staff.
   Map<String, dynamic> _playerCloudMap(Player p) => {
-        'id': p.id,
-        'first_name': p.firstName,
-        'last_name': p.lastName,
-        'number': p.number,
-        'position': p.position,
-        'photo': p.photoPath,
-        'birthdate': p.birthdate?.toIso8601String(),
-        'status': p.status.storageKey,
-        'active': p.active,
-        'captain_role': p.captainRole.storageKey,
-        'nickname': p.nickname,
-        'positions': p.positions.join(','),
-        'wish_position': p.wishPosition,
-        'staff_role': p.staffRole,
-        'suspended_games': p.suspendedGames,
-        'suspension_competition': p.suspensionCompetition,
-        'suspension_from': p.suspensionFrom?.toIso8601String(),
-        'source': p.source.storageKey,
-      };
+    'id': p.id,
+    'first_name': p.firstName,
+    'last_name': p.lastName,
+    'number': p.number,
+    'position': p.position,
+    'photo': p.photoPath,
+    'birthdate': p.birthdate?.toIso8601String(),
+    'status': p.status.storageKey,
+    'active': p.active,
+    'captain_role': p.captainRole.storageKey,
+    'nickname': p.nickname,
+    'positions': p.positions.join(','),
+    'wish_position': p.wishPosition,
+    'staff_role': p.staffRole,
+    'suspended_games': p.suspendedGames,
+    'suspension_competition': p.suspensionCompetition,
+    'suspension_from': p.suspensionFrom?.toIso8601String(),
+    'source': p.source.storageKey,
+  };
 
   /// Übernimmt einen Cloud-Spieler in den lokalen Cache. Felder werden nur
   /// übernommen, wenn die Cloud sie liefert (null = lokalen Wert behalten) –
   /// so clobbern alte Zeilen ohne diese Spalten nichts.
   Future<void> _applyCloudPlayer(
-      Map<String, dynamic> record, String teamId, DateTime now) async {
+    Map<String, dynamic> record,
+    String teamId,
+    DateTime now,
+  ) async {
     final id = record['id'] as String?;
     if (id == null) return;
     final existing = await _repo.getPlayer(id);
@@ -1013,41 +1102,52 @@ class AppState extends ChangeNotifier {
     final captainRaw = record['captain_role'] as String?;
     final activeRaw = record['active'];
     final positionsRaw = record['positions'] as String?;
-    await _repo.upsertPlayer(existing.copyWith(
-      firstName: record['first_name'] as String?,
-      lastName: record['last_name'] as String?,
-      number: (record['number'] as num?)?.toInt(),
-      position: record['position'] as String?,
-      photoPath: record['photo'] as String?,
-      birthdate: DateTime.tryParse((record['birthdate'] as String?) ?? ''),
-      status: statusRaw == null ? null : PlayerStatus.fromKey(statusRaw),
-      captainRole: captainRaw == null ? null : CaptainRole.fromKey(captainRaw),
-      active: activeRaw is bool
-          ? activeRaw
-          : (activeRaw is num ? activeRaw != 0 : null),
-      nickname: record['nickname'] as String?,
-      positions: positionsRaw
-          ?.split(',')
-          .map((s) => s.trim())
-          .where((s) => s.isNotEmpty)
-          .toList(),
-      wishPosition: record['wish_position'] as String?,
-      staffRole: record['staff_role'] as String?,
-      suspendedGames: (record['suspended_games'] as num?)?.toInt(),
-      suspensionCompetition: record['suspension_competition'] as String?,
-      clearSuspensionCompetition: record.containsKey('suspension_competition') &&
-          record['suspension_competition'] == null,
-      suspensionFrom:
-          DateTime.tryParse(record['suspension_from'] as String? ?? ''),
-      clearSuspensionFrom: record.containsKey('suspension_from') &&
-          record['suspension_from'] == null,
-      source: record['source'] != null
-          ? DataSource.fromKey(record['source'] as String?)
-          : null,
-    ));
+    await _repo.upsertPlayer(
+      existing.copyWith(
+        firstName: record['first_name'] as String?,
+        lastName: record['last_name'] as String?,
+        number: (record['number'] as num?)?.toInt(),
+        position: record['position'] as String?,
+        photoPath: record['photo'] as String?,
+        birthdate: DateTime.tryParse((record['birthdate'] as String?) ?? ''),
+        status: statusRaw == null ? null : PlayerStatus.fromKey(statusRaw),
+        captainRole: captainRaw == null
+            ? null
+            : CaptainRole.fromKey(captainRaw),
+        active: activeRaw is bool
+            ? activeRaw
+            : (activeRaw is num ? activeRaw != 0 : null),
+        nickname: record['nickname'] as String?,
+        positions: positionsRaw
+            ?.split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList(),
+        wishPosition: record['wish_position'] as String?,
+        staffRole: record['staff_role'] as String?,
+        suspendedGames: (record['suspended_games'] as num?)?.toInt(),
+        suspensionCompetition: record['suspension_competition'] as String?,
+        clearSuspensionCompetition:
+            record.containsKey('suspension_competition') &&
+            record['suspension_competition'] == null,
+        suspensionFrom: DateTime.tryParse(
+          record['suspension_from'] as String? ?? '',
+        ),
+        clearSuspensionFrom:
+            record.containsKey('suspension_from') &&
+            record['suspension_from'] == null,
+        source: record['source'] != null
+            ? DataSource.fromKey(record['source'] as String?)
+            : null,
+      ),
+    );
   }
 
-  GameMatch _matchFromCloud(Map<String, dynamic> m, String teamId, DateTime now) {
+  GameMatch _matchFromCloud(
+    Map<String, dynamic> m,
+    String teamId,
+    DateTime now,
+  ) {
     final kickoffStr = m['kickoff'] as String?;
     final oppTeamId = m['opponent_team_id'] as String?;
     return GameMatch(
@@ -1058,8 +1158,9 @@ class AppState extends ChangeNotifier {
       opponentTeamId: oppTeamId,
       // Verknüpfter Gegner → Kader liegt (geteilt) vor, kein „manuell"-Hinweis.
       opponentImported: oppTeamId != null,
-      kickoff:
-          kickoffStr == null ? null : DateTime.tryParse(kickoffStr)?.toLocal(),
+      kickoff: kickoffStr == null
+          ? null
+          : DateTime.tryParse(kickoffStr)?.toLocal(),
       venue: (m['venue'] == 'Auswärts') ? Venue.away : Venue.home,
       ownScore: (m['own_score'] as num?)?.toInt() ?? 0,
       opponentScore: (m['opponent_score'] as num?)?.toInt() ?? 0,
@@ -1077,7 +1178,10 @@ class AppState extends ChangeNotifier {
   /// – ein reines Status-/Ergebnis-Update aus der Cloud trägt diese meist nicht
   /// mit, sonst „verschwindet" z.B. das Gegner-Logo.
   Future<void> _applyCloudMatch(
-      Map<String, dynamic> record, String teamId, DateTime now) async {
+    Map<String, dynamic> record,
+    String teamId,
+    DateTime now,
+  ) async {
     final cm = _matchFromCloud(record, teamId, now);
     final existing = await _repo.getMatch(cm.id);
     // Wechsel auf „live" (von einem anderen Gerät) → Info-Benachrichtigung.
@@ -1127,7 +1231,7 @@ class AppState extends ChangeNotifier {
       final players = await _repo.getPlayers(team.id);
       final roster = [
         for (final p in players.where((p) => !p.isStaffOnly))
-          _playerCloudMap(p)
+          _playerCloudMap(p),
       ];
       await CloudService.uploadRoster(cloudTeam, roster);
       final matchRows = [
@@ -1145,7 +1249,7 @@ class AppState extends ChangeNotifier {
             'status': m.status.storageKey,
             'locally_managed': m.locallyManaged,
             'fupa_match_slug': m.fupaMatchSlug,
-          }
+          },
       ];
       await CloudService.upsertMatches(matchRows);
       // Eigenes Logo + Name + FuPa-Link am Cloud-Team aktualisieren.
@@ -1173,7 +1277,7 @@ class AppState extends ChangeNotifier {
             'red_cards': s.redCards,
             'minutes': s.minutes,
             'top_eleven': s.topEleven,
-          }
+          },
       ]);
     } catch (_) {
       // Offline / keine Trainer-Rechte – lokaler Stand bleibt gültig.
@@ -1181,7 +1285,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// Lädt alles für das bereits verbundene Team erneut.
-  Future<ConnectSummary> resyncOwnTeam({void Function(String)? onProgress}) async {
+  Future<ConnectSummary> resyncOwnTeam({
+    void Function(String)? onProgress,
+  }) async {
     final url = _ownTeam?.fupaUrl;
     if (url == null || url.isEmpty) {
       throw StateError('Kein verbundenes Team mit FuPa-Link.');
@@ -1214,9 +1320,8 @@ class AppState extends ChangeNotifier {
     final seen = <String>{};
     final out = <ScheduledMatchData>[];
     for (final m in [...teamMatches, ...leagueMatches]) {
-      final day = m.kickoff?.toIso8601String().substring(0, 10) ??
-          m.externalId ??
-          '';
+      final day =
+          m.kickoff?.toIso8601String().substring(0, 10) ?? m.externalId ?? '';
       final key = '${m.opponentName.trim().toLowerCase()}|$day';
       if (seen.add(key)) out.add(m);
     }
@@ -1266,21 +1371,23 @@ class AppState extends ChangeNotifier {
   Future<int> _importStatsInto(String teamId, String url) async {
     final data = await _importer.importStats(url);
     final stats = data
-        .map((d) => PlayerStat(
-              id: _uuid.v4(),
-              teamId: teamId,
-              externalId: d.externalId,
-              firstName: d.firstName,
-              lastName: d.lastName,
-              matches: d.matches,
-              goals: d.goals,
-              assists: d.assists,
-              yellowCards: d.yellowCards,
-              yellowRedCards: d.yellowRedCards,
-              redCards: d.redCards,
-              minutes: d.minutes,
-              topEleven: d.topEleven,
-            ))
+        .map(
+          (d) => PlayerStat(
+            id: _uuid.v4(),
+            teamId: teamId,
+            externalId: d.externalId,
+            firstName: d.firstName,
+            lastName: d.lastName,
+            matches: d.matches,
+            goals: d.goals,
+            assists: d.assists,
+            yellowCards: d.yellowCards,
+            yellowRedCards: d.yellowRedCards,
+            redCards: d.redCards,
+            minutes: d.minutes,
+            topEleven: d.topEleven,
+          ),
+        )
         .toList();
     await _repo.replaceStats(teamId, stats);
     return stats.length;
@@ -1329,7 +1436,7 @@ class AppState extends ChangeNotifier {
             'red_cards': s.redCards,
             'minutes': s.minutes,
             'top_eleven': s.topEleven,
-          }
+          },
       ]);
     } catch (_) {}
   }
@@ -1352,7 +1459,11 @@ class AppState extends ChangeNotifier {
     return _ownTeam!;
   }
 
-  Future<void> renameTeam(String teamId, String name, {String? shortName}) async {
+  Future<void> renameTeam(
+    String teamId,
+    String name, {
+    String? shortName,
+  }) async {
     final t = await _repo.getTeam(teamId);
     if (t == null) return;
     await _repo.upsertTeam(t.copyWith(name: name, shortName: shortName));
@@ -1363,8 +1474,10 @@ class AppState extends ChangeNotifier {
         CloudService.ready &&
         CloudService.signedIn) {
       try {
-        await CloudService.updateTeam(
-            teamId, {'name': name, 'short_name': shortName});
+        await CloudService.updateTeam(teamId, {
+          'name': name,
+          'short_name': shortName,
+        });
       } catch (_) {}
     }
   }
@@ -1378,11 +1491,15 @@ class AppState extends ChangeNotifier {
   }) async {
     final t = await _repo.getTeam(teamId);
     if (t == null) return;
-    await _repo.upsertTeam(t.copyWith(
-      name: (name != null && name.isNotEmpty) ? name : null,
-      shortName: (shortName != null && shortName.isNotEmpty) ? shortName : null,
-      logoPath: (logoPath != null && logoPath.isNotEmpty) ? logoPath : null,
-    ));
+    await _repo.upsertTeam(
+      t.copyWith(
+        name: (name != null && name.isNotEmpty) ? name : null,
+        shortName: (shortName != null && shortName.isNotEmpty)
+            ? shortName
+            : null,
+        logoPath: (logoPath != null && logoPath.isNotEmpty) ? logoPath : null,
+      ),
+    );
     await _reload();
     notifyListeners();
   }
@@ -1443,8 +1560,9 @@ class AppState extends ChangeNotifier {
   /// Abwesenheit) das „bis"-Datum und ein optionaler Grund. Für die
   /// Status-Ansicht in der Statistik.
   Future<List<PlayerStatusInfo>> squadStatus(String teamId) async {
-    final players =
-        (await _repo.getPlayers(teamId)).where((p) => !p.isStaffOnly).toList();
+    final players = (await _repo.getPlayers(
+      teamId,
+    )).where((p) => !p.isStaffOnly).toList();
     final out = <PlayerStatusInfo>[];
     for (final p in players) {
       DateTime? until;
@@ -1472,15 +1590,17 @@ class AppState extends ChangeNotifier {
     required DateTime until,
     String? note,
   }) async {
-    await _repo.upsertAbsence(PlayerAbsence(
-      id: _uuid.v4(),
-      playerId: player.id,
-      status: status,
-      from: from,
-      until: until,
-      note: note,
-      createdAt: DateTime.now(),
-    ));
+    await _repo.upsertAbsence(
+      PlayerAbsence(
+        id: _uuid.v4(),
+        playerId: player.id,
+        status: status,
+        from: from,
+        until: until,
+        note: note,
+        createdAt: DateTime.now(),
+      ),
+    );
     await updatePlayer(player.copyWith(status: status));
   }
 
@@ -1511,28 +1631,31 @@ class AppState extends ChangeNotifier {
   /// FuPa-Gelben absteigend.
   Future<List<PlayerCardSummary>> cardSummaries(String teamId) async {
     await ensureOwnStats(teamId);
-    final players =
-        (await _repo.getPlayers(teamId)).where((p) => !p.isStaffOnly).toList();
+    final players = (await _repo.getPlayers(
+      teamId,
+    )).where((p) => !p.isStaffOnly).toList();
     final stats = await _repo.getStats(teamId);
     final byKey = <String, PlayerStat>{
       for (final s in stats)
         '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}':
-            s
+            s,
     };
     final out = <PlayerCardSummary>[];
     for (final p in players) {
       final stat = byKey[p.dedupKey];
       final cards = await _repo.getCards(p.id);
       int own(CardType t) => cards.where((c) => c.type == t).length;
-      out.add(PlayerCardSummary(
-        player: p,
-        fupaYellow: stat?.yellowCards ?? 0,
-        fupaYellowRed: stat?.yellowRedCards ?? 0,
-        fupaRed: stat?.redCards ?? 0,
-        ownYellow: own(CardType.yellow),
-        ownYellowRed: own(CardType.yellowRed),
-        ownRed: own(CardType.red),
-      ));
+      out.add(
+        PlayerCardSummary(
+          player: p,
+          fupaYellow: stat?.yellowCards ?? 0,
+          fupaYellowRed: stat?.yellowRedCards ?? 0,
+          fupaRed: stat?.redCards ?? 0,
+          ownYellow: own(CardType.yellow),
+          ownYellowRed: own(CardType.yellowRed),
+          ownRed: own(CardType.red),
+        ),
+      );
     }
     out.sort((a, b) {
       final sa = a.player.suspendedGames > 0 ? 1 : 0;
@@ -1546,14 +1669,19 @@ class AppState extends ChangeNotifier {
   /// Setzt/ändert die Sperre eines Spielers: Anzahl Spiele, Wettbewerb und
   /// Startdatum. games == 0 hebt die Sperre auf (löscht Wettbewerb/Datum).
   /// Spiegelt auch in die Cloud (über updatePlayer).
-  Future<void> setSuspension(Player p,
-      {required int games, String? competition, DateTime? from}) async {
+  Future<void> setSuspension(
+    Player p, {
+    required int games,
+    String? competition,
+    DateTime? from,
+  }) async {
     final g = games < 0 ? 0 : games;
     final updated = g == 0
         ? p.copyWith(
             suspendedGames: 0,
             clearSuspensionCompetition: true,
-            clearSuspensionFrom: true)
+            clearSuspensionFrom: true,
+          )
         : p.copyWith(
             suspendedGames: g,
             suspensionCompetition: competition,
@@ -1565,11 +1693,12 @@ class AppState extends ChangeNotifier {
   }
 
   /// Anzahl noch abzusitzender Spiele ändern, Wettbewerb/Startdatum behalten.
-  Future<void> setSuspendedGames(Player p, int games) =>
-      setSuspension(p,
-          games: games,
-          competition: p.suspensionCompetition,
-          from: p.suspensionFrom);
+  Future<void> setSuspendedGames(Player p, int games) => setSuspension(
+    p,
+    games: games,
+    competition: p.suspensionCompetition,
+    from: p.suspensionFrom,
+  );
 
   /// Vorkommende Wettbewerbe im Spielplan (für die Sperren-Auswahl).
   List<String> competitionsInSchedule() {
@@ -1588,14 +1717,17 @@ class AppState extends ChangeNotifier {
     if (p.suspendedGames <= 0) return const [];
     final from = p.suspensionFrom;
     final comp = p.suspensionCompetition;
-    final list = _matches
-        .where((m) =>
-            m.status == MatchStatus.scheduled &&
-            m.kickoff != null &&
-            (comp == null || m.competition == comp) &&
-            (from == null || !m.kickoff!.isBefore(from)))
-        .toList()
-      ..sort((a, b) => a.kickoff!.compareTo(b.kickoff!));
+    final list =
+        _matches
+            .where(
+              (m) =>
+                  m.status == MatchStatus.scheduled &&
+                  m.kickoff != null &&
+                  (comp == null || m.competition == comp) &&
+                  (from == null || !m.kickoff!.isBefore(from)),
+            )
+            .toList()
+          ..sort((a, b) => a.kickoff!.compareTo(b.kickoff!));
     return list.take(p.suspendedGames).toList();
   }
 
@@ -1652,11 +1784,12 @@ class AppState extends ChangeNotifier {
   /// (gleiche Dedup-Regeln wie der FuPa-Import). Gibt die Anzahl NEU
   /// angelegter Spieler zurück.
   Future<int> importPastedPlayers(
-      String teamId, List<PlayerData> players) async {
+    String teamId,
+    List<PlayerData> players,
+  ) async {
     if (players.isEmpty) return 0;
     final persist = FupaPersistence(_repo);
-    final added =
-        await persist.syncPlayers(teamId, players, DataSource.manual);
+    final added = await persist.syncPlayers(teamId, players, DataSource.manual);
     await _reload();
     notifyListeners();
     return added;
@@ -1713,7 +1846,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveMatchShareInfo(
-      String matchId, Map<String, String> info) async {
+    String matchId,
+    Map<String, String> info,
+  ) async {
     await _repo.setSetting('share_info_$matchId', jsonEncode(info));
   }
 
@@ -1736,7 +1871,10 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setMatchNumber(
-      String matchId, String playerId, int? number) async {
+    String matchId,
+    String playerId,
+    int? number,
+  ) async {
     final map = await matchNumbers(matchId);
     if (number == null) {
       map.remove(playerId);
@@ -1761,7 +1899,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveMatchAnnouncement(
-      String matchId, Map<String, String> info) async {
+    String matchId,
+    Map<String, String> info,
+  ) async {
     await _repo.setSetting('announce_$matchId', jsonEncode(info));
   }
 
@@ -1773,35 +1913,45 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setNomination(
-      String matchId, String playerId, NominationStatus status) async {
+    String matchId,
+    String playerId,
+    NominationStatus status,
+  ) async {
     if (status == NominationStatus.open) {
       await _repo.deleteNomination(matchId, playerId);
     } else {
-      await _repo.upsertNomination(Nomination(
-        id: _uuid.v4(),
-        matchId: matchId,
-        playerId: playerId,
-        status: status,
-        updatedAt: DateTime.now(),
-      ));
+      await _repo.upsertNomination(
+        Nomination(
+          id: _uuid.v4(),
+          matchId: matchId,
+          playerId: playerId,
+          status: status,
+          updatedAt: DateTime.now(),
+        ),
+      );
     }
     notifyListeners();
   }
 
   /// Setzt für mehrere Spieler denselben Status (Bulk, z.B. „alle zusagen").
   Future<void> setNominationBulk(
-      String matchId, List<String> playerIds, NominationStatus status) async {
+    String matchId,
+    List<String> playerIds,
+    NominationStatus status,
+  ) async {
     for (final id in playerIds) {
       if (status == NominationStatus.open) {
         await _repo.deleteNomination(matchId, id);
       } else {
-        await _repo.upsertNomination(Nomination(
-          id: _uuid.v4(),
-          matchId: matchId,
-          playerId: id,
-          status: status,
-          updatedAt: DateTime.now(),
-        ));
+        await _repo.upsertNomination(
+          Nomination(
+            id: _uuid.v4(),
+            matchId: matchId,
+            playerId: id,
+            status: status,
+            updatedAt: DateTime.now(),
+          ),
+        );
       }
     }
     notifyListeners();
@@ -1809,8 +1959,10 @@ class AppState extends ChangeNotifier {
 
   /// Wird beim Öffnen eines Spiels aufgerufen (Gegner sicherstellen).
   Future<ImportResult> openMatch(GameMatch match, {bool force = false}) async {
-    final result =
-        await opponentSync.ensureOpponentForMatch(match, force: force);
+    final result = await opponentSync.ensureOpponentForMatch(
+      match,
+      force: force,
+    );
     // Bei frischem Gegner-Import auch die Torschützen-Statistik laden,
     // damit das Scouting die Toranzahl zeigen und Torjäger markieren kann.
     if (result.status == ImportStatus.success) {
@@ -1836,16 +1988,21 @@ class AppState extends ChangeNotifier {
   /// Die EIGENE Aufstellung des Trainers für ein Spiel – vorhanden, sonst eine
   /// unbesitzte (Alt-)Aufstellung übernehmen, sonst neu anlegen. Jeder Trainer
   /// hat seine eigene; genau eine kann freigegeben werden.
-  Future<Lineup> ensureLineup(String matchId, String teamId,
-      {String formation = '4-4-2'}) async {
+  Future<Lineup> ensureLineup(
+    String matchId,
+    String teamId, {
+    String formation = '4-4-2',
+  }) async {
     final me = _me;
     final mine = await _repo.getMyLineup(matchId, teamId, me);
     if (mine != null) return mine;
     // Alt-/unbesitzte Aufstellung als eigene übernehmen (Migration/Altbestand).
     final unowned = await _repo.getUnownedLineup(matchId, teamId);
     if (unowned != null) {
-      final claimed =
-          unowned.copyWith(createdBy: me, creatorName: CloudService.myName);
+      final claimed = unowned.copyWith(
+        createdBy: me,
+        creatorName: CloudService.myName,
+      );
       await _repo.upsertLineup(claimed);
       return claimed;
     }
@@ -1876,7 +2033,8 @@ class AppState extends ChangeNotifier {
   }
 
   /// Ist dieser Trainer der Ersteller der Aufstellung? (darf sie bearbeiten)
-  bool isMyLineup(Lineup l) => (l.createdBy ?? '') == _me || l.createdBy == null;
+  bool isMyLineup(Lineup l) =>
+      (l.createdBy ?? '') == _me || l.createdBy == null;
 
   /// Vorschläge zu einer Aufstellung.
   Future<List<Lineup>> suggestionsFor(String lineupId) =>
@@ -1912,7 +2070,7 @@ class AppState extends ChangeNotifier {
           orderIndex: e.orderIndex,
           posX: e.posX,
           posY: e.posY,
-        )
+        ),
     ];
     await _repo.replaceLineupEntries(sugg.id, copies);
     notifyListeners();
@@ -1938,7 +2096,7 @@ class AppState extends ChangeNotifier {
           orderIndex: e.orderIndex,
           posX: e.posX,
           posY: e.posY,
-        )
+        ),
     ];
     await _repo.upsertLineup(orig.copyWith(formation: suggestion.formation));
     await _repo.replaceLineupEntries(orig.id, copies);
@@ -2004,17 +2162,19 @@ class AppState extends ChangeNotifier {
     final cardType = CardType.fromEvent(type);
     if (cardType != null && playerId != null) {
       final match = await _repo.getMatch(matchId);
-      await _repo.upsertCard(CardEntry(
-        id: _uuid.v4(),
-        playerId: playerId,
-        type: cardType,
-        date: match?.kickoff ?? DateTime.now(),
-        matchId: matchId,
-        matchEventId: eventId,
-        minute: minute,
-        minuteExtra: minuteExtra,
-        note: note,
-      ));
+      await _repo.upsertCard(
+        CardEntry(
+          id: _uuid.v4(),
+          playerId: playerId,
+          type: cardType,
+          date: match?.kickoff ?? DateTime.now(),
+          matchId: matchId,
+          matchEventId: eventId,
+          minute: minute,
+          minuteExtra: minuteExtra,
+          note: note,
+        ),
+      );
     }
 
     await _recomputeScore(matchId);
@@ -2111,15 +2271,17 @@ class AppState extends ChangeNotifier {
     int? minute,
     String? note,
   }) async {
-    await _repo.upsertCard(CardEntry(
-      id: _uuid.v4(),
-      playerId: playerId,
-      type: type,
-      date: date,
-      matchId: matchId,
-      minute: minute,
-      note: note,
-    ));
+    await _repo.upsertCard(
+      CardEntry(
+        id: _uuid.v4(),
+        playerId: playerId,
+        type: type,
+        date: date,
+        matchId: matchId,
+        minute: minute,
+        note: note,
+      ),
+    );
     notifyListeners();
   }
 
@@ -2136,16 +2298,22 @@ class AppState extends ChangeNotifier {
   // ------------------------------------------------------------- Player notes
   Future<List<PlayerNote>> notesOf(String playerId) => _repo.getNotes(playerId);
 
-  Future<void> addNote(String playerId, String text,
-      {String? categoryId, String? matchId}) async {
-    await _repo.upsertNote(PlayerNote(
-      id: _uuid.v4(),
-      playerId: playerId,
-      text: text.trim(),
-      createdAt: DateTime.now(),
-      categoryId: categoryId,
-      matchId: matchId,
-    ));
+  Future<void> addNote(
+    String playerId,
+    String text, {
+    String? categoryId,
+    String? matchId,
+  }) async {
+    await _repo.upsertNote(
+      PlayerNote(
+        id: _uuid.v4(),
+        playerId: playerId,
+        text: text.trim(),
+        createdAt: DateTime.now(),
+        categoryId: categoryId,
+        matchId: matchId,
+      ),
+    );
     notifyListeners();
   }
 
@@ -2164,11 +2332,13 @@ class AppState extends ChangeNotifier {
 
   Future<void> addNoteCategory(String name) async {
     final existing = await _repo.getNoteCategories();
-    await _repo.upsertNoteCategory(NoteCategory(
-      id: _uuid.v4(),
-      name: name.trim(),
-      sortOrder: existing.length,
-    ));
+    await _repo.upsertNoteCategory(
+      NoteCategory(
+        id: _uuid.v4(),
+        name: name.trim(),
+        sortOrder: existing.length,
+      ),
+    );
     notifyListeners();
   }
 
@@ -2230,17 +2400,22 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> setEventAttendance(
-      String eventId, String playerId, NominationStatus status) async {
+    String eventId,
+    String playerId,
+    NominationStatus status,
+  ) async {
     if (status == NominationStatus.open) {
       await _repo.deleteEventAttendance(eventId, playerId);
     } else {
-      await _repo.upsertEventAttendance(EventAttendance(
-        id: _uuid.v4(),
-        eventId: eventId,
-        playerId: playerId,
-        status: status,
-        updatedAt: DateTime.now(),
-      ));
+      await _repo.upsertEventAttendance(
+        EventAttendance(
+          id: _uuid.v4(),
+          eventId: eventId,
+          playerId: playerId,
+          status: status,
+          updatedAt: DateTime.now(),
+        ),
+      );
     }
     notifyListeners();
   }
@@ -2271,16 +2446,18 @@ class AppState extends ChangeNotifier {
       await _repo.resetMatchEvents(matchId);
       final match = await _repo.getMatch(matchId);
       if (match != null) {
-        await _repo.upsertMatch(match.copyWith(
-          status: MatchStatus.scheduled,
-          ownScore: 0,
-          opponentScore: 0,
-          // Ab jetzt selbst verwaltet – FuPa setzt das Spiel nicht wieder
-          // auf „beendet" (sonst käme es sofort zurück ins Nachholen).
-          locallyManaged: true,
-          // Live-Steuerung freigeben.
-          clearController: true,
-        ));
+        await _repo.upsertMatch(
+          match.copyWith(
+            status: MatchStatus.scheduled,
+            ownScore: 0,
+            opponentScore: 0,
+            // Ab jetzt selbst verwaltet – FuPa setzt das Spiel nicht wieder
+            // auf „beendet" (sonst käme es sofort zurück ins Nachholen).
+            locallyManaged: true,
+            // Live-Steuerung freigeben.
+            clearController: true,
+          ),
+        );
       }
       // Cloud: Ereignisse + zugehörige Karten dieses Spiels leeren, Stand 0:0.
       if (_activeCloudTeamId != null &&
@@ -2341,12 +2518,14 @@ class AppState extends ChangeNotifier {
         match.liveController == null || match.liveController!.isEmpty;
     final becomeController = status == MatchStatus.live && noController;
     final releaseController = status == MatchStatus.finished;
-    await _repo.upsertMatch(match.copyWith(
-      status: status,
-      liveController: becomeController ? CloudService.userId : null,
-      liveControllerName: becomeController ? CloudService.myName : null,
-      clearController: releaseController,
-    ));
+    await _repo.upsertMatch(
+      match.copyWith(
+        status: status,
+        liveController: becomeController ? CloudService.userId : null,
+        liveControllerName: becomeController ? CloudService.myName : null,
+        clearController: releaseController,
+      ),
+    );
     await _reload();
     notifyListeners();
     // Status (z.B. „live"/„beendet") + Controller teilen, damit das Live-Spiel
@@ -2367,7 +2546,10 @@ class AppState extends ChangeNotifier {
       // geschlossener App) über die Edge-Function.
       if (status == MatchStatus.live && match.status != MatchStatus.live) {
         CloudService.notifyLive(
-            _activeCloudTeamId!, matchId, match.opponentName);
+          _activeCloudTeamId!,
+          matchId,
+          match.opponentName,
+        );
       }
     }
   }
@@ -2377,10 +2559,12 @@ class AppState extends ChangeNotifier {
   Future<void> takeOverLiveControl(String matchId) async {
     final match = await _repo.getMatch(matchId);
     if (match == null) return;
-    await _repo.upsertMatch(match.copyWith(
-      liveController: CloudService.userId,
-      liveControllerName: CloudService.myName,
-    ));
+    await _repo.upsertMatch(
+      match.copyWith(
+        liveController: CloudService.userId,
+        liveControllerName: CloudService.myName,
+      ),
+    );
     await _reload();
     notifyListeners();
     if (_activeCloudTeamId != null &&
@@ -2406,7 +2590,7 @@ class AppState extends ChangeNotifier {
     final list = await _repo.getRatings(matchId);
     return {
       for (final r in list)
-        if ((r.userId ?? '') == me) r.playerId: r
+        if ((r.userId ?? '') == me) r.playerId: r,
     };
   }
 
@@ -2427,15 +2611,17 @@ class AppState extends ChangeNotifier {
     final prior = existing
         .where((r) => r.playerId == playerId && (r.userId ?? '') == me)
         .firstOrNull;
-    await _repo.upsertRating(PlayerRating(
-      id: prior?.id ?? _uuid.v4(),
-      matchId: matchId,
-      playerId: playerId,
-      userId: me,
-      rating: rating,
-      note: note ?? (keepNote ? prior?.note : null),
-      createdAt: prior?.createdAt ?? DateTime.now(),
-    ));
+    await _repo.upsertRating(
+      PlayerRating(
+        id: prior?.id ?? _uuid.v4(),
+        matchId: matchId,
+        playerId: playerId,
+        userId: me,
+        rating: rating,
+        note: note ?? (keepNote ? prior?.note : null),
+        createdAt: prior?.createdAt ?? DateTime.now(),
+      ),
+    );
     notifyListeners();
   }
 
@@ -2443,8 +2629,9 @@ class AppState extends ChangeNotifier {
   Future<void> removeRating(String matchId, String playerId) async {
     final me = _me;
     final existing = await _repo.getRatings(matchId);
-    for (final r in existing
-        .where((r) => r.playerId == playerId && (r.userId ?? '') == me)) {
+    for (final r in existing.where(
+      (r) => r.playerId == playerId && (r.userId ?? '') == me,
+    )) {
       await _repo.deleteRating(r.id);
     }
     notifyListeners();
@@ -2461,9 +2648,12 @@ class AppState extends ChangeNotifier {
   /// Monats-Rangliste: bewertete Spieler nach Schnitt (dann Anzahl), danach die
   /// übrigen Kaderspieler ohne Bewertung. avg == null = keine Bewertung.
   Future<List<(Player, double?, int)>> monthRanking(
-      String teamId, String yearMonth) async {
-    final players =
-        (await playersOf(teamId)).where((p) => !p.isStaffOnly).toList();
+    String teamId,
+    String yearMonth,
+  ) async {
+    final players = (await playersOf(
+      teamId,
+    )).where((p) => !p.isStaffOnly).toList();
     final avgs = await _repo.ratingAveragesForTeamInMonth(teamId, yearMonth);
     final rated = <(Player, double?, int)>[];
     final unrated = <(Player, double?, int)>[];
@@ -2480,7 +2670,8 @@ class AppState extends ChangeNotifier {
       return c != 0 ? c : y.$3.compareTo(x.$3);
     });
     unrated.sort(
-        (x, y) => (x.$1.number ?? 9999).compareTo(y.$1.number ?? 9999));
+      (x, y) => (x.$1.number ?? 9999).compareTo(y.$1.number ?? 9999),
+    );
     return [...rated, ...unrated];
   }
 
@@ -2495,12 +2686,14 @@ class AppState extends ChangeNotifier {
 
   Future<void> honorPlayerOfMonth(String yearMonth, String playerId) async {
     final existing = await honoredOf(yearMonth);
-    await _repo.upsertPlayerOfMonth(PlayerOfMonth(
-      id: existing?.id ?? _uuid.v4(),
-      yearMonth: yearMonth,
-      playerId: playerId,
-      createdAt: existing?.createdAt ?? DateTime.now(),
-    ));
+    await _repo.upsertPlayerOfMonth(
+      PlayerOfMonth(
+        id: existing?.id ?? _uuid.v4(),
+        yearMonth: yearMonth,
+        playerId: playerId,
+        createdAt: existing?.createdAt ?? DateTime.now(),
+      ),
+    );
     notifyListeners();
   }
 
@@ -2517,15 +2710,20 @@ class AppState extends ChangeNotifier {
   MatchRating _baseMatchRating(String matchId, MatchRating? mine) =>
       mine ??
       MatchRating(
-          id: _uuid.v4(),
-          matchId: matchId,
-          userId: _me,
-          createdAt: DateTime.now());
+        id: _uuid.v4(),
+        matchId: matchId,
+        userId: _me,
+        createdAt: DateTime.now(),
+      );
 
   Future<void> setMatchRating(String matchId, double? rating) async {
     final mine = await myMatchRating(matchId);
-    await _repo.upsertMatchRating(_baseMatchRating(matchId, mine)
-        .copyWith(userId: _me, rating: rating, clearRating: rating == null));
+    await _repo.upsertMatchRating(
+      _baseMatchRating(
+        matchId,
+        mine,
+      ).copyWith(userId: _me, rating: rating, clearRating: rating == null),
+    );
     notifyListeners();
   }
 
@@ -2533,8 +2731,12 @@ class AppState extends ChangeNotifier {
   /// Spiel-Gesamtnote. Die (geteilten) Spielerbewertungen bleiben unberührt.
   Future<void> setAbstain(String matchId, bool abstained) async {
     final mine = await myMatchRating(matchId);
-    await _repo.upsertMatchRating(_baseMatchRating(matchId, mine)
-        .copyWith(userId: _me, abstained: abstained));
+    await _repo.upsertMatchRating(
+      _baseMatchRating(
+        matchId,
+        mine,
+      ).copyWith(userId: _me, abstained: abstained),
+    );
     notifyListeners();
   }
 
@@ -2543,8 +2745,9 @@ class AppState extends ChangeNotifier {
     final list = await _repo.getMatchRatings(matchId);
     final notes = list.where((r) => r.rating != null).map((r) => r.rating!);
     final abs = list.where((r) => r.abstained).length;
-    final avg =
-        notes.isEmpty ? null : notes.reduce((a, b) => a + b) / notes.length;
+    final avg = notes.isEmpty
+        ? null
+        : notes.reduce((a, b) => a + b) / notes.length;
     return (avg, notes.length, abs);
   }
 
@@ -2602,15 +2805,17 @@ class AppState extends ChangeNotifier {
       for (final m in await _repo.getMatches(own.id)) {
         for (final r in await _repo.getRatings(m.id)) {
           if ((r.userId ?? '') != me) continue;
-          await CloudService.upsertRow(
-              'player_ratings', {...r.toMap(), 'team_id': team},
-              onConflict: 'match_id,player_id,user_id').catchError((_) {});
+          await CloudService.upsertRow('player_ratings', {
+            ...r.toMap(),
+            'team_id': team,
+          }, onConflict: 'match_id,player_id,user_id').catchError((_) {});
         }
         for (final r in await _repo.getMatchRatings(m.id)) {
           if ((r.userId ?? '') != me) continue;
-          await CloudService.upsertRow(
-              'match_ratings', {...r.toMap(), 'team_id': team},
-              onConflict: 'match_id,user_id').catchError((_) {});
+          await CloudService.upsertRow('match_ratings', {
+            ...r.toMap(),
+            'team_id': team,
+          }, onConflict: 'match_id,user_id').catchError((_) {});
         }
       }
     } catch (_) {}
@@ -2618,9 +2823,12 @@ class AppState extends ChangeNotifier {
 
   /// Schnitt + Anzahl eines Spielers in einem Monat (YYYY-MM). Ohne Monat wird
   /// der laufende Kalendermonat genommen.
-  Future<(double?, int)> ratingAverageInMonth(String playerId,
-      [String? yearMonth]) {
-    final ym = yearMonth ??
+  Future<(double?, int)> ratingAverageInMonth(
+    String playerId, [
+    String? yearMonth,
+  ]) {
+    final ym =
+        yearMonth ??
         '${DateTime.now().year.toString().padLeft(4, '0')}-'
             '${DateTime.now().month.toString().padLeft(2, '0')}';
     return _repo.ratingAverageInMonth(playerId, ym);
@@ -2636,10 +2844,15 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, Set<ScoutMarker>>> scoutMarkersForTeam(
-      String teamId) async {
+    String teamId,
+  ) async {
     final raw = await _repo.markersForTeam(teamId);
-    return raw.map((pid, keys) => MapEntry(
-        pid, keys.map(ScoutMarker.fromKey).whereType<ScoutMarker>().toSet()));
+    return raw.map(
+      (pid, keys) => MapEntry(
+        pid,
+        keys.map(ScoutMarker.fromKey).whereType<ScoutMarker>().toSet(),
+      ),
+    );
   }
 
   /// Kommentare je Spieler eines Teams (playerId -> neuester Text).
@@ -2648,7 +2861,9 @@ class AppState extends ChangeNotifier {
 
   /// Liga-Tabelle (komplett) + Platz + Form (letzte 5) des Gegners.
   Future<(StandingRow?, List<FormMatch>, List<StandingRow>)> opponentAnalysis(
-      String ownTeamId, String opponentTeamId) async {
+    String ownTeamId,
+    String opponentTeamId,
+  ) async {
     final opp = await _repo.getTeam(opponentTeamId);
     final oppSlug = FupaReduxImporter.teamSlugFromUrl(opp?.fupaUrl);
     const empty = (null, <FormMatch>[], <StandingRow>[]);
@@ -2685,7 +2900,9 @@ class AppState extends ChangeNotifier {
   }
 
   /// Komplette Liga-Tabelle + die Zeile unseres Teams (für die Statistik).
-  Future<(StandingRow?, List<StandingRow>)> leagueTable(String ownTeamId) async {
+  Future<(StandingRow?, List<StandingRow>)> leagueTable(
+    String ownTeamId,
+  ) async {
     final own = await _repo.getTeam(ownTeamId);
     final ownSlug = FupaReduxImporter.teamSlugFromUrl(own?.fupaUrl);
     const empty = (null, <StandingRow>[]);
@@ -2723,7 +2940,9 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> saveMaterialDutyConfig(
-      String teamId, MaterialDutyConfig config) async {
+    String teamId,
+    MaterialDutyConfig config,
+  ) async {
     await _repo.setSetting('material_duty_$teamId', config.encode());
     notifyListeners();
     // Materialdienst teilen, wenn dies das aktive Cloud-Team ist.
@@ -2731,22 +2950,27 @@ class AppState extends ChangeNotifier {
         CloudService.ready &&
         CloudService.signedIn) {
       try {
-        await CloudService.updateTeam(teamId, {'material_duty': config.encode()});
+        await CloudService.updateTeam(teamId, {
+          'material_duty': config.encode(),
+        });
       } catch (_) {}
     }
   }
 
   /// Urlaube der Team-Spieler (aus den „Urlaub"-Abwesenheiten) als Zeiträume.
   Future<List<DutyVacation>> materialDutyVacations(String teamId) async {
-    final abs =
-        await _repo.absencesForTeam(teamId, status: PlayerStatus.urlaub);
-    return abs
-        .map((a) => DutyVacation(a.playerId, a.from, a.until))
-        .toList();
+    final abs = await _repo.absencesForTeam(
+      teamId,
+      status: PlayerStatus.urlaub,
+    );
+    return abs.map((a) => DutyVacation(a.playerId, a.from, a.until)).toList();
   }
 
   Future<void> toggleScoutMarker(
-      String playerId, ScoutMarker m, bool on) async {
+    String playerId,
+    ScoutMarker m,
+    bool on,
+  ) async {
     if (on) {
       await _repo.setMarker(playerId, m.storageKey);
     } else {
@@ -2770,13 +2994,16 @@ class AppState extends ChangeNotifier {
       }
     } else {
       final id = existing.isNotEmpty ? existing.first.id : _uuid.v4();
-      await _repo.upsertNote(PlayerNote(
-        id: id,
-        playerId: playerId,
-        text: t,
-        createdAt:
-            existing.isNotEmpty ? existing.first.createdAt : DateTime.now(),
-      ));
+      await _repo.upsertNote(
+        PlayerNote(
+          id: id,
+          playerId: playerId,
+          text: t,
+          createdAt: existing.isNotEmpty
+              ? existing.first.createdAt
+              : DateTime.now(),
+        ),
+      );
       // Nur ein Kommentar behalten – ältere Einträge entfernen.
       for (final n in existing.skip(1)) {
         await _repo.deleteNote(n.id);
@@ -2810,14 +3037,16 @@ class AppState extends ChangeNotifier {
   }) async {
     final t = text.trim();
     if (t.isEmpty) return;
-    await _repo.upsertTodo(Todo(
-      id: _uuid.v4(),
-      text: t,
-      createdAt: DateTime.now(),
-      dueDate: dueDate,
-      topicId: topicId,
-      responsible: responsible,
-    ));
+    await _repo.upsertTodo(
+      Todo(
+        id: _uuid.v4(),
+        text: t,
+        createdAt: DateTime.now(),
+        dueDate: dueDate,
+        topicId: topicId,
+        responsible: responsible,
+      ),
+    );
     notifyListeners();
   }
 
@@ -2860,8 +3089,11 @@ class AppState extends ChangeNotifier {
 
   /// Legt einen Sponsor an. Haupt-Sponsor ist exklusiv: ist [isMain] gesetzt,
   /// werden bestehende Haupt-Sponsoren zurückgestuft.
-  Future<Sponsor> addSponsor(String name,
-      {String? logo, bool isMain = false}) async {
+  Future<Sponsor> addSponsor(
+    String name, {
+    String? logo,
+    bool isMain = false,
+  }) async {
     final list = await _repo.getSponsors();
     if (isMain) {
       for (final s in list.where((s) => s.isMain)) {
@@ -2919,8 +3151,10 @@ class AppState extends ChangeNotifier {
     final list = await _repo.getSponsors();
     for (final s in list) {
       try {
-        await CloudService.upsertRow(
-            'sponsors', {...s.toMap(), 'team_id': team});
+        await CloudService.upsertRow('sponsors', {
+          ...s.toMap(),
+          'team_id': team,
+        });
       } catch (_) {
         // Offline/Teilfehler – beim nächsten Öffnen erneut.
       }
@@ -2937,7 +3171,9 @@ class AppState extends ChangeNotifier {
   /// Speichert die Grafik-Einstellungen (id = Cloud-Team-id für eindeutige
   /// Cloud-PK) und spiegelt sie in die Cloud.
   Future<void> saveGraphicSettings(GraphicSettings s) async {
-    await _repo.saveGraphicSettings(s.copyWith(id: _activeCloudTeamId ?? 'local'));
+    await _repo.saveGraphicSettings(
+      s.copyWith(id: _activeCloudTeamId ?? 'local'),
+    );
     notifyListeners();
   }
 
@@ -2954,8 +3190,10 @@ class AppState extends ChangeNotifier {
       await _repo.saveGraphicSettings(s.copyWith(id: team));
     } else {
       try {
-        await CloudService.upsertRow(
-            'graphic_settings', {...s.toMap(), 'team_id': team});
+        await CloudService.upsertRow('graphic_settings', {
+          ...s.toMap(),
+          'team_id': team,
+        });
       } catch (_) {}
     }
   }
@@ -2973,15 +3211,17 @@ class AppState extends ChangeNotifier {
     String? notes,
     bool done = false,
   }) async {
-    await _repo.upsertTalk(PlayerTalk(
-      id: _uuid.v4(),
-      playerId: playerId,
-      title: title.trim(),
-      scheduledAt: scheduledAt,
-      notes: notes,
-      done: done,
-      createdAt: DateTime.now(),
-    ));
+    await _repo.upsertTalk(
+      PlayerTalk(
+        id: _uuid.v4(),
+        playerId: playerId,
+        title: title.trim(),
+        scheduledAt: scheduledAt,
+        notes: notes,
+        done: done,
+        createdAt: DateTime.now(),
+      ),
+    );
     notifyListeners();
   }
 
@@ -2997,17 +3237,21 @@ class AppState extends ChangeNotifier {
 
   /// Abhaken/aufmachen – beim Abhaken wird der Zeitpunkt festgehalten.
   Future<void> toggleTodo(Todo todo, bool done) async {
-    await _repo.upsertTodo(done
-        ? todo.copyWith(done: true, completedAt: DateTime.now())
-        : todo.copyWith(done: false, clearCompletedAt: true));
+    await _repo.upsertTodo(
+      done
+          ? todo.copyWith(done: true, completedAt: DateTime.now())
+          : todo.copyWith(done: false, clearCompletedAt: true),
+    );
     notifyListeners();
   }
 
   /// Fälligkeitsdatum setzen (null entfernt es).
   Future<void> setTodoDueDate(Todo todo, DateTime? dueDate) async {
-    await _repo.upsertTodo(dueDate == null
-        ? todo.copyWith(clearDueDate: true)
-        : todo.copyWith(dueDate: dueDate));
+    await _repo.upsertTodo(
+      dueDate == null
+          ? todo.copyWith(clearDueDate: true)
+          : todo.copyWith(dueDate: dueDate),
+    );
     notifyListeners();
   }
 
@@ -3064,13 +3308,16 @@ class AppState extends ChangeNotifier {
                 .toSet();
             final open = roster.where((id) => !myRated.contains(id)).length;
             if (open > 0) {
-              items.add(NachholenItem(
-                kind: NachholenKind.rating,
-                matchId: m.id,
-                title: 'vs ${m.opponentName}',
-                detail: '$open von ${roster.length} Spielern noch zu bewerten',
-                kickoff: m.kickoff,
-              ));
+              items.add(
+                NachholenItem(
+                  kind: NachholenKind.rating,
+                  matchId: m.id,
+                  title: 'vs ${m.opponentName}',
+                  detail:
+                      '$open von ${roster.length} Spielern noch zu bewerten',
+                  kickoff: m.kickoff,
+                ),
+              );
             }
           }
         }
@@ -3083,32 +3330,37 @@ class AppState extends ChangeNotifier {
         if (!relevant) continue;
         final noms = await _repo.getNominations(m.id);
         if (noms.isEmpty) {
-          items.add(NachholenItem(
-            kind: NachholenKind.nomination,
-            matchId: m.id,
-            title: 'vs ${m.opponentName}',
-            detail: 'Noch keine Nominierung',
-            kickoff: m.kickoff,
-          ));
+          items.add(
+            NachholenItem(
+              kind: NachholenKind.nomination,
+              matchId: m.id,
+              title: 'vs ${m.opponentName}',
+              detail: 'Noch keine Nominierung',
+              kickoff: m.kickoff,
+            ),
+          );
         } else {
-          final zugesagt =
-              noms.where((n) => n.status == NominationStatus.zugesagt).length;
+          final zugesagt = noms
+              .where((n) => n.status == NominationStatus.zugesagt)
+              .length;
           if (zugesagt > 0) {
             final lineup = await _repo.getLineup(m.id, team.id);
             var starters = 0;
             if (lineup != null) {
-              starters = (await _repo.getLineupEntries(lineup.id))
-                  .where((e) => e.role == LineupRole.starter)
-                  .length;
+              starters = (await _repo.getLineupEntries(
+                lineup.id,
+              )).where((e) => e.role == LineupRole.starter).length;
             }
             if (starters == 0) {
-              items.add(NachholenItem(
-                kind: NachholenKind.lineup,
-                matchId: m.id,
-                title: 'vs ${m.opponentName}',
-                detail: 'Aufstellung fehlt',
-                kickoff: m.kickoff,
-              ));
+              items.add(
+                NachholenItem(
+                  kind: NachholenKind.lineup,
+                  matchId: m.id,
+                  title: 'vs ${m.opponentName}',
+                  detail: 'Aufstellung fehlt',
+                  kickoff: m.kickoff,
+                ),
+              );
             }
           }
         }
@@ -3146,7 +3398,9 @@ class AppState extends ChangeNotifier {
 
   /// Spiele, in denen ein Spieler tatsächlich gespielt hat (für die Bewertung).
   Future<Set<String>> playedMatchIdsForPlayer(
-      String playerId, String teamId) async {
+    String playerId,
+    String teamId,
+  ) async {
     final matches = await _repo.getMatches(teamId);
     final out = <String>{};
     for (final m in matches) {

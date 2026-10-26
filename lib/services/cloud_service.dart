@@ -41,7 +41,10 @@ class CloudService {
       _c.auth.signInWithPassword(email: email.trim(), password: password);
 
   static Future<void> signUp(
-      String email, String password, String displayName) async {
+    String email,
+    String password,
+    String displayName,
+  ) async {
     // Name als Metadaten; profiles-Eintrag macht serverseitig ein Trigger
     // (siehe supabase/schema.sql) – kein direkter Insert (RLS/Session).
     await _c.auth.signUp(
@@ -67,7 +70,8 @@ class CloudService {
     final rows = await _c
         .from('team_members')
         .select(
-            'role, can_ticker, teams(id, name, short_name, invite_code, created_by, fupa_url, logo, material_duty)')
+          'role, can_ticker, teams(id, name, short_name, invite_code, created_by, fupa_url, logo, material_duty)',
+        )
         .eq('user_id', user!.id);
     return [
       for (final r in rows)
@@ -75,12 +79,14 @@ class CloudService {
           'role': r['role'],
           'can_ticker': r['can_ticker'],
           ...(r['teams'] as Map<String, dynamic>),
-        }
+        },
     ];
   }
 
-  static Future<Map<String, dynamic>> createTeam(String name,
-      {String? fupaUrl}) async {
+  static Future<Map<String, dynamic>> createTeam(
+    String name, {
+    String? fupaUrl,
+  }) async {
     // Eigene ID vergeben, damit wir NICHT direkt zurücklesen müssen (die
     // Lese-Regel greift erst, wenn man Mitglied ist). Erst Team + Mitglied-
     // schaft anlegen, dann lesen.
@@ -123,13 +129,15 @@ class CloudService {
   /// Push an alle Team-Mitglieder (außer dem Auslöser) auslösen, wenn ein Spiel
   /// live geht (Edge-Function „notify-live"). Fehler werden geschluckt.
   static Future<void> notifyLive(
-      String teamId, String matchId, String opponent) async {
+    String teamId,
+    String matchId,
+    String opponent,
+  ) async {
     try {
-      await _c.functions.invoke('notify-live', body: {
-        'team_id': teamId,
-        'match_id': matchId,
-        'opponent': opponent,
-      });
+      await _c.functions.invoke(
+        'notify-live',
+        body: {'team_id': teamId, 'match_id': matchId, 'opponent': opponent},
+      );
     } catch (_) {}
   }
 
@@ -138,30 +146,38 @@ class CloudService {
   static Future<List<Map<String, dynamic>>> matchSyncRows(String teamId) async {
     final rows = await _c
         .from('matches')
-        .select('id, status, own_score, opponent_score, opponent, '
-            'live_controller, live_controller_name')
+        .select(
+          'id, status, own_score, opponent_score, opponent, '
+          'live_controller, live_controller_name',
+        )
         .eq('team_id', teamId);
     return List<Map<String, dynamic>>.from(rows);
   }
 
   /// Ersetzt die Cloud-Statistik eines Teams (delete + insert, ein Stand).
   static Future<void> uploadStats(
-      String teamId, List<Map<String, dynamic>> rows) async {
+    String teamId,
+    List<Map<String, dynamic>> rows,
+  ) async {
     await _c.from('player_stats').delete().eq('team_id', teamId);
     if (rows.isEmpty) return;
     await _c.from('player_stats').insert([
-      for (final r in rows) {'team_id': teamId, ...r}
+      for (final r in rows) {'team_id': teamId, ...r},
     ]);
   }
 
   /// Gegner-Team (Meta) spiegeln – Owner = eigenes Cloud-Team.
   static Future<void> uploadOpponentTeam(
-          String ownerTeamId, Map<String, dynamic> row) =>
-      _c.from('opponent_teams').upsert({'team_id': ownerTeamId, ...row});
+    String ownerTeamId,
+    Map<String, dynamic> row,
+  ) => _c.from('opponent_teams').upsert({'team_id': ownerTeamId, ...row});
 
   /// Gegner-Kader ersetzen (delete + insert für diesen Gegner).
-  static Future<void> uploadOpponentPlayers(String ownerTeamId,
-      String opponentTeamId, List<Map<String, dynamic>> rows) async {
+  static Future<void> uploadOpponentPlayers(
+    String ownerTeamId,
+    String opponentTeamId,
+    List<Map<String, dynamic>> rows,
+  ) async {
     await _c
         .from('opponent_players')
         .delete()
@@ -169,7 +185,7 @@ class CloudService {
     if (rows.isEmpty) return;
     await _c.from('opponent_players').insert([
       for (final r in rows)
-        {'team_id': ownerTeamId, 'opponent_team_id': opponentTeamId, ...r}
+        {'team_id': ownerTeamId, 'opponent_team_id': opponentTeamId, ...r},
     ]);
   }
 
@@ -182,14 +198,68 @@ class CloudService {
 
   /// Rolle eines Mitglieds ändern (nur Trainer; letzter Trainer bleibt).
   static Future<void> setMemberRole(
-          String teamId, String userId, String role) =>
-      _c.rpc('set_member_role',
-          params: {'t': teamId, 'target': userId, 'new_role': role});
+    String teamId,
+    String userId,
+    String role,
+  ) => _c.rpc(
+    'set_member_role',
+    params: {'t': teamId, 'target': userId, 'new_role': role},
+  );
 
   /// Ticker-Recht eines Mitglieds setzen (nur Trainer; Live-Mitschreiben).
   static Future<void> setTicker(String teamId, String userId, bool value) =>
-      _c.rpc('set_ticker',
-          params: {'t': teamId, 'target': userId, 'value': value});
+      _c.rpc(
+        'set_ticker',
+        params: {'t': teamId, 'target': userId, 'value': value},
+      );
+
+  // ----------------------------------------------- Konto ↔ Spieler (n:m)
+  // Ein Konto kann mit einem oder mehreren Spielerprofilen verknüpft sein
+  // (member_players, siehe stage28). Grundlage für „eigene Gespräche" und die
+  // Sichtbarkeits-Regeln.
+
+  /// Alle Zuordnungen eines Teams: user_id → Liste der verknüpften player_id.
+  static Future<Map<String, List<String>>> memberPlayers(String teamId) async {
+    final rows = await _c
+        .from('member_players')
+        .select('user_id, player_id')
+        .eq('team_id', teamId);
+    final map = <String, List<String>>{};
+    for (final r in rows) {
+      (map[r['user_id'] as String] ??= []).add(r['player_id'] as String);
+    }
+    return map;
+  }
+
+  /// Ersetzt die Spieler-Zuordnung eines Mitglieds (löschen + neu setzen).
+  static Future<void> setMemberPlayers(
+    String teamId,
+    String userId,
+    List<String> playerIds,
+  ) async {
+    await _c
+        .from('member_players')
+        .delete()
+        .eq('team_id', teamId)
+        .eq('user_id', userId);
+    if (playerIds.isEmpty) return;
+    await _c.from('member_players').insert([
+      for (final pid in playerIds)
+        {'team_id': teamId, 'user_id': userId, 'player_id': pid},
+    ]);
+  }
+
+  /// Die mit dem EIGENEN Konto verknüpften Spieler-IDs in diesem Team.
+  static Future<List<String>> myPlayerIds(String teamId) async {
+    final uid = user?.id;
+    if (uid == null) return const [];
+    final rows = await _c
+        .from('member_players')
+        .select('player_id')
+        .eq('team_id', teamId)
+        .eq('user_id', uid);
+    return [for (final r in rows) r['player_id'] as String];
+  }
 
   // ---------------------------------------------------------------- Kader
   static Future<List<Map<String, dynamic>>> players(String teamId) async {
@@ -206,10 +276,12 @@ class CloudService {
   /// Löschen, damit der Kader nie kurz „leer" ist (sonst flackert/verfälscht es
   /// bei anderen Geräten über Realtime).
   static Future<void> uploadRoster(
-      String teamId, List<Map<String, dynamic>> roster) async {
+    String teamId,
+    List<Map<String, dynamic>> roster,
+  ) async {
     if (roster.isEmpty) return;
     final rows = [
-      for (final p in roster) {'team_id': teamId, ...p}
+      for (final p in roster) {'team_id': teamId, ...p},
     ];
     await _c.from('players').upsert(rows, onConflict: 'id');
   }
@@ -228,16 +300,20 @@ class CloudService {
   /// (dedupliziert über Gegner + Anstoß), damit getrackte Spiele nicht
   /// verloren gehen. Gibt die Anzahl NEU hinzugefügter Spiele zurück.
   static Future<int> uploadSchedule(
-      String teamId, List<Map<String, dynamic>> matches) async {
-    final existing =
-        await _c.from('matches').select('opponent, kickoff').eq('team_id', teamId);
+    String teamId,
+    List<Map<String, dynamic>> matches,
+  ) async {
+    final existing = await _c
+        .from('matches')
+        .select('opponent, kickoff')
+        .eq('team_id', teamId);
     final seen = <String>{
-      for (final e in existing) '${e['opponent']}|${e['kickoff']}'
+      for (final e in existing) '${e['opponent']}|${e['kickoff']}',
     };
     final toInsert = [
       for (final m in matches)
         if (!seen.contains('${m['opponent']}|${m['kickoff']}'))
-          {'team_id': teamId, ...m}
+          {'team_id': teamId, ...m},
     ];
     if (toInsert.isNotEmpty) {
       await _c.from('matches').insert(toInsert);
@@ -253,7 +329,9 @@ class CloudService {
   }
 
   static Future<Map<String, dynamic>> createMatch(
-      String teamId, String opponent) async {
+    String teamId,
+    String opponent,
+  ) async {
     return await _c
         .from('matches')
         .insert({
@@ -267,22 +345,27 @@ class CloudService {
         .single();
   }
 
-  static Future<void> setScore(String matchId, int own, int opp) =>
-      _c.from('matches').update(
-          {'own_score': own, 'opponent_score': opp}).eq('id', matchId);
+  static Future<void> setScore(String matchId, int own, int opp) => _c
+      .from('matches')
+      .update({'own_score': own, 'opponent_score': opp})
+      .eq('id', matchId);
 
   /// Setzt Status + Spielstand (z.B. beim Zurücksetzen auf „scheduled", 0:0).
   static Future<void> setMatchState(
-          String matchId, String status, int own, int opp) =>
-      _c.from('matches').update({
-        'status': status,
-        'own_score': own,
-        'opponent_score': opp,
-      }).eq('id', matchId);
+    String matchId,
+    String status,
+    int own,
+    int opp,
+  ) => _c
+      .from('matches')
+      .update({'status': status, 'own_score': own, 'opponent_score': opp})
+      .eq('id', matchId);
 
   /// Beliebige Spiel-Felder aktualisieren (z.B. locally_managed beim Reset).
-  static Future<void> updateMatch(String matchId, Map<String, dynamic> fields) =>
-      _c.from('matches').update(fields).eq('id', matchId);
+  static Future<void> updateMatch(
+    String matchId,
+    Map<String, dynamic> fields,
+  ) => _c.from('matches').update(fields).eq('id', matchId);
 
   // ----------------------------------------------------- Generische Bereiche
   // Für die „eigene Tabelle pro Bereich"-Spiegelung (Nominierung, Aufstellung,
@@ -291,14 +374,18 @@ class CloudService {
 
   /// Spiegelt eine Zeile in die Cloud (Insert oder Update). [onConflict] gibt
   /// bei Bedarf die Konflikt-Spalten an (z.B. 'match_id,player_id').
-  static Future<void> upsertRow(String table, Map<String, dynamic> row,
-          {String? onConflict}) =>
-      _c.from(table).upsert(row, onConflict: onConflict);
+  static Future<void> upsertRow(
+    String table,
+    Map<String, dynamic> row, {
+    String? onConflict,
+  }) => _c.from(table).upsert(row, onConflict: onConflict);
 
   /// Löscht Cloud-Zeilen anhand eines Spalten-Filters (z.B. {id: …} oder
   /// {match_id: …, player_id: …}).
   static Future<void> deleteWhere(
-      String table, Map<String, dynamic> filter) async {
+    String table,
+    Map<String, dynamic> filter,
+  ) async {
     var q = _c.from(table).delete();
     for (final e in filter.entries) {
       q = q.eq(e.key, e.value as Object);
@@ -308,7 +395,9 @@ class CloudService {
 
   /// Alle Zeilen einer Bereichstabelle eines Teams.
   static Future<List<Map<String, dynamic>>> fetchForTeam(
-      String table, String teamId) async {
+    String table,
+    String teamId,
+  ) async {
     final rows = await _c.from(table).select().eq('team_id', teamId);
     return List<Map<String, dynamic>>.from(rows);
   }
@@ -368,7 +457,9 @@ class CloudService {
   /// Realtime-Abo für die Ereignisse eines Spiels. [onChange] wird bei jeder
   /// Änderung (insert/update/delete) aufgerufen.
   static RealtimeChannel subscribeEvents(
-      String matchId, void Function() onChange) {
+    String matchId,
+    void Function() onChange,
+  ) {
     final ch = _c.channel('events_$matchId');
     ch
         .onPostgresChanges(
@@ -421,9 +512,10 @@ class CloudService {
   /// geänderte Zeile (Tabelle, Event-Typ insert/update/delete, Datensatz),
   /// damit der Empfänger GEZIELT nur diese Zeile anwendet (sofortige Updates).
   static List<RealtimeChannel> subscribeTeam(
-      String teamId,
-      void Function(String table, String eventType, Map<String, dynamic> record)
-          onChange) {
+    String teamId,
+    void Function(String table, String eventType, Map<String, dynamic> record)
+    onChange,
+  ) {
     final channels = <RealtimeChannel>[];
     for (final table in teamTables) {
       final ch = _c.channel('team_${teamId}_$table');
@@ -438,11 +530,13 @@ class CloudService {
               value: teamId,
             ),
             callback: (payload) {
-              final isDelete =
-                  payload.eventType == PostgresChangeEvent.delete;
+              final isDelete = payload.eventType == PostgresChangeEvent.delete;
               final rec = isDelete ? payload.oldRecord : payload.newRecord;
-              onChange(table, payload.eventType.name,
-                  Map<String, dynamic>.from(rec));
+              onChange(
+                table,
+                payload.eventType.name,
+                Map<String, dynamic>.from(rec),
+              );
             },
           )
           .subscribe();
@@ -464,8 +558,11 @@ class CloudService {
           callback: (payload) {
             final isDelete = payload.eventType == PostgresChangeEvent.delete;
             final rec = isDelete ? payload.oldRecord : payload.newRecord;
-            onChange('teams', payload.eventType.name,
-                Map<String, dynamic>.from(rec));
+            onChange(
+              'teams',
+              payload.eventType.name,
+              Map<String, dynamic>.from(rec),
+            );
           },
         )
         .subscribe();
@@ -473,8 +570,7 @@ class CloudService {
     return channels;
   }
 
-  static Future<void> removeChannel(RealtimeChannel ch) =>
-      _c.removeChannel(ch);
+  static Future<void> removeChannel(RealtimeChannel ch) => _c.removeChannel(ch);
 
   static Future<void> removeChannels(List<RealtimeChannel> chs) async {
     for (final ch in chs) {
