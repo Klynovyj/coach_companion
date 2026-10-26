@@ -276,7 +276,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
     // Karteikarten: weniger auf einen Blick, kein endloses Scrollen.
     return DefaultTabController(
-      length: 8,
+      length: 9,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
@@ -306,6 +306,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 tabAlignment: TabAlignment.start,
                 tabs: const [
                   Tab(text: 'Profil'),
+                  Tab(text: 'Karte'),
                   Tab(text: 'Abwesenheit'),
                   Tab(text: 'Karten'),
                   Tab(text: 'Tore'),
@@ -320,10 +321,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             Expanded(
               child: TabBarView(
                 children: [
-                  _tabList([
-                    _playerCard(context, state),
-                    _stammdatenCard(context),
-                  ]),
+                  // Profil: nur die Stammdaten.
+                  _tabList([_stammdatenCard(context)]),
+                  // Karte: die Spielerkarte (FuPa/Tracking als Flip-Karte).
+                  _tabList([_playerCard(context, state)]),
                   _tabList([_absencesCard(context, state)]),
                   _tabList([
                     _cardsCard(context, state, df),
@@ -894,7 +895,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   /// Teilt die Spieler-Statistikkarte als Bild (off-screen erfasst, da die Karte
-  /// nur im Profil-Tab gemountet ist).
+  /// nur im Karte-Tab gemountet ist).
   Future<void> _sharePlayerCard() async {
     final state = context.read<AppState>();
     final messenger = ScaffoldMessenger.of(context);
