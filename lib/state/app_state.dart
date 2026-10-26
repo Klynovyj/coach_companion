@@ -2834,20 +2834,31 @@ class AppState extends ChangeNotifier {
     for (final m in matches) {
       final finished = m.status == MatchStatus.finished;
       if (finished) {
-        // Offene Bewertungen: eingesetzte Spieler ohne Bewertung.
-        final roster = await _ratingRoster(m);
-        if (roster.isNotEmpty) {
-          final rated =
-              (await _repo.getRatings(m.id)).map((r) => r.playerId).toSet();
-          final open = roster.where((id) => !rated.contains(id)).length;
-          if (open > 0) {
-            items.add(NachholenItem(
-              kind: NachholenKind.rating,
-              matchId: m.id,
-              title: 'vs ${m.opponentName}',
-              detail: '$open von ${roster.length} Spielern noch zu bewerten',
-              kickoff: m.kickoff,
-            ));
+        // Offene EIGENE Bewertungen: Bewertungen sind pro Trainer – jeder muss
+        // selbst bewerten. Nur zeigen, solange die Frist (3 Tage) läuft und der
+        // Trainer nicht „war nicht da / bewerte nicht" gesetzt hat.
+        final deadline = await ratingDeadline(m.id);
+        final withinDeadline = deadline == null || now.isBefore(deadline);
+        final mine = await myMatchRating(m.id);
+        final abstained = mine?.abstained == true;
+        if (withinDeadline && !abstained) {
+          final roster = await _ratingRoster(m);
+          if (roster.isNotEmpty) {
+            final me = _me;
+            final myRated = (await _repo.getRatings(m.id))
+                .where((r) => (r.userId ?? '') == me)
+                .map((r) => r.playerId)
+                .toSet();
+            final open = roster.where((id) => !myRated.contains(id)).length;
+            if (open > 0) {
+              items.add(NachholenItem(
+                kind: NachholenKind.rating,
+                matchId: m.id,
+                title: 'vs ${m.opponentName}',
+                detail: '$open von ${roster.length} Spielern noch zu bewerten',
+                kickoff: m.kickoff,
+              ));
+            }
           }
         }
       } else {
