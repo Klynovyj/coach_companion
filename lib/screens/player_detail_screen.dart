@@ -361,30 +361,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          GestureDetector(
-            onTap: _changePhoto,
-            child: Stack(
-              children: [
-                PlayerAvatar(player: p, radius: 34),
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Container(
-                    padding: const EdgeInsets.all(3),
-                    decoration: BoxDecoration(
-                      color: scheme.primary,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: scheme.surface, width: 1.5),
-                    ),
-                    child: Icon(Icons.photo_camera,
-                        size: 13, color: scheme.onPrimary),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -423,6 +401,53 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   _suspensionInfo(context, p),
                 ],
               ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          _headerPhoto(context, p),
+        ],
+      ),
+    );
+  }
+
+  /// Quadratisches Spielerfoto rechts im Kopf (antippen = Foto ändern).
+  Widget _headerPhoto(BuildContext context, Player p) {
+    final scheme = Theme.of(context).colorScheme;
+    final bytes = TeamLogo.decode(p.photoPath);
+    final fallback = p.number?.toString() ??
+        (p.lastName.isNotEmpty ? p.lastName[0] : '?');
+    const size = 76.0;
+    return GestureDetector(
+      onTap: _changePhoto,
+      child: Stack(
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: size,
+              height: size,
+              color: scheme.surfaceContainerHighest,
+              child: bytes != null
+                  ? Image.memory(bytes,
+                      fit: BoxFit.cover, gaplessPlayback: true)
+                  : Center(
+                      child: Text(fallback,
+                          style: const TextStyle(
+                              fontSize: 24, fontWeight: FontWeight.w600))),
+            ),
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.all(3),
+              decoration: BoxDecoration(
+                color: scheme.primary,
+                shape: BoxShape.circle,
+                border: Border.all(color: scheme.surface, width: 1.5),
+              ),
+              child: Icon(Icons.photo_camera,
+                  size: 13, color: scheme.onPrimary),
             ),
           ),
         ],
