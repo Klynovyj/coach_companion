@@ -1,6 +1,6 @@
 {
-  "versionCode": 45,
-  "versionName": "1.3.40",
+  "versionCode": 46,
+  "versionName": "1.3.41",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Spieler des Monats teilbar: Instagram-Post 1:1 und Story 9:16 sowie DIN-A4-Urkunde zum Drucken (mit Monatsnote, Monats-Ereignissen, FuPa-Saison und Sponsoren)\n- Position Tor heisst jetzt ueberall Torwart\n- Auswertungs-Liste aktualisiert sich beim Zurueckkehren\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
+  "notes": "Neuerungen:\n- Spieler des Monats: Design einstellbar (Logo, Titel, Farben, Hintergrund wie bei der Startelf-Grafik) ueber Grafik anpassen\n- Urkunde ohne Unterschriftzeile, Logo ersetzbar, passt jetzt sauber ins A4\n- Daten waehlbar: meine Monatsdaten und/oder FuPa-Saison ein- und ausschaltbar\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
 }
