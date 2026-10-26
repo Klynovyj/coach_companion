@@ -1,6 +1,6 @@
 {
-  "versionCode": 30,
-  "versionName": "1.3.25",
+  "versionCode": 31,
+  "versionName": "1.3.26",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Live-Ticker im Chat-Stil: eigene Aktionen links, Gegner rechts - auf einen Blick unterscheidbar\n- Kommentar-Button fest an der Fussleiste (scrollt nicht mehr mit)\n\nAus 1.3.24:\n- Spielbewertung pro Trainer (Schnitt ueber alle), Profil-Umbau (Karte-Reiter, Gesamt/Monat-Note, Rolle & Startelf in den Stammdaten), Bewertungen zeigen nur beendete Spiele\n\nWichtig (Cloud): im Supabase-SQL-Editor stage24 und stage23 ausfuehren."
+  "notes": "Neuerungen:\n- Spielerprofil: Stammdaten aufgeraeumt - alles linksbuendig, Rolle & Startelf und Positionen klar gruppiert\n\nAus 1.3.25:\n- Live-Ticker im Chat-Stil (eigene links, Gegner rechts)\n- Kommentar-Button fest an der Fussleiste\n\nAus 1.3.24:\n- Spielbewertung pro Trainer, Profil-Umbau (Karte-Reiter, Gesamt/Monat-Note), Bewertungen nur beendete Spiele\n\nWichtig (Cloud): im Supabase-SQL-Editor stage24 und stage23 ausfuehren."
 }
