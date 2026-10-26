@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -31,6 +32,7 @@ import '../widgets/team_logo.dart';
 import '../widgets/rich_note_view.dart';
 import '../widgets/star_rating.dart';
 import 'live_match_screen.dart';
+import 'photo_crop_screen.dart';
 import 'note_editor_screen.dart';
 import 'spielergespraeche_screen.dart';
 
@@ -105,20 +107,42 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     try {
       final file = await ImagePicker().pickImage(
         source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
-        maxWidth: 800,
-        maxHeight: 800,
-        imageQuality: 80,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 90,
       );
       if (file == null) return;
-      final bytes = await file.readAsBytes();
-      final dataUrl = 'data:image/jpeg;base64,${base64Encode(bytes)}';
+      final raw = await file.readAsBytes();
       if (!mounted) return;
+      // Quadratisch zuschneiden lassen (In-App-Crop).
+      final cropped = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => PhotoCropScreen(imageBytes: raw),
+        ),
+      );
+      if (cropped == null || !mounted) return;
+      final dataUrl = _encodeSquareJpeg(cropped);
       await _apply(_player.copyWith(photoPath: dataUrl));
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Foto konnte nicht geladen werden: $e')),
       );
     }
+  }
+
+  /// Verkleinert das (bereits quadratische) Bild auf max. 512 px und kodiert es
+  /// als JPEG-Data-URL – klein genug für DB und Cloud-Sync.
+  String _encodeSquareJpeg(Uint8List input) {
+    final decoded = img.decodeImage(input);
+    if (decoded == null) {
+      return 'data:image/jpeg;base64,${base64Encode(input)}';
+    }
+    final sized = decoded.width > 512
+        ? img.copyResize(decoded, width: 512, height: 512)
+        : decoded;
+    final jpg = img.encodeJpg(sized, quality: 85);
+    return 'data:image/jpeg;base64,${base64Encode(jpg)}';
   }
 
   /// Statuswechsel: Abwesenheiten (Verletzt/Krank/Gesperrt/Urlaub) fragen den
