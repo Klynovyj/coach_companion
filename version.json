@@ -1,6 +1,6 @@
 {
-  "versionCode": 46,
-  "versionName": "1.3.41",
+  "versionCode": 47,
+  "versionName": "1.3.42",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Spieler des Monats: Design einstellbar (Logo, Titel, Farben, Hintergrund wie bei der Startelf-Grafik) ueber Grafik anpassen\n- Urkunde ohne Unterschriftzeile, Logo ersetzbar, passt jetzt sauber ins A4\n- Daten waehlbar: meine Monatsdaten und/oder FuPa-Saison ein- und ausschaltbar\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
+  "notes": "Neuerungen:\n- Urkunde modern und weiss, ohne Pokal, mit Noten-Pill und mehr FuPa-Daten (Scorerpunkte, Minuten, Karten, Top11)\n- Bewertungen (Oe-Note) als eigener Schalter optional\n- Social-Grafik mit mehr FuPa-Kacheln\n- Grafik anpassen mit Live-Verlaufsvorschau\n- Bessere Fotoqualitaet (geglaettetes Hochskalieren)\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
 }
