@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -9,6 +8,7 @@ import '../models/player.dart';
 import '../models/player_rating.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import 'rating_summary_screen.dart';
 
 /// Bewertungs-Screen nach dem Spiel: 1–5 Sterne je Spieler **pro Benutzer** +
 /// eine Spiel-Gesamtnote. Jeder bewertet eigenständig; angezeigt wird der
@@ -29,7 +29,6 @@ class _RatingScreenState extends State<RatingScreen> {
   Map<String, (double, int)> _avg = {}; // Schnitt+Anzahl je Spieler
   MatchRating? _myMatch; // eigene Spiel-Gesamtnote/Abwesenheit
   (double?, int, int) _summary = (null, 0, 0);
-  DateTime? _deadline;
   bool _open = true;
   bool _loading = true;
 
@@ -64,20 +63,22 @@ class _RatingScreenState extends State<RatingScreen> {
     }
     final players = await state.playersOf(match.ownTeamId);
     final byId = {for (final p in players) p.id: p};
-    final playedIds =
-        await state.playedPlayerIds(widget.matchId, match.ownTeamId);
-    final roster = <Player>[
-      for (final id in playedIds)
-        if (byId[id] != null) byId[id]!,
-    ]..sort((a, b) {
-        final an = a.number ?? 9999, bn = b.number ?? 9999;
-        return an != bn ? an.compareTo(bn) : a.lastName.compareTo(b.lastName);
-      });
+    final playedIds = await state.playedPlayerIds(
+      widget.matchId,
+      match.ownTeamId,
+    );
+    final roster =
+        <Player>[
+          for (final id in playedIds)
+            if (byId[id] != null) byId[id]!,
+        ]..sort((a, b) {
+          final an = a.number ?? 9999, bn = b.number ?? 9999;
+          return an != bn ? an.compareTo(bn) : a.lastName.compareTo(b.lastName);
+        });
     final mine = await state.ratingsMapOf(widget.matchId);
     final avg = await state.ratingAverages(widget.matchId);
     final myMatch = await state.myMatchRating(widget.matchId);
     final summary = await state.matchRatingSummary(widget.matchId);
-    final deadline = await state.ratingDeadline(widget.matchId);
     if (!mounted) return;
     setState(() {
       _match = match;
@@ -86,8 +87,7 @@ class _RatingScreenState extends State<RatingScreen> {
       _avg = avg;
       _myMatch = myMatch;
       _summary = summary;
-      _deadline = deadline;
-      _open = deadline == null || DateTime.now().isBefore(deadline);
+      _open = true; // Bewerten ist immer möglich (keine 3-Tage-Frist mehr).
       _loading = false;
     });
   }
@@ -95,7 +95,10 @@ class _RatingScreenState extends State<RatingScreen> {
   Future<void> _setStars(Player p, int stars) async {
     if (!_canEdit) return;
     await context.read<AppState>().setRating(
-        matchId: widget.matchId, playerId: p.id, rating: stars.toDouble());
+      matchId: widget.matchId,
+      playerId: p.id,
+      rating: stars.toDouble(),
+    );
     await _load();
   }
 
@@ -106,13 +109,52 @@ class _RatingScreenState extends State<RatingScreen> {
 
   Future<void> _setMatchStars(int stars) async {
     if (!_canEdit) return;
-    await context.read<AppState>().setMatchRating(widget.matchId, stars.toDouble());
+    await context.read<AppState>().setMatchRating(
+      widget.matchId,
+      stars.toDouble(),
+    );
     await _load();
   }
 
   Future<void> _toggleAbstain(bool v) async {
     if (!_open) return;
     await context.read<AppState>().setAbstain(widget.matchId, v);
+    await _load();
+  }
+
+  /// Eigenen Spielbericht/Kommentar schreiben oder bearbeiten.
+  Future<void> _editMatchNote() async {
+    if (!_canEdit) return;
+    final ctrl = TextEditingController(text: _myMatch?.note ?? '');
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mein Spielbericht'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: 4,
+          maxLines: 10,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            hintText: 'Dein Kommentar/Bericht zum Spiel …',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (res == null || !mounted) return;
+    await context.read<AppState>().setMatchNote(widget.matchId, res);
     await _load();
   }
 
@@ -133,23 +175,25 @@ class _RatingScreenState extends State<RatingScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
     if (note == null || !mounted) return;
     final stars = current?.rating ?? 3.0;
     await context.read<AppState>().setRating(
-          matchId: widget.matchId,
-          playerId: p.id,
-          rating: stars,
-          note: note.isEmpty ? null : note,
-          keepNote: false,
-        );
+      matchId: widget.matchId,
+      playerId: p.id,
+      rating: stars,
+      note: note.isEmpty ? null : note,
+      keepNote: false,
+    );
     await _load();
   }
 
@@ -163,11 +207,24 @@ class _RatingScreenState extends State<RatingScreen> {
       return const Scaffold(body: Center(child: Text('Spiel nicht gefunden.')));
     }
     return Scaffold(
-      appBar: AppBar(title: Text('Bewertung • vs ${match.opponentName}')),
+      appBar: AppBar(
+        title: Text('Bewertung • vs ${match.opponentName}'),
+        actions: [
+          IconButton(
+            tooltip: 'Auswertung',
+            icon: const Icon(Icons.assessment_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => RatingSummaryScreen(matchId: widget.matchId),
+              ),
+            ),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          _fristBanner(context),
           _fupaVoteCard(context, match),
           _matchNoteCard(context),
           SwitchListTile(
@@ -193,33 +250,6 @@ class _RatingScreenState extends State<RatingScreen> {
     );
   }
 
-  Widget _fristBanner(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    if (!_open) {
-      return Container(
-        width: double.infinity,
-        color: scheme.errorContainer,
-        padding: const EdgeInsets.all(12),
-        child: Row(children: [
-          const Icon(Icons.lock_clock, size: 18),
-          const SizedBox(width: 8),
-          const Expanded(
-            child: Text(
-                'Bewerten ist nur bis 3 Tage nach Spielende möglich – '
-                'die Frist ist abgelaufen.'),
-          ),
-        ]),
-      );
-    }
-    if (_deadline == null) return const SizedBox.shrink();
-    final df = DateFormat('EEE, dd.MM. HH:mm', 'de_DE');
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
-      child: Text('Bewerten möglich bis ${df.format(_deadline!.toLocal())}',
-          style: Theme.of(context).textTheme.bodySmall),
-    );
-  }
-
   /// „Bester Spieler" bei FuPa: öffnet die FuPa-Spielseite (Elf-der-Woche-
   /// Abstimmung). Nur sichtbar, wenn zum Spiel ein FuPa-Slug bekannt ist.
   Widget _fupaVoteCard(BuildContext context, GameMatch match) {
@@ -232,13 +262,19 @@ class _RatingScreenState extends State<RatingScreen> {
       color: scheme.primaryContainer,
       child: ListTile(
         leading: Icon(Icons.how_to_vote, color: scheme.onPrimaryContainer),
-        title: Text('Bester Spieler bei FuPa',
-            style: TextStyle(
-                fontWeight: FontWeight.w700,
-                color: scheme.onPrimaryContainer)),
-        subtitle: Text('Für die Elf der Woche abstimmen',
-            style: TextStyle(
-                color: scheme.onPrimaryContainer.withValues(alpha: 0.8))),
+        title: Text(
+          'Bester Spieler bei FuPa',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: scheme.onPrimaryContainer,
+          ),
+        ),
+        subtitle: Text(
+          'Für die Elf der Woche abstimmen',
+          style: TextStyle(
+            color: scheme.onPrimaryContainer.withValues(alpha: 0.8),
+          ),
+        ),
         trailing: FilledButton(
           onPressed: () => _openFupa(url),
           child: const Text('Abstimmen'),
@@ -256,6 +292,7 @@ class _RatingScreenState extends State<RatingScreen> {
 
   Widget _matchNoteCard(BuildContext context) {
     final my = _myMatch?.rating?.round() ?? 0;
+    final myNote = (_myMatch?.note ?? '').trim();
     final (avg, rated, abs) = _summary;
     final sub = StringBuffer();
     if (avg != null) sub.write('Schnitt ${avg.toStringAsFixed(1)} ($rated)');
@@ -267,20 +304,58 @@ class _RatingScreenState extends State<RatingScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [
-              Icon(Icons.scoreboard,
-                  color: Theme.of(context).colorScheme.primary),
-              const SizedBox(width: 8),
-              const Text('Spiel-Gesamtnote',
-                  style: TextStyle(fontWeight: FontWeight.bold)),
-            ]),
+            Row(
+              children: [
+                Icon(
+                  Icons.scoreboard,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Spiel-Gesamtnote',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
             _StarRow(
-                value: my,
-                enabled: _canEdit,
-                onTap: (s) => _setMatchStars(s)),
+              value: my,
+              enabled: _canEdit,
+              onTap: (s) => _setMatchStars(s),
+            ),
             if (sub.isNotEmpty)
-              Text(sub.toString(),
-                  style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                sub.toString(),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Icon(
+                  Icons.edit_note,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text(
+                    'Mein Spielbericht',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _canEdit ? _editMatchNote : null,
+                  child: Text(myNote.isEmpty ? 'Schreiben' : 'Bearbeiten'),
+                ),
+              ],
+            ),
+            Text(
+              myNote.isEmpty ? 'Noch kein Bericht.' : myNote,
+              style: TextStyle(
+                color: myNote.isEmpty ? Theme.of(context).hintColor : null,
+              ),
+            ),
           ],
         ),
       ),
@@ -304,15 +379,19 @@ class _RatingScreenState extends State<RatingScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(p.fullName,
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        p.fullName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     if (a != null) ...[
-                      Icon(Icons.star,
-                          size: 15, color: Colors.amber.shade700),
+                      Icon(Icons.star, size: 15, color: Colors.amber.shade700),
                       const SizedBox(width: 2),
-                      Text('${a.$1.toStringAsFixed(1)} (${a.$2})',
-                          style: Theme.of(context).textTheme.bodySmall),
+                      Text(
+                        '${a.$1.toStringAsFixed(1)} (${a.$2})',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
                     ],
                   ],
                 ),
@@ -322,10 +401,12 @@ class _RatingScreenState extends State<RatingScreen> {
                   onTap: (s) => _setStars(p, s),
                 ),
                 if (r?.note != null && r!.note!.isNotEmpty)
-                  Text(r.note!,
-                      style: Theme.of(context).textTheme.bodySmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
+                  Text(
+                    r.note!,
+                    style: Theme.of(context).textTheme.bodySmall,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
               ],
             ),
           ),
@@ -354,8 +435,11 @@ class _RatingScreenState extends State<RatingScreen> {
 
 /// Reihe aus 5 antippbaren Sternen.
 class _StarRow extends StatelessWidget {
-  const _StarRow(
-      {required this.value, required this.onTap, this.enabled = true});
+  const _StarRow({
+    required this.value,
+    required this.onTap,
+    this.enabled = true,
+  });
   final int value;
   final ValueChanged<int> onTap;
   final bool enabled;

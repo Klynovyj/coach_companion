@@ -11,6 +11,7 @@ import '../screens/home_screen.dart';
 import '../screens/live_match_screen.dart';
 import '../screens/material_duty_screen.dart';
 import '../screens/player_of_month_screen.dart';
+import '../screens/rating_overview_screen.dart';
 import '../screens/settings_screen.dart';
 import '../screens/sponsors_screen.dart';
 import '../screens/todos_screen.dart';
@@ -168,6 +169,13 @@ class AppDrawer extends StatelessWidget {
                     label: 'Spieler des Monats',
                     screen: const PlayerOfMonthScreen(),
                   ),
+                  if (state.isTrainerHere)
+                    _push(
+                      context,
+                      icon: Icons.assessment_outlined,
+                      label: 'Auswertung',
+                      screen: const RatingOverviewScreen(),
+                    ),
                   _push(
                     context,
                     icon: Icons.style_outlined,

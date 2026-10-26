@@ -2796,6 +2796,21 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Eigener Spielbericht/Kommentar zum Spiel (Freitext, je Trainer einer).
+  /// Leer = Bericht entfernen. Liegt auf der eigenen match_ratings-Zeile.
+  Future<void> setMatchNote(String matchId, String? note) async {
+    final mine = await myMatchRating(matchId);
+    final trimmed = note?.trim();
+    final empty = trimmed == null || trimmed.isEmpty;
+    await _repo.upsertMatchRating(
+      _baseMatchRating(
+        matchId,
+        mine,
+      ).copyWith(userId: _me, note: trimmed, clearNote: empty),
+    );
+    notifyListeners();
+  }
+
   /// „War nicht da / bewerte nicht": setzt nur das Kennzeichen auf der eigenen
   /// Spiel-Gesamtnote. Die (geteilten) Spielerbewertungen bleiben unberührt.
   Future<void> setAbstain(String matchId, bool abstained) async {
@@ -2807,6 +2822,28 @@ class AppState extends ChangeNotifier {
       ).copyWith(userId: _me, abstained: abstained),
     );
     notifyListeners();
+  }
+
+  /// Anzeigenamen je Benutzer-ID im Cloud-Team (für Auswertungen). Ohne Cloud
+  /// leer (Best effort); der eigene Nutzer wird vom Aufrufer ggf. ergänzt.
+  Future<Map<String, String>> teamMemberNames(String teamId) async {
+    if (!CloudService.ready || !CloudService.signedIn) return const {};
+    try {
+      final rows = await CloudService.teamMembers(teamId);
+      final map = <String, String>{};
+      for (final r in rows) {
+        final uid = r['user_id'] as String?;
+        if (uid == null) continue;
+        final name = (r['display_name'] as String?)?.trim();
+        final mail = (r['email'] as String?)?.trim();
+        map[uid] = (name != null && name.isNotEmpty)
+            ? name
+            : (mail != null && mail.isNotEmpty ? mail : 'Trainer');
+      }
+      return map;
+    } catch (_) {
+      return const {};
+    }
   }
 
   /// (Schnitt der Spiel-Gesamtnote, Anzahl Noten, Anzahl Abwesende).

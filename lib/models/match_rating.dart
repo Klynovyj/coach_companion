@@ -30,36 +30,36 @@ class MatchRating {
     bool clearRating = false,
     bool? abstained,
     String? note,
+    bool clearNote = false,
     String? userId,
-  }) =>
-      MatchRating(
-        id: id,
-        matchId: matchId,
-        userId: userId ?? this.userId,
-        rating: clearRating ? null : (rating ?? this.rating),
-        abstained: abstained ?? this.abstained,
-        note: note ?? this.note,
-        createdAt: createdAt,
-      );
+  }) => MatchRating(
+    id: id,
+    matchId: matchId,
+    userId: userId ?? this.userId,
+    rating: clearRating ? null : (rating ?? this.rating),
+    abstained: abstained ?? this.abstained,
+    note: clearNote ? null : (note ?? this.note),
+    createdAt: createdAt,
+  );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'match_id': matchId,
-        'user_id': userId,
-        'rating': rating,
-        'abstained': abstained ? 1 : 0,
-        'note': note,
-        'created_at': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'match_id': matchId,
+    'user_id': userId,
+    'rating': rating,
+    'abstained': abstained ? 1 : 0,
+    'note': note,
+    'created_at': createdAt.toIso8601String(),
+  };
 
   factory MatchRating.fromMap(Map<String, Object?> m) => MatchRating(
-        id: m['id'] as String,
-        matchId: m['match_id'] as String,
-        userId: m['user_id'] as String?,
-        rating: (m['rating'] as num?)?.toDouble(),
-        abstained: m['abstained'] == true || m['abstained'] == 1,
-        note: m['note'] as String?,
-        createdAt: DateTime.tryParse(m['created_at'] as String? ?? '') ??
-            DateTime.now(),
-      );
+    id: m['id'] as String,
+    matchId: m['match_id'] as String,
+    userId: m['user_id'] as String?,
+    rating: (m['rating'] as num?)?.toDouble(),
+    abstained: m['abstained'] == true || m['abstained'] == 1,
+    note: m['note'] as String?,
+    createdAt:
+        DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+  );
 }
