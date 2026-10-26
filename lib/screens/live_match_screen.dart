@@ -2603,38 +2603,53 @@ class _EventLog extends StatelessWidget {
                   (resolvePlayer(e.playerId) != null ||
                       resolvePlayer(e.assistPlayerId) != null)) ||
               resolvePlayer(e.playerId) != null;
+          // Chat-Stil: eigene Aktionen links, Gegner rechts gespiegelt. So sind
+          // beide Seiten auf einen Blick unterscheidbar. Neutral (Kommentar)
+          // bleibt links.
+          final rightSide = !e.type.isNeutral && !own;
+          final title = Text(
+            leadingIsPhoto ? '${e.type.symbol} ${_describe(e)}' : _describe(e),
+            textAlign: rightSide ? TextAlign.right : TextAlign.left,
+            style: const TextStyle(fontWeight: FontWeight.w500, height: 1.2),
+          );
+          final textCol = Expanded(
+            child: Column(
+              crossAxisAlignment:
+                  rightSide ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              children: [title, ..._subtitleLine(context, e, rightSide)],
+            ),
+          );
+          final editIcon = _readOnly
+              ? null
+              : IconButton(
+                  tooltip: 'Korrigieren',
+                  icon: const Icon(Icons.more_vert),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () => onEdit!(e),
+                );
+          final minute = _MinuteBadge(label: _minuteLabel(e), own: own);
+          final avatar = _eventAvatar(context, e, own);
           final content = Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+            padding: EdgeInsets.fromLTRB(rightSide ? 4 : 16, 8, rightSide ? 16 : 4, 8),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Minute oben links (wie im FuPa-Ticker).
-                _MinuteBadge(label: _minuteLabel(e), own: own),
-                const SizedBox(width: 10),
-                _eventAvatar(context, e, own),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                          leadingIsPhoto
-                              ? '${e.type.symbol} ${_describe(e)}'
-                              : _describe(e),
-                          style: const TextStyle(
-                              fontWeight: FontWeight.w500, height: 1.2)),
-                      ..._subtitleLine(context, e, own),
+              children: rightSide
+                  ? [
+                      ?editIcon,
+                      textCol,
+                      const SizedBox(width: 10),
+                      avatar,
+                      const SizedBox(width: 10),
+                      minute,
+                    ]
+                  : [
+                      minute,
+                      const SizedBox(width: 10),
+                      avatar,
+                      const SizedBox(width: 10),
+                      textCol,
+                      ?editIcon,
                     ],
-                  ),
-                ),
-                if (!_readOnly)
-                  IconButton(
-                    tooltip: 'Korrigieren',
-                    icon: const Icon(Icons.more_vert),
-                    visualDensity: VisualDensity.compact,
-                    onPressed: () => onEdit!(e),
-                  ),
-              ],
             ),
           );
           if (_readOnly) return content;
@@ -2764,14 +2779,16 @@ class _EventLog extends StatelessWidget {
 
   /// Untertitel im Ticker: Team + Notiz; beim Kommentar steht der Text schon
   /// im Titel, daher kein Untertitel.
-  List<Widget> _subtitleLine(BuildContext context, MatchEvent e, bool own) {
-    if (e.type == MatchEventType.comment) return const [];
-    final parts = [
-      own ? 'Eigenes Team' : 'Gegner',
-      if (e.note != null && e.note!.isNotEmpty) e.note!,
-    ];
+  List<Widget> _subtitleLine(
+      BuildContext context, MatchEvent e, bool rightSide) {
+    // Die Seite (links/rechts) zeigt bereits das Team – nur noch die Notiz.
+    final note = e.note?.trim();
+    if (e.type == MatchEventType.comment || note == null || note.isEmpty) {
+      return const [];
+    }
     return [
-      Text(parts.join('  ·  '),
+      Text(note,
+          textAlign: rightSide ? TextAlign.right : TextAlign.left,
           style: TextStyle(
               fontSize: 12, color: Theme.of(context).colorScheme.outline)),
     ];
