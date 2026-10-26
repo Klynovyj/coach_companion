@@ -1,6 +1,6 @@
 {
-  "versionCode": 36,
-  "versionName": "1.3.31",
+  "versionCode": 37,
+  "versionName": "1.3.32",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Zwei Fotos je Spieler: FuPa-Foto und dein eigenes Foto getrennt. Du waehlst, welches angezeigt wird (Schalter unter dem Foto / Foto-Menue). Dein Foto wird vom FuPa-Import nicht mehr ueberschrieben und synchronisiert bei allen\n\nAus 1.3.30:\n- Aufstellung: eigene Aufstellung laesst sich wieder anlegen\n\nAus 1.3.29:\n- Foto-Upload mit quadratischem Zuschnitt\n\nAus 1.3.28:\n- Status als farbige Ecke auf dem Foto, feste Farbe je Status; einheitliche Status-Plaketten; Spieler-Rollen (Spieler sehen Bewertungen/Nominierung/Aufstellung/Notizen nicht); Mitglieder mit Spielerprofilen verknuepfen\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
+  "notes": "Neuerungen:\n- Beendetes Spiel: Nominierung und die freigegebene Aufstellung lassen sich nicht mehr aendern (nur noch ansehen)\n\nAus 1.3.31:\n- Zwei Fotos je Spieler (FuPa + eigenes), umschaltbar; dein Foto wird vom FuPa-Import nicht mehr ueberschrieben\n\nAus 1.3.30:\n- Aufstellung: eigene Aufstellung laesst sich wieder anlegen\n\nAus 1.3.29:\n- Foto-Upload mit quadratischem Zuschnitt\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
 }
