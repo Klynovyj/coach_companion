@@ -1,6 +1,6 @@
 {
-  "versionCode": 31,
-  "versionName": "1.3.26",
+  "versionCode": 33,
+  "versionName": "1.3.28",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Spielerprofil: Stammdaten aufgeraeumt - alles linksbuendig, Rolle & Startelf und Positionen klar gruppiert\n\nAus 1.3.25:\n- Live-Ticker im Chat-Stil (eigene links, Gegner rechts)\n- Kommentar-Button fest an der Fussleiste\n\nAus 1.3.24:\n- Spielbewertung pro Trainer, Profil-Umbau (Karte-Reiter, Gesamt/Monat-Note), Bewertungen nur beendete Spiele\n\nWichtig (Cloud): im Supabase-SQL-Editor stage24 und stage23 ausfuehren."
+  "notes": "Neuerungen:\n- Status jetzt als farbige Ecke auf dem Spielerfoto, feste Farbe je Status (Verletzt rot, Krank orange, Gesperrt violett, Urlaub blau, Inaktiv grau)\n- Einheitliche Status-Plaketten in der Statistik-Status-Ansicht und im Kader-Filter\n- Spielerkarte: grosses Foto, Bewertungen per Tipp aufs Foto ein-/ausklappen\n- Spieler-Rollen: Spieler sehen Bewertungen, Nominierung, Aufstellung und Trainer-Notizen nicht mehr; Gespraeche nur eigene; Status nur lesbar\n- Mitglieder: Konto mit einem oder mehreren Spielerprofilen verknuepfen\n- Doppelte Trainer/Spieler werden automatisch bereinigt\n\nWichtig (Cloud): im Supabase-SQL-Editor stage28 und stage29 ausfuehren, damit die Spieler-Sperre serverseitig greift."
 }
