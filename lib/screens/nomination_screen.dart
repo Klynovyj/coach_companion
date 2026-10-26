@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
+import '../models/match.dart';
 import '../models/player.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
@@ -27,6 +28,7 @@ class NominationScreen extends StatefulWidget {
 class _NominationScreenState extends State<NominationScreen> {
   List<Player> _players = [];
   Map<String, NominationStatus> _status = {};
+  GameMatch? _match;
   bool _loading = true;
 
   late final AppState _app = context.read<AppState>();
@@ -57,9 +59,11 @@ class _NominationScreenState extends State<NominationScreen> {
             !p.isStaffOnly && p.active && p.status != PlayerStatus.inaktiv)
         .toList();
     final noms = await state.nominationsOf(widget.matchId);
+    final match = await state.getMatch(widget.matchId);
     if (!mounted) return;
     setState(() {
       _players = players;
+      _match = match;
       _status = {for (final p in players) p.id: noms[p.id] ?? NominationStatus.open};
       _loading = false;
     });
@@ -182,7 +186,8 @@ class _NominationScreenState extends State<NominationScreen> {
   }
 
   Widget _row(Player p) {
-    final suspended = p.suspendedGames > 0;
+    final suspended =
+        _match != null && _app.isSuspendedForMatch(p, _match!);
     final pos = p.position;
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),

@@ -418,9 +418,78 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     _ratingChipMonth(context),
                   ],
                 ),
+                if (p.suspendedGames > 0) ...[
+                  const SizedBox(height: 8),
+                  _suspensionInfo(context, p),
+                ],
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// Roter Sperr-Block im Kopf: Anzahl Sperrspiele + die nächsten betroffenen
+  /// Spiele aus dem Spielplan (Gegner + Datum).
+  Widget _suspensionInfo(BuildContext context, Player p) {
+    final scheme = Theme.of(context).colorScheme;
+    final n = p.suspendedGames;
+    final df = DateFormat('EEE, dd.MM.', 'de_DE');
+    final dfFull = DateFormat('dd.MM.yyyy', 'de_DE');
+    final next = context.read<AppState>().suspensionMatches(p);
+    final meta = [
+      if (p.suspensionCompetition != null) p.suspensionCompetition!,
+      if (p.suspensionFrom != null) 'ab ${dfFull.format(p.suspensionFrom!)}',
+    ].join(' · ');
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+      decoration: BoxDecoration(
+        color: scheme.errorContainer,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.block, size: 16, color: scheme.error),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text('GESPERRT · noch $n Spiel(e)',
+                    style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: scheme.onErrorContainer)),
+              ),
+            ],
+          ),
+          if (meta.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(meta,
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: scheme.onErrorContainer)),
+            ),
+          const SizedBox(height: 4),
+          if (next.isEmpty)
+            Text('Keine passenden anstehenden Spiele im Plan.',
+                style: TextStyle(
+                    fontSize: 12, color: scheme.onErrorContainer))
+          else ...[
+            Text('Gesperrt für:',
+                style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: scheme.onErrorContainer)),
+            for (final m in next)
+              Text(
+                  '• ${df.format(m.kickoff!.toLocal())} · vs ${m.opponentName}',
+                  style: TextStyle(
+                      fontSize: 12, color: scheme.onErrorContainer)),
+          ],
         ],
       ),
     );

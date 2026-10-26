@@ -19,6 +19,9 @@ List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
           'position': p.position,
           'photo': p.photoPath,
           'source': p.source.storageKey,
+          'suspended_games': p.suspendedGames,
+          'suspension_competition': p.suspensionCompetition,
+          'suspension_from': p.suspensionFrom?.toIso8601String(),
         }
     ];
 

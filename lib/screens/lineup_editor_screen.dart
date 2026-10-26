@@ -49,6 +49,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   final Map<String, Player> _byId = {};
   // Abweichende Rückennummern für dieses Spiel (Spieler-ID → Nummer).
   Map<String, int> _matchNumbers = {};
+  GameMatch? _match;
   // FuPa-Saisonstatistik je Spieler (für die Spielminuten), nach dedupKey.
   Map<String, PlayerStat> _statByKey = {};
   List<Player> _nominated = [];
@@ -90,6 +91,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final noms = await state.nominationsOf(widget.matchId);
     final entries = await state.lineupEntries(lineup.id);
     final matchNumbers = await state.matchNumbers(widget.matchId);
+    final match = await state.getMatch(widget.matchId);
     final statsList = await state.statsOf(widget.teamId);
     final statByKey = <String, PlayerStat>{
       for (final s in statsList)
@@ -116,6 +118,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         ..addEntries(players.map((p) => MapEntry(p.id, p)));
       _nominated = pool;
       _matchNumbers = matchNumbers;
+      _match = match;
       _statByKey = statByKey;
       _restricted = nominated.isNotEmpty;
       _starters.clear();
@@ -1019,7 +1022,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             ),
             const SizedBox(width: 4),
             Icon(Icons.edit, size: 12, color: Theme.of(context).hintColor),
-            if (p.suspendedGames > 0) ...[
+            if (_match != null && _app.isSuspendedForMatch(p, _match!)) ...[
               const SizedBox(width: 6),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
@@ -1027,8 +1030,8 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                   color: Theme.of(context).colorScheme.error,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text('⛔ ${p.suspendedGames}',
-                    style: const TextStyle(
+                child: const Text('⛔',
+                    style: TextStyle(
                         fontSize: 10,
                         fontWeight: FontWeight.bold,
                         color: Colors.white)),

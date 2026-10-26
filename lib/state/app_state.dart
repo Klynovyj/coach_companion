@@ -963,6 +963,9 @@ class AppState extends ChangeNotifier {
         wishPosition: p['wish_position'] as String?,
         staffRole: p['staff_role'] as String?,
         suspendedGames: (p['suspended_games'] as num?)?.toInt() ?? 0,
+        suspensionCompetition: p['suspension_competition'] as String?,
+        suspensionFrom:
+            DateTime.tryParse(p['suspension_from'] as String? ?? ''),
         // Herkunft aus der Cloud übernehmen; Altzeilen ohne Spalte = FuPa.
         source: p['source'] != null
             ? DataSource.fromKey(p['source'] as String?)
@@ -989,6 +992,8 @@ class AppState extends ChangeNotifier {
         'wish_position': p.wishPosition,
         'staff_role': p.staffRole,
         'suspended_games': p.suspendedGames,
+        'suspension_competition': p.suspensionCompetition,
+        'suspension_from': p.suspensionFrom?.toIso8601String(),
         'source': p.source.storageKey,
       };
 
@@ -1029,6 +1034,13 @@ class AppState extends ChangeNotifier {
       wishPosition: record['wish_position'] as String?,
       staffRole: record['staff_role'] as String?,
       suspendedGames: (record['suspended_games'] as num?)?.toInt(),
+      suspensionCompetition: record['suspension_competition'] as String?,
+      clearSuspensionCompetition: record.containsKey('suspension_competition') &&
+          record['suspension_competition'] == null,
+      suspensionFrom:
+          DateTime.tryParse(record['suspension_from'] as String? ?? ''),
+      clearSuspensionFrom: record.containsKey('suspension_from') &&
+          record['suspension_from'] == null,
       source: record['source'] != null
           ? DataSource.fromKey(record['source'] as String?)
           : null,
@@ -1531,11 +1543,65 @@ class AppState extends ChangeNotifier {
     return out;
   }
 
-  /// Setzt die Anzahl noch abzusitzender Spiele einer Sperre (0 = frei).
-  Future<void> setSuspendedGames(Player p, int games) async {
-    await _repo.upsertPlayer(p.copyWith(suspendedGames: games < 0 ? 0 : games));
-    notifyListeners();
+  /// Setzt/ändert die Sperre eines Spielers: Anzahl Spiele, Wettbewerb und
+  /// Startdatum. games == 0 hebt die Sperre auf (löscht Wettbewerb/Datum).
+  /// Spiegelt auch in die Cloud (über updatePlayer).
+  Future<void> setSuspension(Player p,
+      {required int games, String? competition, DateTime? from}) async {
+    final g = games < 0 ? 0 : games;
+    final updated = g == 0
+        ? p.copyWith(
+            suspendedGames: 0,
+            clearSuspensionCompetition: true,
+            clearSuspensionFrom: true)
+        : p.copyWith(
+            suspendedGames: g,
+            suspensionCompetition: competition,
+            clearSuspensionCompetition: competition == null,
+            suspensionFrom: from,
+            clearSuspensionFrom: from == null,
+          );
+    await updatePlayer(updated);
   }
+
+  /// Anzahl noch abzusitzender Spiele ändern, Wettbewerb/Startdatum behalten.
+  Future<void> setSuspendedGames(Player p, int games) =>
+      setSuspension(p,
+          games: games,
+          competition: p.suspensionCompetition,
+          from: p.suspensionFrom);
+
+  /// Vorkommende Wettbewerbe im Spielplan (für die Sperren-Auswahl).
+  List<String> competitionsInSchedule() {
+    final set = <String>{};
+    for (final m in _matches) {
+      final c = m.competition?.trim();
+      if (c != null && c.isNotEmpty) set.add(c);
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  /// Die nächsten N angesetzten Spiele, für die der Spieler gesperrt ist:
+  /// Wettbewerb der Sperre (oder alle) ab dem Startdatum, nach Datum sortiert.
+  List<GameMatch> suspensionMatches(Player p) {
+    if (p.suspendedGames <= 0) return const [];
+    final from = p.suspensionFrom;
+    final comp = p.suspensionCompetition;
+    final list = _matches
+        .where((m) =>
+            m.status == MatchStatus.scheduled &&
+            m.kickoff != null &&
+            (comp == null || m.competition == comp) &&
+            (from == null || !m.kickoff!.isBefore(from)))
+        .toList()
+      ..sort((a, b) => a.kickoff!.compareTo(b.kickoff!));
+    return list.take(p.suspendedGames).toList();
+  }
+
+  /// Ist der Spieler für dieses konkrete Spiel gesperrt? (wettbewerbsgenau)
+  bool isSuspendedForMatch(Player p, GameMatch m) =>
+      suspensionMatches(p).any((x) => x.id == m.id);
 
   /// Setzt Spieler, deren Abwesenheit abgelaufen ist, automatisch auf „Fit".
   Future<void> _autoRevertAbsences() async {

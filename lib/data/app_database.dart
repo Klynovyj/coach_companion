@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 38;
+  static const _dbVersion = 39;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -275,6 +275,12 @@ class AppDatabase {
       await db.execute('DROP INDEX IF EXISTS idx_rating_match_player');
       await db.execute(
           'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
+    }
+    // v38 -> v39: Sperre je Wettbewerb + Startdatum.
+    if (oldV < 39) {
+      await db.execute(
+          'ALTER TABLE players ADD COLUMN suspension_competition TEXT');
+      await db.execute('ALTER TABLE players ADD COLUMN suspension_from TEXT');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -538,6 +544,8 @@ class AppDatabase {
         source TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1,
         suspended_games INTEGER NOT NULL DEFAULT 0,
+        suspension_competition TEXT,
+        suspension_from TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
       )

@@ -61,6 +61,13 @@ class Player {
   /// Manuell gepflegt (Gelb-Rot/Rot/Verbandsstrafe), vom Trainer heruntergezählt.
   final int suspendedGames;
 
+  /// Wettbewerb, für den die Sperre gilt (z.B. „Kreisliga B2" oder
+  /// „Kreispokal …"); null = alle. Betrifft nur Spiele dieses Wettbewerbs.
+  final String? suspensionCompetition;
+
+  /// Ab wann die Sperre gilt (nur Spiele ab diesem Datum zählen).
+  final DateTime? suspensionFrom;
+
   final DateTime createdAt;
 
   const Player({
@@ -83,6 +90,8 @@ class Player {
     this.source = DataSource.manual,
     this.active = true,
     this.suspendedGames = 0,
+    this.suspensionCompetition,
+    this.suspensionFrom,
     required this.createdAt,
   });
 
@@ -142,6 +151,10 @@ class Player {
     DataSource? source,
     bool? active,
     int? suspendedGames,
+    String? suspensionCompetition,
+    bool clearSuspensionCompetition = false,
+    DateTime? suspensionFrom,
+    bool clearSuspensionFrom = false,
   }) {
     return Player(
       id: id,
@@ -164,6 +177,12 @@ class Player {
       source: source ?? this.source,
       active: active ?? this.active,
       suspendedGames: suspendedGames ?? this.suspendedGames,
+      suspensionCompetition: clearSuspensionCompetition
+          ? null
+          : (suspensionCompetition ?? this.suspensionCompetition),
+      suspensionFrom: clearSuspensionFrom
+          ? null
+          : (suspensionFrom ?? this.suspensionFrom),
       createdAt: createdAt,
     );
   }
@@ -188,6 +207,8 @@ class Player {
         'source': source.storageKey,
         'active': active ? 1 : 0,
         'suspended_games': suspendedGames,
+        'suspension_competition': suspensionCompetition,
+        'suspension_from': suspensionFrom?.toIso8601String(),
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -215,6 +236,9 @@ class Player {
         source: DataSource.fromKey(m['source'] as String?),
         active: (m['active'] as int? ?? 1) == 1,
         suspendedGames: m['suspended_games'] as int? ?? 0,
+        suspensionCompetition: m['suspension_competition'] as String?,
+        suspensionFrom:
+            DateTime.tryParse(m['suspension_from'] as String? ?? ''),
         createdAt:
             DateTime.tryParse(m['created_at'] as String? ?? '') ??
                 DateTime.now(),

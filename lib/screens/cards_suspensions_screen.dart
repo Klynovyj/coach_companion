@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
@@ -53,6 +54,94 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
   Future<void> _setSuspension(PlayerCardSummary s, int games) async {
     await _app.setSuspendedGames(s.player, games);
     // _load() wird über den Listener ausgelöst.
+  }
+
+  /// Dialog: Wettbewerb + Startdatum + Anzahl Spiele einer Sperre eintragen.
+  Future<void> _editSuspension(PlayerCardSummary s) async {
+    final p = s.player;
+    final comps = _app.competitionsInSchedule();
+    String? comp = p.suspensionCompetition ??
+        (comps.isNotEmpty ? comps.first : null);
+    var from = p.suspensionFrom ?? DateTime.now();
+    var games = p.suspendedGames > 0 ? p.suspendedGames : 1;
+    final df = DateFormat('dd.MM.yyyy', 'de_DE');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text('Sperre – ${p.fullName}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (comps.isEmpty)
+                const Text('Kein Wettbewerb im Spielplan gefunden – '
+                    'die Sperre gilt dann für alle Spiele.')
+              else
+                DropdownButtonFormField<String>(
+                  initialValue: comp,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Wettbewerb'),
+                  items: [
+                    for (final c in comps)
+                      DropdownMenuItem(value: c, child: Text(c)),
+                  ],
+                  onChanged: (v) => setD(() => comp = v),
+                ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  const Text('Gesperrt ab: '),
+                  TextButton(
+                    onPressed: () async {
+                      final d = await showDatePicker(
+                        context: ctx,
+                        initialDate: from,
+                        firstDate: DateTime(2020),
+                        lastDate: DateTime(2100),
+                        helpText: 'Sperre ab',
+                      );
+                      if (d != null) setD(() => from = d);
+                    },
+                    child: Text(df.format(from)),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const Text('Anzahl Spiele: '),
+                  IconButton(
+                    onPressed: () => setD(() {
+                      if (games > 1) games--;
+                    }),
+                    icon: const Icon(Icons.remove_circle_outline),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  Text('$games',
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  IconButton(
+                    onPressed: () => setD(() => games++),
+                    icon: const Icon(Icons.add_circle_outline),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Abbrechen')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Speichern')),
+          ],
+        ),
+      ),
+    );
+    if (ok == true) {
+      await _app.setSuspension(p, games: games, competition: comp, from: from);
+    }
   }
 
   @override
@@ -196,7 +285,7 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
       return Align(
         alignment: Alignment.centerLeft,
         child: OutlinedButton.icon(
-          onPressed: () => _setSuspension(s, 1),
+          onPressed: () => _editSuspension(s),
           icon: const Icon(Icons.block, size: 16),
           label: const Text('Sperre eintragen'),
           style: OutlinedButton.styleFrom(
@@ -206,27 +295,48 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
         ),
       );
     }
-    return Row(
+    final df = DateFormat('dd.MM.yyyy', 'de_DE');
+    final info = [
+      if (p.suspensionCompetition != null) p.suspensionCompetition!,
+      if (p.suspensionFrom != null) 'ab ${df.format(p.suspensionFrom!)}',
+    ].join(' · ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Gesperrt für',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
-        IconButton(
-          onPressed: () => _setSuspension(s, p.suspendedGames - 1),
-          icon: const Icon(Icons.remove_circle_outline),
-          visualDensity: VisualDensity.compact,
-          tooltip: 'Ein Spiel weniger',
-        ),
-        Text('${p.suspendedGames} Spiel(e)',
-            style: const TextStyle(fontWeight: FontWeight.w700)),
-        IconButton(
-          onPressed: () => _setSuspension(s, p.suspendedGames + 1),
-          icon: const Icon(Icons.add_circle_outline),
-          visualDensity: VisualDensity.compact,
-          tooltip: 'Ein Spiel mehr',
-        ),
-        TextButton(
-          onPressed: () => _setSuspension(s, 0),
-          child: const Text('Aufheben'),
+        if (info.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text(info,
+                style: TextStyle(
+                    fontSize: 12, color: Theme.of(context).hintColor)),
+          ),
+        Row(
+          children: [
+            const Text('Gesperrt für',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            IconButton(
+              onPressed: () => _setSuspension(s, p.suspendedGames - 1),
+              icon: const Icon(Icons.remove_circle_outline),
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Ein Spiel weniger',
+            ),
+            Text('${p.suspendedGames} Spiel(e)',
+                style: const TextStyle(fontWeight: FontWeight.w700)),
+            IconButton(
+              onPressed: () => _setSuspension(s, p.suspendedGames + 1),
+              icon: const Icon(Icons.add_circle_outline),
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Ein Spiel mehr',
+            ),
+            TextButton(
+              onPressed: () => _editSuspension(s),
+              child: const Text('Ändern'),
+            ),
+            TextButton(
+              onPressed: () => _setSuspension(s, 0),
+              child: const Text('Aufheben'),
+            ),
+          ],
         ),
       ],
     );
