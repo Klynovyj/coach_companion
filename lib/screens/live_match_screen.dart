@@ -842,22 +842,6 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                           onEvent: () =>
                               _act(() => _addOtherEvent(ownSide: false)),
                         ),
-                        const SizedBox(height: 8),
-                        Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 12),
-                          child: SizedBox(
-                            width: double.infinity,
-                            child: OutlinedButton.icon(
-                              onPressed: (_actionsEnabled || _nachtragen)
-                                  ? () => _act(_addComment)
-                                  : null,
-                              icon: const Icon(Icons.chat_bubble_outline,
-                                  size: 18),
-                              label: const Text('Kommentar'),
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -873,7 +857,32 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               ],
             ),
           ),
+          // Kommentar fest an der Fußleiste (nicht mitscrollend).
+          if (canEdit && !_watchMode && _phase != _Phase.shootout)
+            _commentFooter(context),
         ],
+      ),
+    );
+  }
+
+  /// Fest an der Fußleiste angedockter Kommentar-Button.
+  Widget _commentFooter(BuildContext context) {
+    final enabled = _actionsEnabled || _nachtragen;
+    return Material(
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: enabled ? () => _act(_addComment) : null,
+              icon: const Icon(Icons.chat_bubble_outline, size: 18),
+              label: const Text('Kommentar'),
+            ),
+          ),
+        ),
       ),
     );
   }
