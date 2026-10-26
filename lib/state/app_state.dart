@@ -1554,12 +1554,17 @@ class AppState extends ChangeNotifier {
           break;
         }
       }
-      // Abgelaufen (letzter Tag liegt vor heute) -> wieder Fit.
+      // Abgelaufen (letzter Tag liegt vor heute) -> wieder Fit. Über
+      // updatePlayer, damit „Fit" auch in die Cloud gespiegelt wird und nicht
+      // beim nächsten Pull wieder von „Krank/Verletzt" überschrieben wird.
       if (current != null && current.until.isBefore(today)) {
-        await _repo.upsertPlayer(p.copyWith(status: PlayerStatus.fit));
+        await updatePlayer(p.copyWith(status: PlayerStatus.fit));
       }
     }
   }
+
+  /// Öffentlicher Einstieg für den Auto-Revert (App-Start + Vordergrund).
+  Future<void> revertExpiredAbsences() => _autoRevertAbsences();
 
   /// Sorgt dafür, dass jede Kapitäns-Rolle pro Team nur einmal vergeben ist.
   Future<void> _enforceCaptainUniqueness(Player player) async {

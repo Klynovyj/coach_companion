@@ -71,8 +71,35 @@ Future<void> main() async {
   );
 }
 
-class CoachCompanionApp extends StatelessWidget {
+class CoachCompanionApp extends StatefulWidget {
   const CoachCompanionApp({super.key});
+
+  @override
+  State<CoachCompanionApp> createState() => _CoachCompanionAppState();
+}
+
+class _CoachCompanionAppState extends State<CoachCompanionApp>
+    with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Kommt die App wieder in den Vordergrund: abgelaufene Abwesenheiten
+    // (Krank/Verletzt/Gesperrt/Urlaub) automatisch auf „Fit" setzen.
+    if (state == AppLifecycleState.resumed) {
+      context.read<AppState>().revertExpiredAbsences();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
