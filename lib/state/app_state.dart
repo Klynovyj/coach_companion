@@ -2220,10 +2220,15 @@ class AppState extends ChangeNotifier {
   Future<List<PlayerRating>> ratingsOf(String matchId) =>
       _repo.getRatings(matchId);
 
-  /// Bewertungen eines Spiels als Map spielerId -> Bewertung.
+  /// Die EIGENEN Bewertungen eines Spiels als Map spielerId -> Bewertung
+  /// (fürs Bearbeiten – jeder Trainer sieht/ändert seine eigene Note).
   Future<Map<String, PlayerRating>> ratingsMapOf(String matchId) async {
+    final me = _me;
     final list = await _repo.getRatings(matchId);
-    return {for (final r in list) r.playerId: r};
+    return {
+      for (final r in list)
+        if ((r.userId ?? '') == me) r.playerId: r
+    };
   }
 
   /// Aktueller Benutzer (für pro-Benutzer-Bewertungen). Ohne Cloud „local".
@@ -2236,13 +2241,18 @@ class AppState extends ChangeNotifier {
     String? note,
     bool keepNote = true,
   }) async {
+    final me = _me;
     final existing = await _repo.getRatings(matchId);
-    final prior = existing.where((r) => r.playerId == playerId).firstOrNull;
+    // Nur die EIGENE Zeile (match, player, user) aktualisieren – jeder Trainer
+    // bewertet eigenständig, der angezeigte Schnitt ist über alle Trainer.
+    final prior = existing
+        .where((r) => r.playerId == playerId && (r.userId ?? '') == me)
+        .firstOrNull;
     await _repo.upsertRating(PlayerRating(
       id: prior?.id ?? _uuid.v4(),
       matchId: matchId,
       playerId: playerId,
-      userId: _me,
+      userId: me,
       rating: rating,
       note: note ?? (keepNote ? prior?.note : null),
       createdAt: prior?.createdAt ?? DateTime.now(),
@@ -2250,10 +2260,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Entfernt die (geteilte) Bewertung eines Spielers für ein Spiel.
+  /// Entfernt die EIGENE Bewertung eines Spielers für ein Spiel.
   Future<void> removeRating(String matchId, String playerId) async {
+    final me = _me;
     final existing = await _repo.getRatings(matchId);
-    for (final r in existing.where((r) => r.playerId == playerId)) {
+    for (final r in existing
+        .where((r) => r.playerId == playerId && (r.userId ?? '') == me)) {
       await _repo.deleteRating(r.id);
     }
     notifyListeners();
@@ -2382,10 +2394,10 @@ class AppState extends ChangeNotifier {
   Future<Map<String, double>> playerRatingsByMatch(String playerId) =>
       _repo.ratingsByPlayer(playerId);
 
-  /// Vollständige Bewertungen je Spiel (inkl. Kommentar) – fürs Profil.
-  /// Pro Spiel gibt es genau eine geteilte Bewertung.
+  /// Vollständige EIGENE Bewertungen je Spiel (inkl. Kommentar) – fürs Profil
+  /// (bearbeitbar ist nur die eigene Bewertung).
   Future<Map<String, PlayerRating>> playerRatingsFull(String playerId) =>
-      _repo.ratingsFullByPlayer(playerId);
+      _repo.ratingsFullByPlayer(playerId, userId: _me);
 
   /// Gesamtschnitt eines Spielers über alle Spiele: (Durchschnitt, Anzahl).
   Future<(double?, int)> ratingAverage(String playerId) =>

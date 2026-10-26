@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 37;
+  static const _dbVersion = 38;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -265,6 +265,16 @@ class AppDatabase {
     if (oldV < 37) {
       await db.execute(
           'ALTER TABLE players ADD COLUMN suspended_games INTEGER NOT NULL DEFAULT 0');
+    }
+    // v37 -> v38: Spielerbewertung wieder pro Trainer (jeder bewertet eigen-
+    // ständig, Schnitt über alle). Unique je (match, player, user). Verwaiste
+    // Zeilen ohne Benutzer entfernen, damit sie den Schnitt nicht verfälschen.
+    if (oldV < 38) {
+      await db.execute(
+          "DELETE FROM player_ratings WHERE user_id IS NULL OR user_id = ''");
+      await db.execute('DROP INDEX IF EXISTS idx_rating_match_player');
+      await db.execute(
+          'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -625,7 +635,7 @@ class AppDatabase {
       )
     ''');
     await db.execute(
-        'CREATE UNIQUE INDEX idx_rating_match_player ON player_ratings (match_id, player_id)');
+        'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
 
     await db.execute(_matchRatingsTableSql);
     await db.execute(
