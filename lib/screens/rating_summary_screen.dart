@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../models/enums.dart';
 import '../models/match.dart';
 import '../models/match_rating.dart';
 import '../models/player.dart';
@@ -231,8 +232,9 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
         children: [
-          // Eigene Bewertung inline (Note + Bericht) – geteilt mit allen Trainern.
-          _myRatingCard(context),
+          // Eigene Bewertung inline – nur bei beendeten Spielen (mit Ergebnis);
+          // geteilt mit allen Trainern.
+          if (match.status == MatchStatus.finished) _myRatingCard(context),
           // Gesamtnote-Schnitt
           Card(
             child: Padding(

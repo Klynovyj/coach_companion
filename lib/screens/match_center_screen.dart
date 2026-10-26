@@ -133,7 +133,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
             ],
           ),
           actions: [
-            if (isTrainer)
+            if (isTrainer && match.status == MatchStatus.finished)
               IconButton(
                 tooltip: 'Spieler & Spiel bewerten',
                 icon: const Icon(Icons.star_rate),
@@ -177,15 +177,16 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                       title: Text('Gegner neu synchronisieren'),
                     ),
                   ),
-                  PopupMenuItem(
-                    value: 'rate',
-                    child: ListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      leading: Icon(Icons.star_border),
-                      title: Text('Spieler bewerten'),
+                  if (match.status == MatchStatus.finished)
+                    const PopupMenuItem(
+                      value: 'rate',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.star_border),
+                        title: Text('Spieler bewerten'),
+                      ),
                     ),
-                  ),
                   PopupMenuItem(
                     value: 'reset',
                     child: ListTile(

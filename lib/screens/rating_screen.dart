@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../models/enums.dart';
 import '../models/match.dart';
 import '../models/match_rating.dart';
 import '../models/player.dart';
@@ -87,7 +88,8 @@ class _RatingScreenState extends State<RatingScreen> {
       _avg = avg;
       _myMatch = myMatch;
       _summary = summary;
-      _open = true; // Bewerten ist immer möglich (keine 3-Tage-Frist mehr).
+      // Nur beendete Spiele (mit Ergebnis) sind bewertbar – keine Frist.
+      _open = match.status == MatchStatus.finished;
       _loading = false;
     });
   }
@@ -225,6 +227,7 @@ class _RatingScreenState extends State<RatingScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
+          if (!_open) _lockBanner(context),
           _fupaVoteCard(context, match),
           _matchNoteCard(context),
           SwitchListTile(
@@ -245,6 +248,29 @@ class _RatingScreenState extends State<RatingScreen> {
             )
           else
             for (final p in _roster) _playerRow(context, p),
+        ],
+      ),
+    );
+  }
+
+  /// Hinweis: Bewerten ist erst nach Spielende (mit Ergebnis) möglich.
+  Widget _lockBanner(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      color: scheme.surfaceContainerHighest,
+      padding: const EdgeInsets.all(12),
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline, size: 18, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Bewerten ist erst nach Spielende möglich – das Spiel hat noch '
+              'kein Ergebnis.',
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
+          ),
         ],
       ),
     );
