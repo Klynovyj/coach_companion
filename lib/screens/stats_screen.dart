@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/enums.dart';
 import '../models/player_stat.dart';
+import '../screens/player_detail_screen.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../state/app_state.dart';
 
 enum _SortKey { goals, assists, matches, minutes, name }
+
+enum _StatsView { players, table, status }
 
 class StatsScreen extends StatefulWidget {
   const StatsScreen({
@@ -25,7 +30,7 @@ class StatsScreen extends StatefulWidget {
 
 class _StatsScreenState extends State<StatsScreen> {
   _SortKey _sort = _SortKey.goals;
-  bool _showTable = false; // false = Spieler-Statistik, true = Liga-Tabelle
+  _StatsView _view = _StatsView.players;
 
   List<PlayerStat> _sorted(List<PlayerStat> stats) {
     final list = [...stats];
@@ -59,23 +64,32 @@ class _StatsScreenState extends State<StatsScreen> {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: SegmentedButton<bool>(
+            child: SegmentedButton<_StatsView>(
+              showSelectedIcon: false,
               segments: const [
                 ButtonSegment(
-                    value: false,
+                    value: _StatsView.players,
                     label: Text('Spieler'),
                     icon: Icon(Icons.groups)),
                 ButtonSegment(
-                    value: true,
+                    value: _StatsView.table,
                     label: Text('Tabelle'),
                     icon: Icon(Icons.table_chart)),
+                ButtonSegment(
+                    value: _StatsView.status,
+                    label: Text('Status'),
+                    icon: Icon(Icons.health_and_safety)),
               ],
-              selected: {_showTable},
-              onSelectionChanged: (s) => setState(() => _showTable = s.first),
+              selected: {_view},
+              onSelectionChanged: (s) => setState(() => _view = s.first),
             ),
           ),
           Expanded(
-            child: _showTable ? _standingsView(state) : _playersView(state),
+            child: switch (_view) {
+              _StatsView.players => _playersView(state),
+              _StatsView.table => _standingsView(state),
+              _StatsView.status => _statusView(state),
+            },
           ),
         ],
       ),
@@ -107,6 +121,111 @@ class _StatsScreenState extends State<StatsScreen> {
           ],
         );
       },
+    );
+  }
+
+  // Reihenfolge der Status-Gruppen: erst die Ausfälle, dann Fit, dann Inaktiv.
+  static const _statusOrder = <PlayerStatus>[
+    PlayerStatus.verletzt,
+    PlayerStatus.gesperrt,
+    PlayerStatus.krank,
+    PlayerStatus.urlaub,
+    PlayerStatus.fit,
+    PlayerStatus.inaktiv,
+  ];
+
+  Widget _statusView(AppState state) {
+    return FutureBuilder<List<PlayerStatusInfo>>(
+      future: state.squadStatus(widget.teamId),
+      builder: (context, snap) {
+        if (!snap.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final all = snap.data!;
+        if (all.isEmpty) return _empty();
+        final byStatus = <PlayerStatus, List<PlayerStatusInfo>>{};
+        for (final info in all) {
+          byStatus.putIfAbsent(info.player.status, () => []).add(info);
+        }
+        final df = DateFormat('dd.MM.yyyy', 'de_DE');
+        return ListView(
+          padding: const EdgeInsets.only(bottom: 24),
+          children: [
+            _statusSummary(context, all),
+            for (final st in _statusOrder)
+              if ((byStatus[st] ?? const []).isNotEmpty) ...[
+                _statusGroupHeader(context, st, byStatus[st]!.length),
+                for (final info in byStatus[st]!) _statusRow(context, info, df),
+              ],
+          ],
+        );
+      },
+    );
+  }
+
+  /// Kopf-Übersicht: Kadergröße + Anzahl je Status als Chips.
+  Widget _statusSummary(BuildContext context, List<PlayerStatusInfo> all) {
+    int countOf(PlayerStatus s) =>
+        all.where((i) => i.player.status == s).length;
+    final chips = <Widget>[
+      _summaryChip(context, '👥', 'Kader', all.length, strong: true),
+      for (final st in _statusOrder)
+        if (countOf(st) > 0)
+          _summaryChip(context, st.symbol, st.label, countOf(st)),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Wrap(spacing: 8, runSpacing: 8, children: chips),
+    );
+  }
+
+  Widget _summaryChip(
+      BuildContext context, String symbol, String label, int n,
+      {bool strong = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: strong ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Text('$symbol $label: $n',
+          style: TextStyle(
+              fontSize: 13,
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600)),
+    );
+  }
+
+  Widget _statusGroupHeader(BuildContext context, PlayerStatus st, int n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
+      child: Text('${st.symbol}  ${st.label} ($n)',
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+    );
+  }
+
+  Widget _statusRow(
+      BuildContext context, PlayerStatusInfo info, DateFormat df) {
+    final p = info.player;
+    final sub = <String>[];
+    if (p.status.isAbsence && info.until != null) {
+      sub.add('bis ${df.format(info.until!.toLocal())}');
+    }
+    if (p.status == PlayerStatus.gesperrt && p.suspendedGames > 0) {
+      sub.add('${p.suspendedGames} Spiel(e)');
+    }
+    if (info.note != null && info.note!.trim().isNotEmpty) {
+      sub.add(info.note!.trim());
+    }
+    return ListTile(
+      dense: true,
+      leading: Text(p.status.symbol, style: const TextStyle(fontSize: 20)),
+      title: Text(p.displayName),
+      subtitle: sub.isEmpty ? null : Text(sub.join('  ·  ')),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => PlayerDetailScreen(player: p)),
+      ),
     );
   }
 

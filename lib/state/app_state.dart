@@ -1420,6 +1420,31 @@ class AppState extends ChangeNotifier {
   Future<List<PlayerAbsence>> absencesOf(String playerId) =>
       _repo.getAbsences(playerId);
 
+  /// Kader-Status-Übersicht: je Feldspieler Status + (bei befristeter
+  /// Abwesenheit) das „bis"-Datum und ein optionaler Grund. Für die
+  /// Status-Ansicht in der Statistik.
+  Future<List<PlayerStatusInfo>> squadStatus(String teamId) async {
+    final players =
+        (await _repo.getPlayers(teamId)).where((p) => !p.isStaffOnly).toList();
+    final out = <PlayerStatusInfo>[];
+    for (final p in players) {
+      DateTime? until;
+      String? note;
+      if (p.status.isAbsence) {
+        final abs = await _repo.getAbsences(p.id);
+        for (final a in abs) {
+          if (a.status == p.status) {
+            until = a.until;
+            note = a.note;
+            break;
+          }
+        }
+      }
+      out.add(PlayerStatusInfo(player: p, until: until, note: note));
+    }
+    return out;
+  }
+
   /// Legt eine Abwesenheit an (Zeitraum + Grund) und setzt den Spielerstatus.
   Future<void> addAbsence({
     required Player player,
@@ -2895,6 +2920,15 @@ class AppState extends ChangeNotifier {
 
 extension _FirstOrNull<E> on Iterable<E> {
   E? get firstOrNull => isEmpty ? null : first;
+}
+
+/// Status-Info eines Spielers für die Kader-Status-Übersicht: der Spieler, bei
+/// befristeter Abwesenheit das „bis"-Datum und ein optionaler Grund.
+class PlayerStatusInfo {
+  final Player player;
+  final DateTime? until;
+  final String? note;
+  const PlayerStatusInfo({required this.player, this.until, this.note});
 }
 
 /// Karten-Übersicht eines Spielers: FuPa-Saisonkarten + eigene erfasste Karten.
