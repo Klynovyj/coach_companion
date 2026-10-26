@@ -8,6 +8,7 @@ import '../models/scout_marker.dart';
 import '../screens/paste_import_screen.dart';
 import '../screens/player_detail_screen.dart';
 import '../state/app_state.dart';
+import 'injury_icon.dart';
 import 'opponent_scout_sheet.dart';
 import 'player_avatar.dart';
 import 'player_edit_dialog.dart';
@@ -210,16 +211,7 @@ class _SquadListViewState extends State<SquadListView> {
           if (p.status != PlayerStatus.fit) ...[
             const SizedBox(width: 6),
             if (p.status == PlayerStatus.verletzt)
-              Container(
-                width: 16,
-                height: 16,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.error,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.add, size: 12, color: Colors.white),
-              )
+              const InjuryCross(size: 16)
             else
               Text(p.status.symbol, style: const TextStyle(fontSize: 13)),
           ],

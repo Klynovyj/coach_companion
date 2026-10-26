@@ -25,6 +25,7 @@ import '../models/team.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
+import '../widgets/injury_icon.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/rich_note_view.dart';
@@ -571,11 +572,26 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       onSelected: _setStatus,
       itemBuilder: (_) => [
         for (final s in PlayerStatus.values)
-          PopupMenuItem(value: s, child: Text('${s.symbol} ${s.label}')),
+          PopupMenuItem(
+            value: s,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (s == PlayerStatus.verletzt)
+                  const InjuryCross(size: 16)
+                else
+                  Text(s.symbol),
+                const SizedBox(width: 8),
+                Text(s.label),
+              ],
+            ),
+          ),
       ],
       child: _editChip(
         context,
-        leading: Text(p.status.symbol, style: const TextStyle(fontSize: 12)),
+        leading: p.status == PlayerStatus.verletzt
+            ? const InjuryCross(size: 14)
+            : Text(p.status.symbol, style: const TextStyle(fontSize: 12)),
         label: p.status.label,
         side: playerStatusColor(p.status),
       ),
@@ -874,8 +890,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   onDismissed: (_) => state.deleteAbsence(a.id),
                   child: ListTile(
                     contentPadding: EdgeInsets.zero,
-                    leading: Text(a.status.symbol,
-                        style: const TextStyle(fontSize: 20)),
+                    leading: a.status == PlayerStatus.verletzt
+                        ? const InjuryCross(size: 20)
+                        : Text(a.status.symbol,
+                            style: const TextStyle(fontSize: 20)),
                     title: Text(
                         '${a.status.label} · ${df.format(a.from)} – ${df.format(a.until)}'),
                     subtitle: a.note == null

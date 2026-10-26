@@ -15,6 +15,7 @@ import '../services/live_clock.dart';
 import '../services/share_service.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
+import '../widgets/injury_icon.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/team_logo.dart';
@@ -2617,11 +2618,33 @@ class _EventLog extends StatelessWidget {
           // beide Seiten auf einen Blick unterscheidbar. Neutral (Kommentar)
           // bleibt links.
           final rightSide = !e.type.isNeutral && !own;
-          final title = Text(
-            leadingIsPhoto ? '${e.type.symbol} ${_describe(e)}' : _describe(e),
-            textAlign: rightSide ? TextAlign.right : TextAlign.left,
-            style: const TextStyle(fontWeight: FontWeight.w500, height: 1.2),
-          );
+          const titleStyle =
+              TextStyle(fontWeight: FontWeight.w500, height: 1.2);
+          final describe = _describe(e);
+          // „Verletzt raus": rotes Kreuz im Text (statt 🚑). Behandlung bleibt.
+          final Widget title = e.type == MatchEventType.injuredOff
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: rightSide
+                      ? [
+                          Flexible(
+                              child: Text(describe,
+                                  textAlign: TextAlign.right,
+                                  style: titleStyle)),
+                          const SizedBox(width: 5),
+                          const InjuryCross(size: 15),
+                        ]
+                      : [
+                          const InjuryCross(size: 15),
+                          const SizedBox(width: 5),
+                          Flexible(child: Text(describe, style: titleStyle)),
+                        ],
+                )
+              : Text(
+                  leadingIsPhoto ? '${e.type.symbol} $describe' : describe,
+                  textAlign: rightSide ? TextAlign.right : TextAlign.left,
+                  style: titleStyle,
+                );
           final textCol = Expanded(
             child: Column(
               crossAxisAlignment:
