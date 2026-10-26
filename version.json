@@ -1,6 +1,6 @@
 {
-  "versionCode": 28,
-  "versionName": "1.3.23",
+  "versionCode": 29,
+  "versionName": "1.3.24",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Statistik: neue Ansicht Status - Kadergroesse + Anzahl je Status (Fit, Verletzt, Krank, Gesperrt, Urlaub, Inaktiv) und Liste mit bis-Datum/Grund bei Abwesenheiten\n- Ball-/Materialdienst: Teilen-Icon mit Auswahl - nur Gruppen (Info) oder kompletter Plan\n\nAus 1.3.22:\n- Live-Spiel: Behandlung (frueher Verletzung) + neue Aktion Verletzt raus\n- Herkunfts-Badge FuPa/Manuell bei Spielern und Spielen\n\nAus 1.3.21:\n- Gegner-Analyse: doppelte Spieler bereinigt; Ereignis-Auswahl scrollbar; Aktionen nachtragen; Tore aus echtem Spielstand"
+  "notes": "Neuerungen:\n- Spielbewertung wieder pro Trainer: jeder bewertet eigenstaendig, angezeigt wird der Schnitt ueber alle Trainer (Sync verbessert)\n- Spielerprofil: Gesamt- und laufende Monats-Note im Kopf; Karte in eigenem Reiter, Rolle & Startelf in den Stammdaten\n- Bewertungen-Liste zeigt nur beendete Spiele (zurueckgesetzte fallen raus)\n- Nachholen: offene Bewertung wird pro Trainer geprueft\n\nAus 1.3.23:\n- Statistik: Status-Ansicht (Kaderstatus); Materialdienst: Teilen-Auswahl\n\nWichtig (Cloud): im Supabase-SQL-Editor stage24 und stage23 ausfuehren, damit Bewertungen pro Trainer und die Herkunfts-Badges auf allen Geraeten stimmen."
 }
