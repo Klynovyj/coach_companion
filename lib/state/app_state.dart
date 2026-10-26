@@ -2403,6 +2403,16 @@ class AppState extends ChangeNotifier {
   Future<(double?, int)> ratingAverage(String playerId) =>
       _repo.ratingAverage(playerId);
 
+  /// Schnitt + Anzahl eines Spielers in einem Monat (YYYY-MM). Ohne Monat wird
+  /// der laufende Kalendermonat genommen.
+  Future<(double?, int)> ratingAverageInMonth(String playerId,
+      [String? yearMonth]) {
+    final ym = yearMonth ??
+        '${DateTime.now().year.toString().padLeft(4, '0')}-'
+            '${DateTime.now().month.toString().padLeft(2, '0')}';
+    return _repo.ratingAverageInMonth(playerId, ym);
+  }
+
   Future<Map<String, (double, int)>> ratingAveragesForTeam(String teamId) =>
       _repo.ratingAveragesForTeam(teamId);
 

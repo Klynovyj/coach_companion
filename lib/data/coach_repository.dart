@@ -549,6 +549,21 @@ class CoachRepository {
     return (c == 0 ? null : a, c);
   }
 
+  /// Schnitt + Anzahl eines Spielers in einem Monat (YYYY-MM) – nach Spieldatum.
+  Future<(double?, int)> ratingAverageInMonth(
+      String playerId, String yearMonth) async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT AVG(r.rating) AS a, COUNT(*) AS c FROM player_ratings r '
+      'JOIN matches m ON m.id = r.match_id '
+      'WHERE r.player_id = ? AND substr(m.kickoff,1,7) = ?',
+      [playerId, yearMonth],
+    );
+    final c = (rows.first['c'] as int?) ?? 0;
+    final a = (rows.first['a'] as num?)?.toDouble();
+    return (c == 0 ? null : a, c);
+  }
+
   /// Durchschnittsbewertung aller Spieler eines Teams: pid -> (Schnitt, Anzahl).
   Future<Map<String, (double, int)>> ratingAveragesForTeam(
       String teamId) async {

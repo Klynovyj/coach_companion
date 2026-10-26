@@ -406,7 +406,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     _statusMenu(context, p),
                     _captainMenu(context, p),
                     _starterChip(context, p),
-                    _ratingChip(context),
+                    _ratingChipOverall(context),
+                    _ratingChipMonth(context),
                   ],
                 ),
               ],
@@ -428,19 +429,36 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     );
   }
 
-  Widget _ratingChip(BuildContext context) {
+  /// Gesamt-Bewertung (über alle Spiele).
+  Widget _ratingChipOverall(BuildContext context) {
     return FutureBuilder<(double?, int)>(
       future: context.read<AppState>().ratingAverage(_player.id),
-      builder: (context, snap) {
-        if (!snap.hasData) return const SizedBox.shrink();
-        final (avg, count) = snap.data!;
-        if (avg == null || count == 0) return const SizedBox.shrink();
-        return Chip(
-          avatar: Icon(Icons.star, size: 16, color: Colors.amber.shade700),
-          label: Text('${avg.toStringAsFixed(1)} ($count)'),
-          visualDensity: VisualDensity.compact,
-        );
-      },
+      builder: (context, snap) => !snap.hasData
+          ? const SizedBox.shrink()
+          : _ratingChipView(context, 'Gesamt', snap.data!),
+    );
+  }
+
+  /// Laufende Monats-Bewertung (aktueller Kalendermonat), immer sichtbar.
+  Widget _ratingChipMonth(BuildContext context) {
+    return FutureBuilder<(double?, int)>(
+      future: context.read<AppState>().ratingAverageInMonth(_player.id),
+      builder: (context, snap) => !snap.hasData
+          ? const SizedBox.shrink()
+          : _ratingChipView(context, 'Monat', snap.data!),
+    );
+  }
+
+  Widget _ratingChipView(
+      BuildContext context, String label, (double?, int) data) {
+    final (avg, count) = data;
+    final text = (avg == null || count == 0)
+        ? '$label –'
+        : '$label ${avg.toStringAsFixed(1)} ($count)';
+    return Chip(
+      avatar: Icon(Icons.star, size: 16, color: Colors.amber.shade700),
+      label: Text(text),
+      visualDensity: VisualDensity.compact,
     );
   }
 
