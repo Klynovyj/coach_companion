@@ -133,6 +133,10 @@ class AppState extends ChangeNotifier {
   /// Eindeutigkeit abbildet.
   static const _auxOnConflict = <String, String>{
     'match_nominations': 'match_id,player_id',
+    // Bewertungen sind pro Trainer: Upsert über die fachliche Eindeutigkeit,
+    // damit zwei Trainer-Noten nebeneinander bestehen (nicht per id kollidieren).
+    'player_ratings': 'match_id,player_id,user_id',
+    'match_ratings': 'match_id,user_id',
   };
 
   /// Spiegelt eine Schreiboperation des Repositorys in die Cloud (best effort).
@@ -786,6 +790,9 @@ class AppState extends ChangeNotifier {
     // Doppelte Gegnerspieler bereinigen (selbstheilend, bei sauberen Daten
     // ein No-op). Räumt lokale Altlasten weg und spiegelt sie in die Cloud.
     unawaited(cleanupDuplicateOpponents());
+    // Eigene Bewertungen erneut in die Cloud spiegeln (damit beide Trainer-
+    // Noten nach Cloud-Stufe 24 zusammenlaufen) + lokale Null-Zeilen entfernen.
+    unawaited(_resyncMyRatingsToCloud());
   }
 
   Future<void> _reload() async {
@@ -2402,6 +2409,40 @@ class AppState extends ChangeNotifier {
   /// Gesamtschnitt eines Spielers über alle Spiele: (Durchschnitt, Anzahl).
   Future<(double?, int)> ratingAverage(String playerId) =>
       _repo.ratingAverage(playerId);
+
+  /// Spiegelt die EIGENEN Bewertungen (Spieler + Spiel-Gesamtnote) erneut in
+  /// die Cloud und entfernt lokale verwaiste Null-Benutzer-Zeilen. Nötig, damit
+  /// nach dem Umstieg auf pro-Trainer-Bewertungen (Cloud-Stufe 24) beide
+  /// Trainer-Noten zusammenlaufen – ohne manuelles Neu-Bewerten. Best effort.
+  Future<void> _resyncMyRatingsToCloud() async {
+    final removed = await _repo.deleteNullUserRatings();
+    if (removed > 0) notifyListeners();
+    final team = _activeCloudTeamId;
+    final own = _ownTeam;
+    if (team == null ||
+        own == null ||
+        !CloudService.ready ||
+        !CloudService.signedIn) {
+      return;
+    }
+    final me = _me;
+    try {
+      for (final m in await _repo.getMatches(own.id)) {
+        for (final r in await _repo.getRatings(m.id)) {
+          if ((r.userId ?? '') != me) continue;
+          await CloudService.upsertRow(
+              'player_ratings', {...r.toMap(), 'team_id': team},
+              onConflict: 'match_id,player_id,user_id').catchError((_) {});
+        }
+        for (final r in await _repo.getMatchRatings(m.id)) {
+          if ((r.userId ?? '') != me) continue;
+          await CloudService.upsertRow(
+              'match_ratings', {...r.toMap(), 'team_id': team},
+              onConflict: 'match_id,user_id').catchError((_) {});
+        }
+      }
+    } catch (_) {}
+  }
 
   /// Schnitt + Anzahl eines Spielers in einem Monat (YYYY-MM). Ohne Monat wird
   /// der laufende Kalendermonat genommen.

@@ -426,6 +426,14 @@ class CoachRepository {
     _syncDelete('player_ratings', {'id': id});
   }
 
+  /// Entfernt verwaiste Bewertungen ohne Benutzer (zählen nicht, verfälschen den
+  /// Schnitt). Gibt die Anzahl gelöschter Zeilen zurück. Ohne Cloud-Sync.
+  Future<int> deleteNullUserRatings() async {
+    final db = await _db;
+    return db.delete('player_ratings',
+        where: "user_id IS NULL OR user_id = ''");
+  }
+
   /// Bewertungen eines Spielers je Spiel: matchId -> Schnitt (über alle Benutzer).
   Future<Map<String, double>> ratingsByPlayer(String playerId) async {
     final db = await _db;
