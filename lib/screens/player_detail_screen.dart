@@ -406,6 +406,15 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     _statusMenu(context, p),
                     _captainMenu(context, p),
                     _starterChip(context, p),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                // Bewertungen in eigener Zeile (Gesamt + laufender Monat).
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
                     _ratingChipOverall(context),
                     _ratingChipMonth(context),
                   ],
