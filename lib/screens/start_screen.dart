@@ -9,6 +9,8 @@ import '../widgets/team_logo.dart';
 import 'home_screen.dart';
 import 'live_match_screen.dart';
 import 'match_center_screen.dart';
+import 'nachholen_screen.dart';
+import 'todos_screen.dart';
 
 /// Start-/Heute-Bildschirm: das Wichtigste auf einen Blick (laufendes/nächstes
 /// Spiel + Schnellzugriff). Wird in weiteren Schritten ausgebaut.
@@ -61,6 +63,7 @@ class StartScreen extends StatelessWidget {
             _nextCard(context, next)
           else if (live == null)
             _emptyCard(context),
+          _offenePunkte(context, state),
           const SizedBox(height: 8),
           _quickAccess(context),
         ],
@@ -167,6 +170,65 @@ class StartScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _offenePunkte(BuildContext context, AppState state) {
+    final isTrainer = state.isTrainerHere;
+    final scheme = Theme.of(context).colorScheme;
+    Widget line({
+      required IconData icon,
+      required String label,
+      required Future<int> count,
+      required Widget screen,
+    }) {
+      return FutureBuilder<int>(
+        future: count,
+        builder: (context, snap) {
+          final n = snap.data ?? 0;
+          return ListTile(
+            leading: Icon(icon, color: scheme.primary),
+            title: Text(label),
+            trailing: n <= 0
+                ? Text(
+                    'erledigt',
+                    style: TextStyle(color: Theme.of(context).hintColor),
+                  )
+                : Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Badge(label: Text('$n')),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => screen),
+            ),
+          );
+        },
+      );
+    }
+
+    return Card(
+      child: Column(
+        children: [
+          if (isTrainer)
+            line(
+              icon: Icons.playlist_add_check_circle,
+              label: 'Offene Bewertungen',
+              count: state.nachholenCount(),
+              screen: const NachholenScreen(),
+            ),
+          line(
+            icon: Icons.checklist,
+            label: 'Offene Aufgaben',
+            count: state.openTodoCount(),
+            screen: const TodosScreen(),
+          ),
+        ],
       ),
     );
   }

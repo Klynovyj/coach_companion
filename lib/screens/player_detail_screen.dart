@@ -353,7 +353,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
     // Karteikarten: weniger auf einen Blick, kein endloses Scrollen.
     return DefaultTabController(
-      length: isTrainer ? 9 : 7,
+      length: 4,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
@@ -379,18 +379,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             Material(
               color: Theme.of(context).colorScheme.surface,
               child: TabBar(
-                isScrollable: true,
-                tabAlignment: TabAlignment.start,
                 tabs: [
                   const Tab(text: 'Profil'),
                   const Tab(text: 'Karte'),
-                  const Tab(text: 'Abwesenheit'),
-                  const Tab(text: 'Karten'),
-                  const Tab(text: 'Tore'),
-                  const Tab(text: 'Ereignisse'),
-                  const Tab(text: 'Gespräche'),
-                  if (isTrainer) const Tab(text: 'Notizen'),
-                  if (isTrainer) const Tab(text: 'Bewertungen'),
+                  const Tab(text: 'Statistik'),
+                  Tab(text: isTrainer ? 'Trainer' : 'Gespräche'),
                 ],
               ),
             ),
@@ -402,20 +395,21 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   _tabList([_stammdatenCard(context)]),
                   // Karte: die Spielerkarte (FuPa/Tracking als Flip-Karte).
                   _tabList([_playerCard(context, state)]),
-                  _tabList([_absencesCard(context, state)]),
-                  _tabList([
-                    _cardsCard(context, state, df),
-                    _fupaCardsCard(context, state),
-                  ]),
+                  // Statistik & Historie zusammengefasst.
                   _tabList([
                     _fupaStatCard(context, state),
                     _goalsCard(context, state, df),
+                    _cardsCard(context, state, df),
+                    _fupaCardsCard(context, state),
+                    _eventsCard(context, state, df),
+                    _absencesCard(context, state),
                   ]),
-                  _tabList([_eventsCard(context, state, df)]),
-                  _tabList([_talksCard(context, state)]),
-                  if (isTrainer) _tabList([_notesCard(context, state, df)]),
-                  if (isTrainer)
-                    _tabList([_bewertungenCard(context, state, df)]),
+                  // Trainer: Gespräche + (nur Trainer) Notizen & Bewertungen.
+                  _tabList([
+                    _talksCard(context, state),
+                    if (isTrainer) _notesCard(context, state, df),
+                    if (isTrainer) _bewertungenCard(context, state, df),
+                  ]),
                 ],
               ),
             ),
