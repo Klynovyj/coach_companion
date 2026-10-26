@@ -32,8 +32,11 @@ class LineupsListScreen extends StatefulWidget {
 class _LineupsListScreenState extends State<LineupsListScreen> {
   late final AppState _app = context.read<AppState>();
   List<Lineup> _lineups = [];
-  final Map<String, int> _starters = {}; // lineupId -> Anzahl Startelf
+  Map<String, int> _starters = {}; // lineupId -> Anzahl Startelf
   bool _loading = true;
+  bool _reloading =
+      false; // verhindert überlappende (flackernde) Mehrfach-Loads
+  bool _reloadQueued = false;
 
   @override
   void initState() {
@@ -53,19 +56,36 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
   }
 
   Future<void> _load() async {
-    final lineups = await _app.lineupsForMatch(widget.matchId, widget.teamId);
-    _starters.clear();
-    for (final l in lineups) {
-      final entries = await _app.lineupEntries(l.id);
-      _starters[l.id] = entries
-          .where((e) => e.role == LineupRole.starter)
-          .length;
+    // Mehrere Benachrichtigungen kurz nacheinander (Speichern + Cloud-Echo +
+    // Realtime) nicht parallel laden lassen – sonst rendert ein Zwischenstand
+    // und es flackert. Läuft schon ein Load, nur einen weiteren vormerken.
+    if (_reloading) {
+      _reloadQueued = true;
+      return;
     }
-    if (!mounted) return;
-    setState(() {
-      _lineups = lineups;
-      _loading = false;
-    });
+    _reloading = true;
+    try {
+      final lineups = await _app.lineupsForMatch(widget.matchId, widget.teamId);
+      final starters = <String, int>{};
+      for (final l in lineups) {
+        final entries = await _app.lineupEntries(l.id);
+        starters[l.id] = entries
+            .where((e) => e.role == LineupRole.starter)
+            .length;
+      }
+      if (!mounted) return;
+      setState(() {
+        _lineups = lineups;
+        _starters = starters;
+        _loading = false;
+      });
+    } finally {
+      _reloading = false;
+      if (_reloadQueued && mounted) {
+        _reloadQueued = false;
+        _load();
+      }
+    }
   }
 
   bool _mine(Lineup l) {
