@@ -74,31 +74,24 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   @override
   void initState() {
     super.initState();
-    // Aufstellung anderer Trainer nach deren Speichern live übernehmen.
-    _app.addListener(_onChanged);
+    // Bewusst KEIN AppState-Listener: der Editor ist eine lokale Bearbeitungs-
+    // Sitzung. Würde er bei jeder Cloud-/Realtime-Benachrichtigung neu laden,
+    // überschriebe er die noch nicht gespeicherten Start/Bank-Änderungen – dann
+    // „reagiert" das Verschieben erst nach mehreren Versuchen. Reload passiert
+    // nur gezielt (Start, Rückkehr aus der Nominierung).
     _load();
-  }
-
-  void _onChanged() {
-    if (mounted) _load();
-  }
-
-  @override
-  void dispose() {
-    _app.removeListener(_onChanged);
-    super.dispose();
   }
 
   Future<void> _load() async {
     final state = context.read<AppState>();
     final lineup = widget.lineupId != null
         ? (await state.getLineupById(widget.lineupId!) ??
-            await state.ensureLineup(widget.matchId, widget.teamId))
+              await state.ensureLineup(widget.matchId, widget.teamId))
         : await state.ensureLineup(widget.matchId, widget.teamId);
     // Reines Trainerteam steht nicht in der Aufstellung (spielender Co-Trainer schon).
-    final players = (await state.playersOf(widget.teamId))
-        .where((p) => !p.isStaffOnly)
-        .toList();
+    final players = (await state.playersOf(
+      widget.teamId,
+    )).where((p) => !p.isStaffOnly).toList();
     final noms = await state.nominationsOf(widget.matchId);
     final entries = await state.lineupEntries(lineup.id);
     final matchNumbers = await state.matchNumbers(widget.matchId);
@@ -113,9 +106,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     // Zugesagte UND „unter Vorbehalt" nominierte Spieler stehen zur Aufstellung
     // zur Verfügung.
     final nominated = players
-        .where((p) =>
-            noms[p.id] == NominationStatus.zugesagt ||
-            noms[p.id] == NominationStatus.unterVorbehalt)
+        .where(
+          (p) =>
+              noms[p.id] == NominationStatus.zugesagt ||
+              noms[p.id] == NominationStatus.unterVorbehalt,
+        )
         .toList();
     final pool = nominated.isEmpty ? players : nominated;
     final slots = slotsForFormation(lineup.formation);
@@ -145,8 +140,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           } else {
             // Altbestand ohne Position -> auf Formations-Slot setzen.
             final s = idx < slots.length ? slots[idx] : null;
-            _starters[e.playerId] =
-                s != null ? Offset(s.x, s.y) : const Offset(0.5, 0.5);
+            _starters[e.playerId] = s != null
+                ? Offset(s.x, s.y)
+                : const Offset(0.5, 0.5);
           }
           idx++;
         } else if (e.role == LineupRole.substitute) {
@@ -177,9 +173,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   }
 
   void _toBench(String pid) => setState(() {
-        _removeEverywhere(pid);
-        _bench.add(pid);
-      });
+    _removeEverywhere(pid);
+    _bench.add(pid);
+  });
 
   void _toPool(String pid) => setState(() => _removeEverywhere(pid));
 
@@ -212,15 +208,17 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final navigator = Navigator.of(context);
     final sugg = await _app.createOrOpenSuggestion(orig);
     if (!mounted) return;
-    navigator.pushReplacement(MaterialPageRoute(
-      builder: (_) => LineupEditorScreen(
-        matchId: widget.matchId,
-        teamId: widget.teamId,
-        teamName: widget.teamName,
-        lineupId: sugg.id,
-        readOnly: false,
+    navigator.pushReplacement(
+      MaterialPageRoute(
+        builder: (_) => LineupEditorScreen(
+          matchId: widget.matchId,
+          teamId: widget.teamId,
+          teamName: widget.teamName,
+          lineupId: sugg.id,
+          readOnly: false,
+        ),
       ),
-    ));
+    );
   }
 
   Future<void> _save() async {
@@ -230,32 +228,37 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     // Deterministische Eintrags-ID pro (Aufstellung, Spieler): erneutes Speichern
     // upsertet in-place, nur wirklich entnommene Spieler gelten als „entfernt".
     _starters.forEach((pid, pos) {
-      entries.add(LineupEntry(
-        id: 'le_${lineup.id}_$pid',
-        lineupId: lineup.id,
-        playerId: pid,
-        role: LineupRole.starter,
-        orderIndex: i++,
-        posX: pos.dx,
-        posY: pos.dy,
-      ));
+      entries.add(
+        LineupEntry(
+          id: 'le_${lineup.id}_$pid',
+          lineupId: lineup.id,
+          playerId: pid,
+          role: LineupRole.starter,
+          orderIndex: i++,
+          posX: pos.dx,
+          posY: pos.dy,
+        ),
+      );
     });
     for (final pid in _bench) {
-      entries.add(LineupEntry(
-        id: 'le_${lineup.id}_$pid',
-        lineupId: lineup.id,
-        playerId: pid,
-        role: LineupRole.substitute,
-        orderIndex: 100 + i++,
-      ));
+      entries.add(
+        LineupEntry(
+          id: 'le_${lineup.id}_$pid',
+          lineupId: lineup.id,
+          playerId: pid,
+          role: LineupRole.substitute,
+          orderIndex: 100 + i++,
+        ),
+      );
     }
-    await context
-        .read<AppState>()
-        .saveLineup(lineup.copyWith(formation: _formation), entries);
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Aufstellung gespeichert.')),
+    await context.read<AppState>().saveLineup(
+      lineup.copyWith(formation: _formation),
+      entries,
     );
+    if (!mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Aufstellung gespeichert.')));
     Navigator.pop(context);
   }
 
@@ -266,14 +269,17 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Aufstellung zurücksetzen?'),
         content: const Text(
-            'Alle Spieler werden vom Feld und der Bank entfernt.'),
+          'Alle Spieler werden vom Feld und der Bank entfernt.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Zurücksetzen')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Zurücksetzen'),
+          ),
         ],
       ),
     );
@@ -301,9 +307,10 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                 padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
                 child: Align(
                   alignment: Alignment.centerLeft,
-                  child: Text('Kader teilen',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  child: Text(
+                    'Kader teilen',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
                 ),
               ),
               const Divider(height: 1),
@@ -316,15 +323,15 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
               ListTile(
                 leading: const Icon(Icons.groups),
                 title: const Text('Für die Mannschaft'),
-                subtitle:
-                    const Text('Nur Kader & Infos – ohne Start/Bank'),
+                subtitle: const Text('Nur Kader & Infos – ohne Start/Bank'),
                 onTap: () => Navigator.pop(context, 'team'),
               ),
               ListTile(
                 leading: const Icon(Icons.image),
                 title: const Text('Als Grafik (Story/Post)'),
-                subtitle:
-                    const Text('Startelf-Bild mit Sponsoren für Instagram/WhatsApp'),
+                subtitle: const Text(
+                  'Startelf-Bild mit Sponsoren für Instagram/WhatsApp',
+                ),
                 onTap: () => Navigator.pop(context, 'graphic'),
               ),
             ],
@@ -342,8 +349,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     }
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final boundary = _boundaryKey.currentContext?.findRenderObject()
-          as RenderRepaintBoundary?;
+      final boundary =
+          _boundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary == null) return;
       final image = await boundary.toImage(pixelRatio: 3);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
@@ -354,14 +362,17 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         text: 'Aufstellung – ${widget.teamName}',
       );
       if (savedPath != null && mounted) {
-        messenger.showSnackBar(SnackBar(
-          content: Text('Als Bild gespeichert und geöffnet:\n$savedPath'),
-          duration: const Duration(seconds: 6),
-        ));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Als Bild gespeichert und geöffnet:\n$savedPath'),
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     } catch (e) {
       messenger.showSnackBar(
-          SnackBar(content: Text('Teilen fehlgeschlagen: $e')));
+        SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
+      );
     }
   }
 
@@ -397,8 +408,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final benchIds = _bench.where(_byId.containsKey).toList()..sort(byNumber);
     final starters = [
       for (final id in starterIds)
-        StartelfPlayer(numOf(id), _byId[id]!.fullName,
-            position: isGk(_byId[id]!) ? 'Torwart' : null),
+        StartelfPlayer(
+          numOf(id),
+          _byId[id]!.fullName,
+          position: isGk(_byId[id]!) ? 'Torwart' : null,
+        ),
     ];
     final bench = [for (final id in benchIds) _byId[id]!.fullName];
     // Spielinfos (Datum/Heim-Auswärts/Gegner) fürs Grafik-Banner.
@@ -425,11 +439,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
 
   /// Kader als Text: Startelf + Ersatzbank, Namen alphabetisch sortiert.
   String _squadText() {
-    List<String> names(Iterable<String> ids) => ids
-        .where(_byId.containsKey)
-        .map((id) => _byId[id]!.shortOrFullName)
-        .toList()
-      ..sort();
+    List<String> names(Iterable<String> ids) =>
+        ids
+            .where(_byId.containsKey)
+            .map((id) => _byId[id]!.shortOrFullName)
+            .toList()
+          ..sort();
     final start = names(_starters.keys);
     final bench = names(_bench);
     final b = StringBuffer();
@@ -477,34 +492,41 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const Text('Infos für die Mannschaft',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const Text(
+                  'Infos für die Mannschaft',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
                 const SizedBox(height: 4),
-                const Text('Start/Bank wird nicht geteilt.',
-                    style: TextStyle(fontSize: 12.5, color: Colors.grey)),
+                const Text(
+                  'Start/Bank wird nicht geteilt.',
+                  style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                ),
                 const SizedBox(height: 14),
                 TextField(
                   controller: venueCtrl,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(
-                      labelText: 'Spielstätte', border: OutlineInputBorder()),
+                    labelText: 'Spielstätte',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: addrCtrl,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(
-                      labelText: 'Adresse / Anfahrt',
-                      border: OutlineInputBorder()),
+                    labelText: 'Adresse / Anfahrt',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 12),
                 TextField(
                   controller: treffCtrl,
                   textCapitalization: TextCapitalization.sentences,
                   decoration: const InputDecoration(
-                      labelText: 'Treffpunkt (Ort/Zeit)',
-                      border: OutlineInputBorder()),
+                    labelText: 'Treffpunkt (Ort/Zeit)',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 FilledButton.icon(
@@ -522,23 +544,32 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final venue = venueCtrl.text.trim();
     final addr = addrCtrl.text.trim();
     final treff = treffCtrl.text.trim();
-    await state.saveMatchShareInfo(
-        widget.matchId, {'venue': venue, 'address': addr, 'treff': treff});
+    await state.saveMatchShareInfo(widget.matchId, {
+      'venue': venue,
+      'address': addr,
+      'treff': treff,
+    });
     await shareViaWhatsApp(_teamShareText(match, venue, addr, treff));
   }
 
   String _teamShareText(
-      GameMatch? match, String venue, String addr, String treff) {
+    GameMatch? match,
+    String venue,
+    String addr,
+    String treff,
+  ) {
     final df = DateFormat('EEEE, dd.MM.yyyy · HH:mm', 'de_DE');
     final b = StringBuffer();
     b.writeln('${widget.teamName} – Infos zum Spiel');
     if (match != null) {
-      b.writeln([
-        'gegen ${match.opponentName}',
-        match.venue.label,
-        if (match.kickoff != null)
-          'Anpfiff ${df.format(match.kickoff!.toLocal())}',
-      ].join(' · '));
+      b.writeln(
+        [
+          'gegen ${match.opponentName}',
+          match.venue.label,
+          if (match.kickoff != null)
+            'Anpfiff ${df.format(match.kickoff!.toLocal())}',
+        ].join(' · '),
+      );
     }
     final names = _allSquadNames();
     if (names.isNotEmpty) {
@@ -576,7 +607,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         title: Text('Aufstellung · ${widget.teamName}'),
         actions: [
           IconButton(
-            tooltip: _listMode ? 'Kader teilen (WhatsApp)' : 'Aufstellung teilen',
+            tooltip: _listMode
+                ? 'Kader teilen (WhatsApp)'
+                : 'Aufstellung teilen',
             icon: const Icon(Icons.share),
             onPressed: _shareLineup,
           ),
@@ -594,21 +627,27 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           if (!widget.readOnly)
             TextButton(
               onPressed: _save,
-              child: const Text('Speichern',
-                  style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Speichern',
+                style: TextStyle(color: Colors.white),
+              ),
             )
           else if (_lineup != null && _lineup!.suggestionOf == null)
             TextButton(
               onPressed: _editAsSuggestion,
-              child: const Text('Als Vorschlag',
-                  style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Als Vorschlag',
+                style: TextStyle(color: Colors.white),
+              ),
             )
           else
             const Padding(
               padding: EdgeInsets.only(right: 12),
               child: Center(
-                child: Text('Nur ansehen',
-                    style: TextStyle(color: Colors.white, fontSize: 13)),
+                child: Text(
+                  'Nur ansehen',
+                  style: TextStyle(color: Colors.white, fontSize: 13),
+                ),
               ),
             ),
         ],
@@ -624,17 +663,21 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Startelf',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleMedium
-                          ?.copyWith(fontWeight: FontWeight.bold)),
-                  Text('$starters/11',
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: starters == 11
-                              ? Colors.green.shade700
-                              : Colors.orange.shade800)),
+                  Text(
+                    'Startelf',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '$starters/11',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: starters == 11
+                          ? Colors.green.shade700
+                          : Colors.orange.shade800,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -654,25 +697,31 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   Widget _banner() {
     return Container(
       width: double.infinity,
-      color:
-          Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.4),
+      color: Theme.of(
+        context,
+      ).colorScheme.primaryContainer.withValues(alpha: 0.4),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          Icon(Icons.how_to_reg,
-              size: 18, color: Theme.of(context).colorScheme.primary),
+          Icon(
+            Icons.how_to_reg,
+            size: 18,
+            color: Theme.of(context).colorScheme.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               !_restricted
                   ? 'Noch keine Zusagen – es wird der ganze Kader gezeigt'
                   : _listMode
-                      ? 'Erst Start/Bank einteilen – dann im Feld anordnen'
-                      : 'Ziehe die Spieler frei auf das Feld',
+                  ? 'Erst Start/Bank einteilen – dann im Feld anordnen'
+                  : 'Ziehe die Spieler frei auf das Feld',
             ),
           ),
           TextButton(
-              onPressed: _openNomination, child: const Text('Nominierung')),
+            onPressed: _openNomination,
+            child: const Text('Nominierung'),
+          ),
         ],
       ),
     );
@@ -776,9 +825,10 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-                color: Colors.white,
-                fontSize: (chip * 0.19).clamp(8.0, 12.0),
-                fontWeight: FontWeight.w600),
+              color: Colors.white,
+              fontSize: (chip * 0.19).clamp(8.0, 12.0),
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
@@ -801,20 +851,20 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   }
 
   Widget _benchSection() => _dropZone(
-        title: 'Ersatzbank',
-        empty: 'Spieler hierher ziehen',
-        players: _bench.where(_byId.containsKey).map((id) => _byId[id]!).toList(),
-        onAccept: _toBench,
-        highlightColor: Theme.of(context).colorScheme.secondaryContainer,
-      );
+    title: 'Ersatzbank',
+    empty: 'Spieler hierher ziehen',
+    players: _bench.where(_byId.containsKey).map((id) => _byId[id]!).toList(),
+    onAccept: _toBench,
+    highlightColor: Theme.of(context).colorScheme.secondaryContainer,
+  );
 
   Widget _poolSection() => _dropZone(
-        title: 'Verfügbar',
-        empty: 'Alle zugesagten Spieler sind eingeteilt.',
-        players: _pool,
-        onAccept: _toPool,
-        highlightColor: Theme.of(context).colorScheme.surfaceContainerHighest,
-      );
+    title: 'Verfügbar',
+    empty: 'Alle zugesagten Spieler sind eingeteilt.',
+    players: _pool,
+    onAccept: _toPool,
+    highlightColor: Theme.of(context).colorScheme.surfaceContainerHighest,
+  );
 
   Widget _dropZone({
     required String title,
@@ -834,13 +884,17 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
               ? highlightColor
               : Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+          border: Border.all(
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('$title (${players.length})',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              '$title (${players.length})',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             if (players.isEmpty)
               Text(empty, style: const TextStyle(color: Colors.grey))
@@ -848,7 +902,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
-                children: players.map((p) => _draggable(p, _compactChip(p))).toList(),
+                children: players
+                    .map((p) => _draggable(p, _compactChip(p)))
+                    .toList(),
               ),
           ],
         ),
@@ -872,8 +928,10 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           PlayerAvatar(player: p, radius: 13),
           const SizedBox(width: 6),
           if (_numberFor(p) != null) ...[
-            Text('${_numberFor(p)}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text(
+              '${_numberFor(p)}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(width: 4),
           ],
           Flexible(
@@ -887,22 +945,30 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   // ------------------------------------------------------------- Listen-Modus
   Widget _listEditor() {
     // Gruppiert wie bei SpielerPlus: Startelf, Ersatzbank, Verfügbar.
-    final starters =
-        _nominated.where((p) => _starters.containsKey(p.id)).toList();
+    final starters = _nominated
+        .where((p) => _starters.containsKey(p.id))
+        .toList();
     final bench = _nominated.where((p) => _bench.contains(p.id)).toList();
     final available = _pool;
     return Column(
       children: [
         _listGroup('Startelf', starters, countLabel: '${starters.length}/11'),
         _listGroup('Ersatzbank', bench),
-        _listGroup('Verfügbar', available,
-            emptyHint: 'Alle Spieler sind eingeteilt.'),
+        _listGroup(
+          'Verfügbar',
+          available,
+          emptyHint: 'Alle Spieler sind eingeteilt.',
+        ),
       ],
     );
   }
 
-  Widget _listGroup(String title, List<Player> players,
-      {String? countLabel, String? emptyHint}) {
+  Widget _listGroup(
+    String title,
+    List<Player> players, {
+    String? countLabel,
+    String? emptyHint,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -910,24 +976,25 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
           child: Row(
             children: [
-              Text(title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelLarge
-                      ?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
-                          fontWeight: FontWeight.bold)),
+              Text(
+                title,
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                  color: Theme.of(context).colorScheme.primary,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               const SizedBox(width: 8),
-              Text(countLabel ?? '${players.length}',
-                  style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                countLabel ?? '${players.length}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ),
         ),
         if (players.isEmpty && emptyHint != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
-            child: Text(emptyHint,
-                style: const TextStyle(color: Colors.grey)),
+            child: Text(emptyHint, style: const TextStyle(color: Colors.grey)),
           )
         else
           for (final p in players) _listRow(p),
@@ -955,14 +1022,18 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           color: (overridden ? accent : scheme.primary).withValues(alpha: 0.14),
           shape: BoxShape.circle,
           border: Border.all(
-              color: overridden ? accent : scheme.primary.withValues(alpha: 0.4),
-              width: overridden ? 1.5 : 1),
+            color: overridden ? accent : scheme.primary.withValues(alpha: 0.4),
+            width: overridden ? 1.5 : 1,
+          ),
         ),
-        child: Text(n != null ? '$n' : '–',
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.bold,
-                color: overridden ? accent : scheme.primary)),
+        child: Text(
+          n != null ? '$n' : '–',
+          style: TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.bold,
+            color: overridden ? accent : scheme.primary,
+          ),
+        ),
       ),
     );
   }
@@ -986,11 +1057,13 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
@@ -1023,11 +1096,13 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
@@ -1049,9 +1124,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final onBench = _bench.contains(p.id);
     // Nur Start oder Bank wählbar. Noch nicht eingeteilte (verfügbare) Spieler
     // haben keine Auswahl, bis Start/Bank getippt wird.
-    final selected = <String>{
-      if (isStarter) 'start' else if (onBench) 'bank',
-    };
+    final selected = <String>{if (isStarter) 'start' else if (onBench) 'bank'};
     final stat = _statByKey[p.dedupKey];
     final sub = [
       if (p.position != null && p.position!.isNotEmpty) p.position!,
@@ -1064,8 +1137,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         child: Row(
           children: [
             Flexible(
-              child: Text(p.shortOrFullName,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+              child: Text(
+                p.shortOrFullName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
             const SizedBox(width: 4),
             Icon(Icons.edit, size: 12, color: Theme.of(context).hintColor),
@@ -1077,11 +1153,14 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                   color: Theme.of(context).colorScheme.error,
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: const Text('⛔',
-                    style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white)),
+                child: const Text(
+                  '⛔',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ],
           ],
@@ -1108,7 +1187,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             onSelectionChanged: widget.readOnly
                 ? null
                 : (s) {
-                    if (s.isEmpty) return;
+                    if (s.isEmpty) {
+                      // Erneutes Tippen auf Start/Bank → raus aus dem Kader
+                      // (zurück zu „Verfügbar").
+                      _toPool(p.id);
+                      return;
+                    }
                     final v = s.first;
                     if (v == 'start') {
                       if (!isStarter) _addStarterDefault(p.id);
