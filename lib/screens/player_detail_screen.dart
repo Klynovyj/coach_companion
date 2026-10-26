@@ -85,8 +85,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             ),
             if (_player.photoPath != null)
               ListTile(
-                leading:
-                    const Icon(Icons.delete_outline, color: Colors.red),
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
                 title: const Text('Foto entfernen'),
                 onTap: () => Navigator.pop(context, 'remove'),
               ),
@@ -114,7 +113,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       await _apply(_player.copyWith(photoPath: dataUrl));
     } catch (e) {
       messenger.showSnackBar(
-          SnackBar(content: Text('Foto konnte nicht geladen werden: $e')));
+        SnackBar(content: Text('Foto konnte nicht geladen werden: $e')),
+      );
     }
   }
 
@@ -128,28 +128,34 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     final res = await _showAbsenceDialog(s);
     if (res == null || !mounted) return;
     await context.read<AppState>().addAbsence(
-          player: _player,
-          status: s,
-          from: res.$1,
-          until: res.$2,
-          note: res.$3,
-        );
+      player: _player,
+      status: s,
+      from: res.$1,
+      until: res.$2,
+      note: res.$3,
+    );
     if (mounted) setState(() => _player = _player.copyWith(status: s));
   }
 
   Future<void> _editAbsence(PlayerAbsence a) async {
-    final res = await _showAbsenceDialog(a.status,
-        initialFrom: a.from, initialUntil: a.until, initialNote: a.note);
+    final res = await _showAbsenceDialog(
+      a.status,
+      initialFrom: a.from,
+      initialUntil: a.until,
+      initialNote: a.note,
+    );
     if (res == null || !mounted) return;
-    await context.read<AppState>().updateAbsence(PlayerAbsence(
-          id: a.id,
-          playerId: a.playerId,
-          status: a.status,
-          from: res.$1,
-          until: res.$2,
-          note: res.$3,
-          createdAt: a.createdAt,
-        ));
+    await context.read<AppState>().updateAbsence(
+      PlayerAbsence(
+        id: a.id,
+        playerId: a.playerId,
+        status: a.status,
+        from: res.$1,
+        until: res.$2,
+        note: res.$3,
+        createdAt: a.createdAt,
+      ),
+    );
     if (mounted) setState(() {});
   }
 
@@ -173,7 +179,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         builder: (context, setLocal) {
           // Direkt eintippbares Datumsfeld (TT.MM.JJJJ) + Kalender als Option.
           Widget dateField(
-              String label, IconData icon, TextEditingController ctrl) {
+            String label,
+            IconData icon,
+            TextEditingController ctrl,
+          ) {
             return TextField(
               controller: ctrl,
               keyboardType: TextInputType.number,
@@ -223,28 +232,34 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             ),
             actions: [
               TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Abbrechen')),
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Abbrechen'),
+              ),
               FilledButton(
                 onPressed: () {
                   final f = _parseDmy(fromCtrl.text);
                   final u = _parseDmy(untilCtrl.text);
                   final messenger = ScaffoldMessenger.of(context);
                   if (f == null || u == null) {
-                    messenger.showSnackBar(const SnackBar(
-                        content:
-                            Text('Bitte Datum als TT.MM.JJJJ eingeben.')));
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('Bitte Datum als TT.MM.JJJJ eingeben.'),
+                      ),
+                    );
                     return;
                   }
                   if (u.isBefore(f)) {
-                    messenger.showSnackBar(const SnackBar(
-                        content: Text('„Bis" darf nicht vor „Von" liegen.')));
+                    messenger.showSnackBar(
+                      const SnackBar(
+                        content: Text('„Bis" darf nicht vor „Von" liegen.'),
+                      ),
+                    );
                     return;
                   }
                   Navigator.pop(context, (
                     f,
                     u,
-                    noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim()
+                    noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
                   ));
                 },
                 child: const Text('Speichern'),
@@ -349,10 +364,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   /// Ein Reiter-Inhalt als scrollbare Liste mit etwas Abstand unten.
-  Widget _tabList(List<Widget> children) => ListView(
-        padding: const EdgeInsets.only(bottom: 28),
-        children: children,
-      );
+  Widget _tabList(List<Widget> children) =>
+      ListView(padding: const EdgeInsets.only(bottom: 28), children: children);
 
   // ------------------------------------------------------------------ Header
   Widget _header(BuildContext context) {
@@ -368,13 +381,17 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(p.fullName.isEmpty ? 'Neuer Spieler' : p.fullName,
-                    style: Theme.of(context).textTheme.titleLarge),
+                Text(
+                  p.fullName.isEmpty ? 'Neuer Spieler' : p.fullName,
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
                 const SizedBox(height: 2),
-                Text([
-                  if (p.number != null) 'Nr. ${p.number}',
-                  if (p.position != null) p.position!,
-                ].join('  ·  ')),
+                Text(
+                  [
+                    if (p.number != null) 'Nr. ${p.number}',
+                    if (p.position != null) p.position!,
+                  ].join('  ·  '),
+                ),
                 const SizedBox(height: 8),
                 // Status direkt im Kopf – antippen zum Ändern. Rolle & Startelf
                 // stehen in den Stammdaten.
@@ -382,9 +399,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   spacing: 6,
                   runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _statusMenu(context, p),
-                  ],
+                  children: [_statusMenu(context, p)],
                 ),
                 const SizedBox(height: 6),
                 // Bewertungen in eigener Zeile (Gesamt + laufender Monat).
@@ -415,8 +430,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   Widget _headerPhoto(BuildContext context, Player p) {
     final scheme = Theme.of(context).colorScheme;
     final bytes = TeamLogo.decode(p.photoPath);
-    final fallback = p.number?.toString() ??
-        (p.lastName.isNotEmpty ? p.lastName[0] : '?');
+    final fallback =
+        p.number?.toString() ?? (p.lastName.isNotEmpty ? p.lastName[0] : '?');
     const size = 104.0;
     return GestureDetector(
       onTap: _changePhoto,
@@ -429,12 +444,20 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               height: size,
               color: scheme.surfaceContainerHighest,
               child: bytes != null
-                  ? Image.memory(bytes,
-                      fit: BoxFit.cover, gaplessPlayback: true)
+                  ? Image.memory(
+                      bytes,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    )
                   : Center(
-                      child: Text(fallback,
-                          style: const TextStyle(
-                              fontSize: 24, fontWeight: FontWeight.w600))),
+                      child: Text(
+                        fallback,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
             ),
           ),
           Positioned(
@@ -447,8 +470,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 shape: BoxShape.circle,
                 border: Border.all(color: scheme.surface, width: 1.5),
               ),
-              child: Icon(Icons.photo_camera,
-                  size: 13, color: scheme.onPrimary),
+              child: Icon(
+                Icons.photo_camera,
+                size: 13,
+                color: scheme.onPrimary,
+              ),
             ),
           ),
         ],
@@ -483,38 +509,48 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               Icon(Icons.block, size: 16, color: scheme.error),
               const SizedBox(width: 6),
               Expanded(
-                child: Text('GESPERRT · noch $n Spiel(e)',
-                    style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: scheme.onErrorContainer)),
+                child: Text(
+                  'GESPERRT · noch $n Spiel(e)',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    color: scheme.onErrorContainer,
+                  ),
+                ),
               ),
             ],
           ),
           if (meta.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 2),
-              child: Text(meta,
-                  style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onErrorContainer)),
+              child: Text(
+                meta,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: scheme.onErrorContainer,
+                ),
+              ),
             ),
           const SizedBox(height: 4),
           if (next.isEmpty)
-            Text('Keine passenden anstehenden Spiele im Plan.',
-                style: TextStyle(
-                    fontSize: 12, color: scheme.onErrorContainer))
+            Text(
+              'Keine passenden anstehenden Spiele im Plan.',
+              style: TextStyle(fontSize: 12, color: scheme.onErrorContainer),
+            )
           else ...[
-            Text('Gesperrt für:',
-                style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onErrorContainer)),
+            Text(
+              'Gesperrt für:',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: scheme.onErrorContainer,
+              ),
+            ),
             for (final m in next)
               Text(
-                  '• ${df.format(m.kickoff!.toLocal())} · vs ${m.opponentName}',
-                  style: TextStyle(
-                      fontSize: 12, color: scheme.onErrorContainer)),
+                '• ${df.format(m.kickoff!.toLocal())} · vs ${m.opponentName}',
+                style: TextStyle(fontSize: 12, color: scheme.onErrorContainer),
+              ),
           ],
         ],
       ),
@@ -553,7 +589,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   Widget _ratingChipView(
-      BuildContext context, String label, (double?, int) data) {
+    BuildContext context,
+    String label,
+    (double?, int) data,
+  ) {
     final (avg, count) = data;
     final text = (avg == null || count == 0)
         ? '$label –'
@@ -607,9 +646,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       itemBuilder: (_) => [
         for (final r in CaptainRole.values)
           PopupMenuItem(
-              value: r,
-              child: Text(
-                  r == CaptainRole.none ? 'Keine Rolle' : '${r.badge} ${r.label}')),
+            value: r,
+            child: Text(
+              r == CaptainRole.none ? 'Keine Rolle' : '${r.badge} ${r.label}',
+            ),
+          ),
       ],
       child: _editChip(
         context,
@@ -622,8 +663,12 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   /// Chip-Optik mit Dropdown-Pfeil, signalisiert „antippbar".
-  Widget _editChip(BuildContext context,
-      {Widget? leading, required String label, required Color side}) {
+  Widget _editChip(
+    BuildContext context, {
+    Widget? leading,
+    required String label,
+    required Color side,
+  }) {
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 5, 6, 5),
       decoration: BoxDecoration(
@@ -668,9 +713,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             initial: p.nickname ?? '',
             onSave: (v) {
               final t = v.trim();
-              _apply(t.isEmpty
-                  ? p.copyWith(clearNickname: true)
-                  : p.copyWith(nickname: t));
+              _apply(
+                t.isEmpty
+                    ? p.copyWith(clearNickname: true)
+                    : p.copyWith(nickname: t),
+              );
             },
           ),
           const SizedBox(height: 10),
@@ -701,9 +748,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   initial: p.position ?? '',
                   onSave: (v) {
                     final t = v.trim();
-                    _apply(t.isEmpty
-                        ? p.copyWith(clearPosition: true)
-                        : p.copyWith(position: t));
+                    _apply(
+                      t.isEmpty
+                          ? p.copyWith(clearPosition: true)
+                          : p.copyWith(position: t),
+                    );
                   },
                 ),
               ),
@@ -715,9 +764,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             initial: p.wishPosition ?? '',
             onSave: (v) {
               final t = v.trim();
-              _apply(t.isEmpty
-                  ? p.copyWith(clearWishPosition: true)
-                  : p.copyWith(wishPosition: t));
+              _apply(
+                t.isEmpty
+                    ? p.copyWith(clearWishPosition: true)
+                    : p.copyWith(wishPosition: t),
+              );
             },
           ),
           const SizedBox(height: 16),
@@ -742,18 +793,16 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 6),
-          child: Text('Rolle & Startelf',
-              style:
-                  TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+          child: Text(
+            'Rolle & Startelf',
+            style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+          ),
         ),
         Wrap(
           spacing: 8,
           runSpacing: 6,
           crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            _captainMenu(context, p),
-            _starterChip(context, p),
-          ],
+          children: [_captainMenu(context, p), _starterChip(context, p)],
         ),
       ],
     );
@@ -766,9 +815,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       children: [
         Padding(
           padding: const EdgeInsets.only(left: 4, bottom: 6),
-          child: Text('Aktuelle Position(en)',
-              style:
-                  TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+          child: Text(
+            'Aktuelle Position(en)',
+            style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+          ),
         ),
         Wrap(
           spacing: 6,
@@ -867,9 +917,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                    'Keine Einträge. Status Verletzt/Krank/Gesperrt/Urlaub '
-                    'oben setzen – mit Zeitraum.',
-                    style: TextStyle(color: Colors.grey)),
+                  'Keine Einträge. Status Verletzt/Krank/Gesperrt/Urlaub '
+                  'oben setzen – mit Zeitraum.',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             );
           }
@@ -892,20 +943,30 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     contentPadding: EdgeInsets.zero,
                     leading: a.status == PlayerStatus.verletzt
                         ? const InjuryCross(size: 20)
-                        : Text(a.status.symbol,
-                            style: const TextStyle(fontSize: 20)),
+                        : Text(
+                            a.status.symbol,
+                            style: const TextStyle(fontSize: 20),
+                          ),
                     title: Text(
-                        '${a.status.label} · ${df.format(a.from)} – ${df.format(a.until)}'),
+                      '${a.status.label} · ${df.format(a.from)} – ${df.format(a.until)}',
+                    ),
                     subtitle: a.note == null
                         ? null
-                        : Text(a.note!,
-                            maxLines: 2, overflow: TextOverflow.ellipsis),
+                        : Text(
+                            a.note!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                     trailing: a.until.isBefore(today)
-                        ? const Text('abgelaufen',
-                            style:
-                                TextStyle(color: Colors.grey, fontSize: 12))
-                        : Icon(Icons.circle,
-                            size: 10, color: playerStatusColor(a.status)),
+                        ? const Text(
+                            'abgelaufen',
+                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                          )
+                        : Icon(
+                            Icons.circle,
+                            size: 10,
+                            color: playerStatusColor(a.status),
+                          ),
                     onTap: () => _editAbsence(a),
                   ),
                 ),
@@ -945,37 +1006,45 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   padding: EdgeInsets.all(8),
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: Text('Noch keine Karten erfasst.',
-                        style: TextStyle(color: Colors.grey)),
+                    child: Text(
+                      'Noch keine Karten erfasst.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
                   ),
                 )
               else
-                ...cards.map((c) => Dismissible(
-                      key: ValueKey(c.id),
-                      direction: DismissDirection.endToStart,
-                      background: Container(
-                        color: Colors.red,
-                        alignment: Alignment.centerRight,
-                        padding: const EdgeInsets.only(right: 20),
-                        child: const Icon(Icons.delete, color: Colors.white),
+                ...cards.map(
+                  (c) => Dismissible(
+                    key: ValueKey(c.id),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      color: Colors.red,
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 20),
+                      child: const Icon(Icons.delete, color: Colors.white),
+                    ),
+                    onDismissed: (_) =>
+                        context.read<AppState>().deleteCard(c.id),
+                    child: ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Text(
+                        c.type.symbol,
+                        style: const TextStyle(fontSize: 22),
                       ),
-                      onDismissed: (_) =>
-                          context.read<AppState>().deleteCard(c.id),
-                      child: ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Text(c.type.symbol,
-                            style: const TextStyle(fontSize: 22)),
-                        title: Text(c.type.label),
-                        subtitle: Text(_context(
+                      title: Text(c.type.label),
+                      subtitle: Text(
+                        _context(
                           df: df,
                           date: c.date,
                           match: c.matchId == null ? null : matches[c.matchId],
                           minuteLabel: c.minuteLabel,
                           note: c.note,
-                        )),
-                        onTap: () => _editCard(context, c),
+                        ),
                       ),
-                    )),
+                      onTap: () => _editCard(context, c),
+                    ),
+                  ),
+                ),
             ],
           );
         },
@@ -987,30 +1056,39 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   /// Lädt Team (Logo/Name) + FuPa-Saisonstatistik + live erfasste Aktionen
   /// dieses Spielers für die Spielerkarte.
   Future<(Team?, PlayerStat?, Map<String, int>)> _loadCardData(
-      AppState s) async {
+    AppState s,
+  ) async {
     final team = await s.repository.getTeam(_player.teamId);
     // FuPa-Statistik bei Bedarf nachladen (Trainer-Gerät mit FuPa-Link).
     await s.ensureOwnStats(_player.teamId);
     final stat = await s.playerSeasonStat(_player.teamId, _player.dedupKey);
     // Tracking-Werte aus allen live getrackten Spielen (Spiele mit Phasen-Marke).
     final all = await s.allEvents();
-    final tracked =
-        all.where((e) => e.type.isPhaseMarker).map((e) => e.matchId).toSet();
+    final tracked = all
+        .where((e) => e.type.isPhaseMarker)
+        .map((e) => e.matchId)
+        .toSet();
     final pid = _player.id;
     final mine = all
-        .where((e) =>
-            tracked.contains(e.matchId) &&
-            (e.playerId == pid || e.assistPlayerId == pid))
+        .where(
+          (e) =>
+              tracked.contains(e.matchId) &&
+              (e.playerId == pid || e.assistPlayerId == pid),
+        )
         .toList();
     int c(Set<MatchEventType> types, {bool assist = false}) => mine
-        .where((e) =>
-            types.contains(e.type) &&
-            (assist ? e.assistPlayerId == pid : e.playerId == pid))
+        .where(
+          (e) =>
+              types.contains(e.type) &&
+              (assist ? e.assistPlayerId == pid : e.playerId == pid),
+        )
         .length;
     final live = <String, int>{
       'Tore': c({MatchEventType.goal, MatchEventType.penalty}),
-      'Vorlagen':
-          c({MatchEventType.goal, MatchEventType.penalty}, assist: true),
+      'Vorlagen': c({
+        MatchEventType.goal,
+        MatchEventType.penalty,
+      }, assist: true),
       'Schüsse': c({MatchEventType.shot}),
       'Distanzschüsse': c({MatchEventType.longShot}),
       'Kopfbälle': c({MatchEventType.header}),
@@ -1030,8 +1108,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       'Meckern': c({MatchEventType.meckern}),
       'Behandlungen': c({MatchEventType.injury}),
       'Verletzt raus': c({MatchEventType.injuredOff}),
-      'Wechsel':
-          mine.where((e) => e.type == MatchEventType.substitution).length,
+      'Wechsel': mine
+          .where((e) => e.type == MatchEventType.substitution)
+          .length,
     };
     return (team, stat, live);
   }
@@ -1047,17 +1126,19 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         final live = snap.data?.$3 ?? const <String, int>{};
         return _FlipPlayerCard(
           front: _PlayerCardView(
-              player: _player,
-              team: team,
-              stat: stat,
-              live: live,
-              section: _CardSide.fupa),
+            player: _player,
+            team: team,
+            stat: stat,
+            live: live,
+            section: _CardSide.fupa,
+          ),
           back: _PlayerCardView(
-              player: _player,
-              team: team,
-              stat: stat,
-              live: live,
-              section: _CardSide.tracking),
+            player: _player,
+            team: team,
+            stat: stat,
+            live: live,
+            section: _CardSide.tracking,
+          ),
         );
       },
     );
@@ -1076,21 +1157,30 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       color: surface,
       padding: const EdgeInsets.all(8),
       child: _PlayerCardView(
-          player: _player, team: team, stat: stat, live: live),
+        player: _player,
+        team: team,
+        stat: stat,
+        live: live,
+      ),
     );
     try {
       final bytes = await _captureOffscreen(card);
       if (bytes == null) return;
       final name = _player.fullName.isEmpty ? 'Spieler' : _player.fullName;
-      final path = await shareOrSaveImage(bytes, 'Statistik_$name',
-          text: 'Statistik – $name');
+      final path = await shareOrSaveImage(
+        bytes,
+        'Statistik_$name',
+        text: 'Statistik – $name',
+      );
       if (path != null && mounted) {
         messenger.showSnackBar(
-            SnackBar(content: Text('Als Bild gespeichert:\n$path')));
+          SnackBar(content: Text('Als Bild gespeichert:\n$path')),
+        );
       }
     } catch (e) {
-      messenger
-          .showSnackBar(SnackBar(content: Text('Teilen fehlgeschlagen: $e')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
+      );
     }
   }
 
@@ -1144,21 +1234,25 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                    'Keine FuPa-Statistik. Über „Jetzt aus FuPa aktualisieren" '
-                    '(Einstellungen → Konto & Team) laden.',
-                    style: TextStyle(color: Colors.grey)),
+                  'Keine FuPa-Statistik. Über „Jetzt aus FuPa aktualisieren" '
+                  '(Einstellungen → Konto & Team) laden.',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             );
           }
           Widget stat(String label, String value) => Column(
-                children: [
-                  Text(value,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text(label,
-                      style: Theme.of(context).textTheme.bodySmall),
-                ],
-              );
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          );
           // Karten stehen im Karten-Reiter; hier nur Tor-/Einsatz-Stats.
           return Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1195,19 +1289,25 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               padding: EdgeInsets.all(8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Keine FuPa-Statistik.',
-                    style: TextStyle(color: Colors.grey)),
+                child: Text(
+                  'Keine FuPa-Statistik.',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             );
           }
           Widget stat(String label, String value) => Column(
-                children: [
-                  Text(value,
-                      style: const TextStyle(
-                          fontSize: 20, fontWeight: FontWeight.bold)),
-                  Text(label, style: Theme.of(context).textTheme.bodySmall),
-                ],
-              );
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(label, style: Theme.of(context).textTheme.bodySmall),
+            ],
+          );
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1222,8 +1322,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               const SizedBox(height: 8),
               const Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Quelle: FuPa-Saisonstatistik',
-                    style: TextStyle(fontSize: 11.5, color: Colors.grey)),
+                child: Text(
+                  'Quelle: FuPa-Saisonstatistik',
+                  style: TextStyle(fontSize: 11.5, color: Colors.grey),
+                ),
               ),
             ],
           );
@@ -1254,8 +1356,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               padding: EdgeInsets.all(8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Noch keine Tore/Vorlagen erfasst.',
-                    style: TextStyle(color: Colors.grey)),
+                child: Text(
+                  'Noch keine Tore/Vorlagen erfasst.',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             );
           }
@@ -1266,16 +1370,20 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               final m = matches[e.matchId];
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: Text(isScorer ? '⚽' : '🅰️',
-                    style: const TextStyle(fontSize: 20)),
+                leading: Text(
+                  isScorer ? '⚽' : '🅰️',
+                  style: const TextStyle(fontSize: 20),
+                ),
                 title: Text(isScorer ? 'Tor' : 'Vorlage'),
-                subtitle: Text(_context(
-                  df: df,
-                  date: m?.kickoff,
-                  match: m,
-                  minuteLabel: e.minuteLabel,
-                  note: null,
-                )),
+                subtitle: Text(
+                  _context(
+                    df: df,
+                    date: m?.kickoff,
+                    match: m,
+                    minuteLabel: e.minuteLabel,
+                    note: null,
+                  ),
+                ),
               );
             }).toList(),
           );
@@ -1296,7 +1404,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             icon: Icons.timeline,
             title: 'Ereignis-Chronik',
             child: Padding(
-                padding: EdgeInsets.all(8), child: LinearProgressIndicator()),
+              padding: EdgeInsets.all(8),
+              child: LinearProgressIndicator(),
+            ),
           );
         }
         final matches = snap.data!.$2;
@@ -1309,8 +1419,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               padding: EdgeInsets.all(8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Noch keine Ereignisse erfasst.',
-                    style: TextStyle(color: Colors.grey)),
+                child: Text(
+                  'Noch keine Ereignisse erfasst.',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             ),
           );
@@ -1330,7 +1442,13 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
           children: [
             for (final mid in matchIds)
               _matchEventsCard(
-                  context, state, df, matches[mid], mid, byMatch[mid]!),
+                context,
+                state,
+                df,
+                matches[mid],
+                mid,
+                byMatch[mid]!,
+              ),
           ],
         );
       },
@@ -1338,8 +1456,14 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   /// Ein Karten-Abschnitt je Spiel – klar voneinander getrennt.
-  Widget _matchEventsCard(BuildContext context, AppState state, DateFormat df,
-      GameMatch? m, String matchId, List<MatchEvent> evs) {
+  Widget _matchEventsCard(
+    BuildContext context,
+    AppState state,
+    DateFormat df,
+    GameMatch? m,
+    String matchId,
+    List<MatchEvent> evs,
+  ) {
     final head = m == null ? 'Spiel' : 'vs ${m.opponentName}';
     final date = m?.kickoff == null ? '' : df.format(m!.kickoff!.toLocal());
     final sorted = [...evs]..sort((a, b) => a.minute.compareTo(b.minute));
@@ -1347,15 +1471,18 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       icon: Icons.sports_soccer,
       title: date.isEmpty ? head : '$head  ·  $date',
       child: Column(
-        children: [
-          for (final e in sorted) _chronRow(context, state, df, e, m),
-        ],
+        children: [for (final e in sorted) _chronRow(context, state, df, e, m)],
       ),
     );
   }
 
-  Widget _chronRow(BuildContext context, AppState state, DateFormat df,
-      MatchEvent e, GameMatch? m) {
+  Widget _chronRow(
+    BuildContext context,
+    AppState state,
+    DateFormat df,
+    MatchEvent e,
+    GameMatch? m,
+  ) {
     final (symbol, label) = _eventLabel(e);
     final sub = [
       e.minuteLabel,
@@ -1371,8 +1498,12 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     );
   }
 
-  Future<void> _eventActions(BuildContext context, AppState state,
-      MatchEvent e, GameMatch? m) async {
+  Future<void> _eventActions(
+    BuildContext context,
+    AppState state,
+    MatchEvent e,
+    GameMatch? m,
+  ) async {
     final navigator = Navigator.of(context);
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -1403,8 +1534,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     if (action == null || !mounted) return;
     switch (action) {
       case 'match':
-        await navigator.push(MaterialPageRoute(
-            builder: (_) => LiveMatchScreen(matchId: e.matchId)));
+        await navigator.push(
+          MaterialPageRoute(
+            builder: (_) => LiveMatchScreen(matchId: e.matchId),
+          ),
+        );
         if (mounted) setState(() {});
       case 'edit':
         await _editChronEvent(state, e);
@@ -1429,7 +1563,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               controller: minCtrl,
               keyboardType: TextInputType.number,
               decoration: const InputDecoration(
-                  labelText: 'Spielminute', border: OutlineInputBorder()),
+                labelText: 'Spielminute',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -1438,35 +1574,41 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               maxLines: 3,
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(
-                  labelText: 'Notiz', border: OutlineInputBorder()),
+                labelText: 'Notiz',
+                border: OutlineInputBorder(),
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
     if (ok != true || !mounted) return;
     final newMin = int.tryParse(minCtrl.text.trim()) ?? e.minute;
     final note = noteCtrl.text.trim();
-    await state.updateEvent(MatchEvent(
-      id: e.id,
-      matchId: e.matchId,
-      teamId: e.teamId,
-      minute: newMin,
-      minuteExtra: e.minuteExtra,
-      type: e.type,
-      playerId: e.playerId,
-      assistPlayerId: e.assistPlayerId,
-      note: note.isEmpty ? null : note,
-      createdAt: e.createdAt,
-    ));
+    await state.updateEvent(
+      MatchEvent(
+        id: e.id,
+        matchId: e.matchId,
+        teamId: e.teamId,
+        minute: newMin,
+        minuteExtra: e.minuteExtra,
+        type: e.type,
+        playerId: e.playerId,
+        assistPlayerId: e.assistPlayerId,
+        note: note.isEmpty ? null : note,
+        createdAt: e.createdAt,
+      ),
+    );
     if (mounted) setState(() {});
   }
 
@@ -1510,8 +1652,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               padding: EdgeInsets.all(8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Noch keine Gespräche geplant.',
-                    style: TextStyle(color: Colors.grey)),
+                child: Text(
+                  'Noch keine Gespräche geplant.',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             );
           }
@@ -1526,17 +1670,22 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     if (mounted) setState(() {});
                   },
                 ),
-                title: Text(t.title,
-                    style: t.done
-                        ? const TextStyle(
-                            decoration: TextDecoration.lineThrough,
-                            color: Colors.grey)
-                        : null),
-                subtitle: Text([
-                  df.format(t.scheduledAt),
-                  if (t.done) '✓ durchgeführt',
-                  if (t.notes != null && t.notes!.isNotEmpty) '📝 Notiz',
-                ].join('  ·  ')),
+                title: Text(
+                  t.title,
+                  style: t.done
+                      ? const TextStyle(
+                          decoration: TextDecoration.lineThrough,
+                          color: Colors.grey,
+                        )
+                      : null,
+                ),
+                subtitle: Text(
+                  [
+                    df.format(t.scheduledAt),
+                    if (t.done) '✓ durchgeführt',
+                    if (t.notes != null && t.notes!.isNotEmpty) '📝 Notiz',
+                  ].join('  ·  '),
+                ),
                 trailing: PopupMenuButton<String>(
                   onSelected: (v) {
                     if (v == 'edit') _editTalk(context, state, t);
@@ -1557,8 +1706,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   Future<void> _planTalk(BuildContext context, AppState state) async {
-    final data = await showTalkForm(context,
-        fixedPlayer: _player, players: [_player]);
+    final data = await showTalkForm(
+      context,
+      fixedPlayer: _player,
+      players: [_player],
+    );
     if (data == null || !mounted) return;
     await state.addTalk(
       playerId: _player.id,
@@ -1570,16 +1722,25 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   Future<void> _editTalk(
-      BuildContext context, AppState state, PlayerTalk t) async {
-    final data = await showTalkForm(context,
-        existing: t, fixedPlayer: _player, players: [_player]);
+    BuildContext context,
+    AppState state,
+    PlayerTalk t,
+  ) async {
+    final data = await showTalkForm(
+      context,
+      existing: t,
+      fixedPlayer: _player,
+      players: [_player],
+    );
     if (data == null || !mounted) return;
-    await state.saveTalk(t.copyWith(
-      title: data.title,
-      scheduledAt: data.scheduledAt,
-      notes: data.notes,
-      clearNotes: data.notes == null,
-    ));
+    await state.saveTalk(
+      t.copyWith(
+        title: data.title,
+        scheduledAt: data.scheduledAt,
+        notes: data.notes,
+        clearNotes: data.notes == null,
+      ),
+    );
     if (mounted) setState(() {});
   }
 
@@ -1598,95 +1759,107 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         icon: const Icon(Icons.add),
         label: const Text('Notiz'),
       ),
-      child: FutureBuilder<
-          (List<PlayerNote>, List<NoteCategory>, Map<String, GameMatch>)>(
-        future: _loadNotes(state),
-        builder: (context, snap) {
-          if (!snap.hasData) {
-            return const Padding(
-              padding: EdgeInsets.all(8),
-              child: LinearProgressIndicator(),
-            );
-          }
-          final notes = snap.data!.$1;
-          final cats = snap.data!.$2;
-          final matches = snap.data!.$3;
-          if (notes.isEmpty) {
-            return const Padding(
-              padding: EdgeInsets.all(8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text('Noch keine Notizen.',
-                    style: TextStyle(color: Colors.grey)),
-              ),
-            );
-          }
-          // Nach Rubrik gruppieren – Reihenfolge wie in den Einstellungen,
-          // „Ohne Rubrik" ganz unten.
-          final byCat = <String?, List<PlayerNote>>{};
-          final known = {for (final c in cats) c.id};
-          for (final n in notes) {
-            final key = (n.categoryId != null && known.contains(n.categoryId))
-                ? n.categoryId
-                : null;
-            byCat.putIfAbsent(key, () => []).add(n);
-          }
-          final groups = <(String, List<PlayerNote>)>[
-            for (final c in cats)
-              if (byCat[c.id] != null) (c.name, byCat[c.id]!),
-            if (byCat[null] != null) ('Ohne Kategorie', byCat[null]!),
-          ];
-          return Column(
-            children: [
-              for (final g in groups) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+      child:
+          FutureBuilder<
+            (List<PlayerNote>, List<NoteCategory>, Map<String, GameMatch>)
+          >(
+            future: _loadNotes(state),
+            builder: (context, snap) {
+              if (!snap.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: LinearProgressIndicator(),
+                );
+              }
+              final notes = snap.data!.$1;
+              final cats = snap.data!.$2;
+              final matches = snap.data!.$3;
+              if (notes.isEmpty) {
+                return const Padding(
+                  padding: EdgeInsets.all(8),
                   child: Align(
                     alignment: Alignment.centerLeft,
-                    child: Text(g.$1,
-                        style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: Theme.of(context).colorScheme.primary)),
-                  ),
-                ),
-                for (final n in g.$2)
-                  Dismissible(
-                    key: ValueKey(n.id),
-                    direction: DismissDirection.endToStart,
-                    background: Container(
-                      color: Colors.red,
-                      alignment: Alignment.centerRight,
-                      padding: const EdgeInsets.only(right: 20),
-                      child: const Icon(Icons.delete, color: Colors.white),
+                    child: Text(
+                      'Noch keine Notizen.',
+                      style: TextStyle(color: Colors.grey),
                     ),
-                    onDismissed: (_) =>
-                        context.read<AppState>().deleteNote(n.id),
-                    child: ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: const Icon(Icons.sticky_note_2_outlined),
-                      title: RichNoteView(stored: n.text),
-                      subtitle: Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text([
-                          df.format(n.createdAt),
-                          if (n.matchId != null && matches[n.matchId] != null)
-                            () {
-                              final mm = matches[n.matchId]!;
-                              final d = mm.kickoff == null
-                                  ? ''
-                                  : ' (${DateFormat('dd.MM.yyyy', 'de_DE').format(mm.kickoff!)})';
-                              return 'vs ${mm.opponentName}$d';
-                            }(),
-                        ].join('  ·  ')),
+                  ),
+                );
+              }
+              // Nach Rubrik gruppieren – Reihenfolge wie in den Einstellungen,
+              // „Ohne Rubrik" ganz unten.
+              final byCat = <String?, List<PlayerNote>>{};
+              final known = {for (final c in cats) c.id};
+              for (final n in notes) {
+                final key =
+                    (n.categoryId != null && known.contains(n.categoryId))
+                    ? n.categoryId
+                    : null;
+                byCat.putIfAbsent(key, () => []).add(n);
+              }
+              final groups = <(String, List<PlayerNote>)>[
+                for (final c in cats)
+                  if (byCat[c.id] != null) (c.name, byCat[c.id]!),
+                if (byCat[null] != null) ('Ohne Kategorie', byCat[null]!),
+              ];
+              return Column(
+                children: [
+                  for (final g in groups) ...[
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(0, 8, 0, 0),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          g.$1,
+                          style: Theme.of(context).textTheme.labelLarge
+                              ?.copyWith(
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                        ),
                       ),
-                      trailing: const Icon(Icons.edit, size: 18),
-                      onTap: () => _editNote(context, n),
                     ),
-                  ),
-              ],
-            ],
-          );
-        },
-      ),
+                    for (final n in g.$2)
+                      Dismissible(
+                        key: ValueKey(n.id),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          color: Colors.red,
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          child: const Icon(Icons.delete, color: Colors.white),
+                        ),
+                        onDismissed: (_) =>
+                            context.read<AppState>().deleteNote(n.id),
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.sticky_note_2_outlined),
+                          title: RichNoteView(stored: n.text),
+                          subtitle: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              [
+                                df.format(n.createdAt),
+                                if (n.matchId != null &&
+                                    matches[n.matchId] != null)
+                                  () {
+                                    final mm = matches[n.matchId]!;
+                                    final d = mm.kickoff == null
+                                        ? ''
+                                        : ' (${DateFormat('dd.MM.yyyy', 'de_DE').format(mm.kickoff!)})';
+                                    return 'vs ${mm.opponentName}$d';
+                                  }(),
+                              ].join('  ·  '),
+                            ),
+                          ),
+                          trailing: const Icon(Icons.edit, size: 18),
+                          onTap: () => _editNote(context, n),
+                        ),
+                      ),
+                  ],
+                ],
+              );
+            },
+          ),
     );
   }
 
@@ -1695,8 +1868,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     return _SectionCard(
       icon: Icons.star_border,
       title: 'Bewertungen',
-      child: FutureBuilder<
-          (List<GameMatch>, Map<String, PlayerRating>, Set<String>)>(
+      child: FutureBuilder<(List<GameMatch>, Map<String, PlayerRating>, Set<String>)>(
         future: _loadRatings(state),
         builder: (context, snap) {
           if (!snap.hasData) {
@@ -1711,9 +1883,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
           // Nur BEENDETE Spiele, in denen der Spieler gespielt hat (oder bereits
           // bewertet ist). Nicht-beendete bzw. zurückgesetzte Spiele fallen raus.
           final matches = allMatches
-              .where((m) =>
-                  m.status == MatchStatus.finished &&
-                  (played.contains(m.id) || ratings.containsKey(m.id)))
+              .where(
+                (m) =>
+                    m.status == MatchStatus.finished &&
+                    (played.contains(m.id) || ratings.containsKey(m.id)),
+              )
               .toList();
           if (matches.isEmpty) {
             return const Padding(
@@ -1721,16 +1895,19 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                    'Noch keine Einsätze. Bewertbar sind nur Spiele, in denen '
-                    'der Spieler gespielt hat.',
-                    style: TextStyle(color: Colors.grey)),
+                  'Noch keine Einsätze. Bewertbar sind nur Spiele, in denen '
+                  'der Spieler gespielt hat.',
+                  style: TextStyle(color: Colors.grey),
+                ),
               ),
             );
           }
           // Nach Datum sortieren – Richtung umschaltbar.
-          final sorted = [...matches]..sort((a, b) {
-              final cmp = (a.kickoff ?? a.createdAt)
-                  .compareTo(b.kickoff ?? b.createdAt);
+          final sorted = [...matches]
+            ..sort((a, b) {
+              final cmp = (a.kickoff ?? a.createdAt).compareTo(
+                b.kickoff ?? b.createdAt,
+              );
               return _ratingsSortAsc ? cmp : -cmp;
             });
           return Column(
@@ -1747,10 +1924,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     onPressed: () =>
                         setState(() => _ratingsSortAsc = !_ratingsSortAsc),
                     icon: Icon(
-                        _ratingsSortAsc
-                            ? Icons.arrow_upward
-                            : Icons.arrow_downward,
-                        size: 16),
+                      _ratingsSortAsc
+                          ? Icons.arrow_upward
+                          : Icons.arrow_downward,
+                      size: 16,
+                    ),
                     label: Text(_ratingsSortAsc ? 'Älteste' : 'Neueste'),
                   ),
                 ],
@@ -1764,7 +1942,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   Widget _ratingRow(
-      BuildContext context, DateFormat df, GameMatch m, PlayerRating? rating) {
+    BuildContext context,
+    DateFormat df,
+    GameMatch m,
+    PlayerRating? rating,
+  ) {
     final stars = rating?.rating.round() ?? 0;
     final note = rating?.note;
     return Padding(
@@ -1778,8 +1960,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('vs ${m.opponentName}',
-                        maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      'vs ${m.opponentName}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     Text(
                       m.kickoff != null ? df.format(m.kickoff!.toLocal()) : '—',
                       style: Theme.of(context).textTheme.bodySmall,
@@ -1791,7 +1976,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 value: stars,
                 size: 22,
                 onTap: (s) => context.read<AppState>().setRating(
-                    matchId: m.id, playerId: _player.id, rating: s.toDouble()),
+                  matchId: m.id,
+                  playerId: _player.id,
+                  rating: s.toDouble(),
+                ),
               ),
               if (stars > 0)
                 IconButton(
@@ -1810,9 +1998,11 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 padding: const EdgeInsets.only(top: 2, bottom: 2),
                 child: Row(
                   children: [
-                    Icon(Icons.chat_bubble_outline,
-                        size: 14,
-                        color: Theme.of(context).colorScheme.primary),
+                    Icon(
+                      Icons.chat_bubble_outline,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -1857,31 +2047,35 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
     if (text == null || !mounted) return;
     await context.read<AppState>().setRating(
-          matchId: m.id,
-          playerId: _player.id,
-          rating: rating.rating,
-          note: text.isEmpty ? null : text,
-          keepNote: false,
-        );
+      matchId: m.id,
+      playerId: _player.id,
+      rating: rating.rating,
+      note: text.isEmpty ? null : text,
+      keepNote: false,
+    );
     if (mounted) setState(() {});
   }
 
   Future<(List<GameMatch>, Map<String, PlayerRating>, Set<String>)>
-      _loadRatings(AppState s) async {
+  _loadRatings(AppState s) async {
     final mm = await s.matchMap(_player.teamId);
     final list = mm.values.toList()
-      ..sort((a, b) =>
-          (b.kickoff ?? b.createdAt).compareTo(a.kickoff ?? a.createdAt));
+      ..sort(
+        (a, b) =>
+            (b.kickoff ?? b.createdAt).compareTo(a.kickoff ?? a.createdAt),
+      );
     final ratings = await s.playerRatingsFull(_player.id);
     final played = await s.playedMatchIdsForPlayer(_player.id, _player.teamId);
     return (list, ratings, played);
@@ -1896,11 +2090,13 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         content: Text('„${_player.fullName}" wirklich entfernen?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Löschen')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Löschen'),
+          ),
         ],
       ),
     );
@@ -1920,8 +2116,12 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       ),
     );
     if (result == null || !context.mounted) return;
-    await context.read<AppState>().addNote(_player.id, result.stored,
-        categoryId: result.categoryId, matchId: result.matchId);
+    await context.read<AppState>().addNote(
+      _player.id,
+      result.stored,
+      categoryId: result.categoryId,
+      matchId: result.matchId,
+    );
   }
 
   Future<void> _editNote(BuildContext context, PlayerNote note) async {
@@ -1931,23 +2131,26 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       context,
       MaterialPageRoute(
         builder: (_) => NoteEditorScreen(
-            playerName: _player.fullName, existing: note, matches: matches),
+          playerName: _player.fullName,
+          existing: note,
+          matches: matches,
+        ),
       ),
     );
     if (result == null || !context.mounted) return;
     await context.read<AppState>().updateNote(
-          note.copyWith(
-            text: result.stored,
-            categoryId: result.categoryId,
-            clearCategory: result.categoryId == null,
-            matchId: result.matchId,
-            clearMatch: result.matchId == null,
-          ),
-        );
+      note.copyWith(
+        text: result.stored,
+        categoryId: result.categoryId,
+        clearCategory: result.categoryId == null,
+        matchId: result.matchId,
+        clearMatch: result.matchId == null,
+      ),
+    );
   }
 
   Future<(List<PlayerNote>, List<NoteCategory>, Map<String, GameMatch>)>
-      _loadNotes(AppState s) async {
+  _loadNotes(AppState s) async {
     final notes = await s.notesOf(_player.id);
     final cats = await s.noteCategories();
     final mm = await s.matchMap(_player.teamId);
@@ -1955,14 +2158,16 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   }
 
   Future<(List<CardEntry>, Map<String, GameMatch>)> _loadCards(
-      AppState s) async {
+    AppState s,
+  ) async {
     final cards = await s.cardsOf(_player.id);
     final mm = await s.matchMap(_player.teamId);
     return (cards, mm);
   }
 
   Future<(List<MatchEvent>, Map<String, GameMatch>)> _loadEvents(
-      AppState s) async {
+    AppState s,
+  ) async {
     final events = await s.playerMatchEvents(_player.id);
     // Kommentare, in denen der Spieler erwähnt wurde, mit aufnehmen.
     final mentions = await s.mentionComments(_player.id);
@@ -1992,13 +2197,13 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   Widget _cardSummary(BuildContext context, List<CardEntry> cards) {
     int count(CardType t) => cards.where((c) => c.type == t).length;
     Widget pill(CardType t) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: Chip(
-            avatar: Text(t.symbol, style: const TextStyle(fontSize: 14)),
-            label: Text('${count(t)}'),
-            visualDensity: VisualDensity.compact,
-          ),
-        );
+      padding: const EdgeInsets.only(right: 8),
+      child: Chip(
+        avatar: Text(t.symbol, style: const TextStyle(fontSize: 14)),
+        label: Text('${count(t)}'),
+        visualDensity: VisualDensity.compact,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Row(
@@ -2017,36 +2222,42 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     final data = await showCardDialog(context, matches: matches);
     if (data == null || !context.mounted) return;
     await context.read<AppState>().addCard(
-          playerId: _player.id,
-          type: data.type,
-          date: data.date,
-          matchId: data.matchId,
-          note: data.note,
-        );
+      playerId: _player.id,
+      type: data.type,
+      date: data.date,
+      matchId: data.matchId,
+      note: data.note,
+    );
   }
 
   Future<void> _editCard(BuildContext context, CardEntry card) async {
     final matches = await _matchesFor(context);
     if (!context.mounted) return;
-    final data = await showCardDialog(context, existing: card, matches: matches);
+    final data = await showCardDialog(
+      context,
+      existing: card,
+      matches: matches,
+    );
     if (data == null || !context.mounted) return;
     await context.read<AppState>().updateCard(
-          card.copyWith(
-            type: data.type,
-            date: data.date,
-            note: data.note,
-            matchId: data.matchId,
-            clearMatchId: data.matchId == null,
-          ),
-        );
+      card.copyWith(
+        type: data.type,
+        date: data.date,
+        note: data.note,
+        matchId: data.matchId,
+        clearMatchId: data.matchId == null,
+      ),
+    );
   }
 
   /// Spiele des Teams, neueste zuerst – für die Spielauswahl im Kartendialog.
   Future<List<GameMatch>> _matchesFor(BuildContext context) async {
     final mm = await context.read<AppState>().matchMap(_player.teamId);
     final list = mm.values.toList()
-      ..sort((a, b) => (b.kickoff ?? b.createdAt)
-          .compareTo(a.kickoff ?? a.createdAt));
+      ..sort(
+        (a, b) =>
+            (b.kickoff ?? b.createdAt).compareTo(a.kickoff ?? a.createdAt),
+      );
     return list;
   }
 }
@@ -2077,13 +2288,18 @@ class _SectionCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
+                Icon(
+                  icon,
+                  size: 18,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
                 const SizedBox(width: 8),
-                Text(title,
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const Spacer(),
                 ?action,
               ],
@@ -2193,7 +2409,8 @@ Future<CardDialogData?> showCardDialog(
   var type = existing?.type ?? CardType.yellow;
   var date = existing?.date ?? DateTime.now();
   // Vorauswahl nur gültig, wenn das Spiel noch existiert.
-  var matchId = (existing?.matchId != null &&
+  var matchId =
+      (existing?.matchId != null &&
           matches.any((m) => m.id == existing!.matchId))
       ? existing!.matchId
       : null;
@@ -2231,12 +2448,19 @@ Future<CardDialogData?> showCardDialog(
                   decoration: const InputDecoration(labelText: 'Spiel'),
                   items: [
                     const DropdownMenuItem<String?>(
-                        value: null, child: Text('Kein Spiel')),
-                    ...matches.map((m) => DropdownMenuItem<String?>(
-                          value: m.id,
-                          child: Text(matchLabel(m),
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
-                        )),
+                      value: null,
+                      child: Text('Kein Spiel'),
+                    ),
+                    ...matches.map(
+                      (m) => DropdownMenuItem<String?>(
+                        value: m.id,
+                        child: Text(
+                          matchLabel(m),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
                   ],
                   onChanged: (v) => setState(() {
                     matchId = v;
@@ -2271,13 +2495,18 @@ Future<CardDialogData?> showCardDialog(
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
             onPressed: () => Navigator.pop(
               context,
-              CardDialogData(type, date, matchId,
-                  noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim()),
+              CardDialogData(
+                type,
+                date,
+                matchId,
+                noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+              ),
             ),
             child: const Text('Speichern'),
           ),
@@ -2289,12 +2518,13 @@ Future<CardDialogData?> showCardDialog(
 
 /// Gestaltete Spielerkarte (FuPa-Werte) im Vereins-Look – oben im Profil.
 class _PlayerCardView extends StatelessWidget {
-  const _PlayerCardView(
-      {required this.player,
-      this.team,
-      this.stat,
-      this.live = const {},
-      this.section = _CardSide.both});
+  const _PlayerCardView({
+    required this.player,
+    this.team,
+    this.stat,
+    this.live = const {},
+    this.section = _CardSide.both,
+  });
 
   final Player player;
   final Team? team;
@@ -2309,14 +2539,17 @@ class _PlayerCardView extends StatelessWidget {
   static const _gold = Color(0xFFC9A24B);
 
   Widget _sectionLabel(String text) => Align(
-        alignment: Alignment.centerLeft,
-        child: Text(text,
-            style: const TextStyle(
-                color: _gold,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 1)),
-      );
+    alignment: Alignment.centerLeft,
+    child: Text(
+      text,
+      style: const TextStyle(
+        color: _gold,
+        fontSize: 11,
+        fontWeight: FontWeight.bold,
+        letterSpacing: 1,
+      ),
+    ),
+  );
 
   /// Eine Tracking-Zeile im Balken-Stil (wie die anderen Aktions-Statistiken):
   /// Label, Balken (proportional zum höchsten Wert) und Zahl.
@@ -2328,10 +2561,12 @@ class _PlayerCardView extends StatelessWidget {
         children: [
           SizedBox(
             width: 108,
-            child: Text(label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: Colors.white, fontSize: 13)),
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+            ),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -2340,7 +2575,9 @@ class _PlayerCardView extends StatelessWidget {
               child: Stack(
                 children: [
                   Container(
-                      height: 10, color: Colors.white.withValues(alpha: 0.08)),
+                    height: 10,
+                    color: Colors.white.withValues(alpha: 0.08),
+                  ),
                   FractionallySizedBox(
                     widthFactor: frac == 0 ? 0.0 : frac,
                     child: Container(height: 10, color: _gold),
@@ -2352,12 +2589,15 @@ class _PlayerCardView extends StatelessWidget {
           const SizedBox(width: 8),
           SizedBox(
             width: 24,
-            child: Text('$value',
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 13)),
+            child: Text(
+              '$value',
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
           ),
         ],
       ),
@@ -2365,16 +2605,20 @@ class _PlayerCardView extends StatelessWidget {
   }
 
   Widget _stat(IconData icon, int value, String label) => Column(
-        children: [
-          Icon(icon, color: _gold, size: 20),
-          const SizedBox(height: 2),
-          Text('$value',
-              style: const TextStyle(
-                  color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-          Text(label,
-              style: const TextStyle(color: Colors.white54, fontSize: 11)),
-        ],
-      );
+    children: [
+      Icon(icon, color: _gold, size: 20),
+      const SizedBox(height: 2),
+      Text(
+        '$value',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 18,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      Text(label, style: const TextStyle(color: Colors.white54, fontSize: 11)),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -2385,114 +2629,140 @@ class _PlayerCardView extends StatelessWidget {
     final red = (stat?.redCards ?? 0) + (stat?.yellowRedCards ?? 0);
     final minutes = stat?.minutes ?? 0;
     final trackingEntries = live.entries.toList();
-    final maxTrack =
-        trackingEntries.fold<int>(0, (m, e) => e.value > m ? e.value : m);
-    return Container(
-      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
+    final maxTrack = trackingEntries.fold<int>(
+      0,
+      (m, e) => e.value > m ? e.value : m,
+    );
+    final status = player.status;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF14130F), Color(0xFF2A2621)],
-        ),
-        border: Border.all(color: _gold, width: 1.5),
-      ),
-      child: Column(
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (team?.logoPath != null)
-                TeamLogo(logoPath: team!.logoPath, size: 34)
-              else
-                const SizedBox(width: 34),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  team?.name ?? '',
-                  style: const TextStyle(
-                      color: _gold, fontWeight: FontWeight.bold, fontSize: 13),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+        child: Stack(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(18),
+                gradient: const LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [Color(0xFF14130F), Color(0xFF2A2621)],
                 ),
+                border: Border.all(color: _gold, width: 1.5),
               ),
-              Container(
-                width: 40,
-                height: 40,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white70, width: 2),
-                ),
-                child: Text(
-                  player.number?.toString() ?? '–',
-                  style: const TextStyle(
+              child: Column(
+                children: [
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      if (team?.logoPath != null)
+                        TeamLogo(logoPath: team!.logoPath, size: 34)
+                      else
+                        const SizedBox(width: 34),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          team?.name ?? '',
+                          style: const TextStyle(
+                            color: _gold,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      Container(
+                        width: 40,
+                        height: 40,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white70, width: 2),
+                        ),
+                        child: Text(
+                          player.number?.toString() ?? '–',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  PlayerAvatar(player: player, radius: 54),
+                  const SizedBox(height: 10),
+                  if (player.firstName.isNotEmpty)
+                    Text(
+                      player.firstName,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
+                  Text(
+                    player.lastName.toUpperCase(),
+                    style: const TextStyle(
                       color: Colors.white,
+                      fontSize: 22,
                       fontWeight: FontWeight.bold,
-                      fontSize: 16),
-                ),
+                      letterSpacing: 0.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (player.position != null && player.position!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2),
+                      child: Text(
+                        player.position!,
+                        style: const TextStyle(color: _gold, fontSize: 12),
+                      ),
+                    ),
+                  const SizedBox(height: 12),
+                  Container(height: 1, color: _gold.withValues(alpha: 0.4)),
+                  const SizedBox(height: 8),
+                  if (section != _CardSide.tracking) ...[
+                    _sectionLabel('FUPA · SAISON'),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _stat(Icons.directions_run, matches, 'Spiele'),
+                        _stat(Icons.sports_soccer, goals, 'Tore'),
+                        _stat(Icons.handshake, assists, 'Vorlagen'),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _stat(Icons.style, yellow, 'Gelb'),
+                        _stat(Icons.style, red, 'Rot'),
+                        _stat(Icons.timer, minutes, 'Minuten'),
+                      ],
+                    ),
+                  ],
+                  if (section == _CardSide.both) ...[
+                    const SizedBox(height: 12),
+                    Container(height: 1, color: _gold.withValues(alpha: 0.4)),
+                    const SizedBox(height: 8),
+                  ],
+                  if (section != _CardSide.fupa) ...[
+                    _sectionLabel('TRACKING · LIVE'),
+                    const SizedBox(height: 8),
+                    for (final e in trackingEntries)
+                      _trackBar(e.key, e.value, maxTrack),
+                  ],
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          PlayerAvatar(player: player, radius: 54),
-          const SizedBox(height: 10),
-          if (player.firstName.isNotEmpty)
-            Text(player.firstName,
-                style: const TextStyle(color: Colors.white70, fontSize: 14)),
-          Text(
-            player.lastName.toUpperCase(),
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 0.5),
-            textAlign: TextAlign.center,
-          ),
-          if (player.position != null && player.position!.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(player.position!,
-                  style: const TextStyle(color: _gold, fontSize: 12)),
             ),
-          const SizedBox(height: 12),
-          Container(height: 1, color: _gold.withValues(alpha: 0.4)),
-          const SizedBox(height: 8),
-          if (section != _CardSide.tracking) ...[
-            _sectionLabel('FUPA · SAISON'),
-            const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _stat(Icons.directions_run, matches, 'Spiele'),
-                _stat(Icons.sports_soccer, goals, 'Tore'),
-                _stat(Icons.handshake, assists, 'Vorlagen'),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                _stat(Icons.style, yellow, 'Gelb'),
-                _stat(Icons.style, red, 'Rot'),
-                _stat(Icons.timer, minutes, 'Minuten'),
-              ],
-            ),
+            if (status != PlayerStatus.fit)
+              Positioned(left: 0, top: 0, child: _CornerRibbon(status: status)),
           ],
-          if (section == _CardSide.both) ...[
-            const SizedBox(height: 12),
-            Container(height: 1, color: _gold.withValues(alpha: 0.4)),
-            const SizedBox(height: 8),
-          ],
-          if (section != _CardSide.fupa) ...[
-            _sectionLabel('TRACKING · LIVE'),
-            const SizedBox(height: 8),
-            for (final e in trackingEntries)
-              _trackBar(e.key, e.value, maxTrack),
-          ],
-        ],
+        ),
       ),
     );
   }
@@ -2500,6 +2770,70 @@ class _PlayerCardView extends StatelessWidget {
 
 /// Welche Statistik-Sektion die Spielerkarte zeigt.
 enum _CardSide { both, fupa, tracking }
+
+/// FuPa-artige farbige Ecke oben links auf der Spielerkarte – zeigt den
+/// Verfügbarkeitsstatus (nur wenn nicht „Fit"). Farbe = [playerStatusColor],
+/// dazu ein weißes Symbol je Status.
+class _CornerRibbon extends StatelessWidget {
+  const _CornerRibbon({required this.status});
+
+  final PlayerStatus status;
+  static const double size = 60;
+
+  IconData get _icon => switch (status) {
+    PlayerStatus.verletzt => Icons.add,
+    PlayerStatus.krank => Icons.sick,
+    PlayerStatus.gesperrt => Icons.block,
+    PlayerStatus.urlaub => Icons.beach_access,
+    PlayerStatus.inaktiv => Icons.pause,
+    PlayerStatus.fit => Icons.check,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final color = playerStatusColor(status);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CustomPaint(painter: _CornerTrianglePainter(color)),
+          ),
+          Positioned(
+            left: size * 0.1,
+            top: size * 0.1,
+            child: Icon(_icon, size: size * 0.3, color: Colors.white),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Zeichnet das farbige Dreieck in der oberen linken Ecke.
+class _CornerTrianglePainter extends CustomPainter {
+  _CornerTrianglePainter(this.color);
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _CornerTrianglePainter old) =>
+      old.color != color;
+}
 
 /// Flip-Karte: Reiter FuPa/Tracking + 3D-Dreh beim Antippen.
 class _FlipPlayerCard extends StatefulWidget {
@@ -2514,7 +2848,9 @@ class _FlipPlayerCard extends StatefulWidget {
 class _FlipPlayerCardState extends State<_FlipPlayerCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _c = AnimationController(
-      vsync: this, duration: const Duration(milliseconds: 450));
+    vsync: this,
+    duration: const Duration(milliseconds: 450),
+  );
   bool _front = true;
 
   @override
@@ -2578,8 +2914,10 @@ class _FlipPlayerCardState extends State<_FlipPlayerCard>
         ),
         const Padding(
           padding: EdgeInsets.only(top: 2),
-          child: Text('Tippen zum Drehen',
-              style: TextStyle(fontSize: 11, color: Colors.grey)),
+          child: Text(
+            'Tippen zum Drehen',
+            style: TextStyle(fontSize: 11, color: Colors.grey),
+          ),
         ),
       ],
     );
@@ -2590,7 +2928,9 @@ class _FlipPlayerCardState extends State<_FlipPlayerCard>
 class _DateInputFormatter extends TextInputFormatter {
   @override
   TextEditingValue formatEditUpdate(
-      TextEditingValue oldValue, TextEditingValue newValue) {
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     var digits = newValue.text.replaceAll(RegExp(r'\D'), '');
     if (digits.length > 8) digits = digits.substring(0, 8);
     final b = StringBuffer();
