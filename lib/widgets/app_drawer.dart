@@ -46,135 +46,146 @@ class AppDrawer extends StatelessWidget {
           children: [
             Expanded(
               child: ListView(
-          padding: EdgeInsets.zero,
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                padding: EdgeInsets.zero,
                 children: [
-                  const _HeaderClock(),
-                  const Spacer(),
-                  if (team?.logoPath != null)
-                    TeamLogo(logoPath: team!.logoPath, size: 36),
-                  const SizedBox(height: 6),
-                  Text(
-                    team?.name ?? 'myCoach',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            // Laufendes Live-Spiel – direkt reinspringen.
-            if (live.isNotEmpty)
-              Container(
-                color: Theme.of(context).colorScheme.errorContainer,
-                child: ListTile(
-                  leading: Icon(Icons.sports_soccer,
-                      color: Theme.of(context).colorScheme.error),
-                  title: const Text('Live-Spiel läuft',
-                      style: TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text('vs ${live.first.opponentName}'),
-                  trailing: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  DrawerHeader(
                     decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.error,
-                      borderRadius: BorderRadius.circular(6),
+                      color: Theme.of(context).colorScheme.primary,
                     ),
-                    child: const Text('LIVE',
-                        style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const _HeaderClock(),
+                        const Spacer(),
+                        if (team?.logoPath != null)
+                          TeamLogo(logoPath: team!.logoPath, size: 36),
+                        const SizedBox(height: 6),
+                        Text(
+                          team?.name ?? 'myCoach',
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.onPrimary,
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
                   ),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) =>
-                            LiveMatchScreen(matchId: live.first.id),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            // Haupt-Bereiche (wechseln den unteren Tab).
-            for (var i = 0; i < _mainSections.length; i++)
-              ListTile(
-                leading: Icon(_mainSections[i].$1),
-                title: Text(_mainSections[i].$2),
-                selected: nav?.index == i,
-                trailing: i == 2 ? _NachholenBadge() : null,
-                onTap: () {
-                  final navigator = Navigator.of(context);
-                  navigator.pop(); // Drawer schließen
-                  homeTabNotifier.value = i; // Start-Tab umschalten
-                  // Aus einer aufgeschobenen Seite zurück zur Startseite.
-                  if (nav == null) {
-                    navigator.popUntil((r) => r.isFirst);
-                  }
-                },
-              ),
-            const Divider(),
-            // Weitere Funktionen (eigene Seiten).
-            _push(
-              context,
-              icon: Icons.checklist,
-              label: 'Aufgaben',
-              trailing: _TodoBadge(),
-              screen: const TodosScreen(),
-            ),
-            if (team != null)
-              ListTile(
-                leading: const Icon(Icons.sports_soccer),
-                title: const Text('Ball-/Materialdienst'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => MaterialDutyScreen(
-                        teamId: team.id,
-                        teamName: team.name,
+                  // Laufendes Live-Spiel – direkt reinspringen.
+                  if (live.isNotEmpty)
+                    Container(
+                      color: Theme.of(context).colorScheme.errorContainer,
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.sports_soccer,
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                        title: const Text(
+                          'Live-Spiel läuft',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text('vs ${live.first.opponentName}'),
+                        trailing: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.error,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'LIVE',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) =>
+                                  LiveMatchScreen(matchId: live.first.id),
+                            ),
+                          );
+                        },
                       ),
                     ),
-                  );
-                },
-              ),
-            _push(
-              context,
-              icon: Icons.emoji_events,
-              label: 'Spieler des Monats',
-              screen: const PlayerOfMonthScreen(),
-            ),
-            _push(
-              context,
-              icon: Icons.style_outlined,
-              label: 'Karten & Sperren',
-              screen: const CardsSuspensionsScreen(),
-            ),
-            _push(
-              context,
-              icon: Icons.handshake_outlined,
-              label: 'Sponsoring',
-              screen: const SponsorsScreen(),
-            ),
-            _push(
-              context,
-              icon: Icons.settings_outlined,
-              label: 'Einstellungen',
-              screen: const SettingsScreen(),
-            ),
+                  // Haupt-Bereiche (wechseln den unteren Tab). „Nachholen" (Index 2,
+                  // Bewertungen) nur für Trainer.
+                  for (var i = 0; i < _mainSections.length; i++)
+                    if (state.isTrainerHere || i != 2)
+                      ListTile(
+                        leading: Icon(_mainSections[i].$1),
+                        title: Text(_mainSections[i].$2),
+                        selected: nav?.index == i,
+                        trailing: i == 2 ? _NachholenBadge() : null,
+                        onTap: () {
+                          final navigator = Navigator.of(context);
+                          navigator.pop(); // Drawer schließen
+                          homeTabNotifier.value = i; // Start-Tab umschalten
+                          // Aus einer aufgeschobenen Seite zurück zur Startseite.
+                          if (nav == null) {
+                            navigator.popUntil((r) => r.isFirst);
+                          }
+                        },
+                      ),
+                  const Divider(),
+                  // Weitere Funktionen (eigene Seiten).
+                  _push(
+                    context,
+                    icon: Icons.checklist,
+                    label: 'Aufgaben',
+                    trailing: _TodoBadge(),
+                    screen: const TodosScreen(),
+                  ),
+                  if (team != null)
+                    ListTile(
+                      leading: const Icon(Icons.sports_soccer),
+                      title: const Text('Ball-/Materialdienst'),
+                      onTap: () {
+                        Navigator.pop(context);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => MaterialDutyScreen(
+                              teamId: team.id,
+                              teamName: team.name,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  _push(
+                    context,
+                    icon: Icons.emoji_events,
+                    label: 'Spieler des Monats',
+                    screen: const PlayerOfMonthScreen(),
+                  ),
+                  _push(
+                    context,
+                    icon: Icons.style_outlined,
+                    label: 'Karten & Sperren',
+                    screen: const CardsSuspensionsScreen(),
+                  ),
+                  _push(
+                    context,
+                    icon: Icons.handshake_outlined,
+                    label: 'Sponsoring',
+                    screen: const SponsorsScreen(),
+                  ),
+                  _push(
+                    context,
+                    icon: Icons.settings_outlined,
+                    label: 'Einstellungen',
+                    screen: const SettingsScreen(),
+                  ),
                 ],
               ),
             ),
@@ -220,8 +231,9 @@ class _DrawerFooterState extends State<_DrawerFooter> {
     super.initState();
     PackageInfo.fromPlatform().then((info) {
       if (mounted) {
-        setState(() =>
-            _version = 'Version ${info.version} (${info.buildNumber})');
+        setState(
+          () => _version = 'Version ${info.version} (${info.buildNumber})',
+        );
       }
     });
   }
@@ -234,16 +246,16 @@ class _DrawerFooterState extends State<_DrawerFooter> {
     final who = !signedIn
         ? 'Nicht angemeldet'
         : (name != null && name.trim().isNotEmpty
-            ? name.trim()
-            : (CloudService.email ?? 'angemeldet'));
-    final subtle =
-        Theme.of(context).textTheme.bodySmall?.color?.withValues(alpha: 0.8);
+              ? name.trim()
+              : (CloudService.email ?? 'angemeldet'));
+    final subtle = Theme.of(
+      context,
+    ).textTheme.bodySmall?.color?.withValues(alpha: 0.8);
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       decoration: BoxDecoration(
-        border:
-            Border(top: BorderSide(color: Theme.of(context).dividerColor)),
+        border: Border(top: BorderSide(color: Theme.of(context).dividerColor)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -252,22 +264,25 @@ class _DrawerFooterState extends State<_DrawerFooter> {
           Row(
             children: [
               Icon(
-                  signedIn
-                      ? Icons.account_circle
-                      : Icons.account_circle_outlined,
-                  size: 16,
-                  color: subtle),
+                signedIn ? Icons.account_circle : Icons.account_circle_outlined,
+                size: 16,
+                color: subtle,
+              ),
               const SizedBox(width: 6),
               Expanded(
-                child: Text(who,
-                    style: TextStyle(fontSize: 12, color: subtle),
-                    overflow: TextOverflow.ellipsis),
+                child: Text(
+                  who,
+                  style: TextStyle(fontSize: 12, color: subtle),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
           const SizedBox(height: 2),
-          Text(_version.isEmpty ? 'myCoach' : 'myCoach · $_version',
-              style: TextStyle(fontSize: 11, color: subtle)),
+          Text(
+            _version.isEmpty ? 'myCoach' : 'myCoach · $_version',
+            style: TextStyle(fontSize: 11, color: subtle),
+          ),
         ],
       ),
     );
@@ -308,12 +323,18 @@ class _HeaderClockState extends State<_HeaderClock> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(time,
-            style: TextStyle(
-                color: onP, fontSize: 20, fontWeight: FontWeight.bold)),
-        Text(date,
-            style: TextStyle(
-                color: onP.withValues(alpha: 0.85), fontSize: 12)),
+        Text(
+          time,
+          style: TextStyle(
+            color: onP,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        Text(
+          date,
+          style: TextStyle(color: onP.withValues(alpha: 0.85), fontSize: 12),
+        ),
       ],
     );
   }

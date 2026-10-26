@@ -79,8 +79,10 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     final noms = await state.nominationsOf(widget.matchId);
     // Freigegebene Aufstellung vorhanden? (nur die zählt für „Live")
     var starters = 0;
-    final lineup =
-        await state.repository.getReleasedLineup(widget.matchId, match.ownTeamId);
+    final lineup = await state.repository.getReleasedLineup(
+      widget.matchId,
+      match.ownTeamId,
+    );
     if (lineup != null && lineup.released) {
       final entries = await state.lineupEntries(lineup.id);
       starters = entries.where((e) => e.role == LineupRole.starter).length;
@@ -110,6 +112,8 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
       return const Scaffold(body: Center(child: Text('Spiel nicht gefunden.')));
     }
     final df = DateFormat('dd.MM.yyyy • HH:mm', 'de_DE');
+    // Spieler (Nicht-Trainer) sehen Nominierung/Aufstellung/Bewertung nicht.
+    final isTrainer = context.watch<AppState>().isTrainerHere;
 
     return DefaultTabController(
       length: 2,
@@ -118,8 +122,9 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
           title: Text('vs ${match.opponentName}'),
           bottom: TabBar(
             labelColor: Theme.of(context).colorScheme.onPrimary,
-            unselectedLabelColor:
-                Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
+            unselectedLabelColor: Theme.of(
+              context,
+            ).colorScheme.onPrimary.withValues(alpha: 0.7),
             indicatorColor: Theme.of(context).colorScheme.onPrimary,
             labelStyle: const TextStyle(fontWeight: FontWeight.bold),
             tabs: const [
@@ -128,63 +133,70 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
             ],
           ),
           actions: [
-            IconButton(
-              tooltip: 'Spieler & Spiel bewerten',
-              icon: const Icon(Icons.star_rate),
-              onPressed: _openRating,
-            ),
-            PopupMenuButton<String>(
-              onSelected: (v) {
-                if (v == 'sync') _load(force: true);
-                if (v == 'reset') _resetMatch();
-                if (v == 'rate') _openRating();
-                if (v == 'announce') _shareAnnouncement();
-                if (v == 'adopt_fupa') _adoptFupaResult();
-              },
-              itemBuilder: (_) => [
-                if (match.locallyManaged)
-                  const PopupMenuItem(
+            if (isTrainer)
+              IconButton(
+                tooltip: 'Spieler & Spiel bewerten',
+                icon: const Icon(Icons.star_rate),
+                onPressed: _openRating,
+              ),
+            if (isTrainer)
+              PopupMenuButton<String>(
+                onSelected: (v) {
+                  if (v == 'sync') _load(force: true);
+                  if (v == 'reset') _resetMatch();
+                  if (v == 'rate') _openRating();
+                  if (v == 'announce') _shareAnnouncement();
+                  if (v == 'adopt_fupa') _adoptFupaResult();
+                },
+                itemBuilder: (_) => [
+                  if (match.locallyManaged)
+                    const PopupMenuItem(
                       value: 'adopt_fupa',
                       child: ListTile(
                         dense: true,
                         contentPadding: EdgeInsets.zero,
                         leading: Icon(Icons.cloud_download_outlined),
                         title: Text('Ergebnis aus FuPa übernehmen'),
-                      )),
-                const PopupMenuItem(
+                      ),
+                    ),
+                  const PopupMenuItem(
                     value: 'announce',
                     child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(Icons.campaign_outlined),
                       title: Text('Spieltags-Info teilen'),
-                    )),
-                PopupMenuItem(
+                    ),
+                  ),
+                  PopupMenuItem(
                     value: 'sync',
                     child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(Icons.sync),
                       title: Text('Gegner neu synchronisieren'),
-                    )),
-                PopupMenuItem(
+                    ),
+                  ),
+                  PopupMenuItem(
                     value: 'rate',
                     child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(Icons.star_border),
                       title: Text('Spieler bewerten'),
-                    )),
-                PopupMenuItem(
+                    ),
+                  ),
+                  PopupMenuItem(
                     value: 'reset',
                     child: ListTile(
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       leading: Icon(Icons.restart_alt),
                       title: Text('Spiel zurücksetzen'),
-                    )),
-              ],
-            ),
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
         body: Column(
@@ -195,7 +207,8 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
               ownLogo: _ownTeam?.logoPath,
               oppLogo: _opponentTeam?.logoPath ?? match.opponentLogoPath,
             ),
-            if (_syncResult != null && _syncResult!.status != ImportStatus.alreadyPresent)
+            if (_syncResult != null &&
+                _syncResult!.status != ImportStatus.alreadyPresent)
               _SyncBanner(result: _syncResult!),
             Expanded(
               child: TabBarView(
@@ -210,13 +223,11 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                           onlyPlayerIds: _nominatedIds,
                         ),
                   _opponentTeam == null
-                      ? const Center(
-                          child: Text('Gegner wird vorbereitet …'))
+                      ? const Center(child: Text('Gegner wird vorbereitet …'))
                       : Column(
                           children: [
                             Padding(
-                              padding:
-                                  const EdgeInsets.fromLTRB(12, 10, 12, 4),
+                              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
                               child: SizedBox(
                                 width: double.infinity,
                                 child: FilledButton.tonalIcon(
@@ -243,15 +254,29 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
           ],
         ),
         bottomNavigationBar: SafeArea(
-          child: _stepBar(context, match),
+          child: _stepBar(context, match, isTrainer),
         ),
       ),
     );
   }
 
-  /// Geführte Schritt-Leiste: Nominierung → Aufstellung → Live.
-  Widget _stepBar(BuildContext context, GameMatch match) {
+  /// Geführte Schritt-Leiste: Nominierung → Aufstellung → Live. Spieler
+  /// (Nicht-Trainer) sehen nur „Live/Bericht" (Ticker ansehen).
+  Widget _stepBar(BuildContext context, GameMatch match, bool isTrainer) {
     final finished = match.status == MatchStatus.finished;
+    if (!isTrainer) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
+        child: SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () => _openLive(),
+            icon: const Icon(Icons.sports),
+            label: Text(finished ? 'Bericht ansehen' : 'Live ansehen'),
+          ),
+        ),
+      );
+    }
     // Aktueller Schritt (1/2/3) für die Hervorhebung.
     final step = !_hasNominations ? 1 : (!_hasLineup ? 2 : 3);
 
@@ -268,18 +293,20 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         children: [
           Icon(icon, size: 20),
           const SizedBox(height: 3),
-          Text(label,
-              textAlign: TextAlign.center,
-              maxLines: 1,
-              overflow: TextOverflow.visible,
-              softWrap: false,
-              style: const TextStyle(
-                  fontSize: 12.5, fontWeight: FontWeight.w600)),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.visible,
+            softWrap: false,
+            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+          ),
         ],
       );
       final style = ButtonStyle(
         padding: WidgetStateProperty.all(
-            const EdgeInsets.symmetric(horizontal: 4, vertical: 8)),
+          const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        ),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       );
       return Expanded(
@@ -302,8 +329,11 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         children: [
           Row(
             children: [
-              Icon(Icons.info_outline,
-                  size: 15, color: Theme.of(context).colorScheme.primary),
+              Icon(
+                Icons.info_outline,
+                size: 15,
+                color: Theme.of(context).colorScheme.primary,
+              ),
               const SizedBox(width: 6),
               Text(hint, style: Theme.of(context).textTheme.bodySmall),
             ],
@@ -350,17 +380,18 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
   void _tryOpenLive(bool finished) {
     // Bericht (beendet) ist immer erlaubt; Live braucht eine Aufstellung.
     if (!finished && !_hasLineup) {
-      _snack(_hasNominations
-          ? 'Bitte zuerst eine Aufstellung freigeben.'
-          : 'Bitte zuerst nominieren und eine Aufstellung freigeben.');
+      _snack(
+        _hasNominations
+            ? 'Bitte zuerst eine Aufstellung freigeben.'
+            : 'Bitte zuerst nominieren und eine Aufstellung freigeben.',
+      );
       return;
     }
     _openLive();
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _openNomination() async {
@@ -374,7 +405,9 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         ),
       ),
     );
-    if (mounted) _load(); // Nominierungen neu laden (Kader-Filter + Aufstellung-Gate)
+    if (mounted) {
+      _load(); // Nominierungen neu laden (Kader-Filter + Aufstellung-Gate)
+    }
   }
 
   Future<void> _resetMatch() async {
@@ -383,12 +416,12 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     final choice = await showResetMatchDialog(context);
     if (choice == null || !choice.any || !mounted) return;
     await context.read<AppState>().resetMatchParts(
-          widget.matchId,
-          match.ownTeamId,
-          verlauf: choice.verlauf,
-          aufstellung: choice.aufstellung,
-          nominierung: choice.nominierung,
-        );
+      widget.matchId,
+      match.ownTeamId,
+      verlauf: choice.verlauf,
+      aufstellung: choice.aufstellung,
+      nominierung: choice.nominierung,
+    );
     if (mounted) _load();
   }
 
@@ -414,7 +447,9 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         ),
       ),
     );
-    if (mounted) _load(); // Aufstellungs-Status neu laden (schaltet „Live" frei)
+    if (mounted) {
+      _load(); // Aufstellungs-Status neu laden (schaltet „Live" frei)
+    }
   }
 
   Future<void> _openLive() async {
@@ -430,9 +465,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
   Future<void> _openRating() async {
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => RatingScreen(matchId: widget.matchId),
-      ),
+      MaterialPageRoute(builder: (_) => RatingScreen(matchId: widget.matchId)),
     );
     if (mounted) _load();
   }
@@ -492,8 +525,12 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     await shareViaWhatsApp(_buildAnnouncement(data, match, players, noms));
   }
 
-  String _buildAnnouncement(Map<String, String> d, GameMatch match,
-      List<Player> players, Map<String, NominationStatus> noms) {
+  String _buildAnnouncement(
+    Map<String, String> d,
+    GameMatch match,
+    List<Player> players,
+    Map<String, NominationStatus> noms,
+  ) {
     final tf = DateFormat('HH:mm', 'de_DE');
     final b = StringBuffer();
 
@@ -547,8 +584,10 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
       b.writeln('');
       b.writeln('Aufgebot (${roster.length} Spieler):');
       for (var i = 0; i < roster.length; i++) {
-        b.writeln('${i + 1}. ${roster[i].key}'
-            '${roster[i].value ? ' (unter Vorbehalt)' : ''}');
+        b.writeln(
+          '${i + 1}. ${roster[i].key}'
+          '${roster[i].value ? ' (unter Vorbehalt)' : ''}',
+        );
       }
     }
     return b.toString().trim();
@@ -607,9 +646,7 @@ class _AnnouncementPageState extends State<_AnnouncementPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Spieltags-Info'),
-        actions: [
-          TextButton(onPressed: _share, child: const Text('Teilen')),
-        ],
+        actions: [TextButton(onPressed: _share, child: const Text('Teilen'))],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
@@ -666,7 +703,8 @@ class _AnnouncementPageState extends State<_AnnouncementPage> {
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
               labelText: 'Treffpunkte & Zeiten',
-              hintText: 'Treffpunkt GSV Parkplatz 13:15\nAbfahrt 13:25\n'
+              hintText:
+                  'Treffpunkt GSV Parkplatz 13:15\nAbfahrt 13:25\n'
                   'Treffpunkt Post 13:50',
               border: OutlineInputBorder(),
               alignLabelWithHint: true,
@@ -721,11 +759,14 @@ class _Header extends StatelessWidget {
           Row(
             children: [
               Expanded(child: _side(scheme, ownLogo, ownName)),
-              Text('${match.ownScore} : ${match.opponentScore}',
-                  style: TextStyle(
-                      color: scheme.onPrimary,
-                      fontSize: 28,
-                      fontWeight: FontWeight.bold)),
+              Text(
+                '${match.ownScore} : ${match.opponentScore}',
+                style: TextStyle(
+                  color: scheme.onPrimary,
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               Expanded(child: _side(scheme, oppLogo, match.opponentName)),
             ],
           ),
@@ -741,12 +782,16 @@ class _Header extends StatelessWidget {
           TeamLogo(logoPath: logo, size: 40),
           const SizedBox(height: 4),
         ],
-        Text(name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                color: scheme.onPrimary, fontWeight: FontWeight.bold)),
+        Text(
+          name,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ],
     );
   }
@@ -773,8 +818,11 @@ class _SyncBanner extends StatelessWidget {
           Icon(icon, color: color, size: 20),
           const SizedBox(width: 8),
           Expanded(
-              child: Text(result.message,
-                  style: Theme.of(context).textTheme.bodySmall)),
+            child: Text(
+              result.message,
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ),
         ],
       ),
     );

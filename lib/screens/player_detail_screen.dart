@@ -292,10 +292,12 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     final state = context.watch<AppState>();
     final df = DateFormat('dd.MM.yyyy', 'de_DE');
     final p = _player;
+    // Spieler (Nicht-Trainer) sehen keine Notizen/Bewertungen.
+    final isTrainer = state.isTrainerHere;
 
     // Karteikarten: weniger auf einen Blick, kein endloses Scrollen.
     return DefaultTabController(
-      length: 9,
+      length: isTrainer ? 9 : 7,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
@@ -323,16 +325,16 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               child: TabBar(
                 isScrollable: true,
                 tabAlignment: TabAlignment.start,
-                tabs: const [
-                  Tab(text: 'Profil'),
-                  Tab(text: 'Karte'),
-                  Tab(text: 'Abwesenheit'),
-                  Tab(text: 'Karten'),
-                  Tab(text: 'Tore'),
-                  Tab(text: 'Ereignisse'),
-                  Tab(text: 'Gespräche'),
-                  Tab(text: 'Notizen'),
-                  Tab(text: 'Bewertungen'),
+                tabs: [
+                  const Tab(text: 'Profil'),
+                  const Tab(text: 'Karte'),
+                  const Tab(text: 'Abwesenheit'),
+                  const Tab(text: 'Karten'),
+                  const Tab(text: 'Tore'),
+                  const Tab(text: 'Ereignisse'),
+                  const Tab(text: 'Gespräche'),
+                  if (isTrainer) const Tab(text: 'Notizen'),
+                  if (isTrainer) const Tab(text: 'Bewertungen'),
                 ],
               ),
             ),
@@ -355,8 +357,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   ]),
                   _tabList([_eventsCard(context, state, df)]),
                   _tabList([_talksCard(context, state)]),
-                  _tabList([_notesCard(context, state, df)]),
-                  _tabList([_bewertungenCard(context, state, df)]),
+                  if (isTrainer) _tabList([_notesCard(context, state, df)]),
+                  if (isTrainer)
+                    _tabList([_bewertungenCard(context, state, df)]),
                 ],
               ),
             ),
@@ -374,6 +377,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   Widget _header(BuildContext context) {
     final p = _player;
     final scheme = Theme.of(context).colorScheme;
+    final isTrainer = context.watch<AppState>().isTrainerHere;
     return Container(
       color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
@@ -404,27 +408,28 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [_statusMenu(context, p)],
                 ),
-                // Bewertungen in eigener Zeile (Gesamt + laufender Monat) –
-                // per Tipp aufs Foto ein-/ausklappbar.
-                AnimatedSize(
-                  duration: const Duration(milliseconds: 220),
-                  curve: Curves.easeInOut,
-                  alignment: Alignment.topLeft,
-                  child: _ratingsExpanded
-                      ? Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Wrap(
-                            spacing: 8,
-                            runSpacing: 6,
-                            crossAxisAlignment: WrapCrossAlignment.center,
-                            children: [
-                              _ratingChipOverall(context),
-                              _ratingChipMonth(context),
-                            ],
-                          ),
-                        )
-                      : const SizedBox(width: double.infinity),
-                ),
+                // Bewertungen (Gesamt + laufender Monat) – per Tipp aufs Foto
+                // ein-/ausklappbar. Nur für Trainer sichtbar.
+                if (isTrainer)
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOut,
+                    alignment: Alignment.topLeft,
+                    child: _ratingsExpanded
+                        ? Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                _ratingChipOverall(context),
+                                _ratingChipMonth(context),
+                              ],
+                            ),
+                          )
+                        : const SizedBox(width: double.infinity),
+                  ),
                 if (p.suspendedGames > 0) ...[
                   const SizedBox(height: 8),
                   _suspensionInfo(context, p),
@@ -433,63 +438,67 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             ),
           ),
           const SizedBox(width: 16),
-          _headerPhoto(context, p),
+          _headerPhoto(context, p, isTrainer),
         ],
       ),
     );
   }
 
-  /// Großes quadratisches Spielerfoto rechts im Kopf. Kurzer Tipp klappt die
-  /// Bewertungen ein/aus (Stern-Hinweis), langes Drücken ändert das Foto.
-  Widget _headerPhoto(BuildContext context, Player p) {
+  /// Großes quadratisches Spielerfoto rechts im Kopf. Für Trainer: kurzer Tipp
+  /// klappt die Bewertungen ein/aus (Stern-Hinweis), langes Drücken ändert das
+  /// Foto. Spieler sehen das Foto nur (keine Gesten/Badges).
+  Widget _headerPhoto(BuildContext context, Player p, bool isTrainer) {
     final scheme = Theme.of(context).colorScheme;
     final bytes = TeamLogo.decode(p.photoPath);
     final fallback =
         p.number?.toString() ?? (p.lastName.isNotEmpty ? p.lastName[0] : '?');
     const size = 160.0;
+    final photo = ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: Container(
+                color: scheme.surfaceContainerHighest,
+                child: bytes != null
+                    ? Image.memory(
+                        bytes,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      )
+                    : Center(
+                        child: Text(
+                          fallback,
+                          style: const TextStyle(
+                            fontSize: 34,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+            // Status-Ecke (FuPa-Stil) oben links auf dem Hauptfoto.
+            if (p.status != PlayerStatus.fit)
+              Positioned(
+                left: 0,
+                top: 0,
+                child: StatusCorner(status: p.status, size: size * 0.3),
+              ),
+          ],
+        ),
+      ),
+    );
+    // Spieler (Nicht-Trainer): nur ansehen – keine Bewertungen/Foto-Gesten.
+    if (!isTrainer) return photo;
     return GestureDetector(
       onTap: () => setState(() => _ratingsExpanded = !_ratingsExpanded),
       onLongPress: _changePhoto,
       child: Stack(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: SizedBox(
-              width: size,
-              height: size,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Container(
-                      color: scheme.surfaceContainerHighest,
-                      child: bytes != null
-                          ? Image.memory(
-                              bytes,
-                              fit: BoxFit.cover,
-                              gaplessPlayback: true,
-                            )
-                          : Center(
-                              child: Text(
-                                fallback,
-                                style: const TextStyle(
-                                  fontSize: 34,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                    ),
-                  ),
-                  // Status-Ecke (FuPa-Stil) oben links auf dem Hauptfoto.
-                  if (p.status != PlayerStatus.fit)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      child: StatusCorner(status: p.status, size: size * 0.3),
-                    ),
-                ],
-              ),
-            ),
-          ),
+          photo,
           // Hinweis unten links: Tipp aufs Foto zeigt/versteckt die Bewertungen.
           Positioned(
             left: 0,

@@ -18,7 +18,12 @@ class TalkFormData {
   final String? notes;
   final bool done;
   const TalkFormData(
-      this.playerIds, this.title, this.scheduledAt, this.notes, this.done);
+    this.playerIds,
+    this.title,
+    this.scheduledAt,
+    this.notes,
+    this.done,
+  );
 }
 
 /// Formular zum Anlegen/Bearbeiten eines Spielergesprächs. [fixedPlayer] fixiert
@@ -56,7 +61,13 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
     with SingleTickerProviderStateMixin {
   static final _df = DateFormat('EEE, dd.MM.yyyy  HH:mm', 'de_DE');
 
-  late final TabController _tab = TabController(length: 3, vsync: this);
+  // Spieler sehen (per RLS) nur eigene Gespräche – und nur lesend: kein
+  // Anlegen, keine Vorschläge, keine Bearbeitung.
+  late final bool _isTrainer = context.read<AppState>().isTrainerHere;
+  late final TabController _tab = TabController(
+    length: _isTrainer ? 3 : 2,
+    vsync: this,
+  );
   bool _groupByPlayerMode = false; // false = nach Datum, true = nach Spieler
 
   @override
@@ -94,8 +105,11 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
 
   /// Gespräch für einen bestimmten Spieler (aus den Vorschlägen).
   Future<void> _planFor(AppState state, Player player) async {
-    final data = await showTalkForm(context,
-        fixedPlayer: player, players: [player]);
+    final data = await showTalkForm(
+      context,
+      fixedPlayer: player,
+      players: [player],
+    );
     if (data == null || !mounted) return;
     await state.addTalk(
       playerId: data.playerIds.first,
@@ -107,20 +121,30 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
     if (mounted) setState(() {});
   }
 
-  Future<void> _edit(AppState state, PlayerTalk talk, List<Player> players,
-      Player? player) async {
-    final data = await showTalkForm(context,
-        existing: talk, fixedPlayer: player, players: players);
+  Future<void> _edit(
+    AppState state,
+    PlayerTalk talk,
+    List<Player> players,
+    Player? player,
+  ) async {
+    final data = await showTalkForm(
+      context,
+      existing: talk,
+      fixedPlayer: player,
+      players: players,
+    );
     if (data == null || !mounted || data.playerIds.isEmpty) return;
     final wasDone = talk.done;
-    await state.saveTalk(talk.copyWith(
-      playerId: data.playerIds.first,
-      title: data.title,
-      scheduledAt: data.scheduledAt,
-      notes: data.notes,
-      clearNotes: data.notes == null,
-      done: data.done,
-    ));
+    await state.saveTalk(
+      talk.copyWith(
+        playerId: data.playerIds.first,
+        title: data.title,
+        scheduledAt: data.scheduledAt,
+        notes: data.notes,
+        clearNotes: data.notes == null,
+        done: data.done,
+      ),
+    );
     if (!mounted) return;
     setState(() {});
     if (data.done && !wasDone) {
@@ -147,85 +171,101 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
   /// Zweizeiliger Tab: Beschriftung oben, Anzahl darunter – passt auch auf
   /// schmale Handy-Breiten, statt einzeilig abgeschnitten zu werden.
   Tab _countTab(String label, int count) => Tab(
-        height: 54,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(label,
-                style: const TextStyle(fontSize: 13),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 2),
-            Text('$count',
-                style:
-                    const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
-          ],
+    height: 54,
+    child: Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(fontSize: 13),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
         ),
-      );
+        const SizedBox(height: 2),
+        Text(
+          '$count',
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     return FutureBuilder<(List<PlayerTalk>, List<Player>)>(
-        future: _load(state),
-        builder: (context, snap) {
-          final hasData = snap.hasData;
-          final talks = hasData ? snap.data!.$1 : <PlayerTalk>[];
-          final players = hasData ? snap.data!.$2 : <Player>[];
-          final playerMap = {for (final p in players) p.id: p};
+      future: _load(state),
+      builder: (context, snap) {
+        final hasData = snap.hasData;
+        final talks = hasData ? snap.data!.$1 : <PlayerTalk>[];
+        final players = hasData ? snap.data!.$2 : <Player>[];
+        final playerMap = {for (final p in players) p.id: p};
 
-          final planned = talks.where((t) => !t.done).toList()
-            ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
-          final done = talks.where((t) => t.done).toList()
-            ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
-          final talkedIds = talks.map((t) => t.playerId).toSet();
-          // Vorschläge: aktive Kaderspieler (ohne Trainerteam) ohne Gespräch.
-          final suggestions = players
-              .where((p) =>
-                  p.active && !p.isStaff && !talkedIds.contains(p.id))
-              .toList();
+        final planned = talks.where((t) => !t.done).toList()
+          ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+        final done = talks.where((t) => t.done).toList()
+          ..sort((a, b) => b.scheduledAt.compareTo(a.scheduledAt));
+        final talkedIds = talks.map((t) => t.playerId).toSet();
+        // Vorschläge: aktive Kaderspieler (ohne Trainerteam) ohne Gespräch.
+        final suggestions = players
+            .where((p) => p.active && !p.isStaff && !talkedIds.contains(p.id))
+            .toList();
 
-          return Scaffold(
-            drawer: const AppDrawer(),
-            appBar: AppBar(
-              title: const Text('Spielergespräche'),
-              bottom: TabBar(
-                controller: _tab,
-                labelColor: Colors.white,
-                unselectedLabelColor: Colors.white70,
-                indicatorColor: Colors.white,
-                labelPadding: const EdgeInsets.symmetric(horizontal: 4),
-                tabs: [
-                  _countTab('Geplant', planned.length),
-                  _countTab('Durchgeführt', done.length),
-                  _countTab('Vorschläge', suggestions.length),
-                ],
-              ),
+        return Scaffold(
+          drawer: const AppDrawer(),
+          appBar: AppBar(
+            title: const Text('Spielergespräche'),
+            bottom: TabBar(
+              controller: _tab,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white70,
+              indicatorColor: Colors.white,
+              labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+              tabs: [
+                _countTab('Geplant', planned.length),
+                _countTab('Durchgeführt', done.length),
+                if (_isTrainer) _countTab('Vorschläge', suggestions.length),
+              ],
             ),
-            floatingActionButton: FloatingActionButton.extended(
-              onPressed: () => _add(state, players),
-              icon: const Icon(Icons.add),
-              label: const Text('Gespräch'),
-            ),
-            body: !hasData
-                ? const Center(child: CircularProgressIndicator())
-                : TabBarView(
-                    controller: _tab,
-                    children: [
-                      _talkList(state, planned, playerMap,
-                          'Keine geplanten Gespräche.'),
-                      _talkList(state, done, playerMap,
-                          'Noch keine durchgeführten Gespräche.'),
-                      _suggestionList(state, suggestions),
-                    ],
-                  ),
-          );
-        },
+          ),
+          floatingActionButton: _isTrainer
+              ? FloatingActionButton.extended(
+                  onPressed: () => _add(state, players),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Gespräch'),
+                )
+              : null,
+          body: !hasData
+              ? const Center(child: CircularProgressIndicator())
+              : TabBarView(
+                  controller: _tab,
+                  children: [
+                    _talkList(
+                      state,
+                      planned,
+                      playerMap,
+                      'Keine geplanten Gespräche.',
+                    ),
+                    _talkList(
+                      state,
+                      done,
+                      playerMap,
+                      'Noch keine durchgeführten Gespräche.',
+                    ),
+                    if (_isTrainer) _suggestionList(state, suggestions),
+                  ],
+                ),
+        );
+      },
     );
   }
 
-  Widget _talkList(AppState state, List<PlayerTalk> talks,
-      Map<String, Player> players, String empty) {
+  Widget _talkList(
+    AppState state,
+    List<PlayerTalk> talks,
+    Map<String, Player> players,
+    String empty,
+  ) {
     final groups = _grouped(talks, players);
     return ListView(
       padding: const EdgeInsets.only(bottom: 88),
@@ -234,18 +274,23 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
         if (talks.isEmpty)
           Padding(
             padding: const EdgeInsets.all(24),
-            child: Text(empty,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.grey)),
+            child: Text(
+              empty,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.grey),
+            ),
           )
         else
           for (final g in groups) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 2),
-              child: Text(g.$1,
-                  style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary)),
+              child: Text(
+                g.$1,
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
             ),
             for (final t in g.$2) _talkRow(state, t, players),
           ],
@@ -262,17 +307,20 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
           const SizedBox(width: 8),
           SegmentedButton<bool>(
             style: const ButtonStyle(
-                visualDensity: VisualDensity.compact,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+              visualDensity: VisualDensity.compact,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
             segments: const [
               ButtonSegment(
-                  value: false,
-                  label: Text('Datum'),
-                  icon: Icon(Icons.event, size: 16)),
+                value: false,
+                label: Text('Datum'),
+                icon: Icon(Icons.event, size: 16),
+              ),
               ButtonSegment(
-                  value: true,
-                  label: Text('Spieler'),
-                  icon: Icon(Icons.person, size: 16)),
+                value: true,
+                label: Text('Spieler'),
+                icon: Icon(Icons.person, size: 16),
+              ),
             ],
             selected: {_groupByPlayerMode},
             onSelectionChanged: (s) =>
@@ -285,16 +333,20 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
 
   /// Gruppiert nach Datum (Reihenfolge der Liste) oder nach Spieler (alpha).
   List<(String, List<PlayerTalk>)> _grouped(
-      List<PlayerTalk> talks, Map<String, Player> players) {
+    List<PlayerTalk> talks,
+    Map<String, Player> players,
+  ) {
     if (_groupByPlayerMode) {
       final map = <String, List<PlayerTalk>>{};
       for (final t in talks) {
         map.putIfAbsent(t.playerId, () => []).add(t);
       }
       final keys = map.keys.toList()
-        ..sort((a, b) => (players[a]?.displayName ?? '')
-            .toLowerCase()
-            .compareTo((players[b]?.displayName ?? '').toLowerCase()));
+        ..sort(
+          (a, b) => (players[a]?.displayName ?? '').toLowerCase().compareTo(
+            (players[b]?.displayName ?? '').toLowerCase(),
+          ),
+        );
       return [
         for (final k in keys)
           (
@@ -316,11 +368,49 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
       }
       map[key]!.add(t);
     }
-    return [for (final k in order) (df.format(map[k]!.first.scheduledAt), map[k]!)];
+    return [
+      for (final k in order) (df.format(map[k]!.first.scheduledAt), map[k]!),
+    ];
   }
 
   Widget _talkRow(AppState state, PlayerTalk t, Map<String, Player> players) {
     final p = players[t.playerId];
+    final card = Card(
+      child: ListTile(
+        leading: p != null
+            ? PlayerAvatar(player: p, radius: 20)
+            : const CircleAvatar(child: Icon(Icons.person)),
+        title: Text(
+          t.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: t.done
+              ? const TextStyle(
+                  decoration: TextDecoration.lineThrough,
+                  color: Colors.grey,
+                )
+              : null,
+        ),
+        subtitle: Text(
+          [
+            p?.displayName ?? 'Spieler',
+            _df.format(t.scheduledAt),
+            if (t.notes != null && t.notes!.isNotEmpty) '📝',
+          ].join('  ·  '),
+        ),
+        trailing: Checkbox(
+          value: t.done,
+          onChanged: _isTrainer
+              ? (v) => _toggleDone(state, t, v ?? false)
+              : null,
+        ),
+        onTap: _isTrainer
+            ? () => _edit(state, t, players.values.toList(), p)
+            : () => _showTalkInfo(t, p),
+      ),
+    );
+    // Spieler: nur ansehen (kein Wischen zum Löschen).
+    if (!_isTrainer) return card;
     return Dismissible(
       key: ValueKey(t.id),
       direction: DismissDirection.endToStart,
@@ -331,30 +421,36 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
         child: const Icon(Icons.delete, color: Colors.white),
       ),
       onDismissed: (_) => state.deleteTalk(t.id),
-      child: Card(
-        child: ListTile(
-          leading: p != null
-              ? PlayerAvatar(player: p, radius: 20)
-              : const CircleAvatar(child: Icon(Icons.person)),
-          title: Text(t.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: t.done
-                  ? const TextStyle(
-                      decoration: TextDecoration.lineThrough,
-                      color: Colors.grey)
-                  : null),
-          subtitle: Text([
-            p?.displayName ?? 'Spieler',
-            _df.format(t.scheduledAt),
-            if (t.notes != null && t.notes!.isNotEmpty) '📝',
-          ].join('  ·  ')),
-          trailing: Checkbox(
-            value: t.done,
-            onChanged: (v) => _toggleDone(state, t, v ?? false),
-          ),
-          onTap: () => _edit(state, t, players.values.toList(), p),
+      child: card,
+    );
+  }
+
+  /// Nur-Lese-Ansicht eines Gesprächs (für Spieler).
+  Future<void> _showTalkInfo(PlayerTalk t, Player? p) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text(t.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${p?.displayName ?? 'Spieler'} · ${_df.format(t.scheduledAt)}',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            if (t.notes != null && t.notes!.trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(t.notes!.trim()),
+            ],
+          ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Schließen'),
+          ),
+        ],
       ),
     );
   }
@@ -364,9 +460,11 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text('Alle aktiven Spieler hatten schon ein Gespräch.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey)),
+          child: Text(
+            'Alle aktiven Spieler hatten schon ein Gespräch.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: Colors.grey),
+          ),
         ),
       );
     }
@@ -379,11 +477,13 @@ class _SpielergespraecheScreenState extends State<SpielergespraecheScreen>
           child: ListTile(
             leading: PlayerAvatar(player: p, radius: 20),
             title: Text(p.displayName),
-            subtitle: Text([
-              if (p.number != null) 'Nr. ${p.number}',
-              if (p.position != null) p.position!,
-              'noch kein Gespräch',
-            ].join('  ·  ')),
+            subtitle: Text(
+              [
+                if (p.number != null) 'Nr. ${p.number}',
+                if (p.position != null) p.position!,
+                'noch kein Gespräch',
+              ].join('  ·  '),
+            ),
             trailing: FilledButton.tonalIcon(
               onPressed: () => _planFor(state, p),
               icon: const Icon(Icons.add, size: 18),
@@ -431,8 +531,7 @@ class _TalkFormPageState extends State<_TalkFormPage> {
     final e = widget.existing;
     _titleCtrl = TextEditingController(text: e?.title ?? '');
     _notesCtrl = TextEditingController(text: e?.notes ?? '');
-    _date = e?.scheduledAt ??
-        DateTime.now().add(const Duration(days: 1));
+    _date = e?.scheduledAt ?? DateTime.now().add(const Duration(days: 1));
     final initId = widget.fixedPlayer?.id ?? e?.playerId;
     _playerIds = initId == null ? [] : [initId];
     _done = e?.done ?? false;
@@ -490,15 +589,24 @@ class _TalkFormPageState extends State<_TalkFormPage> {
       initialTime: TimeOfDay.fromDateTime(_date),
     );
     if (!mounted) return;
-    setState(() => _date =
-        DateTime(d.year, d.month, d.day, t?.hour ?? 18, t?.minute ?? 0));
+    setState(
+      () => _date = DateTime(
+        d.year,
+        d.month,
+        d.day,
+        t?.hour ?? 18,
+        t?.minute ?? 0,
+      ),
+    );
   }
 
   void _save() {
     if (_playerIds.isEmpty) {
-      _snack(widget.multi
-          ? 'Bitte mindestens einen Spieler wählen.'
-          : 'Bitte einen Spieler wählen.');
+      _snack(
+        widget.multi
+            ? 'Bitte mindestens einen Spieler wählen.'
+            : 'Bitte einen Spieler wählen.',
+      );
       return;
     }
     if (_titleCtrl.text.trim().isEmpty) {
@@ -528,8 +636,10 @@ class _TalkFormPageState extends State<_TalkFormPage> {
         Row(
           children: [
             Expanded(
-              child: Text('Spieler (${_playerIds.length})',
-                  style: Theme.of(context).textTheme.titleSmall),
+              child: Text(
+                'Spieler (${_playerIds.length})',
+                style: Theme.of(context).textTheme.titleSmall,
+              ),
             ),
             OutlinedButton.icon(
               onPressed: _pickMulti,
@@ -546,18 +656,20 @@ class _TalkFormPageState extends State<_TalkFormPage> {
             children: _playerIds.map((id) {
               final p = _playerById(id);
               return InputChip(
-                avatar:
-                    p == null ? null : PlayerAvatar(player: p, radius: 11),
+                avatar: p == null ? null : PlayerAvatar(player: p, radius: 11),
                 label: Text(p?.displayName ?? 'Spieler'),
-                onDeleted: () => setState(() =>
-                    _playerIds = _playerIds.where((x) => x != id).toList()),
+                onDeleted: () => setState(
+                  () => _playerIds = _playerIds.where((x) => x != id).toList(),
+                ),
               );
             }).toList(),
           ),
         ],
         const SizedBox(height: 4),
-        Text('Pro Spieler wird ein eigenes Gespräch angelegt.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+        Text(
+          'Pro Spieler wird ein eigenes Gespräch angelegt.',
+          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+        ),
       ],
     );
   }
@@ -589,8 +701,7 @@ class _TalkFormPageState extends State<_TalkFormPage> {
           else
             Row(
               children: [
-                Text('Spieler:',
-                    style: Theme.of(context).textTheme.titleSmall),
+                Text('Spieler:', style: Theme.of(context).textTheme.titleSmall),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Align(
@@ -601,20 +712,24 @@ class _TalkFormPageState extends State<_TalkFormPage> {
                             icon: const Icon(Icons.person_add_alt, size: 18),
                             label: const Text('Spieler wählen'),
                           )
-                        : Builder(builder: (_) {
-                            final sel = _playerById(_playerIds.first);
-                            return Chip(
-                              avatar: sel == null
-                                  ? null
-                                  : PlayerAvatar(player: sel, radius: 11),
-                              label: Text(sel?.displayName ?? 'Spieler'),
-                            );
-                          }),
+                        : Builder(
+                            builder: (_) {
+                              final sel = _playerById(_playerIds.first);
+                              return Chip(
+                                avatar: sel == null
+                                    ? null
+                                    : PlayerAvatar(player: sel, radius: 11),
+                                label: Text(sel?.displayName ?? 'Spieler'),
+                              );
+                            },
+                          ),
                   ),
                 ),
                 if (_playerIds.isNotEmpty && !fixed)
                   TextButton(
-                      onPressed: _pickSingle, child: const Text('Ändern')),
+                    onPressed: _pickSingle,
+                    child: const Text('Ändern'),
+                  ),
               ],
             ),
           const SizedBox(height: 16),
@@ -744,10 +859,12 @@ class _MultiPlayerPickPageState extends State<_MultiPlayerPickPage> {
               }),
               secondary: PlayerAvatar(player: p, radius: 18),
               title: Text(p.displayName),
-              subtitle: Text([
-                if (p.number != null) 'Nr. ${p.number}',
-                if (p.position != null) p.position!,
-              ].join('  ·  ')),
+              subtitle: Text(
+                [
+                  if (p.number != null) 'Nr. ${p.number}',
+                  if (p.position != null) p.position!,
+                ].join('  ·  '),
+              ),
               controlAffinity: ListTileControlAffinity.trailing,
               contentPadding: EdgeInsets.zero,
             ),
