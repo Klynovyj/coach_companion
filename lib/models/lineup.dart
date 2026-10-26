@@ -3,7 +3,8 @@ import 'enums.dart';
 /// Aufstellung eines Teams für ein Spiel.
 ///
 /// Eigene Startelf/Formation/Bank bestimmt der Trainer – FuPa liefert hierfür
-/// bewusst keine Daten (nur Stammdaten der Spieler).
+/// bewusst keine Daten (nur Stammdaten der Spieler). Mehrere Trainer können je
+/// eine eigene Aufstellung haben; genau eine kann für „Live" freigegeben sein.
 class Lineup {
   final String id;
   final String matchId;
@@ -12,6 +13,20 @@ class Lineup {
   /// Formation als Freitext, z.B. "4-4-2", "3-5-2".
   final String formation;
 
+  /// Trainer, der diese Aufstellung erstellt hat (Cloud-User-ID). Nur er darf
+  /// sie bearbeiten; andere erstellen Vorschläge.
+  final String? createdBy;
+
+  /// Anzeigename des Erstellers (denormalisiert, für die Liste).
+  final String? creatorName;
+
+  /// true = für „Live" freigegeben (genau eine je Spiel/Team).
+  final bool released;
+
+  /// Falls diese Aufstellung ein Vorschlag zu einer anderen ist: deren ID
+  /// (Phase 2). null = eigenständige Aufstellung.
+  final String? suggestionOf;
+
   final DateTime createdAt;
 
   const Lineup({
@@ -19,14 +34,29 @@ class Lineup {
     required this.matchId,
     required this.teamId,
     this.formation = '4-4-2',
+    this.createdBy,
+    this.creatorName,
+    this.released = false,
+    this.suggestionOf,
     required this.createdAt,
   });
 
-  Lineup copyWith({String? formation}) => Lineup(
+  Lineup copyWith({
+    String? formation,
+    String? createdBy,
+    String? creatorName,
+    bool? released,
+    String? suggestionOf,
+  }) =>
+      Lineup(
         id: id,
         matchId: matchId,
         teamId: teamId,
         formation: formation ?? this.formation,
+        createdBy: createdBy ?? this.createdBy,
+        creatorName: creatorName ?? this.creatorName,
+        released: released ?? this.released,
+        suggestionOf: suggestionOf ?? this.suggestionOf,
         createdAt: createdAt,
       );
 
@@ -35,6 +65,10 @@ class Lineup {
         'match_id': matchId,
         'team_id': teamId,
         'formation': formation,
+        'created_by': createdBy,
+        'creator_name': creatorName,
+        'released': released ? 1 : 0,
+        'suggestion_of': suggestionOf,
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -43,6 +77,10 @@ class Lineup {
         matchId: m['match_id'] as String,
         teamId: m['team_id'] as String,
         formation: m['formation'] as String? ?? '4-4-2',
+        createdBy: m['created_by'] as String?,
+        creatorName: m['creator_name'] as String?,
+        released: (m['released'] as num?)?.toInt() == 1,
+        suggestionOf: m['suggestion_of'] as String?,
         createdAt:
             DateTime.tryParse(m['created_at'] as String? ?? '') ??
                 DateTime.now(),

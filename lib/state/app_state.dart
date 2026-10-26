@@ -1833,23 +1833,50 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- Lineups
+  /// Die EIGENE Aufstellung des Trainers für ein Spiel – vorhanden, sonst eine
+  /// unbesitzte (Alt-)Aufstellung übernehmen, sonst neu anlegen. Jeder Trainer
+  /// hat seine eigene; genau eine kann freigegeben werden.
   Future<Lineup> ensureLineup(String matchId, String teamId,
       {String formation = '4-4-2'}) async {
-    final existing = await _repo.getLineup(matchId, teamId);
-    if (existing != null) return existing;
+    final me = _me;
+    final mine = await _repo.getMyLineup(matchId, teamId, me);
+    if (mine != null) return mine;
+    // Alt-/unbesitzte Aufstellung als eigene übernehmen (Migration/Altbestand).
+    final unowned = await _repo.getUnownedLineup(matchId, teamId);
+    if (unowned != null) {
+      final claimed =
+          unowned.copyWith(createdBy: me, creatorName: CloudService.myName);
+      await _repo.upsertLineup(claimed);
+      return claimed;
+    }
     final lineup = Lineup(
-      // Deterministische ID pro (Spiel, Team): so vergeben beide Geräte
-      // dieselbe ID und die Aufstellung läuft über GENAU eine Cloud-Zeile
-      // zusammen (kein Divergieren der Einträge mehr).
-      id: 'lu_${matchId}_$teamId',
+      // Deterministische ID pro (Spiel, Team, Trainer) → genau eine Cloud-Zeile.
+      id: 'lu_${matchId}_${teamId}_$me',
       matchId: matchId,
       teamId: teamId,
       formation: formation,
+      createdBy: me,
+      creatorName: CloudService.myName,
       createdAt: DateTime.now(),
     );
     await _repo.upsertLineup(lineup);
     return lineup;
   }
+
+  /// Alle Aufstellungen eines Spiels (je Trainer eine), freigegebene zuerst.
+  Future<List<Lineup>> lineupsForMatch(String matchId, String teamId) =>
+      _repo.getLineupsForMatch(matchId, teamId);
+
+  Future<Lineup?> getLineupById(String id) => _repo.getLineupById(id);
+
+  /// Gibt diese Aufstellung für „Live" frei (alle anderen werden entsperrt).
+  Future<void> releaseLineup(Lineup lineup) async {
+    await _repo.releaseLineup(lineup.id, lineup.matchId, lineup.teamId);
+    notifyListeners();
+  }
+
+  /// Ist dieser Trainer der Ersteller der Aufstellung? (darf sie bearbeiten)
+  bool isMyLineup(Lineup l) => (l.createdBy ?? '') == _me || l.createdBy == null;
 
   Future<List<LineupEntry>> lineupEntries(String lineupId) =>
       _repo.getLineupEntries(lineupId);

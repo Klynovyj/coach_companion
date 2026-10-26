@@ -26,11 +26,19 @@ class LineupEditorScreen extends StatefulWidget {
     required this.matchId,
     required this.teamId,
     required this.teamName,
+    this.lineupId,
+    this.readOnly = false,
   });
 
   final String matchId;
   final String teamId;
   final String teamName;
+
+  /// Bestimmte Aufstellung öffnen (statt der eigenen). Für Ansehen fremder.
+  final String? lineupId;
+
+  /// Nur ansehen (fremde Aufstellung) – keine Bearbeitung/Speichern.
+  final bool readOnly;
 
   @override
   State<LineupEditorScreen> createState() => _LineupEditorScreenState();
@@ -83,7 +91,10 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
 
   Future<void> _load() async {
     final state = context.read<AppState>();
-    final lineup = await state.ensureLineup(widget.matchId, widget.teamId);
+    final lineup = widget.lineupId != null
+        ? (await state.getLineupById(widget.lineupId!) ??
+            await state.ensureLineup(widget.matchId, widget.teamId))
+        : await state.ensureLineup(widget.matchId, widget.teamId);
     // Reines Trainerteam steht nicht in der Aufstellung (spielender Co-Trainer schon).
     final players = (await state.playersOf(widget.teamId))
         .where((p) => !p.isStaffOnly)
@@ -550,21 +561,31 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             icon: const Icon(Icons.share),
             onPressed: _shareLineup,
           ),
-          IconButton(
-            tooltip: 'Aufstellung zurücksetzen',
-            icon: const Icon(Icons.restart_alt),
-            onPressed: _resetLineup,
-          ),
+          if (!widget.readOnly)
+            IconButton(
+              tooltip: 'Aufstellung zurücksetzen',
+              icon: const Icon(Icons.restart_alt),
+              onPressed: _resetLineup,
+            ),
           IconButton(
             tooltip: _listMode ? 'Feld-Ansicht' : 'Listen-Ansicht',
             icon: Icon(_listMode ? Icons.grid_view : Icons.view_list),
             onPressed: () => setState(() => _listMode = !_listMode),
           ),
-          TextButton(
-            onPressed: _save,
-            child: const Text('Speichern',
-                style: TextStyle(color: Colors.white)),
-          ),
+          if (!widget.readOnly)
+            TextButton(
+              onPressed: _save,
+              child: const Text('Speichern',
+                  style: TextStyle(color: Colors.white)),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.only(right: 12),
+              child: Center(
+                child: Text('Nur ansehen',
+                    style: TextStyle(color: Colors.white, fontSize: 13)),
+              ),
+            ),
         ],
       ),
       body: ListView(
@@ -741,6 +762,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
 
   /// Draggable mit pointer-Anker: Drop-Punkt = Zeigerposition.
   Widget _draggable(Player p, Widget child, {double anchor = 26}) {
+    if (widget.readOnly) return child; // Nur ansehen – kein Ziehen.
     return Draggable<String>(
       data: p.id,
       dragAnchorStrategy: pointerDragAnchorStrategy,
@@ -898,7 +920,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final overridden = _matchNumbers.containsKey(p.id);
     const accent = Color(0xFFEF6C00);
     return InkWell(
-      onTap: () => _editNumber(p),
+      onTap: widget.readOnly ? null : () => _editNumber(p),
       borderRadius: BorderRadius.circular(16),
       child: Container(
         width: 30,
@@ -1013,7 +1035,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
       title: InkWell(
-        onTap: () => _editNickname(p),
+        onTap: widget.readOnly ? null : () => _editNickname(p),
         child: Row(
           children: [
             Flexible(
@@ -1058,15 +1080,17 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             selected: selected,
             emptySelectionAllowed: true,
             showSelectedIcon: false,
-            onSelectionChanged: (s) {
-              if (s.isEmpty) return;
-              final v = s.first;
-              if (v == 'start') {
-                if (!isStarter) _addStarterDefault(p.id);
-              } else if (v == 'bank') {
-                _toBench(p.id);
-              }
-            },
+            onSelectionChanged: widget.readOnly
+                ? null
+                : (s) {
+                    if (s.isEmpty) return;
+                    final v = s.first;
+                    if (v == 'start') {
+                      if (!isStarter) _addStarterDefault(p.id);
+                    } else if (v == 'bank') {
+                      _toBench(p.id);
+                    }
+                  },
           ),
         ],
       ),

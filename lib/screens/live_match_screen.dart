@@ -288,9 +288,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         : dedupePlayersByName(await state.playersOf(opp.id));
     final events = await state.eventsOf(widget.matchId);
     final noms = await state.nominationsOf(widget.matchId);
-    // Startelf aus der Aufstellung (für Wechsel: Feld vs Bank).
+    // Startelf aus der FREIGEGEBENEN Aufstellung (für Wechsel: Feld vs Bank).
     final starterIds = <String>{};
-    final lineup = await state.repository.getLineup(widget.matchId, match.ownTeamId);
+    final lineup =
+        await state.repository.getReleasedLineup(widget.matchId, match.ownTeamId);
     if (lineup != null) {
       final entries = await state.lineupEntries(lineup.id);
       for (final e in entries) {

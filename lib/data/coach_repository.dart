@@ -229,21 +229,85 @@ class CoachRepository {
   }
 
   // ----------------------------------------------------------------- Lineups
+  /// Beste Aufstellung für Anzeige/Live: freigegebene zuerst, sonst die mit den
+  /// meisten Einträgen (damit eine leere lokale Zeile die übernommene volle
+  /// Aufstellung nicht verdeckt).
   Future<Lineup?> getLineup(String matchId, String teamId) async {
     final db = await _db;
-    // Gibt es (durch Sync verschiedener Geräte) mehrere Aufstellungen für dies
-    // Spiel/Team, die mit den MEISTEN Einträgen bevorzugen – sonst würde eine
-    // leere lokale Zeile die übernommene (volle) Aufstellung verdecken.
     final rows = await db.rawQuery('''
       SELECT l.* FROM lineups l
       LEFT JOIN (
         SELECT lineup_id, COUNT(*) AS c FROM lineup_entries GROUP BY lineup_id
       ) e ON e.lineup_id = l.id
       WHERE l.match_id = ? AND l.team_id = ?
-      ORDER BY COALESCE(e.c, 0) DESC, l.created_at ASC
+      ORDER BY l.released DESC, COALESCE(e.c, 0) DESC, l.created_at ASC
       LIMIT 1
     ''', [matchId, teamId]);
     return rows.isEmpty ? null : Lineup.fromMap(rows.first);
+  }
+
+  /// Alle Aufstellungen eines Spiels/Teams (freigegebene zuerst, dann Datum).
+  Future<List<Lineup>> getLineupsForMatch(String matchId, String teamId) async {
+    final db = await _db;
+    final rows = await db.query('lineups',
+        where: 'match_id = ? AND team_id = ?',
+        whereArgs: [matchId, teamId],
+        orderBy: 'released DESC, created_at ASC');
+    return rows.map(Lineup.fromMap).toList();
+  }
+
+  Future<Lineup?> getLineupById(String id) async {
+    final db = await _db;
+    final rows =
+        await db.query('lineups', where: 'id = ?', whereArgs: [id], limit: 1);
+    return rows.isEmpty ? null : Lineup.fromMap(rows.first);
+  }
+
+  /// Die freigegebene Aufstellung (für Live); Fallback: beste vorhandene.
+  Future<Lineup?> getReleasedLineup(String matchId, String teamId) async {
+    final db = await _db;
+    final rows = await db.query('lineups',
+        where: 'match_id = ? AND team_id = ? AND released = 1',
+        whereArgs: [matchId, teamId],
+        limit: 1);
+    if (rows.isNotEmpty) return Lineup.fromMap(rows.first);
+    return getLineup(matchId, teamId);
+  }
+
+  /// Die eigene Aufstellung eines Trainers (createdBy) – oder null.
+  Future<Lineup?> getMyLineup(
+      String matchId, String teamId, String? createdBy) async {
+    final db = await _db;
+    final where = createdBy == null
+        ? 'match_id = ? AND team_id = ? AND created_by IS NULL'
+        : 'match_id = ? AND team_id = ? AND created_by = ?';
+    final args = createdBy == null
+        ? [matchId, teamId]
+        : [matchId, teamId, createdBy];
+    final rows =
+        await db.query('lineups', where: where, whereArgs: args, limit: 1);
+    return rows.isEmpty ? null : Lineup.fromMap(rows.first);
+  }
+
+  /// Eine (Alt-)Aufstellung ohne Ersteller – zum Übernehmen beim ersten Öffnen.
+  Future<Lineup?> getUnownedLineup(String matchId, String teamId) async {
+    final db = await _db;
+    final rows = await db.query('lineups',
+        where: 'match_id = ? AND team_id = ? AND created_by IS NULL',
+        whereArgs: [matchId, teamId],
+        limit: 1);
+    return rows.isEmpty ? null : Lineup.fromMap(rows.first);
+  }
+
+  /// Gibt genau diese Aufstellung frei (released=1) und setzt alle anderen des
+  /// Spiels/Teams auf released=0. Änderungen werden gespiegelt.
+  Future<void> releaseLineup(
+      String lineupId, String matchId, String teamId) async {
+    final all = await getLineupsForMatch(matchId, teamId);
+    for (final l in all) {
+      final want = l.id == lineupId;
+      if (l.released != want) await upsertLineup(l.copyWith(released: want));
+    }
   }
 
   Future<void> upsertLineup(Lineup lineup) =>

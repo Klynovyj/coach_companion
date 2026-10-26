@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 39;
+  static const _dbVersion = 40;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -281,6 +281,20 @@ class AppDatabase {
       await db.execute(
           'ALTER TABLE players ADD COLUMN suspension_competition TEXT');
       await db.execute('ALTER TABLE players ADD COLUMN suspension_from TEXT');
+    }
+    // v39 -> v40: Mehrere Aufstellungen je Spiel (eine je Trainer) + Freigabe.
+    if (oldV < 40) {
+      await db.execute('ALTER TABLE lineups ADD COLUMN created_by TEXT');
+      await db.execute('ALTER TABLE lineups ADD COLUMN creator_name TEXT');
+      await db.execute(
+          'ALTER TABLE lineups ADD COLUMN released INTEGER NOT NULL DEFAULT 0');
+      await db.execute('ALTER TABLE lineups ADD COLUMN suggestion_of TEXT');
+      // Bestehende (einzige) Aufstellung je Spiel als freigegeben markieren,
+      // damit „Live" weiter funktioniert.
+      await db.execute('UPDATE lineups SET released = 1');
+      await db.execute('DROP INDEX IF EXISTS idx_lineup_match_team');
+      await db.execute(
+          'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by)');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -586,13 +600,17 @@ class AppDatabase {
         match_id TEXT NOT NULL,
         team_id TEXT NOT NULL,
         formation TEXT NOT NULL,
+        created_by TEXT,
+        creator_name TEXT,
+        released INTEGER NOT NULL DEFAULT 0,
+        suggestion_of TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (match_id) REFERENCES matches (id) ON DELETE CASCADE,
         FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
       )
     ''');
     await db.execute(
-        'CREATE UNIQUE INDEX idx_lineup_match_team ON lineups (match_id, team_id)');
+        'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by)');
 
     await db.execute('''
       CREATE TABLE lineup_entries (

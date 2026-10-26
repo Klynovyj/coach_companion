@@ -13,7 +13,7 @@ import '../widgets/reset_dialog.dart';
 import '../widgets/squad_list_view.dart';
 import '../widgets/team_logo.dart';
 import 'gegner_analyse_screen.dart';
-import 'lineup_editor_screen.dart';
+import 'lineups_list_screen.dart';
 import 'live_match_screen.dart';
 import 'nomination_screen.dart';
 import 'rating_screen.dart';
@@ -77,10 +77,11 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         ? null
         : await state.repository.getTeam(match.opponentTeamId!);
     final noms = await state.nominationsOf(widget.matchId);
-    // Aufstellung vorhanden? (Starter gezählt, ohne eine neue Aufstellung anzulegen)
+    // Freigegebene Aufstellung vorhanden? (nur die zählt für „Live")
     var starters = 0;
-    final lineup = await state.repository.getLineup(widget.matchId, match.ownTeamId);
-    if (lineup != null) {
+    final lineup =
+        await state.repository.getReleasedLineup(widget.matchId, match.ownTeamId);
+    if (lineup != null && lineup.released) {
       final entries = await state.lineupEntries(lineup.id);
       starters = entries.where((e) => e.role == LineupRole.starter).length;
     }
@@ -350,8 +351,8 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     // Bericht (beendet) ist immer erlaubt; Live braucht eine Aufstellung.
     if (!finished && !_hasLineup) {
       _snack(_hasNominations
-          ? 'Bitte zuerst die Aufstellung festlegen.'
-          : 'Bitte zuerst nominieren und aufstellen.');
+          ? 'Bitte zuerst eine Aufstellung freigeben.'
+          : 'Bitte zuerst nominieren und eine Aufstellung freigeben.');
       return;
     }
     _openLive();
@@ -406,7 +407,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => LineupEditorScreen(
+        builder: (_) => LineupsListScreen(
           matchId: widget.matchId,
           teamId: _ownTeam!.id,
           teamName: _ownTeam!.name,
