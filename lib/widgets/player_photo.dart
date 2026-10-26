@@ -76,6 +76,17 @@ class PlayerPhoto extends StatelessWidget {
   }
 }
 
+/// Weißes Symbol je Verfügbarkeitsstatus (wird auf farbigem Grund genutzt:
+/// Status-Ecke, Status-Plakette). Verletzt = medizinisches Pluskreuz.
+IconData playerStatusIcon(PlayerStatus s) => switch (s) {
+  PlayerStatus.verletzt => Icons.add,
+  PlayerStatus.krank => Icons.sick,
+  PlayerStatus.gesperrt => Icons.block,
+  PlayerStatus.urlaub => Icons.beach_access,
+  PlayerStatus.inaktiv => Icons.pause,
+  PlayerStatus.fit => Icons.check,
+};
+
 /// FuPa-artige farbige Ecke oben links für den Verfügbarkeitsstatus. Farbe =
 /// [playerStatusColor], dazu ein weißes Symbol je Status. Wird auf der
 /// Spielerkarte und über den Kader-Fotos genutzt.
@@ -84,15 +95,6 @@ class StatusCorner extends StatelessWidget {
 
   final PlayerStatus status;
   final double size;
-
-  IconData get _icon => switch (status) {
-    PlayerStatus.verletzt => Icons.add,
-    PlayerStatus.krank => Icons.sick,
-    PlayerStatus.gesperrt => Icons.block,
-    PlayerStatus.urlaub => Icons.beach_access,
-    PlayerStatus.inaktiv => Icons.pause,
-    PlayerStatus.fit => Icons.check,
-  };
 
   @override
   Widget build(BuildContext context) {
@@ -108,9 +110,41 @@ class StatusCorner extends StatelessWidget {
           Positioned(
             left: size * 0.09,
             top: size * 0.09,
-            child: Icon(_icon, size: size * 0.34, color: Colors.white),
+            child: Icon(
+              playerStatusIcon(status),
+              size: size * 0.34,
+              color: Colors.white,
+            ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Runde farbige Status-Plakette mit weißem Symbol (für Listen/Chips). Farbe =
+/// [playerStatusColor], Symbol = [playerStatusIcon] – einheitlich mit der
+/// Status-Ecke auf den Fotos.
+class StatusBadge extends StatelessWidget {
+  const StatusBadge({super.key, required this.status, this.size = 20});
+
+  final PlayerStatus status;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: playerStatusColor(status),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(
+        playerStatusIcon(status),
+        size: size * 0.66,
+        color: Colors.white,
       ),
     );
   }

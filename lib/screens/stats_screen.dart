@@ -7,6 +7,7 @@ import '../models/player_stat.dart';
 import '../screens/player_detail_screen.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../state/app_state.dart';
+import '../widgets/player_photo.dart';
 
 enum _SortKey { goals, assists, matches, minutes, name }
 
@@ -36,9 +37,11 @@ class _StatsScreenState extends State<StatsScreen> {
     final list = [...stats];
     switch (_sort) {
       case _SortKey.goals:
-        list.sort((a, b) => b.goals != a.goals
-            ? b.goals.compareTo(a.goals)
-            : b.assists.compareTo(a.assists));
+        list.sort(
+          (a, b) => b.goals != a.goals
+              ? b.goals.compareTo(a.goals)
+              : b.assists.compareTo(a.assists),
+        );
       case _SortKey.assists:
         list.sort((a, b) => b.assists.compareTo(a.assists));
       case _SortKey.matches:
@@ -46,9 +49,10 @@ class _StatsScreenState extends State<StatsScreen> {
       case _SortKey.minutes:
         list.sort((a, b) => b.minutes.compareTo(a.minutes));
       case _SortKey.name:
-        list.sort((a, b) => a.lastName
-            .toLowerCase()
-            .compareTo(b.lastName.toLowerCase()));
+        list.sort(
+          (a, b) =>
+              a.lastName.toLowerCase().compareTo(b.lastName.toLowerCase()),
+        );
     }
     return list;
   }
@@ -57,9 +61,7 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     return Scaffold(
-      appBar: AppBar(
-        title: Text('Statistik · ${widget.teamName}'),
-      ),
+      appBar: AppBar(title: Text('Statistik · ${widget.teamName}')),
       body: Column(
         children: [
           Padding(
@@ -68,17 +70,20 @@ class _StatsScreenState extends State<StatsScreen> {
               showSelectedIcon: false,
               segments: const [
                 ButtonSegment(
-                    value: _StatsView.players,
-                    label: Text('Spieler'),
-                    icon: Icon(Icons.groups)),
+                  value: _StatsView.players,
+                  label: Text('Spieler'),
+                  icon: Icon(Icons.groups),
+                ),
                 ButtonSegment(
-                    value: _StatsView.table,
-                    label: Text('Tabelle'),
-                    icon: Icon(Icons.table_chart)),
+                  value: _StatsView.table,
+                  label: Text('Tabelle'),
+                  icon: Icon(Icons.table_chart),
+                ),
                 ButtonSegment(
-                    value: _StatsView.status,
-                    label: Text('Status'),
-                    icon: Icon(Icons.health_and_safety)),
+                  value: _StatsView.status,
+                  label: Text('Status'),
+                  icon: Icon(Icons.health_and_safety),
+                ),
               ],
               selected: {_view},
               onSelectionChanged: (s) => setState(() => _view = s.first),
@@ -168,10 +173,21 @@ class _StatsScreenState extends State<StatsScreen> {
     int countOf(PlayerStatus s) =>
         all.where((i) => i.player.status == s).length;
     final chips = <Widget>[
-      _summaryChip(context, '👥', 'Kader', all.length, strong: true),
+      _summaryChip(
+        context,
+        const Icon(Icons.groups, size: 16),
+        'Kader',
+        all.length,
+        strong: true,
+      ),
       for (final st in _statusOrder)
         if (countOf(st) > 0)
-          _summaryChip(context, st.symbol, st.label, countOf(st)),
+          _summaryChip(
+            context,
+            StatusBadge(status: st, size: 16),
+            st.label,
+            countOf(st),
+          ),
     ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
@@ -180,32 +196,59 @@ class _StatsScreenState extends State<StatsScreen> {
   }
 
   Widget _summaryChip(
-      BuildContext context, String symbol, String label, int n,
-      {bool strong = false}) {
+    BuildContext context,
+    Widget icon,
+    String label,
+    int n, {
+    bool strong = false,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: strong ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+        color: strong
+            ? scheme.primaryContainer
+            : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(10),
       ),
-      child: Text('$symbol $label: $n',
-          style: TextStyle(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon,
+          const SizedBox(width: 6),
+          Text(
+            '$label: $n',
+            style: TextStyle(
               fontSize: 13,
-              fontWeight: strong ? FontWeight.w800 : FontWeight.w600)),
+              fontWeight: strong ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _statusGroupHeader(BuildContext context, PlayerStatus st, int n) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 4),
-      child: Text('${st.symbol}  ${st.label} ($n)',
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+      child: Row(
+        children: [
+          StatusBadge(status: st, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            '${st.label} ($n)',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _statusRow(
-      BuildContext context, PlayerStatusInfo info, DateFormat df) {
+    BuildContext context,
+    PlayerStatusInfo info,
+    DateFormat df,
+  ) {
     final p = info.player;
     final sub = <String>[];
     if (p.status.isAbsence && info.until != null) {
@@ -219,7 +262,7 @@ class _StatsScreenState extends State<StatsScreen> {
     }
     return ListTile(
       dense: true,
-      leading: Text(p.status.symbol, style: const TextStyle(fontSize: 20)),
+      leading: StatusBadge(status: p.status, size: 28),
       title: Text(p.displayName),
       subtitle: sub.isEmpty ? null : Text(sub.join('  ·  ')),
       onTap: () => Navigator.push(
@@ -274,7 +317,10 @@ class _StatsScreenState extends State<StatsScreen> {
             onChanged: (v) => setState(() => _sort = v ?? _sort),
             items: const [
               DropdownMenuItem(value: _SortKey.goals, child: Text('Tore')),
-              DropdownMenuItem(value: _SortKey.assists, child: Text('Vorlagen')),
+              DropdownMenuItem(
+                value: _SortKey.assists,
+                child: Text('Vorlagen'),
+              ),
               DropdownMenuItem(value: _SortKey.matches, child: Text('Spiele')),
               DropdownMenuItem(value: _SortKey.minutes, child: Text('Minuten')),
               DropdownMenuItem(value: _SortKey.name, child: Text('Name')),
@@ -290,15 +336,18 @@ class _StatsScreenState extends State<StatsScreen> {
   static const _numW = 30.0;
 
   Widget _num(String t, {bool header = false, Color? color}) => SizedBox(
-        width: _numW,
-        child: Text(t,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.clip,
-            style: TextStyle(
-                fontWeight: header ? FontWeight.bold : FontWeight.w600,
-                color: color)),
-      );
+    width: _numW,
+    child: Text(
+      t,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.clip,
+      style: TextStyle(
+        fontWeight: header ? FontWeight.bold : FontWeight.w600,
+        color: color,
+      ),
+    ),
+  );
 
   Widget _table(List<PlayerStat> stats) {
     return Column(
@@ -309,8 +358,11 @@ class _StatsScreenState extends State<StatsScreen> {
           child: Row(
             children: [
               const Expanded(
-                  child: Text('Spieler',
-                      style: TextStyle(fontWeight: FontWeight.bold))),
+                child: Text(
+                  'Spieler',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
               _num('Sp', header: true),
               _num('⚽', header: true),
               _num('🅰', header: true),
@@ -332,8 +384,11 @@ class _StatsScreenState extends State<StatsScreen> {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text('${i + 1}. ${s.fullName}',
-                          maxLines: 1, overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        '${i + 1}. ${s.fullName}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
                     _num('${s.matches}'),
                     _num('${s.goals}'),
@@ -351,18 +406,25 @@ class _StatsScreenState extends State<StatsScreen> {
     );
   }
 
-  static Widget _sCell(String t, double w,
-          {bool header = false, Color? color, FontWeight? weight}) =>
-      SizedBox(
-        width: w,
-        child: Text(t,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.clip,
-            style: TextStyle(
-                fontWeight: weight ?? (header ? FontWeight.bold : FontWeight.w600),
-                color: color)),
-      );
+  static Widget _sCell(
+    String t,
+    double w, {
+    bool header = false,
+    Color? color,
+    FontWeight? weight,
+  }) => SizedBox(
+    width: w,
+    child: Text(
+      t,
+      textAlign: TextAlign.center,
+      maxLines: 1,
+      overflow: TextOverflow.clip,
+      style: TextStyle(
+        fontWeight: weight ?? (header ? FontWeight.bold : FontWeight.w600),
+        color: color,
+      ),
+    ),
+  );
 
   // Liga-Tabelle: Platz · Team · Spiele · Tore · Differenz · Punkte.
   // Unsere Zeile ist hervorgehoben.
@@ -383,7 +445,9 @@ class _StatsScreenState extends State<StatsScreen> {
             child: Text(
               'Platz ${ours.rank} von ${ours.totalTeams}  ·  ${ours.points} Punkte  ·  ${ours.goalDiff > 0 ? '+' : ''}${ours.goalDiff} Tore',
               style: TextStyle(
-                  fontWeight: FontWeight.bold, color: scheme.primary),
+                fontWeight: FontWeight.bold,
+                color: scheme.primary,
+              ),
             ),
           ),
         Padding(
@@ -392,8 +456,11 @@ class _StatsScreenState extends State<StatsScreen> {
             children: [
               _sCell('#', 26, header: true),
               const Expanded(
-                  child: Text('Team',
-                      style: TextStyle(fontWeight: FontWeight.bold))),
+                child: Text(
+                  'Team',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
               _sCell('Sp', 26, header: true),
               _sCell('Tore', 46, header: true),
               _sCell('Diff', 36, header: true),
@@ -414,21 +481,34 @@ class _StatsScreenState extends State<StatsScreen> {
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
                 child: Row(
                   children: [
-                    _sCell('${r.rank}', 26,
-                        weight: isOurs ? FontWeight.bold : null),
+                    _sCell(
+                      '${r.rank}',
+                      26,
+                      weight: isOurs ? FontWeight.bold : null,
+                    ),
                     Expanded(
-                      child: Text(r.teamName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontWeight:
-                                  isOurs ? FontWeight.bold : FontWeight.w500)),
+                      child: Text(
+                        r.teamName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontWeight: isOurs
+                              ? FontWeight.bold
+                              : FontWeight.w500,
+                        ),
+                      ),
                     ),
                     _sCell('${r.matches}', 26),
                     _sCell('${r.goalsFor}:${r.goalsAgainst}', 46),
-                    _sCell(r.goalDiff > 0 ? '+${r.goalDiff}' : '${r.goalDiff}', 36),
-                    _sCell('${r.points}', 32,
-                        weight: isOurs ? FontWeight.bold : FontWeight.w700),
+                    _sCell(
+                      r.goalDiff > 0 ? '+${r.goalDiff}' : '${r.goalDiff}',
+                      36,
+                    ),
+                    _sCell(
+                      '${r.points}',
+                      32,
+                      weight: isOurs ? FontWeight.bold : FontWeight.w700,
+                    ),
                   ],
                 ),
               );
