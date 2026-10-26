@@ -1084,7 +1084,7 @@ class FupaReduxImporter {
   static String? _mapPosition(Object? raw) {
     if (raw is! String) return null;
     final s = raw.toLowerCase();
-    if (s.contains('tor')) return 'Tor';
+    if (s.contains('tor')) return 'Torwart';
     if (s.contains('abwehr') || s.contains('verteidig')) return 'Abwehr';
     if (s.contains('mittelfeld')) return 'Mittelfeld';
     if (s.contains('angriff') || s.contains('sturm')) return 'Sturm';

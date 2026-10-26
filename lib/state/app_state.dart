@@ -1069,6 +1069,9 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Altbestand aus der Cloud: Torwart-Position „Tor" → „Torwart".
+  static String? _normPos(String? p) => p == 'Tor' ? 'Torwart' : p;
+
   Player _playerFromCloud(
     Map<String, dynamic> p,
     String teamId,
@@ -1079,7 +1082,7 @@ class AppState extends ChangeNotifier {
     firstName: (p['first_name'] as String?) ?? '',
     lastName: (p['last_name'] as String?) ?? '',
     number: (p['number'] as num?)?.toInt(),
-    position: p['position'] as String?,
+    position: _normPos(p['position'] as String?),
     fupaPhoto: p['photo_fupa'] as String?,
     // Abwärtskompat: Altschema ohne neue Spalten → aktives Foto als eigenes.
     customPhoto: (p['photo_custom'] as String?) ?? (p['photo'] as String?),
@@ -1163,7 +1166,7 @@ class AppState extends ChangeNotifier {
         firstName: record['first_name'] as String?,
         lastName: record['last_name'] as String?,
         number: (record['number'] as num?)?.toInt(),
-        position: record['position'] as String?,
+        position: _normPos(record['position'] as String?),
         // Fotos: neue Spalten spiegeln (null = löschen); Altschema ohne die
         // Spalten lässt das eigene Foto unangetastet (kein Datenverlust).
         fupaPhoto: _hasPhotoCols(record)

@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 42;
+  static const _dbVersion = 43;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -341,6 +341,12 @@ class AppDatabase {
       );
       await db.execute(
         'UPDATE players SET photo_custom = photo_path WHERE photo_path IS NOT NULL',
+      );
+    }
+    // v42 -> v43: FuPa-Torwart-Position „Tor" → „Torwart".
+    if (oldV < 43) {
+      await db.execute(
+        "UPDATE players SET position = 'Torwart' WHERE position = 'Tor'",
       );
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
