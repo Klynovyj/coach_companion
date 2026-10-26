@@ -7,6 +7,7 @@ import '../models/player.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import 'rating_screen.dart';
 
 /// Auswertung eines Spiels: Gesamtnoten der Trainer (+ Schnitt), ihre
 /// Spielberichte und der Spieler-Schnitt. Rein lesend.
@@ -22,6 +23,7 @@ class RatingSummaryScreen extends StatefulWidget {
 class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
   GameMatch? _match;
   List<MatchRating> _ratings = [];
+  MatchRating? _myMatch; // eigene Note/Bericht (inline bearbeitbar)
   (double?, int, int) _summary = (null, 0, 0);
   Map<String, (double, int)> _avg = {};
   Map<String, Player> _byId = {};
@@ -42,6 +44,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
       return;
     }
     final ratings = await s.matchRatingsOf(widget.matchId);
+    final myMatch = await s.myMatchRating(widget.matchId);
     final summary = await s.matchRatingSummary(widget.matchId);
     final avg = await s.ratingAverages(widget.matchId);
     final players = await s.playersOf(match.ownTeamId);
@@ -50,6 +53,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
     setState(() {
       _match = match;
       _ratings = ratings;
+      _myMatch = myMatch;
       _summary = summary;
       _avg = avg;
       _byId = {for (final p in players) p.id: p};
@@ -64,6 +68,138 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
     if (uid == null || uid == 'local') return 'Du';
     final n = _names[uid];
     return (n != null && n.isNotEmpty) ? n : 'Trainer';
+  }
+
+  Future<void> _setMyStars(int stars) async {
+    await context.read<AppState>().setMatchRating(
+      widget.matchId,
+      stars == 0 ? null : stars.toDouble(),
+    );
+    await _load();
+  }
+
+  Future<void> _editMyNote() async {
+    final ctrl = TextEditingController(text: _myMatch?.note ?? '');
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mein Spielbericht'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: 4,
+          maxLines: 10,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            hintText: 'Dein Kommentar/Bericht zum Spiel …',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (res == null || !mounted) return;
+    await context.read<AppState>().setMatchNote(widget.matchId, res);
+    await _load();
+  }
+
+  /// Karte „Meine Bewertung": eigene Note (Sterne) + Bericht inline bearbeiten,
+  /// plus Button zur vollen Bewertung (Spieler einzeln). Speichert geteilt.
+  Widget _myRatingCard(BuildContext context) {
+    final my = _myMatch?.rating?.round() ?? 0;
+    final myNote = (_myMatch?.note ?? '').trim();
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.rate_review, color: scheme.primary),
+                const SizedBox(width: 8),
+                const Text(
+                  'Meine Bewertung',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                for (var i = 1; i <= 5; i++)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    icon: Icon(
+                      i <= my ? Icons.star : Icons.star_border,
+                      color: Colors.amber.shade700,
+                      size: 28,
+                    ),
+                    onPressed: () => _setMyStars(i),
+                  ),
+                if (my > 0)
+                  TextButton(
+                    onPressed: () => _setMyStars(0),
+                    child: const Text('Note weg'),
+                  ),
+              ],
+            ),
+            const Divider(height: 8),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Mein Spielbericht',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                TextButton(
+                  onPressed: _editMyNote,
+                  child: Text(myNote.isEmpty ? 'Schreiben' : 'Bearbeiten'),
+                ),
+              ],
+            ),
+            Text(
+              myNote.isEmpty ? 'Noch kein Bericht.' : myNote,
+              style: TextStyle(
+                color: myNote.isEmpty ? Theme.of(context).hintColor : null,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: () =>
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => RatingScreen(matchId: widget.matchId),
+                      ),
+                    ).then((_) {
+                      if (mounted) _load();
+                    }),
+                icon: const Icon(Icons.groups, size: 18),
+                label: const Text('Spieler einzeln bewerten'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -95,6 +231,8 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
         children: [
+          // Eigene Bewertung inline (Note + Bericht) – geteilt mit allen Trainern.
+          _myRatingCard(context),
           // Gesamtnote-Schnitt
           Card(
             child: Padding(
