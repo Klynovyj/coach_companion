@@ -61,6 +61,17 @@ class _PhotoCropScreenState extends State<PhotoCropScreen> {
               image: widget.imageBytes,
               controller: _controller,
               aspectRatio: 1,
+              // Start-Rahmen etwas eingerückt, damit die Eck-Punkte nicht am
+              // Bildrand kleben und sich greifen lassen.
+              initialRectBuilder: InitialRectBuilder.withBuilder((viewport, _) {
+                final inset = viewport.shortestSide * 0.1;
+                final side = viewport.shortestSide - inset * 2;
+                return Rect.fromCenter(
+                  center: viewport.center,
+                  width: side,
+                  height: side,
+                );
+              }),
               baseColor: Colors.black,
               maskColor: Colors.black.withValues(alpha: 0.6),
               onCropped: _onCropped,
