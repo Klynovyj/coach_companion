@@ -1,6 +1,6 @@
 {
-  "versionCode": 43,
-  "versionName": "1.3.38",
+  "versionCode": 44,
+  "versionName": "1.3.39",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Auswertung: mit Vereins-Logos und farbigem Ergebnis (Sieg/Unentschieden/Niederlage), sortierbar nach Datum/Note/Ergebnis; gespielte Spiele zuerst (aktuelles oben)\n\nAus 1.3.37: Start-Schnellzugriffe (Auswertung/Material/Karten) + Logos beim naechsten Spiel.\nAus 1.3.36: untere Navigationsleiste, Start-Bildschirm, Spielerprofil auf 4 Tabs.\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
+  "notes": "Neuerungen:\n- Auswertung: eigene Note und Spielbericht direkt hier schreiben/bearbeiten (geteilt mit allen Trainern) + Button Spieler einzeln bewerten\n- Bewerten nur noch fuer Spiele mit Ergebnis (beendete Spiele)\n\nAus 1.3.38: Auswertung mit Logos, farbigem Ergebnis, sortierbar.\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
 }
