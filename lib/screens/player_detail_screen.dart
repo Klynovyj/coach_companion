@@ -27,6 +27,7 @@ import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
 import '../widgets/injury_icon.dart';
 import '../widgets/player_avatar.dart';
+import '../widgets/player_photo.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/rich_note_view.dart';
 import '../widgets/star_rating.dart';
@@ -49,6 +50,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
   /// Sortierrichtung der Bewertungen nach Datum (false = neueste zuerst).
   bool _ratingsSortAsc = false;
+
+  /// Bewertungen im Kopf (Gesamt + Monat) – ein-/ausklappbar per Tipp aufs Foto.
+  bool _ratingsExpanded = false;
 
   @override
   void initState() {
@@ -401,16 +405,26 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [_statusMenu(context, p)],
                 ),
-                const SizedBox(height: 6),
-                // Bewertungen in eigener Zeile (Gesamt + laufender Monat).
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _ratingChipOverall(context),
-                    _ratingChipMonth(context),
-                  ],
+                // Bewertungen in eigener Zeile (Gesamt + laufender Monat) –
+                // per Tipp aufs Foto ein-/ausklappbar.
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 220),
+                  curve: Curves.easeInOut,
+                  alignment: Alignment.topLeft,
+                  child: _ratingsExpanded
+                      ? Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 6,
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            children: [
+                              _ratingChipOverall(context),
+                              _ratingChipMonth(context),
+                            ],
+                          ),
+                        )
+                      : const SizedBox(width: double.infinity),
                 ),
                 if (p.suspendedGames > 0) ...[
                   const SizedBox(height: 8),
@@ -426,19 +440,21 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     );
   }
 
-  /// Quadratisches Spielerfoto rechts im Kopf (antippen = Foto ändern).
+  /// Großes quadratisches Spielerfoto rechts im Kopf. Kurzer Tipp klappt die
+  /// Bewertungen ein/aus (Stern-Hinweis), langes Drücken ändert das Foto.
   Widget _headerPhoto(BuildContext context, Player p) {
     final scheme = Theme.of(context).colorScheme;
     final bytes = TeamLogo.decode(p.photoPath);
     final fallback =
         p.number?.toString() ?? (p.lastName.isNotEmpty ? p.lastName[0] : '?');
-    const size = 104.0;
+    const size = 160.0;
     return GestureDetector(
-      onTap: _changePhoto,
+      onTap: () => setState(() => _ratingsExpanded = !_ratingsExpanded),
+      onLongPress: _changePhoto,
       child: Stack(
         children: [
           ClipRRect(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             child: Container(
               width: size,
               height: size,
@@ -453,18 +469,46 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                       child: Text(
                         fallback,
                         style: const TextStyle(
-                          fontSize: 24,
+                          fontSize: 34,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
             ),
           ),
+          // Hinweis unten links: Tipp aufs Foto zeigt/versteckt die Bewertungen.
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+              decoration: const BoxDecoration(
+                color: Colors.black54,
+                borderRadius: BorderRadius.only(
+                  topRight: Radius.circular(10),
+                  bottomLeft: Radius.circular(14),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.star, size: 13, color: Colors.amber.shade400),
+                  const SizedBox(width: 3),
+                  Icon(
+                    _ratingsExpanded ? Icons.expand_less : Icons.expand_more,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ],
+              ),
+            ),
+          ),
+          // Foto ändern: langes Drücken (Kamera-Symbol als Hinweis).
           Positioned(
             right: 0,
             bottom: 0,
             child: Container(
-              padding: const EdgeInsets.all(3),
+              padding: const EdgeInsets.all(4),
               decoration: BoxDecoration(
                 color: scheme.primary,
                 shape: BoxShape.circle,
@@ -472,7 +516,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               ),
               child: Icon(
                 Icons.photo_camera,
-                size: 13,
+                size: 15,
                 color: scheme.onPrimary,
               ),
             ),
@@ -2760,7 +2804,7 @@ class _PlayerCardView extends StatelessWidget {
               ),
             ),
             if (status != PlayerStatus.fit)
-              Positioned(left: 0, top: 0, child: _CornerRibbon(status: status)),
+              Positioned(left: 0, top: 0, child: StatusCorner(status: status)),
           ],
         ),
       ),
@@ -2770,70 +2814,6 @@ class _PlayerCardView extends StatelessWidget {
 
 /// Welche Statistik-Sektion die Spielerkarte zeigt.
 enum _CardSide { both, fupa, tracking }
-
-/// FuPa-artige farbige Ecke oben links auf der Spielerkarte – zeigt den
-/// Verfügbarkeitsstatus (nur wenn nicht „Fit"). Farbe = [playerStatusColor],
-/// dazu ein weißes Symbol je Status.
-class _CornerRibbon extends StatelessWidget {
-  const _CornerRibbon({required this.status});
-
-  final PlayerStatus status;
-  static const double size = 60;
-
-  IconData get _icon => switch (status) {
-    PlayerStatus.verletzt => Icons.add,
-    PlayerStatus.krank => Icons.sick,
-    PlayerStatus.gesperrt => Icons.block,
-    PlayerStatus.urlaub => Icons.beach_access,
-    PlayerStatus.inaktiv => Icons.pause,
-    PlayerStatus.fit => Icons.check,
-  };
-
-  @override
-  Widget build(BuildContext context) {
-    final color = playerStatusColor(status);
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: CustomPaint(painter: _CornerTrianglePainter(color)),
-          ),
-          Positioned(
-            left: size * 0.1,
-            top: size * 0.1,
-            child: Icon(_icon, size: size * 0.3, color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Zeichnet das farbige Dreieck in der oberen linken Ecke.
-class _CornerTrianglePainter extends CustomPainter {
-  _CornerTrianglePainter(this.color);
-
-  final Color color;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    final path = Path()
-      ..moveTo(0, 0)
-      ..lineTo(size.width, 0)
-      ..lineTo(0, size.height)
-      ..close();
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _CornerTrianglePainter old) =>
-      old.color != color;
-}
 
 /// Flip-Karte: Reiter FuPa/Tracking + 3D-Dreh beim Antippen.
 class _FlipPlayerCard extends StatefulWidget {

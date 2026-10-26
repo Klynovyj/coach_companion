@@ -8,10 +8,10 @@ import '../models/scout_marker.dart';
 import '../screens/paste_import_screen.dart';
 import '../screens/player_detail_screen.dart';
 import '../state/app_state.dart';
-import 'injury_icon.dart';
 import 'opponent_scout_sheet.dart';
 import 'player_avatar.dart';
 import 'player_edit_dialog.dart';
+import 'player_photo.dart';
 
 /// Zeigt den Kader eines Teams mit Suche und Status-Filter. Bearbeitet wird
 /// ein Spieler im Profil (Tippen öffnet es); hier nur Hinzufügen/Einfügen und
@@ -22,7 +22,8 @@ class SquadListView extends StatefulWidget {
     required this.teamId,
     this.teamName = 'Team',
     this.fupaUrl,
-    this.emptyHint = 'Noch keine Spieler. Jetzt welche hinzufügen oder einfügen.',
+    this.emptyHint =
+        'Noch keine Spieler. Jetzt welche hinzufügen oder einfügen.',
     this.showActions = true,
     this.onlyPlayerIds,
     this.isOpponent = false,
@@ -81,8 +82,9 @@ class _SquadListViewState extends State<SquadListView> {
 
         var players = all;
         if (widget.onlyPlayerIds != null) {
-          players =
-              players.where((p) => widget.onlyPlayerIds!.contains(p.id)).toList();
+          players = players
+              .where((p) => widget.onlyPlayerIds!.contains(p.id))
+              .toList();
         }
         if (_showSearch) {
           players = _applyFilter(players);
@@ -123,33 +125,46 @@ class _SquadListViewState extends State<SquadListView> {
                   ? const Center(
                       child: Padding(
                         padding: EdgeInsets.all(24),
-                        child: Text('Keine Treffer.',
-                            style: TextStyle(color: Colors.grey)),
+                        child: Text(
+                          'Keine Treffer.',
+                          style: TextStyle(color: Colors.grey),
+                        ),
                       ),
                     )
                   : ListView(
                       children: [
                         for (var i = 0; i < players.length; i++) ...[
                           if (i > 0) const Divider(height: 1),
-                          _playerTile(context, players[i], cards, ratings,
-                              markers, goals, stats),
+                          _playerTile(
+                            context,
+                            players[i],
+                            cards,
+                            ratings,
+                            markers,
+                            goals,
+                            stats,
+                          ),
                         ],
                         if (staff.isNotEmpty) ...[
                           Padding(
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                             child: Row(
                               children: [
-                                Icon(Icons.sports,
-                                    size: 18,
-                                    color:
-                                        Theme.of(context).colorScheme.primary),
+                                Icon(
+                                  Icons.sports,
+                                  size: 18,
+                                  color: Theme.of(context).colorScheme.primary,
+                                ),
                                 const SizedBox(width: 8),
-                                Text('Trainerteam',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .primary)),
+                                Text(
+                                  'Trainerteam',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -195,25 +210,24 @@ class _SquadListViewState extends State<SquadListView> {
 
     final inactive = p.status == PlayerStatus.inaktiv;
     final tile = ListTile(
-      leading: PlayerAvatar(player: p),
+      leading: PlayerPhoto(player: p, size: 44),
       title: Row(
         children: [
           Flexible(
-              child: Text(p.fullName,
-                  maxLines: 1, overflow: TextOverflow.ellipsis)),
+            child: Text(
+              p.fullName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           const SizedBox(width: 6),
           _sourceBadge(context, p),
           if (p.captainRole != CaptainRole.none) ...[
             const SizedBox(width: 6),
-            Text(p.captainRole.badge,
-                style: TextStyle(color: Theme.of(context).colorScheme.primary)),
-          ],
-          if (p.status != PlayerStatus.fit) ...[
-            const SizedBox(width: 6),
-            if (p.status == PlayerStatus.verletzt)
-              const InjuryCross(size: 16)
-            else
-              Text(p.status.symbol, style: const TextStyle(fontSize: 13)),
+            Text(
+              p.captainRole.badge,
+              style: TextStyle(color: Theme.of(context).colorScheme.primary),
+            ),
           ],
           if (p.suspendedGames > 0) ...[
             const SizedBox(width: 6),
@@ -223,11 +237,14 @@ class _SquadListViewState extends State<SquadListView> {
                 color: Theme.of(context).colorScheme.error,
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Text('⛔ ${p.suspendedGames}',
-                  style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white)),
+              child: Text(
+                '⛔ ${p.suspendedGames}',
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+              ),
             ),
           ],
           if (p.isStarter) ...[
@@ -235,15 +252,19 @@ class _SquadListViewState extends State<SquadListView> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
               decoration: BoxDecoration(
-                color:
-                    Theme.of(context).colorScheme.primary.withValues(alpha: 0.15),
+                color: Theme.of(
+                  context,
+                ).colorScheme.primary.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(6),
               ),
-              child: Text('S11',
-                  style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.primary)),
+              child: Text(
+                'S11',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
             ),
           ],
         ],
@@ -269,10 +290,12 @@ class _SquadListViewState extends State<SquadListView> {
   /// Trainerteam-Kachel: Name + Rolle, tippbar ins Profil.
   Widget _staffTile(BuildContext context, Player p) {
     return ListTile(
-      leading: PlayerAvatar(player: p),
+      leading: PlayerPhoto(player: p, size: 44),
       title: Text(p.fullName),
-      subtitle: Text(p.staffRole ?? 'Trainerteam',
-          style: Theme.of(context).textTheme.bodySmall),
+      subtitle: Text(
+        p.staffRole ?? 'Trainerteam',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => PlayerDetailScreen(player: p)),
@@ -304,12 +327,19 @@ class _SquadListViewState extends State<SquadListView> {
       title: Row(
         children: [
           Flexible(
-              child: Text(p.fullName,
-                  maxLines: 1, overflow: TextOverflow.ellipsis)),
+            child: Text(
+              p.fullName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           if (g >= 5) ...[
             const SizedBox(width: 6),
-            Icon(Icons.local_fire_department,
-                size: 15, color: Colors.red.shade700),
+            Icon(
+              Icons.local_fire_department,
+              size: 15,
+              color: Colors.red.shade700,
+            ),
           ],
         ],
       ),
@@ -325,9 +355,10 @@ class _SquadListViewState extends State<SquadListView> {
               child: Text(
                 '${stat.matches} Sp · ⚽ ${stat.goals} · 🅰 ${stat.assists}',
                 style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: g >= 5 ? Colors.red.shade700 : null),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: g >= 5 ? Colors.red.shade700 : null,
+                ),
               ),
             ),
         ],
@@ -403,12 +434,15 @@ class _SquadListViewState extends State<SquadListView> {
                 ),
                 for (final s in PlayerStatus.values)
                   ChoiceChip(
-                    avatar:
-                        Text(s.symbol, style: const TextStyle(fontSize: 12)),
+                    avatar: Text(
+                      s.symbol,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                     label: Text('${s.label} (${countOf(s)})'),
                     selected: _statusFilter == s,
                     onSelected: (_) => setState(
-                        () => _statusFilter = _statusFilter == s ? null : s),
+                      () => _statusFilter = _statusFilter == s ? null : s,
+                    ),
                   ),
               ],
             ),
@@ -458,19 +492,25 @@ class _SquadListViewState extends State<SquadListView> {
 
   /// Untertitel mit Position, Bewertungsschnitt, Karten-Badges und – falls
   /// vorhanden – der FuPa-Saisonstatistik (Spiele/Tore/Vorlagen).
-  Widget? _subtitle(Player p, Map<CardType, int>? cards, (double, int)? rating,
-      PlayerStat? stat) {
+  Widget? _subtitle(
+    Player p,
+    Map<CardType, int>? cards,
+    (double, int)? rating,
+    PlayerStat? stat,
+  ) {
     final parts = <Widget>[];
     if (p.position != null) parts.add(Text(p.position!));
     if (rating != null) {
-      parts.add(Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.star, size: 13, color: Colors.amber.shade700),
-          const SizedBox(width: 2),
-          Text(rating.$1.toStringAsFixed(1)),
-        ],
-      ));
+      parts.add(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.star, size: 13, color: Colors.amber.shade700),
+            const SizedBox(width: 2),
+            Text(rating.$1.toStringAsFixed(1)),
+          ],
+        ),
+      );
     }
     if (cards != null && cards.isNotEmpty) {
       final badges = <String>[
@@ -534,11 +574,18 @@ class _SquadListViewState extends State<SquadListView> {
         : Theme.of(context).colorScheme.outline;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
-      child: Text(isFupa ? 'FuPa' : 'Manuell',
-          style: const TextStyle(
-              fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        isFupa ? 'FuPa' : 'Manuell',
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 
@@ -546,13 +593,13 @@ class _SquadListViewState extends State<SquadListView> {
     final data = await showPlayerEditDialog(context);
     if (data == null || !context.mounted) return;
     await context.read<AppState>().addPlayer(
-          widget.teamId,
-          firstName: data.firstName,
-          lastName: data.lastName,
-          number: data.number,
-          position: data.position,
-          wishPosition: data.wishPosition,
-        );
+      widget.teamId,
+      firstName: data.firstName,
+      lastName: data.lastName,
+      number: data.number,
+      position: data.position,
+      wishPosition: data.wishPosition,
+    );
   }
 
   Future<void> _delete(BuildContext context, Player p) async {
@@ -563,11 +610,13 @@ class _SquadListViewState extends State<SquadListView> {
         content: Text('„${p.fullName}" wirklich entfernen?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Löschen')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Löschen'),
+          ),
         ],
       ),
     );
@@ -584,8 +633,14 @@ class _SquadData {
   final Map<String, Set<ScoutMarker>> markers;
   final Map<String, int> goals;
   final Map<String, PlayerStat> stats;
-  const _SquadData(this.players, this.cardCounts, this.ratings, this.markers,
-      this.goals, this.stats);
+  const _SquadData(
+    this.players,
+    this.cardCounts,
+    this.ratings,
+    this.markers,
+    this.goals,
+    this.stats,
+  );
 }
 
 class _EmptyState extends StatelessWidget {
