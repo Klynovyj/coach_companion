@@ -1,6 +1,6 @@
 {
-  "versionCode": 33,
-  "versionName": "1.3.28",
+  "versionCode": 34,
+  "versionName": "1.3.29",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Status jetzt als farbige Ecke auf dem Spielerfoto, feste Farbe je Status (Verletzt rot, Krank orange, Gesperrt violett, Urlaub blau, Inaktiv grau)\n- Einheitliche Status-Plaketten in der Statistik-Status-Ansicht und im Kader-Filter\n- Spielerkarte: grosses Foto, Bewertungen per Tipp aufs Foto ein-/ausklappen\n- Spieler-Rollen: Spieler sehen Bewertungen, Nominierung, Aufstellung und Trainer-Notizen nicht mehr; Gespraeche nur eigene; Status nur lesbar\n- Mitglieder: Konto mit einem oder mehreren Spielerprofilen verknuepfen\n- Doppelte Trainer/Spieler werden automatisch bereinigt\n\nWichtig (Cloud): im Supabase-SQL-Editor stage28 und stage29 ausfuehren, damit die Spieler-Sperre serverseitig greift."
+  "notes": "Neuerungen:\n- Foto-Upload mit quadratischem Zuschnitt: nach der Auswahl rahmst du das Bild selbst, es wird passend quadratisch gespeichert\n\nAus 1.3.28:\n- Status als farbige Ecke auf dem Spielerfoto, feste Farbe je Status; einheitliche Status-Plaketten in Statistik und Kader-Filter\n- Spielerkarte: grosses Foto, Bewertungen per Tipp aufs Foto ein-/ausklappen\n- Spieler-Rollen: Spieler sehen Bewertungen, Nominierung, Aufstellung und Trainer-Notizen nicht mehr; Gespraeche nur eigene; Status nur lesbar\n- Mitglieder: Konto mit einem oder mehreren Spielerprofilen verknuepfen\n- Doppelte Trainer/Spieler werden automatisch bereinigt\n\nWichtig (Cloud): im Supabase-SQL-Editor stage28 und stage29 ausfuehren, damit die Spieler-Sperre serverseitig greift."
 }
