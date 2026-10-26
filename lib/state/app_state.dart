@@ -956,7 +956,10 @@ class AppState extends ChangeNotifier {
         wishPosition: p['wish_position'] as String?,
         staffRole: p['staff_role'] as String?,
         suspendedGames: (p['suspended_games'] as num?)?.toInt() ?? 0,
-        source: DataSource.fupaApproved,
+        // Herkunft aus der Cloud übernehmen; Altzeilen ohne Spalte = FuPa.
+        source: p['source'] != null
+            ? DataSource.fromKey(p['source'] as String?)
+            : DataSource.fupaApproved,
         createdAt: now,
       );
 
@@ -979,6 +982,7 @@ class AppState extends ChangeNotifier {
         'wish_position': p.wishPosition,
         'staff_role': p.staffRole,
         'suspended_games': p.suspendedGames,
+        'source': p.source.storageKey,
       };
 
   /// Übernimmt einen Cloud-Spieler in den lokalen Cache. Felder werden nur
@@ -1018,6 +1022,9 @@ class AppState extends ChangeNotifier {
       wishPosition: record['wish_position'] as String?,
       staffRole: record['staff_role'] as String?,
       suspendedGames: (record['suspended_games'] as num?)?.toInt(),
+      source: record['source'] != null
+          ? DataSource.fromKey(record['source'] as String?)
+          : null,
     ));
   }
 

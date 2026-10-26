@@ -167,7 +167,7 @@ class _SquadListViewState extends State<SquadListView> {
                 child: SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
-                    onPressed: () => _addSheet(context),
+                    onPressed: () => _add(context),
                     icon: const Icon(Icons.person_add),
                     label: const Text('Spieler hinzufügen'),
                   ),
@@ -200,6 +200,8 @@ class _SquadListViewState extends State<SquadListView> {
           Flexible(
               child: Text(p.fullName,
                   maxLines: 1, overflow: TextOverflow.ellipsis)),
+          const SizedBox(width: 6),
+          _sourceBadge(context, p),
           if (p.captainRole != CaptainRole.none) ...[
             const SizedBox(width: 6),
             Text(p.captainRole.badge,
@@ -519,37 +521,21 @@ class _SquadListViewState extends State<SquadListView> {
     );
   }
 
-  /// Ein Button für beides: einzeln anlegen oder Liste einfügen.
-  Future<void> _addSheet(BuildContext context) async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.person_add),
-              title: const Text('Einzeln hinzufügen'),
-              subtitle: const Text('Einen Spieler manuell anlegen'),
-              onTap: () => Navigator.pop(context, 'add'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.content_paste),
-              title: const Text('Liste einfügen'),
-              subtitle: const Text('Mehrere Spieler aus Text/FuPa übernehmen'),
-              onTap: () => Navigator.pop(context, 'paste'),
-            ),
-          ],
-        ),
-      ),
+  /// Herkunfts-Badge: „FuPa" für importierte, „Manuell" für selbst angelegte
+  /// Spieler – damit klar ist, wer (nicht) bei FuPa gepflegt wird.
+  Widget _sourceBadge(BuildContext context, Player p) {
+    final isFupa = p.source == DataSource.fupaApproved;
+    final bg = isFupa
+        ? const Color(0xFF138A54)
+        : Theme.of(context).colorScheme.outline;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
+      child: Text(isFupa ? 'FuPa' : 'Manuell',
+          style: const TextStyle(
+              fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
     );
-    if (!context.mounted) return;
-    if (choice == 'add') {
-      await _add(context);
-    } else if (choice == 'paste') {
-      await _pasteImport(context);
-    }
   }
 
   Future<void> _add(BuildContext context) async {

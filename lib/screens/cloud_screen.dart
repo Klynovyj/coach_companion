@@ -18,6 +18,7 @@ List<Map<String, dynamic>> rosterMaps(List<Player> players) => [
           'number': p.number,
           'position': p.position,
           'photo': p.photoPath,
+          'source': p.source.storageKey,
         }
     ];
 

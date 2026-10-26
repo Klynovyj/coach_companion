@@ -206,11 +206,19 @@ class _MatchCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(match.opponentName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700, fontSize: 15)),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(match.opponentName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  fontWeight: FontWeight.w700, fontSize: 15)),
+                        ),
+                        const SizedBox(width: 6),
+                        _matchSourceBadge(context, match),
+                      ],
+                    ),
                     const SizedBox(height: 2),
                     Text([
                       if (match.kickoff != null)
@@ -229,6 +237,24 @@ class _MatchCard extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// Herkunfts-Badge: „FuPa" für importierte Spiele, „Manuell" für selbst
+  /// angelegte. FuPa erkennbar an externer ID bzw. dem FuPa-Match-Slug.
+  Widget _matchSourceBadge(BuildContext context, GameMatch match) {
+    final isFupa = (match.externalId != null && match.externalId!.isNotEmpty) ||
+        (match.fupaMatchSlug != null && match.fupaMatchSlug!.isNotEmpty);
+    final bg = isFupa
+        ? const Color(0xFF138A54)
+        : Theme.of(context).colorScheme.outline;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+      decoration:
+          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
+      child: Text(isFupa ? 'FuPa' : 'Manuell',
+          style: const TextStyle(
+              fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white)),
     );
   }
 }
