@@ -155,10 +155,16 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
     final finished = m.status == MatchStatus.finished;
     final c = finished ? _outcomeColor(m) : Theme.of(context).hintColor;
     return InkWell(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => RatingSummaryScreen(matchId: m.id)),
-      ),
+      onTap: () =>
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RatingSummaryScreen(matchId: m.id),
+            ),
+          ).then((_) {
+            // Beim Zurückkehren Noten-Schnitt der Liste aktualisieren.
+            if (mounted) _load();
+          }),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         child: Row(
