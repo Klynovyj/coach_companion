@@ -34,6 +34,7 @@ import '../widgets/star_rating.dart';
 import 'live_match_screen.dart';
 import 'photo_crop_screen.dart';
 import 'note_editor_screen.dart';
+import 'player_of_month_graphic_screen.dart';
 import 'spielergespraeche_screen.dart';
 
 /// Spielerprofil – alles nach Kategorien geordnet und direkt im Profil
@@ -366,8 +367,13 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             PopupMenuButton<String>(
               onSelected: (v) {
                 if (v == 'delete') _deletePlayer();
+                if (v == 'graphic') _openGraphic();
               },
               itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'graphic',
+                  child: Text('Ehrung / Grafik erstellen'),
+                ),
                 PopupMenuItem(value: 'delete', child: Text('Spieler löschen')),
               ],
             ),
@@ -2268,6 +2274,24 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     if (ok != true || !mounted) return;
     await context.read<AppState>().deletePlayer(_player.id);
     if (mounted) Navigator.pop(context);
+  }
+
+  /// Öffnet die teilbare Grafik/Urkunde für diesen Spieler im Anlass-Modus
+  /// (frei wählbarer Anlass, z.B. „100. Spiel für den Verein").
+  Future<void> _openGraphic() async {
+    final s = context.read<AppState>();
+    final team = await s.repository.getTeam(_player.teamId);
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PlayerOfMonthGraphicScreen(
+          player: _player,
+          teamName: team?.name ?? team?.shortName ?? 'Mannschaft',
+          teamLogo: team?.logoPath,
+          defaultOccasion: 'Ehrung',
+        ),
+      ),
+    );
   }
 
   Future<void> _addNote(BuildContext context) async {

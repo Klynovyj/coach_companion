@@ -2754,27 +2754,43 @@ class AppState extends ChangeNotifier {
     String teamId,
     String yearMonth,
     String playerId,
-  ) async {
+  ) => _aggregatePlayerStats(teamId, playerId, yearMonth: yearMonth);
+
+  /// Gesamt-Statistik eines Spielers über ALLE live getrackten eigenen Spiele
+  /// (ohne Monatsfilter) – für Ehrungen/Anlässe (z.B. „100. Spiel").
+  Future<PlayerMonthStats> playerTotalStats(String teamId, String playerId) =>
+      _aggregatePlayerStats(teamId, playerId);
+
+  /// Aggregiert Tracking-Werte eines Spielers über die getrackten eigenen Spiele;
+  /// mit [yearMonth] (YYYY-MM) nur diesen Monat, sonst alle.
+  Future<PlayerMonthStats> _aggregatePlayerStats(
+    String teamId,
+    String playerId, {
+    String? yearMonth,
+  }) async {
     final events = await allEvents();
     // Getrackte Spiele = Matches mit einer Phasen-Marke (wie Gesamtstatistik).
     final trackedIds = events
         .where((e) => e.type.isPhaseMarker)
         .map((e) => e.matchId)
         .toSet();
-    // Davon nur eigene Spiele dieses Monats.
-    final monthMatchIds = <String>{};
+    // Eigene getrackte Spiele – optional auf den Monat eingegrenzt.
+    final matchIds = <String>{};
     for (final m in matches) {
       if (!trackedIds.contains(m.id)) continue;
       if (m.ownTeamId != teamId) continue;
-      final d = (m.kickoff ?? m.createdAt).toLocal();
-      final ym =
-          '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
-      if (ym == yearMonth) monthMatchIds.add(m.id);
+      if (yearMonth != null) {
+        final d = (m.kickoff ?? m.createdAt).toLocal();
+        final ym =
+            '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}';
+        if (ym != yearMonth) continue;
+      }
+      matchIds.add(m.id);
     }
     var goals = 0, assists = 0, yellow = 0, secondYellow = 0, red = 0;
     final playedIn = <String>{};
     for (final e in events) {
-      if (!monthMatchIds.contains(e.matchId)) continue;
+      if (!matchIds.contains(e.matchId)) continue;
       final isOwn = e.teamId == teamId;
       final mine = isOwn && e.playerId == playerId;
       final myAssist = isOwn && e.assistPlayerId == playerId;

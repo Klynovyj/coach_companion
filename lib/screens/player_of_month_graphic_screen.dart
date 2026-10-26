@@ -63,19 +63,27 @@ class PlayerOfMonthGraphicScreen extends StatefulWidget {
   const PlayerOfMonthGraphicScreen({
     super.key,
     required this.player,
-    required this.yearMonth,
-    required this.avg,
-    required this.ratedCount,
     required this.teamName,
     required this.teamLogo,
+    this.yearMonth,
+    this.avg,
+    this.ratedCount = 0,
+    this.defaultOccasion = 'Spieler des Monats',
+    this.defaultSubtitle,
   });
 
   final Player player;
-  final String yearMonth; // YYYY-MM
-  final double? avg;
-  final int ratedCount;
   final String teamName;
   final String? teamLogo;
+
+  /// Monat (YYYY-MM) für Monatsdaten/Ø-Note; null = Anlass-Modus ohne Monat.
+  final String? yearMonth;
+  final double? avg;
+  final int ratedCount;
+
+  /// Vorbelegter Anlass-Titel (Eyebrow) und Untertitel.
+  final String defaultOccasion;
+  final String? defaultSubtitle;
 
   @override
   State<PlayerOfMonthGraphicScreen> createState() =>
@@ -91,21 +99,33 @@ class _PlayerOfMonthGraphicScreenState
 
   List<Sponsor> _sponsors = [];
   PlayerMonthStats _month = const PlayerMonthStats();
+  PlayerMonthStats _total = const PlayerMonthStats();
   PlayerStat? _fupa;
   GraphicSettings _settings = const GraphicSettings(id: 'local');
 
+  // Anlass (Eyebrow) + Untertitel – editierbar.
+  late String _occasion = widget.defaultOccasion;
+  late String _subtitle =
+      widget.defaultSubtitle ?? (widget.yearMonth != null ? _monthLabel : '');
+
+  bool get _hasMonth => widget.yearMonth != null;
+  bool get _hasRating => widget.avg != null;
+
   // Welche Datenquellen auf der Grafik/Urkunde erscheinen (umschaltbar).
-  bool _showRating = true; // Bewertungen (Ø-Note)
-  bool _showMonth = true; // meine Monatsdaten (live getrackt)
+  late bool _showRating = _hasRating; // Bewertungen (Ø-Note)
+  late bool _showMonth = _hasMonth; // meine Monatsdaten (live getrackt)
+  late bool _showTotal = !_hasMonth; // Gesamt (alle getrackten Spiele)
   bool _showFupa = true; // FuPa-Saison
 
   // Spieler (lokal veränderbar – z.B. neues Foto) und editierbarer Text.
   late Player _player = widget.player;
   String? _honorText;
 
-  String get _defaultHonor =>
-      'wird für herausragende Leistungen im Monat $_monthLabel zum '
-      'Spieler des Monats ernannt.';
+  String get _defaultHonor => _hasMonth
+      ? 'wird für herausragende Leistungen im Monat $_monthLabel zum '
+            'Spieler des Monats ernannt.'
+      : 'wird für seine Verdienste um den Verein geehrt. '
+            'Herzlichen Glückwunsch und vielen Dank!';
   String get _effectiveHonor =>
       (_honorText != null && _honorText!.trim().isNotEmpty)
       ? _honorText!.trim()
@@ -121,9 +141,15 @@ class _PlayerOfMonthGraphicScreenState
     final state = context.read<AppState>();
     final sponsors = await state.sponsors();
     final settings = await state.graphicSettings();
-    final month = await state.playerMonthStats(
+    final month = _hasMonth
+        ? await state.playerMonthStats(
+            widget.player.teamId,
+            widget.yearMonth!,
+            widget.player.id,
+          )
+        : const PlayerMonthStats();
+    final total = await state.playerTotalStats(
       widget.player.teamId,
-      widget.yearMonth,
       widget.player.id,
     );
     final fupa = await state.playerSeasonStat(
@@ -135,6 +161,7 @@ class _PlayerOfMonthGraphicScreenState
       _sponsors = sponsors;
       _settings = settings;
       _month = month;
+      _total = total;
       _fupa = fupa;
       _loading = false;
     });
@@ -151,8 +178,10 @@ class _PlayerOfMonthGraphicScreenState
   String? get _logo => _settings.logo ?? widget.teamLogo;
 
   String get _monthLabel {
-    final y = int.tryParse(widget.yearMonth.substring(0, 4)) ?? 2000;
-    final m = int.tryParse(widget.yearMonth.substring(5, 7)) ?? 1;
+    final ym = widget.yearMonth;
+    if (ym == null) return '';
+    final y = int.tryParse(ym.substring(0, 4)) ?? 2000;
+    final m = int.tryParse(ym.substring(5, 7)) ?? 1;
     return DateFormat('MMMM yyyy', 'de_DE').format(DateTime(y, m));
   }
 
@@ -177,9 +206,20 @@ class _PlayerOfMonthGraphicScreenState
     }
   }
 
+  static const _occasionPresets = <String>[
+    'Spieler des Monats',
+    'Jubiläum',
+    'Meilenstein',
+    '100. Spiel für den Verein',
+    'Torschützenkönig',
+    'Danke!',
+  ];
+
   Future<void> _openCustomize() async {
     final titleCtrl = TextEditingController(text: _settings.title ?? '');
     final honorCtrl = TextEditingController(text: _effectiveHonor);
+    final occasionCtrl = TextEditingController(text: _occasion);
+    final subtitleCtrl = TextEditingController(text: _subtitle);
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -214,7 +254,51 @@ class _PlayerOfMonthGraphicScreenState
                     'Startelf-Grafik). Der Urkunden-Look bleibt klassisch.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
+                  const SizedBox(height: 12),
+                  // Anlass: Vorlagen + frei editierbar.
+                  const Text(
+                    'Anlass',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final p in _occasionPresets)
+                        ActionChip(
+                          label: Text(p),
+                          onPressed: () {
+                            occasionCtrl.text = p;
+                            setState(() => _occasion = p);
+                            setSheet(() {});
+                          },
+                        ),
+                    ],
+                  ),
                   const SizedBox(height: 10),
+                  TextField(
+                    controller: occasionCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Anlass-Titel',
+                      helperText: 'Große Überschrift der Grafik',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => setState(() => _occasion = v),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: subtitleCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      labelText: 'Untertitel (optional)',
+                      hintText: _hasMonth ? _monthLabel : 'z.B. Garather SV',
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => setState(() => _subtitle = v),
+                  ),
+                  const Divider(height: 28),
                   // Live-Vorschau des Verlaufs (Post/Story-Hintergrund).
                   Container(
                     height: 40,
@@ -367,25 +451,39 @@ class _PlayerOfMonthGraphicScreenState
                     'Daten anzeigen',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Bewertungen (Ø-Note)'),
-                    subtitle: const Text('Durchschnittsnote des Monats'),
-                    value: _showRating,
-                    onChanged: (v) {
-                      setState(() => _showRating = v);
-                      setSheet(() {});
-                    },
-                  ),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Meine Daten (Monat, live)'),
-                    subtitle: const Text(
-                      'Tore/Vorlagen/Karten aus getrackten Spielen des Monats',
+                  if (_hasRating)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Bewertungen (Ø-Note)'),
+                      subtitle: const Text('Durchschnittsnote des Monats'),
+                      value: _showRating,
+                      onChanged: (v) {
+                        setState(() => _showRating = v);
+                        setSheet(() {});
+                      },
                     ),
-                    value: _showMonth,
+                  if (_hasMonth)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Meine Daten (Monat, live)'),
+                      subtitle: const Text(
+                        'Tore/Vorlagen/Karten aus getrackten Spielen des Monats',
+                      ),
+                      value: _showMonth,
+                      onChanged: (v) {
+                        setState(() => _showMonth = v);
+                        setSheet(() {});
+                      },
+                    ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Gesamt (alle getrackten Spiele)'),
+                    subtitle: const Text(
+                      'Summe über alle live getrackten Spiele',
+                    ),
+                    value: _showTotal,
                     onChanged: (v) {
-                      setState(() => _showMonth = v);
+                      setState(() => _showTotal = v);
                       setSheet(() {});
                     },
                   ),
@@ -623,25 +721,30 @@ class _PlayerOfMonthGraphicScreenState
             player: _player,
             teamName: _title,
             teamLogo: _logo,
-            monthLabel: _monthLabel,
+            occasion: _occasion,
+            subtitle: _subtitle,
             honorText: _effectiveHonor,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
             month: _month,
+            total: _total,
             fupa: _fupa,
             barSponsors: _barSponsors,
             showRating: _showRating,
             showMonth: _showMonth,
+            showTotal: _showTotal,
             showFupa: _showFupa,
           )
         : _SocialGraphic(
             player: _player,
             teamName: _title,
             teamLogo: _logo,
-            monthLabel: _monthLabel,
+            occasion: _occasion,
+            subtitle: _subtitle,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
             month: _month,
+            total: _total,
             fupa: _fupa,
             barSponsors: _barSponsors,
             gradTop: _hex(_settings.gradTop),
@@ -650,12 +753,13 @@ class _PlayerOfMonthGraphicScreenState
             overlayOpacity: _settings.overlayOpacity / 100,
             showRating: _showRating,
             showMonth: _showMonth,
+            showTotal: _showTotal,
             showFupa: _showFupa,
             compact: _fmt == _Fmt.post,
           );
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Spieler des Monats – teilen'),
+        title: const Text('Grafik teilen'),
         actions: [
           IconButton(
             tooltip: 'Spielerfoto (Galerie/Kamera)',
@@ -854,10 +958,12 @@ class _SocialGraphic extends StatelessWidget {
     required this.player,
     required this.teamName,
     required this.teamLogo,
-    required this.monthLabel,
+    required this.occasion,
+    required this.subtitle,
     required this.avg,
     required this.ratedCount,
     required this.month,
+    required this.total,
     required this.fupa,
     required this.barSponsors,
     required this.gradTop,
@@ -866,6 +972,7 @@ class _SocialGraphic extends StatelessWidget {
     required this.overlayOpacity,
     required this.showRating,
     required this.showMonth,
+    required this.showTotal,
     required this.showFupa,
     required this.compact,
   });
@@ -873,10 +980,12 @@ class _SocialGraphic extends StatelessWidget {
   final Player player;
   final String teamName;
   final String? teamLogo;
-  final String monthLabel;
+  final String occasion;
+  final String subtitle;
   final double? avg;
   final int ratedCount;
   final PlayerMonthStats month;
+  final PlayerMonthStats total;
   final PlayerStat? fupa;
   final List<Sponsor> barSponsors;
   final Color gradTop;
@@ -885,6 +994,7 @@ class _SocialGraphic extends StatelessWidget {
   final double overlayOpacity; // 0..1
   final bool showRating;
   final bool showMonth;
+  final bool showTotal;
   final bool showFupa;
   final bool compact;
 
@@ -1015,7 +1125,8 @@ class _SocialGraphic extends StatelessWidget {
           child: Column(
             children: [
               Text(
-                'SPIELER DES MONATS',
+                occasion.toUpperCase(),
+                textAlign: TextAlign.center,
                 style: TextStyle(
                   color: _gold,
                   fontSize: compact ? 22 : 26,
@@ -1024,16 +1135,18 @@ class _SocialGraphic extends StatelessWidget {
                   height: 1.0,
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                monthLabel.toUpperCase(),
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 2,
+              if (subtitle.trim().isNotEmpty) ...[
+                const SizedBox(height: 2),
+                Text(
+                  subtitle.toUpperCase(),
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.85),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2,
+                  ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -1080,10 +1193,16 @@ class _SocialGraphic extends StatelessWidget {
     void add(String v, String l) => tiles.add(_StatTile(value: v, label: l));
     final monthShown = showMonth && month.hasAny;
     if (monthShown) {
-      add('${month.goals}', 'Tore');
-      add('${month.assists}', 'Vorlagen');
-      if (month.redTotal > 0) add('${month.redTotal}', 'Rot');
-      if (month.yellow > 0) add('${month.yellow}', 'Gelb');
+      add('${month.goals}', 'Tore M.');
+      add('${month.assists}', 'Vorl. M.');
+      if (month.redTotal > 0) add('${month.redTotal}', 'Rot M.');
+      if (month.yellow > 0) add('${month.yellow}', 'Gelb M.');
+    }
+    final totalShown = showTotal && total.hasAny;
+    if (totalShown) {
+      add('${total.games}', 'Spiele G.');
+      add('${total.goals}', 'Tore G.');
+      add('${total.assists}', 'Vorl. G.');
     }
     final f = fupa;
     final fupaShown = showFupa && f != null;
@@ -1095,6 +1214,11 @@ class _SocialGraphic extends StatelessWidget {
       if (f.topEleven > 0) add('${f.topEleven}', '⭐ Top11');
     }
     if (tiles.isEmpty) return const SizedBox.shrink();
+    final legend = [
+      if (monthShown) 'M. = Monat',
+      if (totalShown) 'G. = Gesamt',
+      if (fupaShown) 'S. = Saison (FuPa)',
+    ].join(' · ');
     return Column(
       children: [
         Wrap(
@@ -1103,12 +1227,11 @@ class _SocialGraphic extends StatelessWidget {
           runSpacing: 10,
           children: tiles,
         ),
-        if (monthShown || fupaShown) ...[
+        if (legend.isNotEmpty) ...[
           const SizedBox(height: 6),
           Text(
-            monthShown && fupaShown
-                ? 'Monat · S. = Saison (FuPa)'
-                : (monthShown ? 'Monat' : 'Saison (FuPa)'),
+            legend,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.6),
               fontSize: 9,
@@ -1149,30 +1272,36 @@ class _UrkundeGraphic extends StatelessWidget {
     required this.player,
     required this.teamName,
     required this.teamLogo,
-    required this.monthLabel,
+    required this.occasion,
+    required this.subtitle,
     required this.honorText,
     required this.avg,
     required this.ratedCount,
     required this.month,
+    required this.total,
     required this.fupa,
     required this.barSponsors,
     required this.showRating,
     required this.showMonth,
+    required this.showTotal,
     required this.showFupa,
   });
 
   final Player player;
   final String teamName;
   final String? teamLogo;
-  final String monthLabel;
+  final String occasion;
+  final String subtitle;
   final String honorText;
   final double? avg;
   final int ratedCount;
   final PlayerMonthStats month;
+  final PlayerMonthStats total;
   final PlayerStat? fupa;
   final List<Sponsor> barSponsors;
   final bool showRating;
   final bool showMonth;
+  final bool showTotal;
   final bool showFupa;
 
   static const _line = Color(0xFFE7E3D8);
@@ -1238,21 +1367,23 @@ class _UrkundeGraphic extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 20),
-        // Eyebrow + kleines URKUNDE-Label.
+        // Eyebrow (Anlass) + kleines URKUNDE-Label.
         Text(
-          'SPIELER DES MONATS',
+          occasion.toUpperCase(),
           textAlign: TextAlign.center,
           style: const TextStyle(
             color: _gold,
             fontSize: 20,
             fontWeight: FontWeight.w900,
             letterSpacing: 3,
-            height: 1.0,
+            height: 1.05,
           ),
         ),
         const SizedBox(height: 6),
         Text(
-          'URKUNDE · ${monthLabel.toUpperCase()}',
+          subtitle.trim().isEmpty
+              ? 'URKUNDE'
+              : 'URKUNDE · ${subtitle.toUpperCase()}',
           textAlign: TextAlign.center,
           style: TextStyle(
             color: _ink.withValues(alpha: 0.55),
@@ -1291,7 +1422,7 @@ class _UrkundeGraphic extends StatelessWidget {
           const SizedBox(height: 14),
           Center(child: _notePill()),
         ],
-        if (showMonth || showFupa) ...[
+        if (showMonth || showTotal || showFupa) ...[
           const SizedBox(height: 16),
           _statsBlock(),
         ],
@@ -1388,6 +1519,13 @@ class _UrkundeGraphic extends StatelessWidget {
       if (month.yellow > 0) ('Gelbe Karten', '${month.yellow}'),
       if (month.redTotal > 0) ('Rote Karten', '${month.redTotal}'),
     ];
+    final totalRows = <(String, String)>[
+      ('Spiele', '${total.games}'),
+      ('Tore', '${total.goals}'),
+      ('Vorlagen', '${total.assists}'),
+      if (total.yellow > 0) ('Gelbe Karten', '${total.yellow}'),
+      if (total.redTotal > 0) ('Rote Karten', '${total.redTotal}'),
+    ];
     final seasonRows = <(String, String)>[
       ('Spiele', '${f?.matches ?? 0}'),
       ('Tore', '${f?.goals ?? 0}'),
@@ -1400,9 +1538,10 @@ class _UrkundeGraphic extends StatelessWidget {
       if ((f?.topEleven ?? 0) > 0) ('⭐ Top11', '${f!.topEleven}'),
     ];
 
-    // Nur die aktivierten Quellen – eine Spalte (volle Breite) oder beide.
+    // Nur die aktivierten Quellen – eine bis drei Spalten nebeneinander.
     final cols = <Widget>[
       if (showMonth) col('Dieser Monat', monthRows),
+      if (showTotal) col('Gesamt', totalRows),
       if (showFupa) col('Saison (FuPa)', seasonRows),
     ];
 
