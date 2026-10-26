@@ -1,11 +1,14 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/graphic_settings.dart';
 import '../models/player.dart';
 import '../models/player_stat.dart';
 import '../models/sponsor.dart';
@@ -52,8 +55,10 @@ const _ink = Color(0xFF1F2A24);
 /// Erzeugt die teilbaren Grafiken zum „Spieler des Monats": moderne
 /// Social-Grafik (Instagram Post 1:1 / Story 9:16) und klassische DIN-A4-
 /// Urkunde zum Drucken. Enthält Monatsnote, Monats-Ereignisse (live getrackt),
-/// FuPa-Saison und die Sponsoren-Leiste. Export per RepaintBoundary → PNG über
-/// das System-Teilen-Menü (Handy, inkl. Instagram) bzw. Download (Desktop).
+/// FuPa-Saison und die Sponsoren-Leiste. Logo/Titel/Farben sind über „Grafik
+/// anpassen" einstellbar (teamweit, dieselben Einstellungen wie die
+/// Startelf-Grafik). Export per RepaintBoundary → PNG über das System-Teilen-
+/// Menü (Handy, inkl. Instagram) bzw. Download (Desktop).
 class PlayerOfMonthGraphicScreen extends StatefulWidget {
   const PlayerOfMonthGraphicScreen({
     super.key,
@@ -87,6 +92,11 @@ class _PlayerOfMonthGraphicScreenState
   List<Sponsor> _sponsors = [];
   PlayerMonthStats _month = const PlayerMonthStats();
   PlayerStat? _fupa;
+  GraphicSettings _settings = const GraphicSettings(id: 'local');
+
+  // Welche Datenquellen auf der Grafik/Urkunde erscheinen (umschaltbar).
+  bool _showMonth = true; // meine Monatsdaten (live getrackt)
+  bool _showFupa = true; // FuPa-Saison
 
   @override
   void initState() {
@@ -97,6 +107,7 @@ class _PlayerOfMonthGraphicScreenState
   Future<void> _load() async {
     final state = context.read<AppState>();
     final sponsors = await state.sponsors();
+    final settings = await state.graphicSettings();
     final month = await state.playerMonthStats(
       widget.player.teamId,
       widget.yearMonth,
@@ -109,6 +120,7 @@ class _PlayerOfMonthGraphicScreenState
     if (!mounted) return;
     setState(() {
       _sponsors = sponsors;
+      _settings = settings;
       _month = month;
       _fupa = fupa;
       _loading = false;
@@ -118,10 +130,292 @@ class _PlayerOfMonthGraphicScreenState
   List<Sponsor> get _barSponsors =>
       _sponsors.where((s) => s.logo != null).toList();
 
+  // Effektive Anzeige-Werte (Einstellung überschreibt die Defaults).
+  String get _title =>
+      (_settings.title != null && _settings.title!.trim().isNotEmpty)
+      ? _settings.title!.trim()
+      : widget.teamName;
+  String? get _logo => _settings.logo ?? widget.teamLogo;
+
   String get _monthLabel {
     final y = int.tryParse(widget.yearMonth.substring(0, 4)) ?? 2000;
     final m = int.tryParse(widget.yearMonth.substring(5, 7)) ?? 1;
     return DateFormat('MMMM yyyy', 'de_DE').format(DateTime(y, m));
+  }
+
+  Future<String?> _pickImage({required bool asBackground}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: asBackground ? 1080 : 600,
+        maxHeight: asBackground ? 1920 : 600,
+        imageQuality: asBackground ? 75 : 90,
+      );
+      if (file == null) return null;
+      final bytes = await file.readAsBytes();
+      final mime = asBackground ? 'image/jpeg' : 'image/png';
+      return 'data:$mime;base64,${base64Encode(bytes)}';
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Bild konnte nicht geladen werden: $e')),
+      );
+      return null;
+    }
+  }
+
+  Future<void> _openCustomize() async {
+    final titleCtrl = TextEditingController(text: _settings.title ?? '');
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void apply(GraphicSettings s) {
+            setState(() => _settings = s); // Live-Vorschau hinter dem Sheet
+            setSheet(() {});
+          }
+
+          return Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            ),
+            child: DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.8,
+              maxChildSize: 0.95,
+              minChildSize: 0.5,
+              builder: (ctx, scroll) => ListView(
+                controller: scroll,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                children: [
+                  const Text(
+                    'Grafik anpassen',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Logo, Titel und Farben gelten teamweit (wie bei der '
+                    'Startelf-Grafik). Der Urkunden-Look bleibt klassisch.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: titleCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      labelText: 'Titel (Vereinsname)',
+                      hintText: widget.teamName,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => apply(
+                      _settings.copyWith(
+                        title: v.trim(),
+                        clearTitle: v.trim().isEmpty,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  _rowWithImage(
+                    label: 'Logo',
+                    preview: _logo,
+                    onPick: () async {
+                      final url = await _pickImage(asBackground: false);
+                      if (url != null) apply(_settings.copyWith(logo: url));
+                    },
+                    onClear: _settings.logo == null
+                        ? null
+                        : () => apply(_settings.copyWith(clearLogo: true)),
+                    clearLabel: 'Team-Logo',
+                  ),
+                  const SizedBox(height: 12),
+                  _rowWithImage(
+                    label: 'Hintergrundbild (nur Post/Story)',
+                    preview: _settings.bgImage,
+                    onPick: () async {
+                      final url = await _pickImage(asBackground: true);
+                      if (url != null) apply(_settings.copyWith(bgImage: url));
+                    },
+                    onClear: _settings.bgImage == null
+                        ? null
+                        : () => apply(_settings.copyWith(clearBgImage: true)),
+                    clearLabel: 'Entfernen',
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _settings.bgImage == null
+                        ? 'Abdunkeln (nur mit Hintergrundbild wirksam)'
+                        : 'Abdunkeln / Transparenz: ${_settings.overlayOpacity}%',
+                  ),
+                  Slider(
+                    value: _settings.overlayOpacity.toDouble(),
+                    min: 0,
+                    max: 100,
+                    divisions: 20,
+                    label: '${_settings.overlayOpacity}%',
+                    onChanged: (v) =>
+                        apply(_settings.copyWith(overlayOpacity: v.round())),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text('Verlaufsfarbe oben (Post/Story)'),
+                  const SizedBox(height: 6),
+                  _swatches(
+                    selected: _settings.gradTop,
+                    onPick: (hex) => apply(_settings.copyWith(gradTop: hex)),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('Verlaufsfarbe unten (Post/Story)'),
+                  const SizedBox(height: 6),
+                  _swatches(
+                    selected: _settings.gradBottom,
+                    onPick: (hex) => apply(_settings.copyWith(gradBottom: hex)),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text('Vorlagen'),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      for (final p in _presets)
+                        ActionChip(
+                          avatar: Container(
+                            width: 18,
+                            height: 18,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(4),
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: [_hex(p.$2), _hex(p.$3)],
+                              ),
+                            ),
+                          ),
+                          label: Text(p.$1),
+                          onPressed: () => apply(
+                            _settings.copyWith(gradTop: p.$2, gradBottom: p.$3),
+                          ),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Divider(),
+                  const Text(
+                    'Daten anzeigen',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Meine Daten (Monat, live)'),
+                    subtitle: const Text(
+                      'Tore/Vorlagen/Karten aus getrackten Spielen des Monats',
+                    ),
+                    value: _showMonth,
+                    onChanged: (v) {
+                      setState(() => _showMonth = v);
+                      setSheet(() {});
+                    },
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('FuPa-Daten (Saison)'),
+                    subtitle: const Text('Spiele/Tore/Vorlagen/Minuten/Top11'),
+                    value: _showFupa,
+                    onChanged: (v) {
+                      setState(() => _showFupa = v);
+                      setSheet(() {});
+                    },
+                  ),
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Fertig'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    await state.saveGraphicSettings(_settings);
+    await state.pushGraphicSettingsToCloud();
+  }
+
+  Widget _rowWithImage({
+    required String label,
+    required String? preview,
+    required Future<void> Function() onPick,
+    required VoidCallback? onClear,
+    required String clearLabel,
+  }) {
+    return Row(
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          clipBehavior: Clip.antiAlias,
+          child: preview != null
+              ? Image.memory(
+                  TeamLogo.decode(preview) ?? Uint8List(0),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Icon(Icons.image),
+                )
+              : Icon(Icons.image_outlined, color: Theme.of(context).hintColor),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
+        if (onClear != null)
+          TextButton(onPressed: onClear, child: Text(clearLabel)),
+        OutlinedButton(onPressed: onPick, child: const Text('Wählen')),
+      ],
+    );
+  }
+
+  Widget _swatches({
+    required String selected,
+    required void Function(String) onPick,
+  }) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final hex in _palette)
+          GestureDetector(
+            onTap: () => onPick(hex),
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                color: _hex(hex),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: selected.toUpperCase() == hex.toUpperCase()
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.black26,
+                  width: selected.toUpperCase() == hex.toUpperCase() ? 3 : 1,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 
   Future<void> _share() async {
@@ -170,29 +464,46 @@ class _PlayerOfMonthGraphicScreenState
     final graphic = _fmt == _Fmt.urkunde
         ? _UrkundeGraphic(
             player: widget.player,
-            teamName: widget.teamName,
-            teamLogo: widget.teamLogo,
+            teamName: _title,
+            teamLogo: _logo,
             monthLabel: _monthLabel,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
             month: _month,
             fupa: _fupa,
             barSponsors: _barSponsors,
+            showMonth: _showMonth,
+            showFupa: _showFupa,
           )
         : _SocialGraphic(
             player: widget.player,
-            teamName: widget.teamName,
-            teamLogo: widget.teamLogo,
+            teamName: _title,
+            teamLogo: _logo,
             monthLabel: _monthLabel,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
             month: _month,
             fupa: _fupa,
             barSponsors: _barSponsors,
+            gradTop: _hex(_settings.gradTop),
+            gradBottom: _hex(_settings.gradBottom),
+            bgImage: _settings.bgImage,
+            overlayOpacity: _settings.overlayOpacity / 100,
+            showMonth: _showMonth,
+            showFupa: _showFupa,
             compact: _fmt == _Fmt.post,
           );
     return Scaffold(
-      appBar: AppBar(title: const Text('Spieler des Monats – teilen')),
+      appBar: AppBar(
+        title: const Text('Spieler des Monats – teilen'),
+        actions: [
+          IconButton(
+            tooltip: 'Grafik anpassen',
+            icon: const Icon(Icons.tune),
+            onPressed: _openCustomize,
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Padding(
@@ -251,6 +562,35 @@ class _PlayerOfMonthGraphicScreenState
       ),
     );
   }
+}
+
+// Kuratierte Farbpalette und Verlauf-Vorlagen (wie Startelf-Grafik).
+const _palette = <String>[
+  '#0E3325',
+  '#15603F',
+  '#0B6B43',
+  '#064E3B',
+  '#0C4A6E',
+  '#1E3A8A',
+  '#111827',
+  '#1F2937',
+  '#000000',
+  '#7F1D1D',
+  '#92400E',
+  '#3F3F46',
+];
+const _presets = <(String, String, String)>[
+  ('Dunkelgrün', '#0E3325', '#15603F'),
+  ('Vereinsgrün', '#0B6B43', '#0E3D28'),
+  ('Schwarz', '#1F2937', '#000000'),
+  ('Nacht', '#0C4A6E', '#111827'),
+  ('Weinrot', '#7F1D1D', '#111827'),
+];
+
+Color _hex(String h) {
+  var s = h.replaceAll('#', '').trim();
+  if (s.length == 6) s = 'FF$s';
+  return Color(int.tryParse(s, radix: 16) ?? 0xFF0E3325);
 }
 
 /// Rundes Spielerfoto in fester Größe mit Goldring; Rückfall auf Initialen.
@@ -350,6 +690,12 @@ class _SocialGraphic extends StatelessWidget {
     required this.month,
     required this.fupa,
     required this.barSponsors,
+    required this.gradTop,
+    required this.gradBottom,
+    required this.bgImage,
+    required this.overlayOpacity,
+    required this.showMonth,
+    required this.showFupa,
     required this.compact,
   });
 
@@ -362,81 +708,108 @@ class _SocialGraphic extends StatelessWidget {
   final PlayerMonthStats month;
   final PlayerStat? fupa;
   final List<Sponsor> barSponsors;
+  final Color gradTop;
+  final Color gradBottom;
+  final String? bgImage;
+  final double overlayOpacity; // 0..1
+  final bool showMonth;
+  final bool showFupa;
   final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final pad = compact ? 18.0 : 22.0;
     final photo = compact ? 120.0 : 168.0;
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [_green, _greenDark],
+    final bgBytes = TeamLogo.decode(bgImage);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [gradTop, gradBottom],
+            ),
+          ),
         ),
-      ),
-      child: Padding(
-        padding: EdgeInsets.all(pad),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _header(),
-            SizedBox(height: compact ? 8 : 14),
-            Expanded(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: SizedBox(
-                  width: 320,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _PhotoRing(player: player, diameter: photo),
-                      const SizedBox(height: 12),
-                      Text(
-                        player.fullName.toUpperCase(),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 26,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.5,
-                          height: 1.05,
-                        ),
-                      ),
-                      if ((player.position ?? '').isNotEmpty ||
-                          player.number != null) ...[
-                        const SizedBox(height: 2),
+        if (bgBytes != null) ...[
+          Image.memory(bgBytes, fit: BoxFit.cover, gaplessPlayback: true),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  gradTop.withValues(alpha: overlayOpacity),
+                  gradBottom.withValues(alpha: overlayOpacity),
+                ],
+              ),
+            ),
+          ),
+        ],
+        Padding(
+          padding: EdgeInsets.all(pad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _header(),
+              SizedBox(height: compact ? 8 : 14),
+              Expanded(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: SizedBox(
+                    width: 320,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _PhotoRing(player: player, diameter: photo),
+                        const SizedBox(height: 12),
                         Text(
-                          [
-                            if (player.number != null) '#${player.number}',
-                            if ((player.position ?? '').isNotEmpty)
-                              player.position!,
-                          ].join('  ·  ').toUpperCase(),
-                          style: TextStyle(
-                            color: _gold,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1,
+                          player.fullName.toUpperCase(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                            height: 1.05,
                           ),
                         ),
+                        if ((player.position ?? '').isNotEmpty ||
+                            player.number != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            [
+                              if (player.number != null) '#${player.number}',
+                              if ((player.position ?? '').isNotEmpty)
+                                player.position!,
+                            ].join('  ·  ').toUpperCase(),
+                            style: const TextStyle(
+                              color: _gold,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1,
+                            ),
+                          ),
+                        ],
+                        const SizedBox(height: 12),
+                        if (avg != null) _noteBadge(),
+                        const SizedBox(height: 14),
+                        _statRow(),
                       ],
-                      const SizedBox(height: 12),
-                      if (avg != null) _noteBadge(),
-                      const SizedBox(height: 14),
-                      _statRow(),
-                    ],
+                    ),
                   ),
                 ),
               ),
-            ),
-            if (barSponsors.isNotEmpty) ...[
-              SizedBox(height: compact ? 8 : 12),
-              _sponsorBar(),
+              if (barSponsors.isNotEmpty) ...[
+                SizedBox(height: compact ? 8 : 12),
+                _sponsorBar(),
+              ],
             ],
-          ],
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -462,7 +835,6 @@ class _SocialGraphic extends StatelessWidget {
                 ),
               ),
             ),
-            const Text('🏆', style: TextStyle(fontSize: 22)),
           ],
         ),
         const SizedBox(height: 8),
@@ -534,16 +906,16 @@ class _SocialGraphic extends StatelessWidget {
   Widget _statRow() {
     final tiles = <Widget>[];
     void add(String v, String l) => tiles.add(_StatTile(value: v, label: l));
-    // Monat (live getrackt) – nur wenn vorhanden.
-    if (month.hasAny) {
+    final monthShown = showMonth && month.hasAny;
+    if (monthShown) {
       add('${month.goals}', 'Tore');
       add('${month.assists}', 'Vorlagen');
       if (month.redTotal > 0) add('${month.redTotal}', 'Rot');
       if (month.yellow > 0) add('${month.yellow}', 'Gelb');
     }
-    // FuPa-Saison als Ergänzung.
     final f = fupa;
-    if (f != null) {
+    final fupaShown = showFupa && f != null;
+    if (fupaShown) {
       add('${f.matches}', 'Spiele S.');
       add('${f.goals}', 'Tore S.');
     }
@@ -556,10 +928,12 @@ class _SocialGraphic extends StatelessWidget {
           runSpacing: 10,
           children: tiles,
         ),
-        if (month.hasAny || fupa != null) ...[
+        if (monthShown || fupaShown) ...[
           const SizedBox(height: 6),
           Text(
-            month.hasAny ? 'Monat · S. = Saison (FuPa)' : 'Saison (FuPa)',
+            monthShown && fupaShown
+                ? 'Monat · S. = Saison (FuPa)'
+                : (monthShown ? 'Monat' : 'Saison (FuPa)'),
             style: TextStyle(
               color: Colors.white.withValues(alpha: 0.6),
               fontSize: 9,
@@ -593,7 +967,8 @@ class _SocialGraphic extends StatelessWidget {
   }
 }
 
-/// Klassische DIN-A4-Urkunde (Hochformat) zum Drucken.
+/// Klassische DIN-A4-Urkunde (Hochformat) zum Drucken. Der Inhalt skaliert
+/// über eine FittedBox sicher in das A4-Format (kein Überlauf).
 class _UrkundeGraphic extends StatelessWidget {
   const _UrkundeGraphic({
     required this.player,
@@ -605,6 +980,8 @@ class _UrkundeGraphic extends StatelessWidget {
     required this.month,
     required this.fupa,
     required this.barSponsors,
+    required this.showMonth,
+    required this.showFupa,
   });
 
   final Player player;
@@ -616,6 +993,8 @@ class _UrkundeGraphic extends StatelessWidget {
   final PlayerMonthStats month;
   final PlayerStat? fupa;
   final List<Sponsor> barSponsors;
+  final bool showMonth;
+  final bool showFupa;
 
   @override
   Widget build(BuildContext context) {
@@ -629,108 +1008,116 @@ class _UrkundeGraphic extends StatelessWidget {
           decoration: BoxDecoration(
             border: Border.all(color: _gold.withValues(alpha: 0.5), width: 1),
           ),
-          padding: const EdgeInsets.fromLTRB(26, 22, 26, 18),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Kopf: Logo + Verein.
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+          padding: const EdgeInsets.all(22),
+          // Skaliert den Inhalt sicher ins A4-Format (nie Überlauf).
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: SizedBox(
+              width: 336,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (teamLogo != null) ...[
-                    TeamLogo(logoPath: teamLogo, size: 40),
-                    const SizedBox(width: 10),
-                  ],
-                  Flexible(
+                  // Kopf: Logo + Verein.
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      if (teamLogo != null) ...[
+                        TeamLogo(logoPath: teamLogo, size: 38),
+                        const SizedBox(width: 10),
+                      ],
+                      Flexible(
+                        child: Text(
+                          teamName.toUpperCase(),
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '🏆',
+                    style: TextStyle(fontSize: 30),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'URKUNDE',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _gold,
+                      fontSize: 38,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 5,
+                      height: 1.0,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Spieler des Monats',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    monthLabel,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: _ink.withValues(alpha: 0.7),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 2,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Center(child: _PhotoRing(player: player, diameter: 100)),
+                  const SizedBox(height: 12),
+                  Text(
+                    player.fullName,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
                     child: Text(
-                      teamName.toUpperCase(),
+                      'wird für herausragende Leistungen im Monat $monthLabel '
+                      'zum Spieler des Monats ernannt.',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        color: _ink,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1,
+                      style: TextStyle(
+                        color: _ink.withValues(alpha: 0.85),
+                        fontSize: 13,
+                        height: 1.4,
                       ),
                     ),
                   ),
+                  if (showMonth || showFupa) ...[
+                    const SizedBox(height: 16),
+                    _statsBlock(),
+                  ],
+                  if (barSponsors.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _sponsorBar(),
+                  ],
                 ],
               ),
-              const SizedBox(height: 18),
-              const Text(
-                '🏆',
-                style: TextStyle(fontSize: 34),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'URKUNDE',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _gold,
-                  fontSize: 40,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 6,
-                  height: 1.0,
-                ),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Spieler des Monats',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _ink,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                monthLabel,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _ink.withValues(alpha: 0.7),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 2,
-                ),
-              ),
-              const SizedBox(height: 18),
-              Center(child: _PhotoRing(player: player, diameter: 108)),
-              const SizedBox(height: 12),
-              Text(
-                player.fullName,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _ink,
-                  fontSize: 30,
-                  fontWeight: FontWeight.w900,
-                  height: 1.05,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  'wird für herausragende Leistungen im Monat $monthLabel '
-                  'zum Spieler des Monats ernannt.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: _ink.withValues(alpha: 0.85),
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 16),
-              _statsBlock(),
-              const Spacer(),
-              _signatureRow(),
-              if (barSponsors.isNotEmpty) ...[
-                const SizedBox(height: 14),
-                _sponsorBar(),
-              ],
-            ],
+            ),
           ),
         ),
       ),
@@ -745,7 +1132,7 @@ class _UrkundeGraphic extends StatelessWidget {
         children: [
           Text(
             title.toUpperCase(),
-            style: TextStyle(
+            style: const TextStyle(
               color: _gold,
               fontSize: 11,
               fontWeight: FontWeight.w900,
@@ -797,6 +1184,12 @@ class _UrkundeGraphic extends StatelessWidget {
       if ((f?.topEleven ?? 0) > 0) ('⭐ Top11', '${f!.topEleven}'),
     ];
 
+    // Nur die aktivierten Quellen – eine Spalte (volle Breite) oder beide.
+    final cols = <Widget>[
+      if (showMonth) col('Dieser Monat', monthRows),
+      if (showFupa) col('Saison (FuPa)', seasonRows),
+    ];
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -804,47 +1197,22 @@ class _UrkundeGraphic extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: _gold.withValues(alpha: 0.4)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          col('Dieser Monat', monthRows),
-          Container(
-            width: 1,
-            height: 96,
-            margin: const EdgeInsets.symmetric(horizontal: 14),
-            color: _gold.withValues(alpha: 0.4),
-          ),
-          col('Saison (FuPa)', seasonRows),
-        ],
-      ),
-    );
-  }
-
-  Widget _signatureRow() {
-    final today = DateFormat('dd.MM.yyyy', 'de_DE').format(DateTime.now());
-    Widget sig(String label, String value) => Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Container(width: 130, height: 1, color: _ink.withValues(alpha: 0.5)),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: _ink.withValues(alpha: 0.7),
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-          ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (var i = 0; i < cols.length; i++) ...[
+              if (i > 0)
+                Container(
+                  width: 1,
+                  margin: const EdgeInsets.symmetric(horizontal: 14),
+                  color: _gold.withValues(alpha: 0.4),
+                ),
+              cols[i],
+            ],
+          ],
         ),
-        if (value.isNotEmpty)
-          Text(
-            value,
-            style: TextStyle(color: _ink.withValues(alpha: 0.6), fontSize: 10),
-          ),
-      ],
-    );
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
-      children: [sig('Trainerteam', ''), sig('Datum', today)],
+      ),
     );
   }
 
