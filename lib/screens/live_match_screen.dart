@@ -1000,7 +1000,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         ? {..._starterIds}
         : {..._nominatedIds}; // Fallback ohne Aufstellung
     for (final e in _events) {
-      if (e.type != MatchEventType.substitution) continue;
+      // Wechsel UND „Verletzt raus" verschieben das Feld: geht runter, (falls
+      // vorhanden) Ersatz kommt rauf.
+      if (e.type != MatchEventType.substitution &&
+          e.type != MatchEventType.injuredOff) {
+        continue;
+      }
       final off = e.assistPlayerId; // geht
       final on = e.playerId; // kommt
       if (off != null) onField.remove(off);
@@ -1316,6 +1321,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       MatchEventType.bigChance,
       MatchEventType.meckern,
       MatchEventType.injury,
+      MatchEventType.injuredOff,
     ];
     final type = await showModalBottomSheet<MatchEventType>(
       context: context,
@@ -1353,6 +1359,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ),
     );
     if (type == null || !mounted) return;
+    // „Verletzt raus": eigener Flow (verletzter Spieler runter, optional Ersatz).
+    if (type == MatchEventType.injuredOff) {
+      await _addInjuredOff(ownSide: ownSide);
+      return;
+    }
     // Elfmeter: erst den Ausgang abfragen (Tor / verschossen / gehalten).
     var resolved = type;
     if (type == MatchEventType.penalty) {
@@ -1371,6 +1382,81 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           playerId: detail.playerId,
           note: detail.note,
         );
+    await _refreshEvents();
+  }
+
+  /// „Verletzt raus": verletzter Spieler geht vom Feld; optional kommt ein
+  /// Ersatz von der Bank (sonst Unterzahl). Wird wie ein Wechsel geführt
+  /// (Feld-Tracking), aber als eigene Aktion. Gegner: nur protokollieren.
+  Future<void> _addInjuredOff({required bool ownSide}) async {
+    final state = context.read<AppState>();
+    if (!ownSide) {
+      // Gegner hat keinen Kader/Bank → nur protokollieren (Spieler optional).
+      final offRes = await _pickPlayer(
+        title: 'Verletzt raus (Gegner)',
+        players: _opponentPlayers,
+        allowUnknown: true,
+      );
+      if (offRes == _pickCancelled) return;
+      final offId = offRes == _pickUnknown ? null : offRes;
+      if (!mounted) return;
+      await state.addEvent(
+        matchId: widget.matchId,
+        teamId: _teamIdFor(false),
+        minute: _currentMinute,
+        minuteExtra: _currentExtra,
+        type: MatchEventType.injuredOff,
+        assistPlayerId: offId, // Verletzter (geht)
+      );
+      await _refreshEvents();
+      return;
+    }
+
+    final players = _playersFor(true);
+    final onIds = _onFieldIds;
+    final sentOff = _sentOffIds;
+    final onField = players.where((p) => onIds.contains(p.id)).toList();
+    if (onField.isEmpty) {
+      _snack('Niemand auf dem Feld – bitte zuerst aufstellen.');
+      return;
+    }
+    // Verletzten Spieler (geht) wählen.
+    final offRes = await _pickPlayer(
+      title: 'Verletzt raus',
+      players: onField,
+      allowUnknown: true,
+    );
+    if (offRes == _pickCancelled) return;
+    final offId = offRes == _pickUnknown ? null : offRes;
+    if (!mounted) return;
+    // Ersatz von der Bank (optional: „Ohne Einwechslung").
+    final bench = players
+        .where((p) =>
+            !onIds.contains(p.id) &&
+            !sentOff.contains(p.id) &&
+            p.id != offId)
+        .toList();
+    String? onId;
+    if (bench.isNotEmpty) {
+      final onRes = await _pickPlayer(
+        title: 'Ersatzspieler',
+        players: bench,
+        allowNone: true,
+        noneLabel: 'Ohne Einwechslung',
+      );
+      if (onRes == _pickCancelled) return;
+      onId = onRes == _pickNone ? null : onRes;
+    }
+    if (!mounted) return;
+    await state.addEvent(
+      matchId: widget.matchId,
+      teamId: _teamIdFor(true),
+      minute: _currentMinute,
+      minuteExtra: _currentExtra,
+      type: MatchEventType.injuredOff,
+      playerId: onId, // Ersatz (kommt); null = ohne Einwechslung
+      assistPlayerId: offId, // Verletzter (geht)
+    );
     await _refreshEvents();
   }
 
@@ -1621,7 +1707,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ('Großchance', MatchEventType.bigChance),
       ('Meckern', MatchEventType.meckern),
       ('Parade', MatchEventType.save),
-      ('Verletzung', MatchEventType.injury),
+      ('Behandlung', MatchEventType.injury),
       ('Kommentar', MatchEventType.comment),
     ];
     return showModalBottomSheet<MatchEventType>(
@@ -1815,7 +1901,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ('Rote Karten', {MatchEventType.redCard}),
       ('Paraden', {MatchEventType.save}),
       ('Meckern', {MatchEventType.meckern}),
-      ('Verletzungen', {MatchEventType.injury}),
+      ('Behandlungen', {MatchEventType.injury}),
+      ('Verletzt raus', {MatchEventType.injuredOff}),
       ('Wechsel', {MatchEventType.substitution}),
     ];
 
@@ -2012,6 +2099,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     required List<Player> players,
     bool allowUnknown = false,
     bool allowNone = false,
+    String noneLabel = 'Keine (ohne Vorlage)',
   }) async {
     final result = await showModalBottomSheet<String>(
       context: context,
@@ -2024,6 +2112,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         allowNone: allowNone,
         unknownValue: _pickUnknown,
         noneValue: _pickNone,
+        noneLabel: noneLabel,
       ),
     );
     return result ?? _pickCancelled;
@@ -2510,6 +2599,9 @@ class _EventLog extends StatelessWidget {
           // Typ-Symbol wieder in den Titel. Nur ohne Spieler (Symbol-Kreis
           // links) würde es sonst doppelt erscheinen.
           final leadingIsPhoto = e.type == MatchEventType.substitution ||
+              (e.type == MatchEventType.injuredOff &&
+                  (resolvePlayer(e.playerId) != null ||
+                      resolvePlayer(e.assistPlayerId) != null)) ||
               resolvePlayer(e.playerId) != null;
           final content = Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
@@ -2610,6 +2702,13 @@ class _EventLog extends StatelessWidget {
       case MatchEventType.substitution:
         if (e.playerId == null && e.assistPlayerId == null) return 'Wechsel';
         return 'Wechsel – ${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}';
+      case MatchEventType.injuredOff:
+        final off =
+            e.assistPlayerId == null ? '' : ' – ${resolveName(e.assistPlayerId)}';
+        if (e.playerId != null) {
+          return 'Verletzt raus$off (Ersatz: ${resolveName(e.playerId)})';
+        }
+        return 'Verletzt raus$off (ohne Einwechslung)';
       case MatchEventType.yellowCard:
         return 'Gelbe Karte – ${resolveName(e.playerId)}';
       case MatchEventType.secondYellow:
@@ -2682,15 +2781,29 @@ class _EventLog extends StatelessWidget {
   /// Pfeil (rein/raus) wie im FuPa-Ticker; sonst das Foto des Spielers.
   Widget _eventAvatar(BuildContext context, MatchEvent e, bool own) {
     const r = 18.0;
+    final inP = resolvePlayer(e.playerId);
+    final outP = resolvePlayer(e.assistPlayerId);
     if (e.type == MatchEventType.substitution) {
-      final inP = resolvePlayer(e.playerId);
-      final outP = resolvePlayer(e.assistPlayerId);
       return Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _avatarWithArrow(outP, Icons.arrow_downward, Colors.red),
           const SizedBox(width: 3),
           _avatarWithArrow(inP, Icons.arrow_upward, Colors.green),
+        ],
+      );
+    }
+    // „Verletzt raus": Verletzter runter (rot), Ersatz rauf (grün, falls da).
+    if (e.type == MatchEventType.injuredOff && (outP != null || inP != null)) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (outP != null)
+            _avatarWithArrow(outP, Icons.arrow_downward, Colors.red),
+          if (inP != null) ...[
+            const SizedBox(width: 3),
+            _avatarWithArrow(inP, Icons.arrow_upward, Colors.green),
+          ],
         ],
       );
     }
@@ -3086,6 +3199,7 @@ class _PlayerPickSheet extends StatelessWidget {
     required this.allowNone,
     required this.unknownValue,
     required this.noneValue,
+    this.noneLabel = 'Keine (ohne Vorlage)',
   });
 
   final String title;
@@ -3094,6 +3208,7 @@ class _PlayerPickSheet extends StatelessWidget {
   final bool allowNone;
   final String unknownValue;
   final String noneValue;
+  final String noneLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -3144,7 +3259,7 @@ class _PlayerPickSheet extends StatelessWidget {
                     ListTile(
                       leading:
                           const CircleAvatar(child: Icon(Icons.block)),
-                      title: const Text('Keine (ohne Vorlage)'),
+                      title: Text(noneLabel),
                       onTap: () => Navigator.pop(context, noneValue),
                     ),
                 ],

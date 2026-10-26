@@ -45,7 +45,8 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
     ('Rote Karten', {MatchEventType.redCard}),
     ('Paraden', {MatchEventType.save}),
     ('Meckern', {MatchEventType.meckern}),
-    ('Verletzungen', {MatchEventType.injury}),
+    ('Behandlungen', {MatchEventType.injury}),
+    ('Verletzt raus', {MatchEventType.injuredOff}),
     ('Wechsel', {MatchEventType.substitution}),
   ];
 

@@ -858,7 +858,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       'Rote': c({MatchEventType.redCard}),
       'Paraden': c({MatchEventType.save}),
       'Meckern': c({MatchEventType.meckern}),
-      'Verletzungen': c({MatchEventType.injury}),
+      'Behandlungen': c({MatchEventType.injury}),
+      'Verletzt raus': c({MatchEventType.injuredOff}),
       'Wechsel':
           mine.where((e) => e.type == MatchEventType.substitution).length,
     };

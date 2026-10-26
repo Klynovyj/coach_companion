@@ -87,7 +87,8 @@ enum MatchEventType {
   shot('shot', 'Schuss', '👟'),
   longShot('long_shot', 'Distanzschuss', '🚀'),
   header('header', 'Kopfball', '👤'),
-  injury('injury', 'Verletzung', '🤕'),
+  injury('injury', 'Behandlung', '🤕'),
+  injuredOff('injured_off', 'Verletzt raus', '🚑'),
   comment('comment', 'Kommentar', '💬'),
   // Team-neutrale Spielphasen-Marken (ohne Spieler).
   kickoff('kickoff', 'Anpfiff', '🟢'),
