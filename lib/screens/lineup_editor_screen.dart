@@ -204,6 +204,25 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     });
   }
 
+  /// Aus der Ansehen-Ansicht einen eigenen Vorschlag der fremden Aufstellung
+  /// erstellen/öffnen und bearbeitbar weitermachen.
+  Future<void> _editAsSuggestion() async {
+    final orig = _lineup;
+    if (orig == null) return;
+    final navigator = Navigator.of(context);
+    final sugg = await _app.createOrOpenSuggestion(orig);
+    if (!mounted) return;
+    navigator.pushReplacement(MaterialPageRoute(
+      builder: (_) => LineupEditorScreen(
+        matchId: widget.matchId,
+        teamId: widget.teamId,
+        teamName: widget.teamName,
+        lineupId: sugg.id,
+        readOnly: false,
+      ),
+    ));
+  }
+
   Future<void> _save() async {
     final lineup = _lineup!;
     final entries = <LineupEntry>[];
@@ -576,6 +595,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
             TextButton(
               onPressed: _save,
               child: const Text('Speichern',
+                  style: TextStyle(color: Colors.white)),
+            )
+          else if (_lineup != null && _lineup!.suggestionOf == null)
+            TextButton(
+              onPressed: _editAsSuggestion,
+              child: const Text('Als Vorschlag',
                   style: TextStyle(color: Colors.white)),
             )
           else

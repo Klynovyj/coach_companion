@@ -105,7 +105,8 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasMine = _lineups.any(_mine);
+    final hasMine =
+        _lineups.any((l) => l.suggestionOf == null && _mine(l));
     return Scaffold(
       appBar: AppBar(title: Text('Aufstellungen · ${widget.teamName}')),
       floatingActionButton: hasMine
@@ -128,7 +129,7 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ),
-                if (_lineups.isEmpty)
+                if (_lineups.where((l) => l.suggestionOf == null).isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(24),
                     child: Center(
@@ -136,10 +137,54 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
                     ),
                   )
                 else
-                  for (final l in _lineups) _lineupCard(context, l),
+                  for (final l
+                      in _lineups.where((l) => l.suggestionOf == null))
+                    _lineupCard(context, l),
               ],
             ),
     );
+  }
+
+  List<Lineup> _suggestionsFor(String lineupId) =>
+      _lineups.where((s) => s.suggestionOf == lineupId).toList();
+
+  Future<void> _editAsSuggestion(Lineup original) async {
+    final sugg = await _app.createOrOpenSuggestion(original);
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LineupEditorScreen(
+          matchId: widget.matchId,
+          teamId: widget.teamId,
+          teamName: widget.teamName,
+          lineupId: sugg.id,
+          readOnly: false,
+        ),
+      ),
+    );
+    if (mounted) _load();
+  }
+
+  Future<void> _openEditable(Lineup l) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LineupEditorScreen(
+          matchId: widget.matchId,
+          teamId: widget.teamId,
+          teamName: widget.teamName,
+          lineupId: l.id,
+          readOnly: false,
+        ),
+      ),
+    );
+    if (mounted) _load();
+  }
+
+  Future<void> _adopt(Lineup sugg) async {
+    await _app.adoptSuggestion(sugg);
+    if (mounted) _load();
   }
 
   Widget _lineupCard(BuildContext context, Lineup l) {
@@ -192,8 +237,9 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
             Text('$count/11 Startelf',
                 style:
                     TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 4,
               children: [
                 if (!l.released)
                   TextButton.icon(
@@ -207,16 +253,82 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
                     icon: const Icon(Icons.edit, size: 16),
                     label: const Text('Bearbeiten'),
                   )
-                else
+                else ...[
                   OutlinedButton.icon(
                     onPressed: () => _openView(l),
                     icon: const Icon(Icons.visibility, size: 16),
                     label: const Text('Ansehen'),
                   ),
+                  if (!_suggestionsFor(l.id).any(_mine))
+                    FilledButton.tonalIcon(
+                      onPressed: () => _editAsSuggestion(l),
+                      icon: const Icon(Icons.edit_note, size: 16),
+                      label: const Text('Als Vorschlag'),
+                    ),
+                ],
               ],
             ),
+            ..._suggestionsFor(l.id).map((s) => _suggestionTile(context, l, s)),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Zeile für einen Vorschlag unter einer Aufstellung.
+  Widget _suggestionTile(BuildContext context, Lineup original, Lineup s) {
+    final scheme = Theme.of(context).colorScheme;
+    final mineSugg = _mine(s);
+    final iAmOwner = _mine(original);
+    final count = _starters[s.id] ?? 0;
+    final who = mineSugg
+        ? 'Mein Vorschlag'
+        : 'Vorschlag von ${s.creatorName?.trim().isNotEmpty == true ? s.creatorName!.trim() : 'Trainer'}';
+    return Container(
+      margin: const EdgeInsets.only(left: 12, top: 6),
+      padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.edit_note, size: 16, color: scheme.secondary),
+              const SizedBox(width: 6),
+              Expanded(
+                  child: Text('$who · $count/11',
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600))),
+            ],
+          ),
+          Wrap(
+            alignment: WrapAlignment.end,
+            spacing: 4,
+            children: [
+              if (mineSugg)
+                FilledButton.tonalIcon(
+                  onPressed: () => _openEditable(s),
+                  icon: const Icon(Icons.edit, size: 15),
+                  label: const Text('Bearbeiten'),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: () => _openView(s),
+                  icon: const Icon(Icons.visibility, size: 15),
+                  label: const Text('Ansehen'),
+                ),
+              if (iAmOwner)
+                FilledButton.icon(
+                  onPressed: () => _adopt(s),
+                  icon: const Icon(Icons.download_done, size: 15),
+                  label: const Text('Übernehmen'),
+                ),
+            ],
+          ),
+        ],
       ),
     );
   }

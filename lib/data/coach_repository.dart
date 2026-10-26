@@ -313,6 +313,39 @@ class CoachRepository {
   Future<void> upsertLineup(Lineup lineup) =>
       _upsertById('lineups', lineup.toMap());
 
+  /// Vorschläge zu einer Aufstellung (suggestion_of = lineupId).
+  Future<List<Lineup>> getSuggestionsFor(String lineupId) async {
+    final db = await _db;
+    final rows = await db.query('lineups',
+        where: 'suggestion_of = ?',
+        whereArgs: [lineupId],
+        orderBy: 'created_at ASC');
+    return rows.map(Lineup.fromMap).toList();
+  }
+
+  /// Mein Vorschlag zu einer Aufstellung – oder null.
+  Future<Lineup?> getMySuggestionOf(String lineupId, String? createdBy) async {
+    final db = await _db;
+    final where = createdBy == null
+        ? 'suggestion_of = ? AND created_by IS NULL'
+        : 'suggestion_of = ? AND created_by = ?';
+    final args = createdBy == null ? [lineupId] : [lineupId, createdBy];
+    final rows =
+        await db.query('lineups', where: where, whereArgs: args, limit: 1);
+    return rows.isEmpty ? null : Lineup.fromMap(rows.first);
+  }
+
+  /// Löscht eine Aufstellung (per id) inkl. Einträge – lokal + Cloud.
+  Future<void> deleteLineupById(String id) async {
+    final db = await _db;
+    final entries = await getLineupEntries(id);
+    await db.delete('lineups', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('lineups', {'id': id});
+    for (final e in entries) {
+      _syncDelete('lineup_entries', {'id': e.id});
+    }
+  }
+
   /// Löscht die Aufstellung eines Teams für ein Spiel (inkl. Einträge).
   Future<void> deleteLineup(String matchId, String teamId) async {
     final db = await _db;

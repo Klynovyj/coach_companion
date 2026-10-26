@@ -24,7 +24,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 40;
+  static const _dbVersion = 41;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -295,6 +295,13 @@ class AppDatabase {
       await db.execute('DROP INDEX IF EXISTS idx_lineup_match_team');
       await db.execute(
           'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by)');
+    }
+    // v40 -> v41: Vorschläge (suggestion_of) zulassen – Eindeutigkeit „eine je
+    // Trainer" gilt nur für echte Aufstellungen (nicht für Vorschläge).
+    if (oldV < 41) {
+      await db.execute('DROP INDEX IF EXISTS idx_lineup_match_team_user');
+      await db.execute(
+          'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by) WHERE suggestion_of IS NULL');
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -610,7 +617,7 @@ class AppDatabase {
       )
     ''');
     await db.execute(
-        'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by)');
+        'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by) WHERE suggestion_of IS NULL');
 
     await db.execute('''
       CREATE TABLE lineup_entries (

@@ -1878,6 +1878,80 @@ class AppState extends ChangeNotifier {
   /// Ist dieser Trainer der Ersteller der Aufstellung? (darf sie bearbeiten)
   bool isMyLineup(Lineup l) => (l.createdBy ?? '') == _me || l.createdBy == null;
 
+  /// Vorschläge zu einer Aufstellung.
+  Future<List<Lineup>> suggestionsFor(String lineupId) =>
+      _repo.getSuggestionsFor(lineupId);
+
+  /// Öffnet meinen Vorschlag zu einer fremden Aufstellung – vorhanden, sonst
+  /// als Kopie (inkl. Einträge) neu anlegen. Der Vorschlag ist meine eigene,
+  /// bearbeitbare Aufstellung und steht dem Ersteller zur Übernahme bereit.
+  Future<Lineup> createOrOpenSuggestion(Lineup original) async {
+    final me = _me;
+    final existing = await _repo.getMySuggestionOf(original.id, me);
+    if (existing != null) return existing;
+    final sugg = Lineup(
+      id: 'lu_sg_${original.id}_$me',
+      matchId: original.matchId,
+      teamId: original.teamId,
+      formation: original.formation,
+      createdBy: me,
+      creatorName: CloudService.myName,
+      suggestionOf: original.id,
+      createdAt: DateTime.now(),
+    );
+    await _repo.upsertLineup(sugg);
+    final entries = await _repo.getLineupEntries(original.id);
+    final copies = [
+      for (final e in entries)
+        LineupEntry(
+          id: 'le_${sugg.id}_${e.playerId}',
+          lineupId: sugg.id,
+          playerId: e.playerId,
+          role: e.role,
+          positionLabel: e.positionLabel,
+          orderIndex: e.orderIndex,
+          posX: e.posX,
+          posY: e.posY,
+        )
+    ];
+    await _repo.replaceLineupEntries(sugg.id, copies);
+    notifyListeners();
+    return sugg;
+  }
+
+  /// Übernimmt einen Vorschlag in die Original-Aufstellung (Einträge + Formation)
+  /// und entfernt den Vorschlag danach. Nur sinnvoll für den Ersteller.
+  Future<void> adoptSuggestion(Lineup suggestion) async {
+    final origId = suggestion.suggestionOf;
+    if (origId == null) return;
+    final orig = await _repo.getLineupById(origId);
+    if (orig == null) return;
+    final entries = await _repo.getLineupEntries(suggestion.id);
+    final copies = [
+      for (final e in entries)
+        LineupEntry(
+          id: 'le_${orig.id}_${e.playerId}',
+          lineupId: orig.id,
+          playerId: e.playerId,
+          role: e.role,
+          positionLabel: e.positionLabel,
+          orderIndex: e.orderIndex,
+          posX: e.posX,
+          posY: e.posY,
+        )
+    ];
+    await _repo.upsertLineup(orig.copyWith(formation: suggestion.formation));
+    await _repo.replaceLineupEntries(orig.id, copies);
+    await _repo.deleteLineupById(suggestion.id);
+    notifyListeners();
+  }
+
+  /// Verwirft einen Vorschlag (löscht ihn).
+  Future<void> discardSuggestion(Lineup suggestion) async {
+    await _repo.deleteLineupById(suggestion.id);
+    notifyListeners();
+  }
+
   Future<List<LineupEntry>> lineupEntries(String lineupId) =>
       _repo.getLineupEntries(lineupId);
 
