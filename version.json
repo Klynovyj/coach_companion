@@ -1,6 +1,6 @@
 {
-  "versionCode": 35,
-  "versionName": "1.3.30",
+  "versionCode": 36,
+  "versionName": "1.3.31",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Aufstellung: eigene Aufstellung laesst sich wieder anlegen (eigener Vorschlag wurde faelschlich als eigene Aufstellung erkannt)\n\nAus 1.3.29:\n- Foto-Upload mit quadratischem Zuschnitt\n\nAus 1.3.28:\n- Status als farbige Ecke auf dem Spielerfoto, feste Farbe je Status; einheitliche Status-Plaketten in Statistik und Kader-Filter\n- Spielerkarte: grosses Foto, Bewertungen per Tipp aufs Foto ein-/ausklappen\n- Spieler-Rollen: Spieler sehen Bewertungen, Nominierung, Aufstellung und Trainer-Notizen nicht; Gespraeche nur eigene; Status nur lesbar\n- Mitglieder: Konto mit einem oder mehreren Spielerprofilen verknuepfen\n- Doppelte Trainer/Spieler werden automatisch bereinigt\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28 und stage29 ausfuehren (Aufstellungs-Vorschlaege + Spieler-Sperre)."
+  "notes": "Neuerungen:\n- Zwei Fotos je Spieler: FuPa-Foto und dein eigenes Foto getrennt. Du waehlst, welches angezeigt wird (Schalter unter dem Foto / Foto-Menue). Dein Foto wird vom FuPa-Import nicht mehr ueberschrieben und synchronisiert bei allen\n\nAus 1.3.30:\n- Aufstellung: eigene Aufstellung laesst sich wieder anlegen\n\nAus 1.3.29:\n- Foto-Upload mit quadratischem Zuschnitt\n\nAus 1.3.28:\n- Status als farbige Ecke auf dem Foto, feste Farbe je Status; einheitliche Status-Plaketten; Spieler-Rollen (Spieler sehen Bewertungen/Nominierung/Aufstellung/Notizen nicht); Mitglieder mit Spielerprofilen verknuepfen\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
 }
