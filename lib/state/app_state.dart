@@ -786,6 +786,49 @@ class AppState extends ChangeNotifier {
     return removed;
   }
 
+  /// Selbstheilende Bereinigung doppelter EIGENER Spieler-/Trainer-Zeilen:
+  /// gleiche Person zweimal (eine mit FuPa-`external_id`, eine ohne – entstanden
+  /// über Cloud/mehrere Geräte, da Cloud-Zeilen nur über die id gematcht
+  /// werden). Behält je Name die FuPa-verlinkte/vollständigere Zeile und löscht
+  /// die Klone lokal UND in der Cloud. Räumt nur dort auf, wo eine FuPa-Zeile
+  /// existiert (sonst könnten zwei echte Gleichnamige fälschlich wegfallen).
+  /// Gibt die Anzahl entfernter Zeilen zurück; bei sauberen Daten ein No-op.
+  Future<int> cleanupDuplicateOwnPlayers() async {
+    final own = await _repo.getOwnTeam();
+    if (own == null) return 0;
+    final players = await _repo.getPlayers(own.id);
+    final deduped = dedupePlayersByName(players);
+    if (deduped.length == players.length) return 0;
+    final keep = {for (final p in deduped) p.id};
+    // Nur Namen bereinigen, deren behaltene Zeile eine FuPa-ID hat – so werden
+    // ausschließlich die Nicht-FuPa-Klone entfernt, nie zwei echte Gleichnamige.
+    final safeNames = {
+      for (final p in deduped)
+        if (p.externalId != null && p.externalId!.isNotEmpty) p.dedupKey,
+    };
+    final canPush =
+        _activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn;
+    var removed = 0;
+    for (final p in players) {
+      if (keep.contains(p.id)) continue;
+      // Mehrdeutig (keine FuPa-Zeile im Namen) → stehen lassen.
+      if (!safeNames.contains(p.dedupKey)) continue;
+      await _repo.deletePlayer(p.id);
+      removed++;
+      if (canPush) {
+        try {
+          await CloudService.deleteWhere('players', {'id': p.id});
+        } catch (_) {
+          // Offline/keine Rechte – lokale Bereinigung bleibt gültig.
+        }
+      }
+    }
+    if (removed > 0) notifyListeners();
+    return removed;
+  }
+
   /// Lädt geteilte Gegner-Teams + -Kader aus der Cloud in den lokalen Cache.
   /// Muss VOR den Spielen laufen (matches.opponent_team_id → teams-FK).
   Future<void> _pullOpponentsFromCloud(String teamId) async {
@@ -865,6 +908,7 @@ class AppState extends ChangeNotifier {
     // Doppelte Gegnerspieler bereinigen (selbstheilend, bei sauberen Daten
     // ein No-op). Räumt lokale Altlasten weg und spiegelt sie in die Cloud.
     unawaited(cleanupDuplicateOpponents());
+    unawaited(cleanupDuplicateOwnPlayers());
     // Eigene Bewertungen erneut in die Cloud spiegeln (damit beide Trainer-
     // Noten nach Cloud-Stufe 24 zusammenlaufen) + lokale Null-Zeilen entfernen.
     unawaited(_resyncMyRatingsToCloud());
