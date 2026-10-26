@@ -6,10 +6,13 @@ import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import 'cards_suspensions_screen.dart';
 import 'home_screen.dart';
 import 'live_match_screen.dart';
 import 'match_center_screen.dart';
+import 'material_duty_screen.dart';
 import 'nachholen_screen.dart';
+import 'rating_overview_screen.dart';
 import 'todos_screen.dart';
 
 /// Start-/Heute-Bildschirm: das Wichtigste auf einen Blick (laufendes/nächstes
@@ -60,12 +63,12 @@ class StartScreen extends StatelessWidget {
         children: [
           if (live != null) _liveCard(context, live),
           if (next != null)
-            _nextCard(context, next)
+            _nextCard(context, next, team?.logoPath)
           else if (live == null)
             _emptyCard(context),
           _offenePunkte(context, state),
           const SizedBox(height: 8),
-          _quickAccess(context),
+          _shortcuts(context, state),
         ],
       ),
     );
@@ -96,7 +99,11 @@ class StartScreen extends StatelessWidget {
     );
   }
 
-  Widget _nextCard(BuildContext context, GameMatch m) {
+  Widget _teamLogo(String? path, ColorScheme scheme) => path != null
+      ? TeamLogo(logoPath: path, size: 36)
+      : Icon(Icons.shield_outlined, size: 32, color: scheme.outline);
+
+  Widget _nextCard(BuildContext context, GameMatch m, String? ownLogo) {
     final df = DateFormat('EEE, dd.MM.yyyy · HH:mm', 'de_DE');
     final scheme = Theme.of(context).colorScheme;
     return Card(
@@ -121,17 +128,42 @@ class StartScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                '${m.venue == Venue.home ? 'Heim' : 'Auswärts'} · '
-                'vs ${m.opponentName}',
-                style: Theme.of(context).textTheme.titleMedium,
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  _teamLogo(ownLogo, scheme),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      'vs',
+                      style: TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  _teamLogo(m.opponentLogoPath, scheme),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          m.opponentName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium,
+                        ),
+                        Text(
+                          [
+                            m.venue == Venue.home ? 'Heim' : 'Auswärts',
+                            if (m.kickoff != null)
+                              df.format(m.kickoff!.toLocal()),
+                          ].join(' · '),
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              if (m.kickoff != null)
-                Text(
-                  df.format(m.kickoff!.toLocal()),
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
               const SizedBox(height: 10),
               Row(
                 children: [
@@ -233,18 +265,28 @@ class StartScreen extends StatelessWidget {
     );
   }
 
-  Widget _quickAccess(BuildContext context) {
-    Widget tile(IconData icon, String label, int tab) => Expanded(
+  /// Schnellzugriff auf häufig genutzte Neben-Funktionen (nicht die Haupt-Tabs
+  /// aus der unteren Leiste doppeln).
+  Widget _shortcuts(BuildContext context, AppState state) {
+    final team = state.ownTeam;
+    final isTrainer = state.isTrainerHere;
+    void push(Widget s) =>
+        Navigator.push(context, MaterialPageRoute(builder: (_) => s));
+    Widget tile(IconData icon, String label, VoidCallback onTap) => Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
-        onTap: () => homeTabNotifier.value = tab,
+        onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
           child: Column(
             children: [
               Icon(icon, color: Theme.of(context).colorScheme.primary),
               const SizedBox(height: 6),
-              Text(label, style: Theme.of(context).textTheme.bodySmall),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             ],
           ),
         ),
@@ -253,9 +295,25 @@ class StartScreen extends StatelessWidget {
     return Card(
       child: Row(
         children: [
-          tile(Icons.event_note, 'Spielplan', 1),
-          tile(Icons.groups, 'Kader', 2),
-          tile(Icons.apps, 'Mehr', 3),
+          if (isTrainer)
+            tile(
+              Icons.assessment_outlined,
+              'Auswertung',
+              () => push(const RatingOverviewScreen()),
+            ),
+          if (team != null)
+            tile(
+              Icons.sports_soccer,
+              'Materialdienst',
+              () => push(
+                MaterialDutyScreen(teamId: team.id, teamName: team.name),
+              ),
+            ),
+          tile(
+            Icons.style_outlined,
+            'Karten &\nSperren',
+            () => push(const CardsSuspensionsScreen()),
+          ),
         ],
       ),
     );
