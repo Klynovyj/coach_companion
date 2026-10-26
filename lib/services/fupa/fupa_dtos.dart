@@ -83,21 +83,21 @@ class ScheduledMatchData {
   });
 
   ScheduledMatchData withLogo(String? dataUrl) => ScheduledMatchData(
-        opponentName: opponentName,
-        opponentRef: opponentRef,
-        opponentFupaUrl: opponentFupaUrl,
-        opponentLogoUrl: opponentLogoUrl,
-        opponentLogoDataUrl: dataUrl,
-        kickoff: kickoff,
-        venue: venue,
-        competition: competition,
-        matchday: matchday,
-        externalId: externalId,
-        fupaMatchSlug: fupaMatchSlug,
-        finished: finished,
-        ownGoals: ownGoals,
-        opponentGoals: opponentGoals,
-      );
+    opponentName: opponentName,
+    opponentRef: opponentRef,
+    opponentFupaUrl: opponentFupaUrl,
+    opponentLogoUrl: opponentLogoUrl,
+    opponentLogoDataUrl: dataUrl,
+    kickoff: kickoff,
+    venue: venue,
+    competition: competition,
+    matchday: matchday,
+    externalId: externalId,
+    fupaMatchSlug: fupaMatchSlug,
+    finished: finished,
+    ownGoals: ownGoals,
+    opponentGoals: opponentGoals,
+  );
 }
 
 /// Saison-Statistik eines Spielers aus FuPa (quellneutral).
@@ -194,4 +194,18 @@ class FormMatch {
   /// 'S' Sieg, 'U' Unentschieden, 'N' Niederlage.
   String get result =>
       ownGoals > oppGoals ? 'S' : (ownGoals < oppGoals ? 'N' : 'U');
+}
+
+/// Ein kommendes (noch nicht gespieltes) Spiel eines Teams – für die
+/// „Nächste 5 Spiele"-Karte in der Gegner-Analyse.
+class FixtureMatch {
+  final DateTime? date;
+  final String opponentName;
+  final bool home;
+
+  const FixtureMatch({
+    required this.date,
+    required this.opponentName,
+    required this.home,
+  });
 }

@@ -17,15 +17,18 @@ import 'fupa_dtos.dart';
 /// Hinweis: Ändert FuPa das Seitenlayout, muss die Extraktion angepasst
 /// werden (gleiche Abhängigkeit wie in Coach Studio).
 class FupaReduxImporter {
-  FupaReduxImporter({http.Client? client})
-      : _client = client ?? http.Client();
+  FupaReduxImporter({http.Client? client}) : _client = client ?? http.Client();
 
   final http.Client _client;
 
-  static final RegExp _playerUrl =
-      RegExp(r'^https?://(www\.)?fupa\.(net|de)/player/', caseSensitive: false);
-  static final RegExp _teamUrl =
-      RegExp(r'^https?://(www\.)?fupa\.(net|de)/team/', caseSensitive: false);
+  static final RegExp _playerUrl = RegExp(
+    r'^https?://(www\.)?fupa\.(net|de)/player/',
+    caseSensitive: false,
+  );
+  static final RegExp _teamUrl = RegExp(
+    r'^https?://(www\.)?fupa\.(net|de)/team/',
+    caseSensitive: false,
+  );
 
   /// true, wenn [text] (getrimmt) eine FuPa-Spieler-URL ist.
   static bool isPlayerUrl(String text) => _playerUrl.hasMatch(text.trim());
@@ -34,15 +37,15 @@ class FupaReduxImporter {
   static bool isTeamUrl(String text) => _teamUrl.hasMatch(text.trim());
 
   /// true für jede verarbeitbare FuPa-URL (Spieler oder Team).
-  static bool isFupaUrl(String text) =>
-      isPlayerUrl(text) || isTeamUrl(text);
+  static bool isFupaUrl(String text) => isPlayerUrl(text) || isTeamUrl(text);
 
   /// Lädt die FuPa-Spielerseite und liefert einen Spieler-Vorschlag.
   Future<ParsedPlayer> importPlayer(String url) async {
     final trimmed = url.trim();
     if (!isPlayerUrl(trimmed)) {
       throw FupaImportException(
-          'URL muss auf eine FuPa-Spielerseite zeigen (…/player/…).');
+        'URL muss auf eine FuPa-Spielerseite zeigen (…/player/…).',
+      );
     }
     return parsePlayerHtml(await _fetchHtml(trimmed));
   }
@@ -52,7 +55,8 @@ class FupaReduxImporter {
     final trimmed = url.trim();
     if (!isTeamUrl(trimmed)) {
       throw FupaImportException(
-          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+        'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).',
+      );
     }
     return parseTeamPlayersHtml(await _fetchHtml(trimmed));
   }
@@ -63,12 +67,15 @@ class FupaReduxImporter {
     final trimmed = url.trim();
     if (!isTeamUrl(trimmed)) {
       throw FupaImportException(
-          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+        'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).',
+      );
     }
     final html = await _fetchHtml(trimmed);
     final players = parseTeamPlayersHtml(html);
     final meta = parseTeamMetaHtml(html);
-    final logo = meta.logoUrl == null ? null : await downloadLogo(meta.logoUrl!);
+    final logo = meta.logoUrl == null
+        ? null
+        : await downloadLogo(meta.logoUrl!);
     return FupaTeamImport(
       name: meta.name,
       shortName: meta.shortName,
@@ -91,8 +98,10 @@ class FupaReduxImporter {
   Future<String?> _downloadImage(String baseUrl, String suffix) async {
     final url = baseUrl.endsWith('/') ? '$baseUrl$suffix' : baseUrl;
     try {
-      final resp = await _client.get(Uri.parse(url),
-          headers: const {'User-Agent': 'Mozilla/5.0 CoachCompanion/1.0'});
+      final resp = await _client.get(
+        Uri.parse(url),
+        headers: const {'User-Agent': 'Mozilla/5.0 CoachCompanion/1.0'},
+      );
       if (resp.statusCode != 200) return null;
       final ct = resp.headers['content-type'] ?? 'image/jpeg';
       if (!ct.startsWith('image/')) return null;
@@ -105,7 +114,8 @@ class FupaReduxImporter {
   /// Wandelt erkannte Spieler in [PlayerData] um und lädt dabei – sofern eine
   /// Foto-URL vorliegt – die Spielerfotos nebenläufig als Data-URL.
   Future<List<PlayerData>> toPlayerDataWithPhotos(
-      List<ParsedPlayer> players) async {
+    List<ParsedPlayer> players,
+  ) async {
     final photos = <String, String?>{};
     final urls = <String>{
       for (final p in players)
@@ -145,7 +155,8 @@ class FupaReduxImporter {
   /// Lädt die FuPa-Profilseite und liest Geburtsdatum + Spitzname.
   /// Fehler werden geschluckt (dann bleiben beide leer).
   Future<({DateTime? birthday, String? nickname})> _fetchProfile(
-      String slug) async {
+    String slug,
+  ) async {
     try {
       final html = await _fetchHtml('https://www.fupa.net/player/$slug');
       return (birthday: parseBirthday(html), nickname: parseNickname(html));
@@ -159,7 +170,10 @@ class FupaReduxImporter {
     final m = RegExp(r'"birthday":"(\d{4})-(\d{2})-(\d{2})"').firstMatch(html);
     if (m == null) return null;
     return DateTime(
-        int.parse(m.group(1)!), int.parse(m.group(2)!), int.parse(m.group(3)!));
+      int.parse(m.group(1)!),
+      int.parse(m.group(2)!),
+      int.parse(m.group(3)!),
+    );
   }
 
   /// Liest `"nickname":"..."` aus dem Profil-HTML (leer → null). Testbar.
@@ -176,7 +190,8 @@ class FupaReduxImporter {
     final trimmed = url.trim();
     if (!isTeamUrl(trimmed)) {
       throw FupaImportException(
-          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+        'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).',
+      );
     }
     final ownSlug = _teamSlug(trimmed);
     final matchesUrl = _subPageUrlFor(trimmed, 'matches');
@@ -189,9 +204,11 @@ class FupaReduxImporter {
         if (m.opponentLogoUrl != null) m.opponentLogoUrl!,
     };
     final logoCache = <String, String?>{};
-    await Future.wait(uniqueLogos.map((u) async {
-      logoCache[u] = await downloadLogo(u);
-    }));
+    await Future.wait(
+      uniqueLogos.map((u) async {
+        logoCache[u] = await downloadLogo(u);
+      }),
+    );
 
     return [
       for (final m in matches)
@@ -206,11 +223,13 @@ class FupaReduxImporter {
   /// nur ab dem aktuellen Spieltag liefert) weglässt. Liefert nur die Spiele
   /// des eigenen Teams (per Slug erkannt).
   Future<List<ScheduledMatchData>> importLeagueScheduleForTeam(
-      String teamUrl) async {
+    String teamUrl,
+  ) async {
     final trimmed = teamUrl.trim();
     if (!isTeamUrl(trimmed)) {
       throw FupaImportException(
-          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+        'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).',
+      );
     }
     final ownSlug = _teamSlug(trimmed);
     // Liga-Slug + Wettbewerbsname aus der Team-Spielplan-Seite ermitteln.
@@ -246,12 +265,16 @@ class FupaReduxImporter {
         if (m.opponentLogoUrl != null) m.opponentLogoUrl!,
     };
     final logoCache = <String, String?>{};
-    await Future.wait(uniqueLogos.map((u) async {
-      logoCache[u] = await downloadLogo(u);
-    }));
+    await Future.wait(
+      uniqueLogos.map((u) async {
+        logoCache[u] = await downloadLogo(u);
+      }),
+    );
     return [
       for (final m in out)
-        m.opponentLogoUrl == null ? m : m.withLogo(logoCache[m.opponentLogoUrl!]),
+        m.opponentLogoUrl == null
+            ? m
+            : m.withLogo(logoCache[m.opponentLogoUrl!]),
     ];
   }
 
@@ -276,8 +299,9 @@ class FupaReduxImporter {
 
   /// Komplette Liga-Tabelle (alle Teams) von der Standing-Seite der Liga.
   Future<List<StandingRow>> fetchStanding(String leagueSlug) async {
-    final html =
-        await _fetchHtml('https://www.fupa.net/league/$leagueSlug/standing');
+    final html = await _fetchHtml(
+      'https://www.fupa.net/league/$leagueSlug/standing',
+    );
     return parseStanding(html);
   }
 
@@ -299,22 +323,24 @@ class FupaReduxImporter {
       for (final s in standings) {
         if (s is! Map) continue;
         final team = s['team'];
-        out.add(StandingRow(
-          rank: asInt(s['rank']),
-          matches: asInt(s['matches']),
-          wins: asInt(s['wins']),
-          draws: asInt(s['draws']),
-          defeats: asInt(s['defeats']),
-          goalsFor: asInt(s['ownGoals']),
-          goalsAgainst: asInt(s['againstGoals']),
-          goalDiff: asInt(s['goalDifference']),
-          points: asInt(s['points']),
-          totalTeams: standings.length,
-          teamName: team is Map ? _teamName(team) : 'Team',
-          teamSlug: team is Map
-              ? (team['slug'] as String?)?.toLowerCase() ?? ''
-              : '',
-        ));
+        out.add(
+          StandingRow(
+            rank: asInt(s['rank']),
+            matches: asInt(s['matches']),
+            wins: asInt(s['wins']),
+            draws: asInt(s['draws']),
+            defeats: asInt(s['defeats']),
+            goalsFor: asInt(s['ownGoals']),
+            goalsAgainst: asInt(s['againstGoals']),
+            goalDiff: asInt(s['goalDifference']),
+            points: asInt(s['points']),
+            totalTeams: standings.length,
+            teamName: team is Map ? _teamName(team) : 'Team',
+            teamSlug: team is Map
+                ? (team['slug'] as String?)?.toLowerCase() ?? ''
+                : '',
+          ),
+        );
       }
       break; // erste Tabellenseite genügt
     }
@@ -331,8 +357,38 @@ class FupaReduxImporter {
 
   /// Die letzten [limit] abgeschlossenen Spiele eines Teams (Form) aus der
   /// Liga-API.
-  Future<List<FormMatch>> fetchTeamForm(String leagueSlug, String teamSlug,
-      {int limit = 5}) async {
+  Future<List<FormMatch>> fetchTeamForm(
+    String leagueSlug,
+    String teamSlug, {
+    int limit = 5,
+  }) async {
+    return parseTeamForm(
+      await _fetchLeagueMatches(leagueSlug, teamSlug),
+      teamSlug,
+      limit: limit,
+    );
+  }
+
+  /// Holt die Liga-Spiele EINMAL und liefert daraus Form (gespielt) und
+  /// kommende Spiele – spart einen zweiten Netzwerk-Abruf.
+  Future<(List<FormMatch>, List<FixtureMatch>)> fetchTeamFormAndFixtures(
+    String leagueSlug,
+    String teamSlug, {
+    int formLimit = 50,
+    int fixtureLimit = 5,
+  }) async {
+    final matches = await _fetchLeagueMatches(leagueSlug, teamSlug);
+    return (
+      parseTeamForm(matches, teamSlug, limit: formLimit),
+      parseTeamFixtures(matches, teamSlug, limit: fixtureLimit),
+    );
+  }
+
+  /// Lädt die (paginierten) Liga-Spiele ab Saisonstart.
+  Future<List<Map>> _fetchLeagueMatches(
+    String leagueSlug,
+    String teamSlug,
+  ) async {
     final from = _seasonStart(teamSlug);
     final matches = <Map>[];
     for (var offset = 0; offset < 600; offset += 100) {
@@ -346,12 +402,52 @@ class FupaReduxImporter {
       }
       if (decoded.length < 100) break;
     }
-    return parseTeamForm(matches, teamSlug, limit: limit);
+    return matches;
+  }
+
+  /// Netzwerkfrei testbar: kommende (noch nicht gespielte) Spiele eines Teams,
+  /// nach Anstoß aufsteigend.
+  static List<FixtureMatch> parseTeamFixtures(
+    List matches,
+    String teamSlug, {
+    int limit = 5,
+    DateTime? now,
+  }) {
+    final ref = now ?? DateTime.now();
+    final out = <FixtureMatch>[];
+    for (final m in matches) {
+      if (m is! Map) continue;
+      final home = m['homeTeam'];
+      final away = m['awayTeam'];
+      if (home is! Map || away is! Map) continue;
+      final homeIs = (home['slug'] as String?)?.toLowerCase() == teamSlug;
+      final awayIs = (away['slug'] as String?)?.toLowerCase() == teamSlug;
+      if (!homeIs && !awayIs) continue;
+      // Noch nicht gespielt: nicht POST und keine Tore.
+      final hg = m['homeGoal'];
+      final ag = m['awayGoal'];
+      if ((hg is int && ag is int) || m['section'] == 'POST') continue;
+      final date = DateTime.tryParse((m['kickoff'] ?? '').toString());
+      if (date == null) continue;
+      // Vergangene (aber noch nicht gewertete) Spiele ausklammern.
+      if (date.isBefore(ref.subtract(const Duration(hours: 6)))) continue;
+      final opp = homeIs ? away : home;
+      out.add(
+        FixtureMatch(date: date, opponentName: _teamName(opp), home: homeIs),
+      );
+    }
+    out.sort(
+      (a, b) => (a.date ?? DateTime(2100)).compareTo(b.date ?? DateTime(2100)),
+    );
+    return out.take(limit).toList();
   }
 
   /// Netzwerkfrei testbar: Form (letzte abgeschlossene Spiele) eines Teams.
-  static List<FormMatch> parseTeamForm(List matches, String teamSlug,
-      {int limit = 5}) {
+  static List<FormMatch> parseTeamForm(
+    List matches,
+    String teamSlug, {
+    int limit = 5,
+  }) {
     final mine = <FormMatch>[];
     for (final m in matches) {
       if (m is! Map) continue;
@@ -366,24 +462,29 @@ class FupaReduxImporter {
       if (hg is! int || ag is! int) continue; // nur gespielte
       if (m['section'] != 'POST') continue;
       final opp = homeIs ? away : home;
-      mine.add(FormMatch(
-        date: DateTime.tryParse((m['kickoff'] ?? '').toString()),
-        opponentName: _teamName(opp),
-        ownGoals: homeIs ? hg : ag,
-        oppGoals: homeIs ? ag : hg,
-        home: homeIs,
-      ));
+      mine.add(
+        FormMatch(
+          date: DateTime.tryParse((m['kickoff'] ?? '').toString()),
+          opponentName: _teamName(opp),
+          ownGoals: homeIs ? hg : ag,
+          oppGoals: homeIs ? ag : hg,
+          home: homeIs,
+        ),
+      );
     }
-    mine.sort((a, b) => (b.date ?? DateTime(1900))
-        .compareTo(a.date ?? DateTime(1900)));
+    mine.sort(
+      (a, b) => (b.date ?? DateTime(1900)).compareTo(a.date ?? DateTime(1900)),
+    );
     return mine.take(limit).toList();
   }
 
   /// Wandelt eine Liga-API-Match-Liste in [ScheduledMatchData] – nur die
   /// Spiele des eigenen Teams. Netzwerkfrei testbar.
   static List<ScheduledMatchData> parseLeagueMatches(
-      List items, String ownSlug,
-      {String? competition}) {
+    List items,
+    String ownSlug, {
+    String? competition,
+  }) {
     final out = <ScheduledMatchData>[];
     for (final it in items) {
       if (it is! Map) continue;
@@ -396,7 +497,10 @@ class FupaReduxImporter {
   /// Wandelt ein Liga-API-Match in [ScheduledMatchData] – nur wenn das eigene
   /// Team (per Slug) beteiligt ist.
   static ScheduledMatchData? _leagueMatchToData(
-      Map raw, String ownSlug, String? competition) {
+    Map raw,
+    String ownSlug,
+    String? competition,
+  ) {
     final home = raw['homeTeam'];
     final away = raw['awayTeam'];
     if (home is! Map || away is! Map) return null;
@@ -440,7 +544,8 @@ class FupaReduxImporter {
         final round = it['round'];
         if (round is Map && round['competitionSeason'] is Map) {
           final cs = round['competitionSeason'] as Map;
-          final isLeague = round['type'] == 'league' ||
+          final isLeague =
+              round['type'] == 'league' ||
               (cs['category'] is Map &&
                   (cs['category'] as Map)['name'] == 'Liga');
           if (isLeague) {
@@ -470,11 +575,13 @@ class FupaReduxImporter {
     final trimmed = url.trim();
     if (!isTeamUrl(trimmed)) {
       throw FupaImportException(
-          'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).');
+        'URL muss auf eine FuPa-Teamseite zeigen (…/team/…).',
+      );
     }
     final slug = _teamSlug(trimmed);
     final body = await _fetchHtml(
-        'https://api.fupa.net/v1/teams/$slug/player-stats');
+      'https://api.fupa.net/v1/teams/$slug/player-stats',
+    );
     return parsePlayerStatsJson(body);
   }
 
@@ -491,19 +598,21 @@ class FupaReduxImporter {
       final first = (raw['firstName'] as String?)?.trim() ?? '';
       final last = (raw['lastName'] as String?)?.trim() ?? '';
       if (first.isEmpty && last.isEmpty) continue;
-      out.add(PlayerStatData(
-        externalId: (raw['id'] ?? raw['slug'])?.toString(),
-        firstName: first,
-        lastName: last,
-        matches: asInt(raw['matches']),
-        goals: asInt(raw['goals']),
-        assists: asInt(raw['assists']),
-        yellowCards: asInt(raw['yellowCards']),
-        yellowRedCards: asInt(raw['yellowRedCards']),
-        redCards: asInt(raw['redCards']),
-        minutes: asInt(raw['minutesPlayed']),
-        topEleven: asInt(raw['topEleven']),
-      ));
+      out.add(
+        PlayerStatData(
+          externalId: (raw['id'] ?? raw['slug'])?.toString(),
+          firstName: first,
+          lastName: last,
+          matches: asInt(raw['matches']),
+          goals: asInt(raw['goals']),
+          assists: asInt(raw['assists']),
+          yellowCards: asInt(raw['yellowCards']),
+          yellowRedCards: asInt(raw['yellowRedCards']),
+          redCards: asInt(raw['redCards']),
+          minutes: asInt(raw['minutesPlayed']),
+          topEleven: asInt(raw['topEleven']),
+        ),
+      );
     }
     return out;
   }
@@ -530,7 +639,8 @@ class FupaReduxImporter {
     }
     if (players == null) {
       throw FupaImportException(
-          'Keine Statistik (TeamPlayerStatsPage) gefunden – zeigt der Link auf die Mannschaft?');
+        'Keine Statistik (TeamPlayerStatsPage) gefunden – zeigt der Link auf die Mannschaft?',
+      );
     }
     int asInt(Object? v) => v is int ? v : (v is num ? v.toInt() : 0);
     final out = <PlayerStatData>[];
@@ -539,19 +649,21 @@ class FupaReduxImporter {
       final first = (raw['firstName'] as String?)?.trim() ?? '';
       final last = (raw['lastName'] as String?)?.trim() ?? '';
       if (first.isEmpty && last.isEmpty) continue;
-      out.add(PlayerStatData(
-        externalId: (raw['id'] ?? raw['slug'])?.toString(),
-        firstName: first,
-        lastName: last,
-        matches: asInt(raw['matches']),
-        goals: asInt(raw['goals']),
-        assists: asInt(raw['assists']),
-        yellowCards: asInt(raw['yellowCards']),
-        yellowRedCards: asInt(raw['yellowRedCards']),
-        redCards: asInt(raw['redCards']),
-        minutes: asInt(raw['minutesPlayed']),
-        topEleven: asInt(raw['topEleven']),
-      ));
+      out.add(
+        PlayerStatData(
+          externalId: (raw['id'] ?? raw['slug'])?.toString(),
+          firstName: first,
+          lastName: last,
+          matches: asInt(raw['matches']),
+          goals: asInt(raw['goals']),
+          assists: asInt(raw['assists']),
+          yellowCards: asInt(raw['yellowCards']),
+          yellowRedCards: asInt(raw['yellowRedCards']),
+          redCards: asInt(raw['redCards']),
+          minutes: asInt(raw['minutesPlayed']),
+          topEleven: asInt(raw['topEleven']),
+        ),
+      );
     }
     return out;
   }
@@ -560,9 +672,10 @@ class FupaReduxImporter {
   /// (z.B. `matches`, `playerstats`) – egal welche Unterseite eingefügt wurde.
   static String _subPageUrlFor(String url, String sub) {
     final u = url.trim().replaceAll(RegExp(r'/+$'), '');
-    final match = RegExp(r'^(https?://(?:www\.)?fupa\.(?:net|de)/team/[^/]+)',
-            caseSensitive: false)
-        .firstMatch(u);
+    final match = RegExp(
+      r'^(https?://(?:www\.)?fupa\.(?:net|de)/team/[^/]+)',
+      caseSensitive: false,
+    ).firstMatch(u);
     final base = match?.group(1) ?? u;
     return '$base/$sub';
   }
@@ -586,7 +699,9 @@ class FupaReduxImporter {
       throw FupaImportException('Netzwerkfehler beim FuPa-Abruf: $e');
     }
     if (resp.statusCode != 200) {
-      throw FupaImportException('HTTP ${resp.statusCode} beim Laden der Seite.');
+      throw FupaImportException(
+        'HTTP ${resp.statusCode} beim Laden der Seite.',
+      );
     }
     return resp.body;
   }
@@ -616,15 +731,17 @@ class FupaReduxImporter {
       final jersey = raw['jerseyNumber'];
       if (jersey is int) number = jersey;
       if (jersey is num) number = jersey.toInt();
-      out.add(ParsedPlayer(
-        number: number,
-        firstName: first,
-        lastName: last,
-        position: _mapPosition(raw['position']),
-        externalId: (raw['id'] ?? raw['slug'])?.toString(),
-        slug: raw['slug']?.toString(),
-        photoUrl: _imagePath(raw['image']),
-      ));
+      out.add(
+        ParsedPlayer(
+          number: number,
+          firstName: first,
+          lastName: last,
+          position: _mapPosition(raw['position']),
+          externalId: (raw['id'] ?? raw['slug'])?.toString(),
+          slug: raw['slug']?.toString(),
+          photoUrl: _imagePath(raw['image']),
+        ),
+      );
     }
     // Trainerteam (coaches). Ein „spielender Co-Trainer" ist zugleich Spieler:
     // dann wird die Rolle am vorhandenen Spieler gesetzt (er bleibt Spieler),
@@ -656,14 +773,16 @@ class FupaReduxImporter {
           staffRole: staffRole,
         );
       } else {
-        out.add(ParsedPlayer(
-          firstName: first,
-          lastName: last,
-          externalId: (raw['id'] ?? raw['slug'])?.toString(),
-          slug: raw['slug']?.toString(),
-          photoUrl: _imagePath(raw['image']),
-          staffRole: staffRole,
-        ));
+        out.add(
+          ParsedPlayer(
+            firstName: first,
+            lastName: last,
+            externalId: (raw['id'] ?? raw['slug'])?.toString(),
+            slug: raw['slug']?.toString(),
+            photoUrl: _imagePath(raw['image']),
+            staffRole: staffRole,
+          ),
+        );
       }
     }
     return out;
@@ -718,7 +837,9 @@ class FupaReduxImporter {
   /// (`dataHistory[].TeamMatchesPage.items`). [ownSlug] bestimmt Heim/Auswärts
   /// und die Ergebnis-Zuordnung. Netzwerkfrei testbar.
   static List<ScheduledMatchData> parseTeamMatchesHtml(
-      String html, String ownSlug) {
+    String html,
+    String ownSlug,
+  ) {
     final redux = _extractRedux(html);
     final items = _extractMatchItems(redux);
     final out = <ScheduledMatchData>[];
@@ -736,20 +857,22 @@ class FupaReduxImporter {
       final awayGoal = raw['awayGoal'];
       final finished = homeGoal is int && awayGoal is int;
 
-      out.add(ScheduledMatchData(
-        opponentName: _teamName(opp),
-        opponentRef: (opp['slug'] as String?)?.toLowerCase(),
-        opponentFupaUrl: _teamLink(opp),
-        opponentLogoUrl: _teamLogo(opp),
-        kickoff: DateTime.tryParse((raw['kickoff'] ?? '').toString()),
-        venue: ownIsHome ? Venue.home : Venue.away,
-        competition: _competition(raw),
-        externalId: raw['id']?.toString(),
-        fupaMatchSlug: (raw['slug'] as String?)?.trim(),
-        finished: finished,
-        ownGoals: finished ? (ownIsHome ? homeGoal : awayGoal) : null,
-        opponentGoals: finished ? (ownIsHome ? awayGoal : homeGoal) : null,
-      ));
+      out.add(
+        ScheduledMatchData(
+          opponentName: _teamName(opp),
+          opponentRef: (opp['slug'] as String?)?.toLowerCase(),
+          opponentFupaUrl: _teamLink(opp),
+          opponentLogoUrl: _teamLogo(opp),
+          kickoff: DateTime.tryParse((raw['kickoff'] ?? '').toString()),
+          venue: ownIsHome ? Venue.home : Venue.away,
+          competition: _competition(raw),
+          externalId: raw['id']?.toString(),
+          fupaMatchSlug: (raw['slug'] as String?)?.trim(),
+          finished: finished,
+          ownGoals: finished ? (ownIsHome ? homeGoal : awayGoal) : null,
+          opponentGoals: finished ? (ownIsHome ? awayGoal : homeGoal) : null,
+        ),
+      );
     }
     return out;
   }
@@ -767,7 +890,8 @@ class FupaReduxImporter {
       }
     }
     throw FupaImportException(
-        'Kein Spielplan (TeamMatchesPage.items) gefunden – zeigt der Link auf die Mannschaft?');
+      'Kein Spielplan (TeamMatchesPage.items) gefunden – zeigt der Link auf die Mannschaft?',
+    );
   }
 
   static String _teamName(Map team) {
@@ -844,7 +968,8 @@ class FupaReduxImporter {
       }
     }
     throw FupaImportException(
-        'Kein Kader (players) auf der Teamseite gefunden – zeigt der Link auf die Mannschaft?');
+      'Kein Kader (players) auf der Teamseite gefunden – zeigt der Link auf die Mannschaft?',
+    );
   }
 
   // ─── REDUX_DATA-Extraktion (string-sicherer Brace-Counter) ──────────────
@@ -853,7 +978,8 @@ class FupaReduxImporter {
     final start = html.indexOf(marker);
     if (start < 0) {
       throw FupaImportException(
-          'REDUX_DATA-Block nicht gefunden – FuPa-Layout könnte sich geändert haben.');
+        'REDUX_DATA-Block nicht gefunden – FuPa-Layout könnte sich geändert haben.',
+      );
     }
     final text = html.substring(start + marker.length);
     var depth = 0, end = -1;
@@ -885,7 +1011,9 @@ class FupaReduxImporter {
       }
     }
     if (end < 0) {
-      throw FupaImportException('REDUX_DATA-Block ist nicht sauber geschlossen.');
+      throw FupaImportException(
+        'REDUX_DATA-Block ist nicht sauber geschlossen.',
+      );
     }
     try {
       final decoded = jsonDecode(text.substring(0, end));
@@ -894,7 +1022,9 @@ class FupaReduxImporter {
       }
       return decoded;
     } on FormatException catch (e) {
-      throw FupaImportException('REDUX_DATA-JSON ließ sich nicht parsen: ${e.message}');
+      throw FupaImportException(
+        'REDUX_DATA-JSON ließ sich nicht parsen: ${e.message}',
+      );
     }
   }
 
@@ -912,7 +1042,8 @@ class FupaReduxImporter {
       }
     }
     throw FupaImportException(
-        'Kein PlayerPage-Eintrag gefunden – ist das wirklich eine FuPa-Spielerseite?');
+      'Kein PlayerPage-Eintrag gefunden – ist das wirklich eine FuPa-Spielerseite?',
+    );
   }
 
   static ParsedPlayer _toParsed(Map<String, dynamic> data) {
@@ -998,6 +1129,5 @@ class FupaTeamImport {
     this.players = const [],
   });
 
-  bool get hasMeta =>
-      name != null || shortName != null || logoDataUrl != null;
+  bool get hasMeta => name != null || shortName != null || logoDataUrl != null;
 }

@@ -2929,13 +2929,11 @@ class AppState extends ChangeNotifier {
       _repo.commentsForTeam(teamId);
 
   /// Liga-Tabelle (komplett) + Platz + Form (letzte 5) des Gegners.
-  Future<(StandingRow?, List<FormMatch>, List<StandingRow>)> opponentAnalysis(
-    String ownTeamId,
-    String opponentTeamId,
-  ) async {
+  Future<(StandingRow?, List<FormMatch>, List<StandingRow>, List<FixtureMatch>)>
+  opponentAnalysis(String ownTeamId, String opponentTeamId) async {
     final opp = await _repo.getTeam(opponentTeamId);
     final oppSlug = FupaReduxImporter.teamSlugFromUrl(opp?.fupaUrl);
-    const empty = (null, <FormMatch>[], <StandingRow>[]);
+    const empty = (null, <FormMatch>[], <StandingRow>[], <FixtureMatch>[]);
     if (oppSlug == null || opp?.fupaUrl == null) return empty;
     // Liga-Slug aus dem GEGNER ableiten (nicht aus unserer Liga – Pokalgegner
     // spielen in einer anderen Liga). Je Gegner gecacht.
@@ -2950,13 +2948,22 @@ class AppState extends ChangeNotifier {
     if (leagueSlug == null) return empty;
     var table = const <StandingRow>[];
     var form = const <FormMatch>[];
+    var fixtures = const <FixtureMatch>[];
     try {
       table = await _importer.fetchStanding(leagueSlug);
     } catch (_) {}
     try {
       // Mehr Spiele laden, damit die Niederlagen der ganzen Saison vorliegen;
-      // die „letzte 5"-Karte nimmt sich davon die ersten fünf.
-      form = await _importer.fetchTeamForm(leagueSlug, oppSlug, limit: 50);
+      // die „letzte 5"-Karte nimmt sich davon die ersten fünf. Kommende Spiele
+      // (nächste 5) fallen aus demselben Abruf mit ab.
+      final (f, fx) = await _importer.fetchTeamFormAndFixtures(
+        leagueSlug,
+        oppSlug,
+        formLimit: 50,
+        fixtureLimit: 5,
+      );
+      form = f;
+      fixtures = fx;
     } catch (_) {}
     StandingRow? standing;
     for (final r in table) {
@@ -2965,7 +2972,7 @@ class AppState extends ChangeNotifier {
         break;
       }
     }
-    return (standing, form, table);
+    return (standing, form, table, fixtures);
   }
 
   /// Komplette Liga-Tabelle + die Zeile unseres Teams (für die Statistik).
