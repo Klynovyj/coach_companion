@@ -416,7 +416,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     final bytes = TeamLogo.decode(p.photoPath);
     final fallback = p.number?.toString() ??
         (p.lastName.isNotEmpty ? p.lastName[0] : '?');
-    const size = 76.0;
+    const size = 104.0;
     return GestureDetector(
       onTap: _changePhoto,
       child: Stack(
