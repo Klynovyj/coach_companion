@@ -454,25 +454,40 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(14),
-            child: Container(
+            child: SizedBox(
               width: size,
               height: size,
-              color: scheme.surfaceContainerHighest,
-              child: bytes != null
-                  ? Image.memory(
-                      bytes,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
-                    )
-                  : Center(
-                      child: Text(
-                        fallback,
-                        style: const TextStyle(
-                          fontSize: 34,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: Container(
+                      color: scheme.surfaceContainerHighest,
+                      child: bytes != null
+                          ? Image.memory(
+                              bytes,
+                              fit: BoxFit.cover,
+                              gaplessPlayback: true,
+                            )
+                          : Center(
+                              child: Text(
+                                fallback,
+                                style: const TextStyle(
+                                  fontSize: 34,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
                     ),
+                  ),
+                  // Status-Ecke (FuPa-Stil) oben links auf dem Hauptfoto.
+                  if (p.status != PlayerStatus.fit)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      child: StatusCorner(status: p.status, size: size * 0.3),
+                    ),
+                ],
+              ),
             ),
           ),
           // Hinweis unten links: Tipp aufs Foto zeigt/versteckt die Bewertungen.
@@ -2730,12 +2745,7 @@ class _PlayerCardView extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          PlayerPhoto(
-            player: player,
-            size: 116,
-            radius: 16,
-            cornerFraction: 0.34,
-          ),
+          PlayerPhoto(player: player, size: 116, radius: 16, showStatus: false),
           const SizedBox(height: 10),
           if (player.firstName.isNotEmpty)
             Text(
