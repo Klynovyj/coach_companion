@@ -1,6 +1,6 @@
 {
-  "versionCode": 38,
-  "versionName": "1.3.33",
+  "versionCode": 39,
+  "versionName": "1.3.34",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Foto-Zuschnitt: der Rahmen startet eingerueckt, die Eck-Punkte lassen sich jetzt gut greifen\n\nAus 1.3.32:\n- Beendetes Spiel: Nominierung und freigegebene Aufstellung nur noch ansehen\n\nAus 1.3.31:\n- Zwei Fotos je Spieler (FuPa + eigenes), umschaltbar; dein Foto wird vom FuPa-Import nicht mehr ueberschrieben\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
+  "notes": "Neuerungen:\n- Aufstellung: Bearbeiten reagiert jetzt direkt (keine ungewollten Ruecksetzer mehr), kein Flimmern der Liste; erneutes Tippen auf Start/Bank nimmt den Spieler zurueck zu Verfuegbar\n\nAus 1.3.33:\n- Foto-Zuschnitt: Eck-Punkte lassen sich greifen\n\nAus 1.3.32:\n- Beendetes Spiel: Nominierung und freigegebene Aufstellung nur noch ansehen\n\nAus 1.3.31:\n- Zwei Fotos je Spieler (FuPa + eigenes), umschaltbar\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
 }
