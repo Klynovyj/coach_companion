@@ -1591,9 +1591,12 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
           final allMatches = snap.data!.$1;
           final ratings = snap.data!.$2;
           final played = snap.data!.$3;
-          // Nur Spiele, in denen der Spieler gespielt hat (oder bereits bewertet).
+          // Nur BEENDETE Spiele, in denen der Spieler gespielt hat (oder bereits
+          // bewertet ist). Nicht-beendete bzw. zurückgesetzte Spiele fallen raus.
           final matches = allMatches
-              .where((m) => played.contains(m.id) || ratings.containsKey(m.id))
+              .where((m) =>
+                  m.status == MatchStatus.finished &&
+                  (played.contains(m.id) || ratings.containsKey(m.id)))
               .toList();
           if (matches.isEmpty) {
             return const Padding(
