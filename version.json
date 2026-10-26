@@ -1,6 +1,6 @@
 {
-  "versionCode": 44,
-  "versionName": "1.3.39",
+  "versionCode": 45,
+  "versionName": "1.3.40",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Auswertung: eigene Note und Spielbericht direkt hier schreiben/bearbeiten (geteilt mit allen Trainern) + Button Spieler einzeln bewerten\n- Bewerten nur noch fuer Spiele mit Ergebnis (beendete Spiele)\n\nAus 1.3.38: Auswertung mit Logos, farbigem Ergebnis, sortierbar.\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
+  "notes": "Neuerungen:\n- Spieler des Monats teilbar: Instagram-Post 1:1 und Story 9:16 sowie DIN-A4-Urkunde zum Drucken (mit Monatsnote, Monats-Ereignissen, FuPa-Saison und Sponsoren)\n- Position Tor heisst jetzt ueberall Torwart\n- Auswertungs-Liste aktualisiert sich beim Zurueckkehren\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
 }
