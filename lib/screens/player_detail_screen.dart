@@ -397,15 +397,14 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   if (p.position != null) p.position!,
                 ].join('  ·  ')),
                 const SizedBox(height: 8),
-                // Status & Rolle direkt im Kopf – antippen zum Ändern.
+                // Status direkt im Kopf – antippen zum Ändern. Rolle & Startelf
+                // stehen in den Stammdaten.
                 Wrap(
                   spacing: 6,
                   runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     _statusMenu(context, p),
-                    _captainMenu(context, p),
-                    _starterChip(context, p),
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -611,11 +610,37 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             },
           ),
           const SizedBox(height: 14),
+          _rolleStartelfField(context, p),
+          const SizedBox(height: 14),
           _positionsField(context, p),
           const SizedBox(height: 14),
           _birthdateField(context, p),
         ],
       ),
+    );
+  }
+
+  /// Rolle (Kapitän) & Startelf-Kennzeichen – antippen zum Ändern.
+  Widget _rolleStartelfField(BuildContext context, Player p) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          child: Text('Rolle & Startelf',
+              style:
+                  TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+        ),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            _captainMenu(context, p),
+            _starterChip(context, p),
+          ],
+        ),
+      ],
     );
   }
 
