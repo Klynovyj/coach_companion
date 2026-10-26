@@ -539,6 +539,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       icon: Icons.badge_outlined,
       title: 'Stammdaten',
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _EditableField(
             label: 'Vorname',
@@ -609,10 +610,14 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   : p.copyWith(wishPosition: t));
             },
           ),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
           const SizedBox(height: 14),
           _rolleStartelfField(context, p),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
           _positionsField(context, p),
+          const SizedBox(height: 16),
+          const Divider(height: 1),
           const SizedBox(height: 14),
           _birthdateField(context, p),
         ],
