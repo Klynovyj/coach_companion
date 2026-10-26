@@ -402,6 +402,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
           matchId: widget.matchId,
           teamId: _ownTeam!.id,
           title: _match!.opponentName,
+          readOnly: _match?.status == MatchStatus.finished,
         ),
       ),
     );
@@ -444,6 +445,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
           matchId: widget.matchId,
           teamId: _ownTeam!.id,
           teamName: _ownTeam!.name,
+          matchFinished: _match?.status == MatchStatus.finished,
         ),
       ),
     );

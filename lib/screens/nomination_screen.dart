@@ -15,11 +15,15 @@ class NominationScreen extends StatefulWidget {
     required this.matchId,
     required this.teamId,
     required this.title,
+    this.readOnly = false,
   });
 
   final String matchId;
   final String teamId;
   final String title;
+
+  /// Nur-Lese-Modus (z.B. Spiel beendet): keine Änderungen möglich.
+  final bool readOnly;
 
   @override
   State<NominationScreen> createState() => _NominationScreenState();
@@ -55,8 +59,9 @@ class _NominationScreenState extends State<NominationScreen> {
     final state = context.read<AppState>();
     // Reines Trainerteam wird nicht nominiert (spielender Co-Trainer schon).
     final players = (await state.playersOf(widget.teamId))
-        .where((p) =>
-            !p.isStaffOnly && p.active && p.status != PlayerStatus.inaktiv)
+        .where(
+          (p) => !p.isStaffOnly && p.active && p.status != PlayerStatus.inaktiv,
+        )
         .toList();
     final noms = await state.nominationsOf(widget.matchId);
     final match = await state.getMatch(widget.matchId);
@@ -64,7 +69,9 @@ class _NominationScreenState extends State<NominationScreen> {
     setState(() {
       _players = players;
       _match = match;
-      _status = {for (final p in players) p.id: noms[p.id] ?? NominationStatus.open};
+      _status = {
+        for (final p in players) p.id: noms[p.id] ?? NominationStatus.open,
+      };
       _loading = false;
     });
   }
@@ -104,11 +111,13 @@ class _NominationScreenState extends State<NominationScreen> {
         content: const Text('Alle Spieler werden auf „offen" gesetzt.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Zurücksetzen')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Zurücksetzen'),
+          ),
         ],
       ),
     );
@@ -122,7 +131,10 @@ class _NominationScreenState extends State<NominationScreen> {
       }
     });
     await context.read<AppState>().setNominationBulk(
-        widget.matchId, _players.map((p) => p.id).toList(), s);
+      widget.matchId,
+      _players.map((p) => p.id).toList(),
+      s,
+    );
   }
 
   @override
@@ -139,29 +151,35 @@ class _NominationScreenState extends State<NominationScreen> {
             icon: const Icon(Icons.share),
             onPressed: _share,
           ),
-          PopupMenuButton<String>(
-            onSelected: (v) {
-              if (v == 'all_in') _bulk(NominationStatus.zugesagt);
-              if (v == 'reset') _resetNomination();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'all_in', child: Text('Alle zusagen')),
-              PopupMenuItem(
-                  value: 'reset', child: Text('Nominierung zurücksetzen')),
-            ],
-          ),
+          if (!widget.readOnly)
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'all_in') _bulk(NominationStatus.zugesagt);
+                if (v == 'reset') _resetNomination();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'all_in', child: Text('Alle zusagen')),
+                PopupMenuItem(
+                  value: 'reset',
+                  child: Text('Nominierung zurücksetzen'),
+                ),
+              ],
+            ),
         ],
       ),
       body: _players.isEmpty
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Text('Noch keine Spieler im Kader.',
-                    textAlign: TextAlign.center),
+                child: Text(
+                  'Noch keine Spieler im Kader.',
+                  textAlign: TextAlign.center,
+                ),
               ),
             )
           : Column(
               children: [
+                if (widget.readOnly) _readOnlyBanner(context),
                 _summary(),
                 const Divider(height: 1),
                 Expanded(
@@ -179,15 +197,14 @@ class _NominationScreenState extends State<NominationScreen> {
   Widget _summary() {
     return Padding(
       padding: const EdgeInsets.all(12),
-      child: AvailabilitySummary(counts: {
-        for (final s in NominationStatus.values) s: _count(s),
-      }),
+      child: AvailabilitySummary(
+        counts: {for (final s in NominationStatus.values) s: _count(s)},
+      ),
     );
   }
 
   Widget _row(Player p) {
-    final suspended =
-        _match != null && _app.isSuspendedForMatch(p, _match!);
+    final suspended = _match != null && _app.isSuspendedForMatch(p, _match!);
     final pos = p.position;
     return ListTile(
       leading: PlayerAvatar(player: p, radius: 18),
@@ -201,9 +218,57 @@ class _NominationScreenState extends State<NominationScreen> {
         ],
       ),
       subtitle: pos == null ? null : Text(pos),
-      trailing: AvailabilityChoices(
-        current: _statusOf(p),
-        onChanged: (s) => _set(p, s),
+      trailing: widget.readOnly
+          ? _statusChip(_statusOf(p))
+          : AvailabilityChoices(
+              current: _statusOf(p),
+              onChanged: (s) => _set(p, s),
+            ),
+    );
+  }
+
+  /// Hinweiszeile im Nur-Lese-Modus.
+  Widget _readOnlyBanner(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: double.infinity,
+      color: scheme.surfaceContainerHighest,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          Icon(Icons.lock_outline, size: 16, color: scheme.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Spiel beendet – Nominierung nur zur Ansicht.',
+              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Nur-Lese-Statuschip (Zu/Unsicher/Vorbehalt/Ab/Offen).
+  Widget _statusChip(NominationStatus s) {
+    final c = availabilityColor(s);
+    final label = switch (s) {
+      NominationStatus.zugesagt => 'Zu',
+      NominationStatus.unsicher => 'Unsicher',
+      NominationStatus.unterVorbehalt => 'Vorbehalt',
+      NominationStatus.abgesagt => 'Ab',
+      NominationStatus.open => 'Offen',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: c.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: c, fontWeight: FontWeight.w600, fontSize: 12),
       ),
     );
   }
@@ -215,9 +280,14 @@ class _NominationScreenState extends State<NominationScreen> {
         color: Theme.of(context).colorScheme.error,
         borderRadius: BorderRadius.circular(5),
       ),
-      child: Text('⛔ Gesperrt · $games',
-          style: const TextStyle(
-              color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800)),
+      child: Text(
+        '⛔ Gesperrt · $games',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
     );
   }
 }

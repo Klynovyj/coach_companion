@@ -15,11 +15,15 @@ class LineupsListScreen extends StatefulWidget {
     required this.matchId,
     required this.teamId,
     required this.teamName,
+    this.matchFinished = false,
   });
 
   final String matchId;
   final String teamId;
   final String teamName;
+
+  /// Spiel beendet: die freigegebene Aufstellung ist nur noch ansehbar.
+  final bool matchFinished;
 
   @override
   State<LineupsListScreen> createState() => _LineupsListScreenState();
@@ -53,8 +57,9 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
     _starters.clear();
     for (final l in lineups) {
       final entries = await _app.lineupEntries(l.id);
-      _starters[l.id] =
-          entries.where((e) => e.role == LineupRole.starter).length;
+      _starters[l.id] = entries
+          .where((e) => e.role == LineupRole.starter)
+          .length;
     }
     if (!mounted) return;
     setState(() {
@@ -105,8 +110,7 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final hasMine =
-        _lineups.any((l) => l.suggestionOf == null && _mine(l));
+    final hasMine = _lineups.any((l) => l.suggestionOf == null && _mine(l));
     return Scaffold(
       appBar: AppBar(title: Text('Aufstellungen · ${widget.teamName}')),
       floatingActionButton: hasMine
@@ -137,8 +141,7 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
                     ),
                   )
                 else
-                  for (final l
-                      in _lineups.where((l) => l.suggestionOf == null))
+                  for (final l in _lineups.where((l) => l.suggestionOf == null))
                     _lineupCard(context, l),
               ],
             ),
@@ -194,14 +197,15 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
     final who = mine
         ? 'Meine Aufstellung'
         : (l.creatorName?.trim().isNotEmpty == true
-            ? l.creatorName!.trim()
-            : 'Anderer Trainer');
+              ? l.creatorName!.trim()
+              : 'Anderer Trainer');
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       shape: l.released
           ? RoundedRectangleBorder(
               side: BorderSide(color: scheme.primary, width: 2),
-              borderRadius: BorderRadius.circular(12))
+              borderRadius: BorderRadius.circular(12),
+            )
           : null,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 12, 10, 8),
@@ -210,49 +214,72 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
           children: [
             Row(
               children: [
-                Icon(mine ? Icons.person : Icons.person_outline,
-                    size: 18, color: scheme.primary),
+                Icon(
+                  mine ? Icons.person : Icons.person_outline,
+                  size: 18,
+                  color: scheme.primary,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(who,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w700, fontSize: 15)),
+                  child: Text(
+                    who,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
                 ),
                 if (l.released)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
-                        color: scheme.primary,
-                        borderRadius: BorderRadius.circular(6)),
-                    child: Text('FREIGEGEBEN',
-                        style: TextStyle(
-                            color: scheme.onPrimary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800)),
+                      color: scheme.primary,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      'FREIGEGEBEN',
+                      style: TextStyle(
+                        color: scheme.onPrimary,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
               ],
             ),
             const SizedBox(height: 2),
-            Text('$count/11 Startelf',
-                style:
-                    TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+            Text(
+              '$count/11 Startelf',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
             Wrap(
               alignment: WrapAlignment.end,
               spacing: 4,
               children: [
-                if (!l.released)
+                if (!l.released && !widget.matchFinished)
                   TextButton.icon(
                     onPressed: () => _release(l),
                     icon: const Icon(Icons.verified, size: 16),
                     label: const Text('Freigeben'),
                   ),
                 if (mine)
-                  FilledButton.tonalIcon(
-                    onPressed: _openMine,
-                    icon: const Icon(Icons.edit, size: 16),
-                    label: const Text('Bearbeiten'),
-                  )
+                  (widget.matchFinished && l.released)
+                      ? OutlinedButton.icon(
+                          onPressed: () => _openView(l),
+                          icon: const Icon(Icons.visibility, size: 16),
+                          label: const Text('Ansehen'),
+                        )
+                      : FilledButton.tonalIcon(
+                          onPressed: _openMine,
+                          icon: const Icon(Icons.edit, size: 16),
+                          label: const Text('Bearbeiten'),
+                        )
                 else ...[
                   OutlinedButton.icon(
                     onPressed: () => _openView(l),
@@ -299,9 +326,14 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
               Icon(Icons.edit_note, size: 16, color: scheme.secondary),
               const SizedBox(width: 6),
               Expanded(
-                  child: Text('$who · $count/11',
-                      style: const TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600))),
+                child: Text(
+                  '$who · $count/11',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
             ],
           ),
           Wrap(
