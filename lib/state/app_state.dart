@@ -1080,7 +1080,10 @@ class AppState extends ChangeNotifier {
     lastName: (p['last_name'] as String?) ?? '',
     number: (p['number'] as num?)?.toInt(),
     position: p['position'] as String?,
-    photoPath: p['photo'] as String?,
+    fupaPhoto: p['photo_fupa'] as String?,
+    // Abwärtskompat: Altschema ohne neue Spalten → aktives Foto als eigenes.
+    customPhoto: (p['photo_custom'] as String?) ?? (p['photo'] as String?),
+    useCustomPhoto: (p['use_custom_photo'] as num?)?.toInt() != 0,
     birthdate: DateTime.tryParse((p['birthdate'] as String?) ?? ''),
     status: PlayerStatus.fromKey(p['status'] as String?),
     captainRole: CaptainRole.fromKey(p['captain_role'] as String?),
@@ -1112,7 +1115,11 @@ class AppState extends ChangeNotifier {
     'last_name': p.lastName,
     'number': p.number,
     'position': p.position,
+    // Aktives Foto (Abwärtskompat) + beide Slots + Auswahl.
     'photo': p.photoPath,
+    'photo_fupa': p.fupaPhoto,
+    'photo_custom': p.customPhoto,
+    'use_custom_photo': p.useCustomPhoto ? 1 : 0,
     'birthdate': p.birthdate?.toIso8601String(),
     'status': p.status.storageKey,
     'active': p.active,
@@ -1126,6 +1133,11 @@ class AppState extends ChangeNotifier {
     'suspension_from': p.suspensionFrom?.toIso8601String(),
     'source': p.source.storageKey,
   };
+
+  /// true, wenn die Cloud-Zeile die Zwei-Foto-Spalten hat (stage30). Ohne diese
+  /// Spalten (Altschema) werden die Fotos beim Pull NICHT angetastet.
+  bool _hasPhotoCols(Map<String, dynamic> r) =>
+      r.containsKey('photo_fupa') || r.containsKey('photo_custom');
 
   /// Übernimmt einen Cloud-Spieler in den lokalen Cache. Felder werden nur
   /// übernommen, wenn die Cloud sie liefert (null = lokalen Wert behalten) –
@@ -1152,7 +1164,20 @@ class AppState extends ChangeNotifier {
         lastName: record['last_name'] as String?,
         number: (record['number'] as num?)?.toInt(),
         position: record['position'] as String?,
-        photoPath: record['photo'] as String?,
+        // Fotos: neue Spalten spiegeln (null = löschen); Altschema ohne die
+        // Spalten lässt das eigene Foto unangetastet (kein Datenverlust).
+        fupaPhoto: _hasPhotoCols(record)
+            ? record['photo_fupa'] as String?
+            : null,
+        clearFupaPhoto: _hasPhotoCols(record) && record['photo_fupa'] == null,
+        customPhoto: _hasPhotoCols(record)
+            ? record['photo_custom'] as String?
+            : record['photo'] as String?,
+        clearCustomPhoto:
+            _hasPhotoCols(record) && record['photo_custom'] == null,
+        useCustomPhoto: record['use_custom_photo'] == null
+            ? null
+            : (record['use_custom_photo'] as num).toInt() != 0,
         birthdate: DateTime.tryParse((record['birthdate'] as String?) ?? ''),
         status: statusRaw == null ? null : PlayerStatus.fromKey(statusRaw),
         captainRole: captainRaw == null

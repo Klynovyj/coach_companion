@@ -7,15 +7,13 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 /// Zentraler Datenbank-Zugang. SQLite läuft auf Mobile nativ und auf
 /// Windows/Desktop über die FFI-Implementierung.
 class AppDatabase {
-  AppDatabase._()
-      : _inMemory = false,
-        _customPath = null;
+  AppDatabase._() : _inMemory = false, _customPath = null;
 
   /// Nur für Tests: In-Memory, oder (mit [path]) eine echte Datei –
   /// um Neustart-/Persistenz-Verhalten nachzustellen.
   AppDatabase.test({String? path})
-      : _inMemory = path == null,
-        _customPath = path;
+    : _inMemory = path == null,
+      _customPath = path;
 
   static final AppDatabase instance = AppDatabase._();
 
@@ -24,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 41;
+  static const _dbVersion = 42;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -43,7 +41,8 @@ class AppDatabase {
       databaseFactory = databaseFactoryFfi;
     }
 
-    final path = _customPath ??
+    final path =
+        _customPath ??
         (_inMemory
             ? inMemoryDatabasePath
             : p.join((await getApplicationDocumentsDirectory()).path, _dbName));
@@ -69,7 +68,9 @@ class AppDatabase {
     // v2 -> v3: Gegner-Link und -Logo am Spiel (für Auto-Import/Anzeige).
     if (oldV < 3) {
       await db.execute('ALTER TABLE matches ADD COLUMN opponent_fupa_url TEXT');
-      await db.execute('ALTER TABLE matches ADD COLUMN opponent_logo_path TEXT');
+      await db.execute(
+        'ALTER TABLE matches ADD COLUMN opponent_logo_path TEXT',
+      );
     }
     // v3 -> v4: Spieler-Saison-Statistik.
     if (oldV < 4) {
@@ -83,17 +84,21 @@ class AppDatabase {
     if (oldV < 6) {
       await db.execute(_nominationsTableSql);
       await db.execute(
-          'CREATE UNIQUE INDEX idx_nom_match_player ON match_nominations (match_id, player_id)');
+        'CREATE UNIQUE INDEX idx_nom_match_player ON match_nominations (match_id, player_id)',
+      );
     }
     // v6 -> v7: Karten je Spieler.
     if (oldV < 7) {
       await db.execute(_cardEntriesTableSql);
-      await db.execute('CREATE INDEX idx_cards_player ON card_entries (player_id)');
+      await db.execute(
+        'CREATE INDEX idx_cards_player ON card_entries (player_id)',
+      );
     }
     // v8 -> v9: Nachspielzeit am Live-Ereignis.
     if (oldV < 9) {
       await db.execute(
-          'ALTER TABLE match_events ADD COLUMN minute_extra INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE match_events ADD COLUMN minute_extra INTEGER NOT NULL DEFAULT 0',
+      );
     }
     // v9 -> v10: freie Positionen in der Aufstellung.
     if (oldV < 10) {
@@ -103,14 +108,17 @@ class AppDatabase {
     // v10 -> v11: Nachspielzeit an der Karte.
     if (oldV < 11) {
       await db.execute(
-          'ALTER TABLE card_entries ADD COLUMN minute_extra INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE card_entries ADD COLUMN minute_extra INTEGER NOT NULL DEFAULT 0',
+      );
     }
     // v11 -> v12: Spieler-Status, Kapitäns-Rolle, Wunschposition.
     if (oldV < 12) {
       await db.execute(
-          "ALTER TABLE players ADD COLUMN status TEXT NOT NULL DEFAULT 'fit'");
+        "ALTER TABLE players ADD COLUMN status TEXT NOT NULL DEFAULT 'fit'",
+      );
       await db.execute(
-          "ALTER TABLE players ADD COLUMN captain_role TEXT NOT NULL DEFAULT 'none'");
+        "ALTER TABLE players ADD COLUMN captain_role TEXT NOT NULL DEFAULT 'none'",
+      );
       await db.execute('ALTER TABLE players ADD COLUMN wish_position TEXT');
     }
     // v12 -> v13: Notiz-Rubriken (zentral) + Rubrik an der Notiz.
@@ -119,7 +127,9 @@ class AppDatabase {
       // Notizen vor < v8 bekommen die Spalte bereits beim Anlegen der Tabelle
       // im v8-Block; ältere Bestände (v8..v12) brauchen das ALTER.
       if (oldV >= 8) {
-        await db.execute('ALTER TABLE player_notes ADD COLUMN category_id TEXT');
+        await db.execute(
+          'ALTER TABLE player_notes ADD COLUMN category_id TEXT',
+        );
       }
     }
     // v13 -> v14: Scouting-Marker für (Gegner-)Spieler.
@@ -134,7 +144,8 @@ class AppDatabase {
     if (oldV < 16) {
       await db.execute(_playerAbsencesTableSql);
       await db.execute(
-          'CREATE INDEX idx_absences_player ON player_absences (player_id)');
+        'CREATE INDEX idx_absences_player ON player_absences (player_id)',
+      );
     }
     // v16 -> v17: Fälligkeit, Erledigt-Zeitpunkt und Archiv an To-Dos.
     // Nur für Bestände, deren todos-Tabelle ohne diese Spalten angelegt wurde
@@ -144,7 +155,8 @@ class AppDatabase {
       await db.execute('ALTER TABLE todos ADD COLUMN due_date TEXT');
       await db.execute('ALTER TABLE todos ADD COLUMN completed_at TEXT');
       await db.execute(
-          'ALTER TABLE todos ADD COLUMN archived INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE todos ADD COLUMN archived INTEGER NOT NULL DEFAULT 0',
+      );
     }
     // v17 -> v18: Geburtsdatum am Spieler (u.a. für Ball-/Materialdienst).
     if (oldV < 18) {
@@ -154,7 +166,8 @@ class AppDatabase {
     if (oldV < 19) {
       await db.execute('ALTER TABLE players ADD COLUMN positions TEXT');
       await db.execute(
-          'ALTER TABLE players ADD COLUMN is_starter INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE players ADD COLUMN is_starter INTEGER NOT NULL DEFAULT 0',
+      );
     }
     // v19 -> v20: Trainerteam-Rolle am Spieler (null = Spieler).
     if (oldV < 20) {
@@ -193,7 +206,8 @@ class AppDatabase {
     // Spalte bereits über _playerTalksTableSql.
     if (oldV < 26 && oldV >= 25) {
       await db.execute(
-          'ALTER TABLE player_talks ADD COLUMN done INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE player_talks ADD COLUMN done INTEGER NOT NULL DEFAULT 0',
+      );
     }
     // v26 -> v27: Spieler in Ereignissen/Kommentaren erwähnen (n:m).
     if (oldV < 27) {
@@ -203,13 +217,15 @@ class AppDatabase {
     // getrackte Spiele nicht vom FuPa-Import überschreiben).
     if (oldV < 28) {
       await db.execute(
-          'ALTER TABLE matches ADD COLUMN locally_managed INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE matches ADD COLUMN locally_managed INTEGER NOT NULL DEFAULT 0',
+      );
     }
     // v28 -> v29: Live-Steuerung – wer steuert gerade das Live-Spiel.
     if (oldV < 29) {
       await db.execute('ALTER TABLE matches ADD COLUMN live_controller TEXT');
-      await db
-          .execute('ALTER TABLE matches ADD COLUMN live_controller_name TEXT');
+      await db.execute(
+        'ALTER TABLE matches ADD COLUMN live_controller_name TEXT',
+      );
     }
     // v29 -> v30: Sponsoren (teamweit, für die Startelf-Grafik).
     if (oldV < 30) {
@@ -222,23 +238,27 @@ class AppDatabase {
     // v31 -> v32: optionales Gegner-Logo auf der Startelf-Grafik.
     if (oldV < 32) {
       await db.execute(
-          'ALTER TABLE graphic_settings ADD COLUMN show_opponent_logo INTEGER');
+        'ALTER TABLE graphic_settings ADD COLUMN show_opponent_logo INTEGER',
+      );
     }
     // v32 -> v33: Bewertungen pro Benutzer + Spiel-Gesamtnote/Abwesenheit.
     if (oldV < 33) {
       await db.execute('ALTER TABLE player_ratings ADD COLUMN user_id TEXT');
       await db.execute('DROP INDEX IF EXISTS idx_rating_match_player');
       await db.execute(
-          'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
+        'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)',
+      );
       await db.execute(_matchRatingsTableSql);
       await db.execute(
-          'CREATE UNIQUE INDEX idx_match_rating_user ON match_ratings (match_id, user_id)');
+        'CREATE UNIQUE INDEX idx_match_rating_user ON match_ratings (match_id, user_id)',
+      );
     }
     // v33 -> v34: Spieler des Monats (Kürung je Monat).
     if (oldV < 34) {
       await db.execute(_playerOfMonthTableSql);
       await db.execute(
-          'CREATE UNIQUE INDEX idx_potm_month ON player_of_month (year_month)');
+        'CREATE UNIQUE INDEX idx_potm_month ON player_of_month (year_month)',
+      );
     }
     // v34 -> v35: Spielerbewertung wieder EINE je Spiel/Spieler (nicht pro
     // Benutzer). Mehrfach-/Alt-Zeilen deduplizieren (jüngste behalten).
@@ -255,7 +275,8 @@ class AppDatabase {
       ''');
       await db.execute('DROP INDEX IF EXISTS idx_rating_match_player_user');
       await db.execute(
-          'CREATE UNIQUE INDEX idx_rating_match_player ON player_ratings (match_id, player_id)');
+        'CREATE UNIQUE INDEX idx_rating_match_player ON player_ratings (match_id, player_id)',
+      );
     }
     // v35 -> v36: FuPa-Match-Slug am Spiel (Link auf die FuPa-Spielseite).
     if (oldV < 36) {
@@ -264,22 +285,26 @@ class AppDatabase {
     // v36 -> v37: Sperren-Zähler am Spieler (noch abzusitzende Spiele).
     if (oldV < 37) {
       await db.execute(
-          'ALTER TABLE players ADD COLUMN suspended_games INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE players ADD COLUMN suspended_games INTEGER NOT NULL DEFAULT 0',
+      );
     }
     // v37 -> v38: Spielerbewertung wieder pro Trainer (jeder bewertet eigen-
     // ständig, Schnitt über alle). Unique je (match, player, user). Verwaiste
     // Zeilen ohne Benutzer entfernen, damit sie den Schnitt nicht verfälschen.
     if (oldV < 38) {
       await db.execute(
-          "DELETE FROM player_ratings WHERE user_id IS NULL OR user_id = ''");
+        "DELETE FROM player_ratings WHERE user_id IS NULL OR user_id = ''",
+      );
       await db.execute('DROP INDEX IF EXISTS idx_rating_match_player');
       await db.execute(
-          'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
+        'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)',
+      );
     }
     // v38 -> v39: Sperre je Wettbewerb + Startdatum.
     if (oldV < 39) {
       await db.execute(
-          'ALTER TABLE players ADD COLUMN suspension_competition TEXT');
+        'ALTER TABLE players ADD COLUMN suspension_competition TEXT',
+      );
       await db.execute('ALTER TABLE players ADD COLUMN suspension_from TEXT');
     }
     // v39 -> v40: Mehrere Aufstellungen je Spiel (eine je Trainer) + Freigabe.
@@ -287,31 +312,49 @@ class AppDatabase {
       await db.execute('ALTER TABLE lineups ADD COLUMN created_by TEXT');
       await db.execute('ALTER TABLE lineups ADD COLUMN creator_name TEXT');
       await db.execute(
-          'ALTER TABLE lineups ADD COLUMN released INTEGER NOT NULL DEFAULT 0');
+        'ALTER TABLE lineups ADD COLUMN released INTEGER NOT NULL DEFAULT 0',
+      );
       await db.execute('ALTER TABLE lineups ADD COLUMN suggestion_of TEXT');
       // Bestehende (einzige) Aufstellung je Spiel als freigegeben markieren,
       // damit „Live" weiter funktioniert.
       await db.execute('UPDATE lineups SET released = 1');
       await db.execute('DROP INDEX IF EXISTS idx_lineup_match_team');
       await db.execute(
-          'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by)');
+        'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by)',
+      );
     }
     // v40 -> v41: Vorschläge (suggestion_of) zulassen – Eindeutigkeit „eine je
     // Trainer" gilt nur für echte Aufstellungen (nicht für Vorschläge).
     if (oldV < 41) {
       await db.execute('DROP INDEX IF EXISTS idx_lineup_match_team_user');
       await db.execute(
-          'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by) WHERE suggestion_of IS NULL');
+        'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by) WHERE suggestion_of IS NULL',
+      );
+    }
+    // v41 -> v42: Zwei Fotos je Spieler (FuPa + eigenes) + Auswahl. Bestehendes
+    // Foto als „mein Foto" übernehmen (verlustfrei); FuPa-Slot füllt der Import.
+    if (oldV < 42) {
+      await db.execute('ALTER TABLE players ADD COLUMN photo_fupa TEXT');
+      await db.execute('ALTER TABLE players ADD COLUMN photo_custom TEXT');
+      await db.execute(
+        'ALTER TABLE players ADD COLUMN use_custom_photo INTEGER NOT NULL DEFAULT 1',
+      );
+      await db.execute(
+        'UPDATE players SET photo_custom = photo_path WHERE photo_path IS NOT NULL',
+      );
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
-      await db.execute('CREATE INDEX idx_notes_player ON player_notes (player_id)');
+      await db.execute(
+        'CREATE INDEX idx_notes_player ON player_notes (player_id)',
+      );
       await db.execute(_teamEventsTableSql);
       await db.execute('CREATE INDEX idx_events_team ON team_events (team_id)');
       await db.execute(_eventAttendanceTableSql);
       await db.execute(
-          'CREATE UNIQUE INDEX idx_att_event_player ON event_attendance (event_id, player_id)');
+        'CREATE UNIQUE INDEX idx_att_event_player ON event_attendance (event_id, player_id)',
+      );
     }
   }
 
@@ -562,6 +605,9 @@ class AppDatabase {
         staff_role TEXT,
         external_id TEXT,
         photo_path TEXT,
+        photo_fupa TEXT,
+        photo_custom TEXT,
+        use_custom_photo INTEGER NOT NULL DEFAULT 1,
         source TEXT NOT NULL,
         active INTEGER NOT NULL DEFAULT 1,
         suspended_games INTEGER NOT NULL DEFAULT 0,
@@ -617,7 +663,8 @@ class AppDatabase {
       )
     ''');
     await db.execute(
-        'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by) WHERE suggestion_of IS NULL');
+      'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by) WHERE suggestion_of IS NULL',
+    );
 
     await db.execute('''
       CREATE TABLE lineup_entries (
@@ -634,7 +681,8 @@ class AppDatabase {
       )
     ''');
     await db.execute(
-        'CREATE INDEX idx_entries_lineup ON lineup_entries (lineup_id)');
+      'CREATE INDEX idx_entries_lineup ON lineup_entries (lineup_id)',
+    );
 
     await db.execute('''
       CREATE TABLE match_events (
@@ -652,7 +700,8 @@ class AppDatabase {
       )
     ''');
     await db.execute(
-        'CREATE INDEX idx_events_match ON match_events (match_id)');
+      'CREATE INDEX idx_events_match ON match_events (match_id)',
+    );
 
     await db.execute('''
       CREATE TABLE player_ratings (
@@ -668,29 +717,36 @@ class AppDatabase {
       )
     ''');
     await db.execute(
-        'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)');
+      'CREATE UNIQUE INDEX idx_rating_match_player_user ON player_ratings (match_id, player_id, user_id)',
+    );
 
     await db.execute(_matchRatingsTableSql);
     await db.execute(
-        'CREATE UNIQUE INDEX idx_match_rating_user ON match_ratings (match_id, user_id)');
+      'CREATE UNIQUE INDEX idx_match_rating_user ON match_ratings (match_id, user_id)',
+    );
 
     await db.execute(_playerOfMonthTableSql);
     await db.execute(
-        'CREATE UNIQUE INDEX idx_potm_month ON player_of_month (year_month)');
+      'CREATE UNIQUE INDEX idx_potm_month ON player_of_month (year_month)',
+    );
 
     await db.execute(_playerStatsTableSql);
-    await db.execute(
-        'CREATE INDEX idx_stats_team ON player_stats (team_id)');
+    await db.execute('CREATE INDEX idx_stats_team ON player_stats (team_id)');
 
     await db.execute(_nominationsTableSql);
     await db.execute(
-        'CREATE UNIQUE INDEX idx_nom_match_player ON match_nominations (match_id, player_id)');
+      'CREATE UNIQUE INDEX idx_nom_match_player ON match_nominations (match_id, player_id)',
+    );
 
     await db.execute(_cardEntriesTableSql);
-    await db.execute('CREATE INDEX idx_cards_player ON card_entries (player_id)');
+    await db.execute(
+      'CREATE INDEX idx_cards_player ON card_entries (player_id)',
+    );
 
     await db.execute(_playerNotesTableSql);
-    await db.execute('CREATE INDEX idx_notes_player ON player_notes (player_id)');
+    await db.execute(
+      'CREATE INDEX idx_notes_player ON player_notes (player_id)',
+    );
     await db.execute(_noteCategoriesTableSql);
     await db.execute(_playerMarkersTableSql);
     await db.execute(_todosTableSql);
@@ -701,12 +757,14 @@ class AppDatabase {
     await db.execute(_eventMentionsTableSql);
     await db.execute(_playerAbsencesTableSql);
     await db.execute(
-        'CREATE INDEX idx_absences_player ON player_absences (player_id)');
+      'CREATE INDEX idx_absences_player ON player_absences (player_id)',
+    );
     await db.execute(_teamEventsTableSql);
     await db.execute('CREATE INDEX idx_events_team ON team_events (team_id)');
     await db.execute(_eventAttendanceTableSql);
     await db.execute(
-        'CREATE UNIQUE INDEX idx_att_event_player ON event_attendance (event_id, player_id)');
+      'CREATE UNIQUE INDEX idx_att_event_player ON event_attendance (event_id, player_id)',
+    );
 
     await db.execute('''
       CREATE TABLE settings (

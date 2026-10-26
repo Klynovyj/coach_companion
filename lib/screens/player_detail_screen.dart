@@ -85,13 +85,32 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               ),
             ListTile(
               leading: const Icon(Icons.photo_library),
-              title: Text(isMobile ? 'Galerie' : 'Bild auswählen'),
+              title: Text(isMobile ? 'Galerie (mein Foto)' : 'Bild auswählen'),
               onTap: () => Navigator.pop(context, 'gallery'),
             ),
-            if (_player.photoPath != null)
+            if (_player.hasCustomPhoto && _player.hasFupaPhoto) ...[
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.person_outline),
+                title: const Text('Mein Foto verwenden'),
+                trailing: _player.useCustomPhoto
+                    ? const Icon(Icons.check, color: Colors.green)
+                    : null,
+                onTap: () => Navigator.pop(context, 'use_custom'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.cloud_outlined),
+                title: const Text('FuPa-Foto verwenden'),
+                trailing: !_player.useCustomPhoto
+                    ? const Icon(Icons.check, color: Colors.green)
+                    : null,
+                onTap: () => Navigator.pop(context, 'use_fupa'),
+              ),
+            ],
+            if (_player.hasCustomPhoto)
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text('Foto entfernen'),
+                title: const Text('Mein Foto entfernen'),
                 onTap: () => Navigator.pop(context, 'remove'),
               ),
           ],
@@ -99,8 +118,19 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       ),
     );
     if (choice == null || !mounted) return;
+    if (choice == 'use_custom') {
+      await _apply(_player.copyWith(useCustomPhoto: true));
+      return;
+    }
+    if (choice == 'use_fupa') {
+      await _apply(_player.copyWith(useCustomPhoto: false));
+      return;
+    }
     if (choice == 'remove') {
-      await _apply(_player.copyWith(clearPhotoPath: true));
+      // Eigenes Foto entfernen → auf das FuPa-Foto zurückfallen.
+      await _apply(
+        _player.copyWith(clearCustomPhoto: true, useCustomPhoto: false),
+      );
       return;
     }
     final messenger = ScaffoldMessenger.of(context);
@@ -123,7 +153,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       );
       if (cropped == null || !mounted) return;
       final dataUrl = _encodeSquareJpeg(cropped);
-      await _apply(_player.copyWith(photoPath: dataUrl));
+      await _apply(
+        _player.copyWith(customPhoto: dataUrl, useCustomPhoto: true),
+      );
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Foto konnte nicht geladen werden: $e')),
@@ -462,7 +494,16 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             ),
           ),
           const SizedBox(width: 16),
-          _headerPhoto(context, p, isTrainer),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _headerPhoto(context, p, isTrainer),
+              if (isTrainer && p.hasFupaPhoto && p.hasCustomPhoto) ...[
+                const SizedBox(height: 6),
+                _photoSourceToggle(context, p),
+              ],
+            ],
+          ),
         ],
       ),
     );
@@ -569,6 +610,33 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Kleiner Umschalter FuPa-Foto / mein Foto (nur wenn beide vorhanden).
+  Widget _photoSourceToggle(BuildContext context, Player p) {
+    return SizedBox(
+      width: 160,
+      child: SegmentedButton<bool>(
+        style: const ButtonStyle(
+          visualDensity: VisualDensity.compact,
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+        ),
+        segments: const [
+          ButtonSegment(
+            value: false,
+            label: Text('FuPa', style: TextStyle(fontSize: 11)),
+          ),
+          ButtonSegment(
+            value: true,
+            label: Text('Mein', style: TextStyle(fontSize: 11)),
+          ),
+        ],
+        selected: {p.useCustomPhoto},
+        showSelectedIcon: false,
+        onSelectionChanged: (s) => _apply(p.copyWith(useCustomPhoto: s.first)),
       ),
     );
   }

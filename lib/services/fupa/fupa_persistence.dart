@@ -21,8 +21,11 @@ class FupaPersistence {
   /// Namen. Vorhandene Spieler werden aktualisiert statt neu angelegt.
   ///
   /// Gibt die Anzahl NEU angelegter Spieler zurück.
-  Future<int> syncPlayers(String teamId, List<PlayerData> incoming,
-      DataSource source) async {
+  Future<int> syncPlayers(
+    String teamId,
+    List<PlayerData> incoming,
+    DataSource source,
+  ) async {
     final existing = await _repo.getPlayers(teamId);
     final byExternal = <String, Player>{};
     final byName = <String, Player>{};
@@ -55,7 +58,9 @@ class FupaPersistence {
           number: data.number ?? match.number,
           position: data.position ?? match.position,
           externalId: data.externalId ?? match.externalId,
-          photoPath: data.photoDataUrl,
+          // Nur den FuPa-Foto-Slot aktualisieren – das selbst hochgeladene Foto
+          // (customPhoto) bleibt unangetastet.
+          fupaPhoto: data.photoDataUrl,
           // Vorhandenes Geburtsdatum behalten, wenn FuPa keins liefert.
           birthdate: data.birthdate ?? match.birthdate,
           staffRole: data.staffRole ?? match.staffRole,
@@ -81,7 +86,7 @@ class FupaPersistence {
           number: data.number,
           position: data.position,
           externalId: data.externalId,
-          photoPath: data.photoDataUrl,
+          fupaPhoto: data.photoDataUrl,
           birthdate: data.birthdate,
           staffRole: data.staffRole,
           nickname: data.nickname,
@@ -103,7 +108,8 @@ class FupaPersistence {
   /// (Name/Kurzname/Logo/Link). Der Kader wird separat (mit Fotos) übernommen.
   Future<Team> saveOwnTeam(String url, FupaTeamImport data) async {
     final existing = await _repo.getOwnTeam();
-    final base = existing ??
+    final base =
+        existing ??
         Team(
           id: _uuid.v4(),
           name: data.name ?? 'Meine Mannschaft',
@@ -161,7 +167,9 @@ class FupaPersistence {
   /// Übernimmt einen importierten Spielplan für das eigene Team und verhindert
   /// doppelte Spiele (über externe ID, sonst Gegnername + Anstoßzeit).
   Future<int> syncSchedule(
-      String ownTeamId, List<ScheduledMatchData> incoming) async {
+    String ownTeamId,
+    List<ScheduledMatchData> incoming,
+  ) async {
     final existing = await _repo.getMatches(ownTeamId);
     final byExternal = <String, GameMatch>{};
     final byKey = <String, GameMatch>{};
@@ -185,41 +193,48 @@ class FupaPersistence {
         // Selbst verwaltete Spiele (zurückgesetzt/live getrackt): Metadaten
         // aktualisieren, aber Status/Ergebnis NICHT aus FuPa überschreiben.
         final managed = match.locallyManaged;
-        await _repo.upsertMatch(match.copyWith(
-          opponentName: data.opponentName,
-          opponentFupaUrl: data.opponentFupaUrl,
-          opponentLogoPath: data.opponentLogoDataUrl,
-          kickoff: data.kickoff,
-          venue: data.venue,
-          competition: data.competition,
-          matchday: data.matchday ?? match.matchday,
-          externalId: data.externalId,
-          fupaMatchSlug: data.fupaMatchSlug ?? match.fupaMatchSlug,
-          // Live/beendete/selbst verwaltete Spiele nicht zurücksetzen.
-          status: !managed && data.finished && match.status != MatchStatus.live
-              ? MatchStatus.finished
-              : null,
-          ownScore: !managed && data.finished ? data.ownGoals : null,
-          opponentScore: !managed && data.finished ? data.opponentGoals : null,
-        ));
+        await _repo.upsertMatch(
+          match.copyWith(
+            opponentName: data.opponentName,
+            opponentFupaUrl: data.opponentFupaUrl,
+            opponentLogoPath: data.opponentLogoDataUrl,
+            kickoff: data.kickoff,
+            venue: data.venue,
+            competition: data.competition,
+            matchday: data.matchday ?? match.matchday,
+            externalId: data.externalId,
+            fupaMatchSlug: data.fupaMatchSlug ?? match.fupaMatchSlug,
+            // Live/beendete/selbst verwaltete Spiele nicht zurücksetzen.
+            status:
+                !managed && data.finished && match.status != MatchStatus.live
+                ? MatchStatus.finished
+                : null,
+            ownScore: !managed && data.finished ? data.ownGoals : null,
+            opponentScore: !managed && data.finished
+                ? data.opponentGoals
+                : null,
+          ),
+        );
       } else {
-        await _repo.upsertMatch(GameMatch(
-          id: _uuid.v4(),
-          ownTeamId: ownTeamId,
-          opponentName: data.opponentName,
-          opponentFupaUrl: data.opponentFupaUrl,
-          opponentLogoPath: data.opponentLogoDataUrl,
-          kickoff: data.kickoff,
-          venue: data.venue,
-          competition: data.competition,
-          matchday: data.matchday,
-          externalId: data.externalId,
-          fupaMatchSlug: data.fupaMatchSlug,
-          status: status ?? MatchStatus.scheduled,
-          ownScore: data.finished ? (data.ownGoals ?? 0) : 0,
-          opponentScore: data.finished ? (data.opponentGoals ?? 0) : 0,
-          createdAt: DateTime.now(),
-        ));
+        await _repo.upsertMatch(
+          GameMatch(
+            id: _uuid.v4(),
+            ownTeamId: ownTeamId,
+            opponentName: data.opponentName,
+            opponentFupaUrl: data.opponentFupaUrl,
+            opponentLogoPath: data.opponentLogoDataUrl,
+            kickoff: data.kickoff,
+            venue: data.venue,
+            competition: data.competition,
+            matchday: data.matchday,
+            externalId: data.externalId,
+            fupaMatchSlug: data.fupaMatchSlug,
+            status: status ?? MatchStatus.scheduled,
+            ownScore: data.finished ? (data.ownGoals ?? 0) : 0,
+            opponentScore: data.finished ? (data.opponentGoals ?? 0) : 0,
+            createdAt: DateTime.now(),
+          ),
+        );
         added++;
       }
     }

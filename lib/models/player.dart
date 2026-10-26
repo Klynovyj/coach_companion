@@ -49,8 +49,22 @@ class Player {
   /// Externer Bezeichner aus der Importquelle – für Duplikaterkennung.
   final String? externalId;
 
-  /// Spielerfoto als Data-URL (image/jpeg), falls synchronisiert.
-  final String? photoPath;
+  /// Foto aus dem FuPa-Import (nur der Import schreibt es).
+  final String? fupaPhoto;
+
+  /// Selbst hochgeladenes Foto (nur der Upload schreibt es).
+  final String? customPhoto;
+
+  /// true = das eigene Foto bevorzugen/anzeigen; false = FuPa-Foto.
+  final bool useCustomPhoto;
+
+  /// Das anzuzeigende Foto (überall für die Anzeige genutzt): bei „mein Foto"
+  /// das eigene, sonst das FuPa-Foto – je mit Rückfall aufs andere.
+  String? get photoPath =>
+      useCustomPhoto ? (customPhoto ?? fupaPhoto) : (fupaPhoto ?? customPhoto);
+
+  bool get hasFupaPhoto => fupaPhoto != null && fupaPhoto!.isNotEmpty;
+  bool get hasCustomPhoto => customPhoto != null && customPhoto!.isNotEmpty;
 
   final DataSource source;
 
@@ -86,7 +100,9 @@ class Player {
     this.captainRole = CaptainRole.none,
     this.birthdate,
     this.externalId,
-    this.photoPath,
+    this.fupaPhoto,
+    this.customPhoto,
+    this.useCustomPhoto = true,
     this.source = DataSource.manual,
     this.active = true,
     this.suspendedGames = 0,
@@ -146,8 +162,11 @@ class Player {
     DateTime? birthdate,
     bool clearBirthdate = false,
     String? externalId,
-    String? photoPath,
-    bool clearPhotoPath = false,
+    String? fupaPhoto,
+    bool clearFupaPhoto = false,
+    String? customPhoto,
+    bool clearCustomPhoto = false,
+    bool? useCustomPhoto,
     DataSource? source,
     bool? active,
     int? suspendedGames,
@@ -165,15 +184,18 @@ class Player {
       number: clearNumber ? null : (number ?? this.number),
       position: clearPosition ? null : (position ?? this.position),
       positions: positions ?? this.positions,
-      wishPosition:
-          clearWishPosition ? null : (wishPosition ?? this.wishPosition),
+      wishPosition: clearWishPosition
+          ? null
+          : (wishPosition ?? this.wishPosition),
       isStarter: isStarter ?? this.isStarter,
       staffRole: clearStaffRole ? null : (staffRole ?? this.staffRole),
       status: status ?? this.status,
       captainRole: captainRole ?? this.captainRole,
       birthdate: clearBirthdate ? null : (birthdate ?? this.birthdate),
       externalId: externalId ?? this.externalId,
-      photoPath: clearPhotoPath ? null : (photoPath ?? this.photoPath),
+      fupaPhoto: clearFupaPhoto ? null : (fupaPhoto ?? this.fupaPhoto),
+      customPhoto: clearCustomPhoto ? null : (customPhoto ?? this.customPhoto),
+      useCustomPhoto: useCustomPhoto ?? this.useCustomPhoto,
       source: source ?? this.source,
       active: active ?? this.active,
       suspendedGames: suspendedGames ?? this.suspendedGames,
@@ -188,61 +210,66 @@ class Player {
   }
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'team_id': teamId,
-        'first_name': firstName,
-        'last_name': lastName,
-        'nickname': nickname,
-        'number': number,
-        'position': position,
-        'positions': positions.join(','),
-        'wish_position': wishPosition,
-        'is_starter': isStarter ? 1 : 0,
-        'staff_role': staffRole,
-        'status': status.storageKey,
-        'captain_role': captainRole.storageKey,
-        'birthdate': birthdate?.toIso8601String(),
-        'external_id': externalId,
-        'photo_path': photoPath,
-        'source': source.storageKey,
-        'active': active ? 1 : 0,
-        'suspended_games': suspendedGames,
-        'suspension_competition': suspensionCompetition,
-        'suspension_from': suspensionFrom?.toIso8601String(),
-        'created_at': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'team_id': teamId,
+    'first_name': firstName,
+    'last_name': lastName,
+    'nickname': nickname,
+    'number': number,
+    'position': position,
+    'positions': positions.join(','),
+    'wish_position': wishPosition,
+    'is_starter': isStarter ? 1 : 0,
+    'staff_role': staffRole,
+    'status': status.storageKey,
+    'captain_role': captainRole.storageKey,
+    'birthdate': birthdate?.toIso8601String(),
+    'external_id': externalId,
+    // Aktives Foto zusätzlich (Abwärtskompatibilität für ältere Clients).
+    'photo_path': photoPath,
+    'photo_fupa': fupaPhoto,
+    'photo_custom': customPhoto,
+    'use_custom_photo': useCustomPhoto ? 1 : 0,
+    'source': source.storageKey,
+    'active': active ? 1 : 0,
+    'suspended_games': suspendedGames,
+    'suspension_competition': suspensionCompetition,
+    'suspension_from': suspensionFrom?.toIso8601String(),
+    'created_at': createdAt.toIso8601String(),
+  };
 
   factory Player.fromMap(Map<String, Object?> m) => Player(
-        id: m['id'] as String,
-        teamId: m['team_id'] as String,
-        firstName: m['first_name'] as String? ?? '',
-        lastName: m['last_name'] as String? ?? '',
-        nickname: m['nickname'] as String?,
-        number: m['number'] as int?,
-        position: m['position'] as String?,
-        positions: ((m['positions'] as String?) ?? '')
-            .split(',')
-            .map((s) => s.trim())
-            .where((s) => s.isNotEmpty)
-            .toList(),
-        wishPosition: m['wish_position'] as String?,
-        isStarter: (m['is_starter'] as int? ?? 0) == 1,
-        staffRole: m['staff_role'] as String?,
-        status: PlayerStatus.fromKey(m['status'] as String?),
-        captainRole: CaptainRole.fromKey(m['captain_role'] as String?),
-        birthdate: DateTime.tryParse(m['birthdate'] as String? ?? ''),
-        externalId: m['external_id'] as String?,
-        photoPath: m['photo_path'] as String?,
-        source: DataSource.fromKey(m['source'] as String?),
-        active: (m['active'] as int? ?? 1) == 1,
-        suspendedGames: m['suspended_games'] as int? ?? 0,
-        suspensionCompetition: m['suspension_competition'] as String?,
-        suspensionFrom:
-            DateTime.tryParse(m['suspension_from'] as String? ?? ''),
-        createdAt:
-            DateTime.tryParse(m['created_at'] as String? ?? '') ??
-                DateTime.now(),
-      );
+    id: m['id'] as String,
+    teamId: m['team_id'] as String,
+    firstName: m['first_name'] as String? ?? '',
+    lastName: m['last_name'] as String? ?? '',
+    nickname: m['nickname'] as String?,
+    number: m['number'] as int?,
+    position: m['position'] as String?,
+    positions: ((m['positions'] as String?) ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList(),
+    wishPosition: m['wish_position'] as String?,
+    isStarter: (m['is_starter'] as int? ?? 0) == 1,
+    staffRole: m['staff_role'] as String?,
+    status: PlayerStatus.fromKey(m['status'] as String?),
+    captainRole: CaptainRole.fromKey(m['captain_role'] as String?),
+    birthdate: DateTime.tryParse(m['birthdate'] as String? ?? ''),
+    externalId: m['external_id'] as String?,
+    fupaPhoto: m['photo_fupa'] as String?,
+    // Abwärtskompat: alte Zeilen ohne neue Spalten → altes Foto als eigenes.
+    customPhoto: (m['photo_custom'] as String?) ?? (m['photo_path'] as String?),
+    useCustomPhoto: (m['use_custom_photo'] as num?)?.toInt() != 0,
+    source: DataSource.fromKey(m['source'] as String?),
+    active: (m['active'] as int? ?? 1) == 1,
+    suspendedGames: m['suspended_games'] as int? ?? 0,
+    suspensionCompetition: m['suspension_competition'] as String?,
+    suspensionFrom: DateTime.tryParse(m['suspension_from'] as String? ?? ''),
+    createdAt:
+        DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+  );
 }
 
 /// Führt doppelte Spielerzeilen desselben Namens zu einer zusammen – bevorzugt
