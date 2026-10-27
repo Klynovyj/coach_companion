@@ -8,6 +8,7 @@ import 'nachholen_screen.dart';
 import 'player_of_month_screen.dart';
 import 'rating_overview_screen.dart';
 import 'settings_screen.dart';
+import 'statistics_hub_screen.dart';
 import 'spielergespraeche_screen.dart';
 import 'sponsors_screen.dart';
 import 'todos_screen.dart';
@@ -27,6 +28,13 @@ class MoreScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Mehr')),
       body: ListView(
         children: [
+          _group(context, 'Statistik'),
+          _tile(
+            context,
+            icon: Icons.insights,
+            label: 'Statistik (alles an einem Ort)',
+            screen: const StatisticsHubScreen(),
+          ),
           _group(context, 'Team'),
           _tile(
             context,

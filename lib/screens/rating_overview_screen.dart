@@ -15,7 +15,11 @@ enum _SortBy { date, rating, result }
 /// (Datum/Note/Ergebnis); gespielte Spiele zuerst, kommende unten angehängt.
 /// Antippen öffnet die Auswertung (Trainer-Noten, Berichte, Spieler-Schnitt).
 class RatingOverviewScreen extends StatefulWidget {
-  const RatingOverviewScreen({super.key});
+  const RatingOverviewScreen({super.key, this.embedded = false});
+
+  /// Eingebettet (Statistik-Hub): ohne eigenes Scaffold/AppBar; die Aktionen
+  /// (Bericht, Sortierung) erscheinen als Kopfzeile des Inhalts.
+  final bool embedded;
 
   @override
   State<RatingOverviewScreen> createState() => _RatingOverviewScreenState();
@@ -85,57 +89,71 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
     return [...sorted, ...upcoming];
   }
 
+  List<Widget> _actionButtons() => [
+    IconButton(
+      tooltip: 'Bericht: alle Noten & Kommentare',
+      icon: const Icon(Icons.article_outlined),
+      onPressed: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const RatingReportScreen()),
+      ),
+    ),
+    IconButton(
+      tooltip: _desc ? 'Absteigend' : 'Aufsteigend',
+      icon: Icon(_desc ? Icons.arrow_downward : Icons.arrow_upward),
+      onPressed: () => setState(() => _desc = !_desc),
+    ),
+    PopupMenuButton<_SortBy>(
+      tooltip: 'Sortieren',
+      icon: const Icon(Icons.sort),
+      initialValue: _sortBy,
+      onSelected: (v) => setState(() => _sortBy = v),
+      itemBuilder: (_) => const [
+        PopupMenuItem(value: _SortBy.date, child: Text('Nach Datum')),
+        PopupMenuItem(value: _SortBy.rating, child: Text('Nach Note')),
+        PopupMenuItem(value: _SortBy.result, child: Text('Nach Ergebnis')),
+      ],
+    ),
+  ];
+
   @override
   Widget build(BuildContext context) {
     final list = _loading ? const <GameMatch>[] : _ordered();
+    final content = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : list.isEmpty
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('Noch keine Spiele.', textAlign: TextAlign.center),
+            ),
+          )
+        : ListView.separated(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            itemCount: list.length,
+            separatorBuilder: (_, _) => const Divider(height: 1),
+            itemBuilder: (context, i) => _matchRow(context, list[i]),
+          );
+    if (widget.embedded) {
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 2, 8, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: _actionButtons(),
+            ),
+          ),
+          Expanded(child: content),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: const Text('Auswertung'),
-        actions: [
-          IconButton(
-            tooltip: 'Bericht: alle Noten & Kommentare',
-            icon: const Icon(Icons.article_outlined),
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const RatingReportScreen()),
-            ),
-          ),
-          IconButton(
-            tooltip: _desc ? 'Absteigend' : 'Aufsteigend',
-            icon: Icon(_desc ? Icons.arrow_downward : Icons.arrow_upward),
-            onPressed: () => setState(() => _desc = !_desc),
-          ),
-          PopupMenuButton<_SortBy>(
-            tooltip: 'Sortieren',
-            icon: const Icon(Icons.sort),
-            initialValue: _sortBy,
-            onSelected: (v) => setState(() => _sortBy = v),
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: _SortBy.date, child: Text('Nach Datum')),
-              PopupMenuItem(value: _SortBy.rating, child: Text('Nach Note')),
-              PopupMenuItem(
-                value: _SortBy.result,
-                child: Text('Nach Ergebnis'),
-              ),
-            ],
-          ),
-        ],
+        actions: _actionButtons(),
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : list.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('Noch keine Spiele.', textAlign: TextAlign.center),
-              ),
-            )
-          : ListView.separated(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              itemCount: list.length,
-              separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (context, i) => _matchRow(context, list[i]),
-            ),
+      body: content,
     );
   }
 

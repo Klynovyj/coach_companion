@@ -19,7 +19,11 @@ enum _View { players, staff, all }
 /// Laufbahn keine Freundschaftsspiele) plus Saison-Minuten. Pro Spieler ein
 /// FuPa-Abruf beim Öffnen.
 class ClubStatsScreen extends StatefulWidget {
-  const ClubStatsScreen({super.key});
+  const ClubStatsScreen({super.key, this.embedded = false});
+
+  /// Eingebettet (Statistik-Hub): ohne eigenes Scaffold/AppBar; Teilen-Button
+  /// erscheint dann in der Kopfzeile des Inhalts.
+  final bool embedded;
 
   @override
   State<ClubStatsScreen> createState() => _ClubStatsScreenState();
@@ -133,88 +137,90 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
     return list;
   }
 
+  Widget _shareButton() => IconButton(
+    tooltip: 'Als Bild teilen (WhatsApp)',
+    icon: _sharing
+        ? const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          )
+        : const Icon(Icons.ios_share),
+    onPressed: (_loading || _rows.isEmpty || _sharing) ? null : _share,
+  );
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final sorted = _sorted();
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Vereins-Bilanz (FuPa)'),
-        actions: [
-          IconButton(
-            tooltip: 'Als Bild teilen (WhatsApp)',
-            icon: _sharing
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.ios_share),
-            onPressed: (_loading || _rows.isEmpty || _sharing) ? null : _share,
-          ),
-        ],
-      ),
-      body: _loading
-          ? const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 12),
-                  Text('FuPa-Laufbahn aller Spieler wird geladen …'),
-                ],
-              ),
-            )
-          : _rows.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('Keine Spieler.', textAlign: TextAlign.center),
-              ),
-            )
-          : Column(
+    final body = _loading
+        ? const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                _controls(),
-                const Divider(height: 1),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: RepaintBoundary(
-                      key: _tableKey,
-                      child: Container(
-                        color: scheme.surface,
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Column(
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      'Vereins-Bilanz · ${_teamName.isEmpty ? 'Verein' : _teamName}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w800,
-                                        fontSize: 14,
-                                      ),
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text('FuPa-Laufbahn aller Spieler wird geladen …'),
+              ],
+            ),
+          )
+        : _rows.isEmpty
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text('Keine Spieler.', textAlign: TextAlign.center),
+            ),
+          )
+        : Column(
+            children: [
+              _controls(),
+              const Divider(height: 1),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: RepaintBoundary(
+                    key: _tableKey,
+                    child: Container(
+                      color: scheme.surface,
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        children: [
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    'Vereins-Bilanz · ${_teamName.isEmpty ? 'Verein' : _teamName}',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 14,
                                     ),
                                   ),
-                                ],
-                              ),
+                                ),
+                              ],
                             ),
-                            _headerRow(),
+                          ),
+                          _headerRow(),
+                          const Divider(height: 1),
+                          for (final r in sorted) ...[
+                            _row(r),
                             const Divider(height: 1),
-                            for (final r in sorted) ...[
-                              _row(r),
-                              const Divider(height: 1),
-                            ],
                           ],
-                        ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
+          );
+    if (widget.embedded) return body;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Vereins-Bilanz (FuPa)'),
+        actions: [_shareButton()],
+      ),
+      body: body,
     );
   }
 
@@ -224,19 +230,26 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(
-            width: double.infinity,
-            child: SegmentedButton<_View>(
-              showSelectedIcon: false,
-              style: const ButtonStyle(visualDensity: VisualDensity.compact),
-              segments: const [
-                ButtonSegment(value: _View.players, label: Text('Spieler')),
-                ButtonSegment(value: _View.staff, label: Text('Trainer')),
-                ButtonSegment(value: _View.all, label: Text('Alle')),
-              ],
-              selected: {_view},
-              onSelectionChanged: (s) => setState(() => _view = s.first),
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: SegmentedButton<_View>(
+                  showSelectedIcon: false,
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  segments: const [
+                    ButtonSegment(value: _View.players, label: Text('Spieler')),
+                    ButtonSegment(value: _View.staff, label: Text('Trainer')),
+                    ButtonSegment(value: _View.all, label: Text('Alle')),
+                  ],
+                  selected: {_view},
+                  onSelectionChanged: (s) => setState(() => _view = s.first),
+                ),
+              ),
+              // Im Statistik-Hub (ohne AppBar) das Teilen hier anbieten.
+              if (widget.embedded) _shareButton(),
+            ],
           ),
           const SizedBox(height: 8),
           Row(

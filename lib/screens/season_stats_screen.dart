@@ -15,7 +15,11 @@ import '../widgets/team_logo.dart';
 /// Saison-Gesamtstatistik des eigenen Teams: alle live erfassten Aktionen über
 /// alle Spiele als Summen, im Vergleich Wir vs. Gegner. Teilbar per WhatsApp.
 class SeasonStatsScreen extends StatefulWidget {
-  const SeasonStatsScreen({super.key});
+  const SeasonStatsScreen({super.key, this.embedded = false});
+
+  /// Eingebettet (Statistik-Hub): ohne eigenes Scaffold/AppBar; Teilen-Button
+  /// erscheint dann in der Kopfzeile des Inhalts.
+  final bool embedded;
 
   @override
   State<SeasonStatsScreen> createState() => _SeasonStatsScreenState();
@@ -187,6 +191,132 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
     // Tore: gesamt aus dem kanonischen Spielstand, je Halbzeit aus Ereignissen.
     final ownGoals = _half == 0 ? _goalsOwn : _count(true, _goalTypes);
     final oppGoals = _half == 0 ? _goalsOpp : _count(false, _goalTypes);
+    final body = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SegmentedButton<int>(
+                        showSelectedIcon: false,
+                        style: const ButtonStyle(
+                          visualDensity: VisualDensity.compact,
+                        ),
+                        segments: const [
+                          ButtonSegment(value: 0, label: Text('Gesamt')),
+                          ButtonSegment(value: 1, label: Text('1. HZ')),
+                          ButtonSegment(value: 2, label: Text('2. HZ')),
+                        ],
+                        selected: {_half},
+                        onSelectionChanged: (s) =>
+                            setState(() => _half = s.first),
+                      ),
+                    ),
+                    if (widget.embedded)
+                      IconButton(
+                        tooltip: 'Teilen (WhatsApp)',
+                        icon: const Icon(Icons.share),
+                        onPressed: _loading ? null : _share,
+                      ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: RepaintBoundary(
+                    key: _statsKey,
+                    child: Container(
+                      color: scheme.surface,
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Column(
+                            children: [
+                              if (_team?.logoPath != null) ...[
+                                TeamLogo(logoPath: _team!.logoPath, size: 48),
+                                const SizedBox(height: 6),
+                              ],
+                              Text(
+                                name,
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '$_matchCount Spiele erfasst',
+                                style: TextStyle(
+                                  color: Theme.of(context).hintColor,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Tore  $ownGoals : $oppGoals',
+                                style: const TextStyle(
+                                  fontSize: 24,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              if (_half != 0)
+                                Text(
+                                  _halfLabel,
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    color: scheme.primary,
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              _legend('Wir', scheme.primary),
+                              _legend('Gegner', _oppColor),
+                            ],
+                          ),
+                          const Divider(height: 20),
+                          if (_matchCount == 0)
+                            Padding(
+                              padding: const EdgeInsets.all(24),
+                              child: Text(
+                                'Noch keine live erfassten Aktionen. Starte ein Spiel im '
+                                'Live-Modus – die Summen erscheinen hier automatisch.',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Theme.of(context).hintColor,
+                                ),
+                              ),
+                            )
+                          else
+                            for (final r in _rows)
+                              StatCompareRow(
+                                label: r.$1,
+                                // „Tore" aus dem (ggf. HZ-gefilterten) Stand, Rest aus Ereignissen.
+                                own: r.$1 == 'Tore'
+                                    ? ownGoals
+                                    : _count(true, r.$2),
+                                opp: r.$1 == 'Tore'
+                                    ? oppGoals
+                                    : _count(false, r.$2),
+                                ownColor: scheme.primary,
+                                oppColor: _oppColor,
+                              ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+    if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Gesamtstatistik'),
@@ -198,118 +328,7 @@ class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
           ),
         ],
       ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: SegmentedButton<int>(
-                    showSelectedIcon: false,
-                    style: const ButtonStyle(
-                      visualDensity: VisualDensity.compact,
-                    ),
-                    segments: const [
-                      ButtonSegment(value: 0, label: Text('Gesamt')),
-                      ButtonSegment(value: 1, label: Text('1. HZ')),
-                      ButtonSegment(value: 2, label: Text('2. HZ')),
-                    ],
-                    selected: {_half},
-                    onSelectionChanged: (s) => setState(() => _half = s.first),
-                  ),
-                ),
-                Expanded(
-                  child: SingleChildScrollView(
-                    child: RepaintBoundary(
-                      key: _statsKey,
-                      child: Container(
-                        color: scheme.surface,
-                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Column(
-                              children: [
-                                if (_team?.logoPath != null) ...[
-                                  TeamLogo(logoPath: _team!.logoPath, size: 48),
-                                  const SizedBox(height: 6),
-                                ],
-                                Text(
-                                  name,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 18,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  '$_matchCount Spiele erfasst',
-                                  style: TextStyle(
-                                    color: Theme.of(context).hintColor,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  'Tore  $ownGoals : $oppGoals',
-                                  style: const TextStyle(
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                                if (_half != 0)
-                                  Text(
-                                    _halfLabel,
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      color: scheme.primary,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                _legend('Wir', scheme.primary),
-                                _legend('Gegner', _oppColor),
-                              ],
-                            ),
-                            const Divider(height: 20),
-                            if (_matchCount == 0)
-                              Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  'Noch keine live erfassten Aktionen. Starte ein Spiel im '
-                                  'Live-Modus – die Summen erscheinen hier automatisch.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Theme.of(context).hintColor,
-                                  ),
-                                ),
-                              )
-                            else
-                              for (final r in _rows)
-                                StatCompareRow(
-                                  label: r.$1,
-                                  // „Tore" aus dem (ggf. HZ-gefilterten) Stand, Rest aus Ereignissen.
-                                  own: r.$1 == 'Tore'
-                                      ? ownGoals
-                                      : _count(true, r.$2),
-                                  opp: r.$1 == 'Tore'
-                                      ? oppGoals
-                                      : _count(false, r.$2),
-                                  ownColor: scheme.primary,
-                                  oppColor: _oppColor,
-                                ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+      body: body,
     );
   }
 

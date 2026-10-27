@@ -9,7 +9,10 @@ import '../widgets/player_avatar.dart';
 /// eigenen erfassten Karten, dazu „noch X Gelbe bis zur Sperre" (Schwelle 5)
 /// und eine manuell gepflegte Sperre („gesperrt für N Spiele").
 class CardsSuspensionsScreen extends StatefulWidget {
-  const CardsSuspensionsScreen({super.key});
+  const CardsSuspensionsScreen({super.key, this.embedded = false});
+
+  /// Eingebettet (z.B. im Statistik-Hub): ohne eigenes Scaffold/AppBar.
+  final bool embedded;
 
   @override
   State<CardsSuspensionsScreen> createState() => _CardsSuspensionsScreenState();
@@ -152,27 +155,29 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final body = _loading
+        ? const Center(child: CircularProgressIndicator())
+        : _rows.isEmpty
+        ? const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Keine Spieler.\nKader importieren bzw. anlegen.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          )
+        : ListView(
+            padding: const EdgeInsets.only(bottom: 24),
+            children: [
+              _legend(context),
+              for (final s in _rows) _row(context, s),
+            ],
+          );
+    if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(title: const Text('Karten & Sperren')),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : _rows.isEmpty
-          ? const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text(
-                  'Keine Spieler.\nKader importieren bzw. anlegen.',
-                  textAlign: TextAlign.center,
-                ),
-              ),
-            )
-          : ListView(
-              padding: const EdgeInsets.only(bottom: 24),
-              children: [
-                _legend(context),
-                for (final s in _rows) _row(context, s),
-              ],
-            ),
+      body: body,
     );
   }
 

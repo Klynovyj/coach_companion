@@ -13,7 +13,7 @@ import 'live_match_screen.dart';
 import 'match_center_screen.dart';
 import 'material_duty_screen.dart';
 import 'nachholen_screen.dart';
-import 'rating_overview_screen.dart';
+import 'statistics_hub_screen.dart';
 import 'todos_screen.dart';
 
 /// Start-/Heute-Bildschirm: das Wichtigste auf einen Blick (laufendes/nächstes
@@ -357,7 +357,6 @@ class StartScreen extends StatelessWidget {
   /// aus der unteren Leiste doppeln).
   Widget _shortcuts(BuildContext context, AppState state) {
     final team = state.ownTeam;
-    final isTrainer = state.isTrainerHere;
     void push(Widget s) =>
         Navigator.push(context, MaterialPageRoute(builder: (_) => s));
     Widget tile(IconData icon, String label, VoidCallback onTap) => Expanded(
@@ -383,12 +382,11 @@ class StartScreen extends StatelessWidget {
     return Card(
       child: Row(
         children: [
-          if (isTrainer)
-            tile(
-              Icons.assessment_outlined,
-              'Auswertung',
-              () => push(const RatingOverviewScreen()),
-            ),
+          tile(
+            Icons.insights,
+            'Statistik',
+            () => push(const StatisticsHubScreen()),
+          ),
           if (team != null)
             tile(
               Icons.sports_soccer,

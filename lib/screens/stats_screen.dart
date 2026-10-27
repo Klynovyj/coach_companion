@@ -19,11 +19,15 @@ class StatsScreen extends StatefulWidget {
     required this.teamId,
     required this.teamName,
     this.fupaUrl,
+    this.embedded = false,
   });
 
   final String teamId;
   final String teamName;
   final String? fupaUrl;
+
+  /// Eingebettet (Statistik-Hub): ohne eigenes Scaffold/AppBar.
+  final bool embedded;
 
   @override
   State<StatsScreen> createState() => _StatsScreenState();
@@ -60,44 +64,46 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    final body = Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SegmentedButton<_StatsView>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: _StatsView.players,
+                label: Text('Spieler'),
+                icon: Icon(Icons.groups),
+              ),
+              ButtonSegment(
+                value: _StatsView.table,
+                label: Text('Tabelle'),
+                icon: Icon(Icons.table_chart),
+              ),
+              ButtonSegment(
+                value: _StatsView.status,
+                label: Text('Status'),
+                icon: Icon(Icons.health_and_safety),
+              ),
+            ],
+            selected: {_view},
+            onSelectionChanged: (s) => setState(() => _view = s.first),
+          ),
+        ),
+        Expanded(
+          child: switch (_view) {
+            _StatsView.players => _playersView(state),
+            _StatsView.table => _standingsView(state),
+            _StatsView.status => _statusView(state),
+          },
+        ),
+      ],
+    );
+    if (widget.embedded) return body;
     return Scaffold(
       appBar: AppBar(title: Text('Statistik · ${widget.teamName}')),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: SegmentedButton<_StatsView>(
-              showSelectedIcon: false,
-              segments: const [
-                ButtonSegment(
-                  value: _StatsView.players,
-                  label: Text('Spieler'),
-                  icon: Icon(Icons.groups),
-                ),
-                ButtonSegment(
-                  value: _StatsView.table,
-                  label: Text('Tabelle'),
-                  icon: Icon(Icons.table_chart),
-                ),
-                ButtonSegment(
-                  value: _StatsView.status,
-                  label: Text('Status'),
-                  icon: Icon(Icons.health_and_safety),
-                ),
-              ],
-              selected: {_view},
-              onSelectionChanged: (s) => setState(() => _view = s.first),
-            ),
-          ),
-          Expanded(
-            child: switch (_view) {
-              _StatsView.players => _playersView(state),
-              _StatsView.table => _standingsView(state),
-              _StatsView.status => _statusView(state),
-            },
-          ),
-        ],
-      ),
+      body: body,
     );
   }
 
