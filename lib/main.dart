@@ -8,7 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:window_manager/window_manager.dart';
 
-import 'screens/home_screen.dart';
+import 'screens/root_gate.dart';
 import 'services/cloud_service.dart';
 import 'services/desktop_tray.dart';
 import 'services/live_clock.dart';
@@ -116,7 +116,7 @@ class _CoachCompanionAppState extends State<CoachCompanionApp>
         FlutterQuillLocalizations.delegate,
       ],
       supportedLocales: const [Locale('de'), Locale('en')],
-      home: const HomeScreen(),
+      home: const RootGate(),
     );
   }
 }

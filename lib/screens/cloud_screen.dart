@@ -87,9 +87,9 @@ class _CloudScreenState extends State<CloudScreen> {
               stream: CloudService.authChanges,
               builder: (context, _) {
                 if (!CloudService.signedIn) {
-                  return _AuthForm(onDone: () => setState(() {}));
+                  return AuthForm(onDone: () => setState(() {}));
                 }
-                return _TeamsView(onChanged: () => setState(() {}));
+                return TeamsView(onChanged: () => setState(() {}));
               },
             ),
     );
@@ -97,18 +97,21 @@ class _CloudScreenState extends State<CloudScreen> {
 }
 
 // ----------------------------------------------------------------- Auth
-class _AuthForm extends StatefulWidget {
-  const _AuthForm({required this.onDone});
+/// Anmelde-/Registrier-Formular. Öffentlich, damit auch der Onboarding-Screen
+/// es nutzt. [onDone] wird nach erfolgreicher Anmeldung aufgerufen.
+class AuthForm extends StatefulWidget {
+  const AuthForm({super.key, required this.onDone});
   final VoidCallback onDone;
 
   @override
-  State<_AuthForm> createState() => _AuthFormState();
+  State<AuthForm> createState() => _AuthFormState();
 }
 
-class _AuthFormState extends State<_AuthForm> {
+class _AuthFormState extends State<AuthForm> {
   final _email = TextEditingController();
   final _pw = TextEditingController();
-  final _name = TextEditingController();
+  final _firstName = TextEditingController();
+  final _lastName = TextEditingController();
   bool _register = false;
   bool _busy = false;
   String? _error;
@@ -117,18 +120,31 @@ class _AuthFormState extends State<_AuthForm> {
   void dispose() {
     _email.dispose();
     _pw.dispose();
-    _name.dispose();
+    _firstName.dispose();
+    _lastName.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
+    // Registrieren: Vor- und Nachname sind Pflicht, damit nie die E-Mail als
+    // Anzeigename erscheint.
+    if (_register) {
+      final first = _firstName.text.trim();
+      final last = _lastName.text.trim();
+      if (first.isEmpty || last.isEmpty) {
+        setState(() => _error = 'Bitte Vor- und Nachnamen angeben.');
+        return;
+      }
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
       if (_register) {
-        await CloudService.signUp(_email.text, _pw.text, _name.text);
+        final name = '${_firstName.text.trim()} ${_lastName.text.trim()}'
+            .trim();
+        await CloudService.signUp(_email.text, _pw.text, name);
         // Falls E-Mail-Bestätigung aus ist, ist man direkt angemeldet.
         if (!CloudService.signedIn) {
           await CloudService.signIn(_email.text, _pw.text);
@@ -155,18 +171,26 @@ class _AuthFormState extends State<_AuthForm> {
           style: Theme.of(context).textTheme.titleLarge,
         ),
         const SizedBox(height: 16),
-        if (_register)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: TextField(
-              controller: _name,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Name',
-                border: OutlineInputBorder(),
-              ),
+        if (_register) ...[
+          TextField(
+            controller: _firstName,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Vorname',
+              border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _lastName,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Nachname',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
         TextField(
           controller: _email,
           keyboardType: TextInputType.emailAddress,
@@ -217,15 +241,17 @@ class _AuthFormState extends State<_AuthForm> {
 }
 
 // ----------------------------------------------------------------- Teams
-class _TeamsView extends StatefulWidget {
-  const _TeamsView({required this.onChanged});
+/// Team-Liste mit Anlegen/Beitreten/Aktivieren. Öffentlich, damit auch der
+/// Onboarding-Screen sie nutzt.
+class TeamsView extends StatefulWidget {
+  const TeamsView({super.key, required this.onChanged});
   final VoidCallback onChanged;
 
   @override
-  State<_TeamsView> createState() => _TeamsViewState();
+  State<TeamsView> createState() => _TeamsViewState();
 }
 
-class _TeamsViewState extends State<_TeamsView> {
+class _TeamsViewState extends State<TeamsView> {
   late Future<List<Map<String, dynamic>>> _future = CloudService.myTeams();
 
   void _reload() {
