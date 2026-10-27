@@ -360,7 +360,7 @@ class StartScreen extends StatelessWidget {
           if (isTrainer)
             line(
               icon: Icons.playlist_add_check_circle,
-              label: 'Offene Bewertungen',
+              label: 'Nachholen',
               count: state.nachholenCount(),
               screen: const NachholenScreen(),
             ),
