@@ -2881,6 +2881,18 @@ class AppState extends ChangeNotifier {
         }
       }
     }
+    // Trainer: Profil-ID aus dem Coach-Slug der Teamseite.
+    if (team?.fupaUrl?.isNotEmpty ?? false) {
+      try {
+        for (final c in await _importer.importCoachProfiles(team!.fupaUrl!)) {
+          final k =
+              '${c.firstName.trim().toLowerCase()}|${c.lastName.trim().toLowerCase()}';
+          if (k == key && c.slug.isNotEmpty) return c.slug;
+        }
+      } catch (_) {
+        // Ohne Trainer-Slug bleibt nur der Rückfall.
+      }
+    }
     final pe = player.externalId?.trim();
     return (pe != null && pe.isNotEmpty) ? pe : null;
   }

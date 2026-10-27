@@ -1,8 +1,12 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
 import '../models/player.dart';
 import '../services/fupa/fupa_dtos.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 
@@ -25,7 +29,42 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
   static const _gold = Color(0xFFC9A24B);
   FupaCareer? _career;
   bool _loading = true;
+  bool _sharing = false;
   _CFilter _filter = _CFilter.all;
+  final GlobalKey _shareKey = GlobalKey();
+
+  /// Teilt den Inhalt (Kopf + Laufbahn) als Bild (RepaintBoundary → PNG).
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final b =
+          _shareKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (b == null) return;
+      final image = await b.toImage(pixelRatio: 2.5);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return;
+      final name = widget.player.fullName.replaceAll(' ', '-');
+      final path = await shareOrSaveImage(
+        data.buffer.asUint8List(),
+        'Laufbahn_$name',
+        text: 'Laufbahn – ${widget.player.fullName}',
+      );
+      if (path != null && mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Als Bild gespeichert:\n$path')),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
 
   @override
   void initState() {
@@ -59,8 +98,29 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final ready =
+        !_loading &&
+        _career != null &&
+        (_career!.stations.isNotEmpty || _career!.hasCoachData);
     return Scaffold(
-      appBar: AppBar(title: Text(widget.player.fullName)),
+      appBar: AppBar(
+        title: Text(widget.player.fullName),
+        actions: [
+          if (ready)
+            IconButton(
+              tooltip: 'Als Bild teilen (WhatsApp)',
+              icon: _sharing
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.ios_share),
+              onPressed: _sharing ? null : _share,
+            ),
+        ],
+      ),
       body: _loading
           ? const Center(
               child: Column(
@@ -72,7 +132,7 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
                 ],
               ),
             )
-          : _career == null || _career!.stations.isEmpty
+          : !ready
           ? const Center(
               child: Padding(
                 padding: EdgeInsets.all(24),
@@ -82,18 +142,96 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
                 ),
               ),
             )
-          : ListView(
-              padding: const EdgeInsets.only(bottom: 24),
+          : Column(
               children: [
-                _bilanzCard(),
-                _filterChips(),
-                if (_filter == _CFilter.cards)
-                  _cardsInfo()
-                else ...[
-                  for (final s in _stations()) _stationRow(s),
-                ],
+                if (_career!.stations.isNotEmpty) _filterChips(),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: RepaintBoundary(
+                      key: _shareKey,
+                      child: Container(
+                        color: scheme.surface,
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Column(
+                          children: [
+                            if (_career!.hasCoachData) _coachCard(),
+                            if (_career!.stations.isNotEmpty) ...[
+                              _bilanzCard(),
+                              if (_filter == _CFilter.cards)
+                                _cardsInfo()
+                              else ...[
+                                for (final s in _stations()) _stationRow(s),
+                              ],
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
+    );
+  }
+
+  Widget _statBox(String v, String l) => Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        v,
+        style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18),
+      ),
+      Text(l, style: Theme.of(context).textTheme.bodySmall),
+    ],
+  );
+
+  /// Trainer-Bilanz (Karriere) – nur wenn die Person auch Trainer ist.
+  Widget _coachCard() {
+    final c = _career!;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                PlayerAvatar(player: widget.player, radius: 24),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.player.fullName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const Text(
+                        'Trainer-Bilanz (FuPa, Karriere · alle Vereine)',
+                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _statBox('${c.coachMatches}', 'Spiele'),
+                _statBox('${c.coachWins}', 'Siege'),
+                _statBox('${c.coachDraws}', 'Unent.'),
+                _statBox('${c.coachLosses}', 'Niederl.'),
+                _statBox('${c.coachPoints}', 'Punkte'),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
