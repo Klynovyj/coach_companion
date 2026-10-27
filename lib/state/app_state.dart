@@ -2854,42 +2854,42 @@ class AppState extends ChangeNotifier {
   /// FuPa-Laufbahn eines Spielers samt aufgelöstem Verein (für die Vereins-
   /// Gesamtstatistik in der Grafik, live umschaltbar alle/nur Pflichtspiele).
   /// Lädt die FuPa-Spielerseite (Netzwerk); bei Fehlern/ohne FuPa-Bezug `null`.
-  Future<FupaClubCareer?> playerFupaClub(String teamId, Player player) async {
-    try {
-      final team = await _repo.getTeam(teamId);
-      final key = player.dedupKey;
-      // Primär: echte FuPa-Spieler-ID aus der lokalen Saison-Statistik (per
-      // Name). player.external_id ist die Kader-/Roster-ID und taugt NICHT.
-      String? ext;
-      for (final s in await _repo.getStats(teamId)) {
+  /// Löst die echte FuPa-Spieler-Profil-ID auf: zuerst aus der Saison-Statistik
+  /// (per Name), sonst live aus der FuPa-Saison-API, zuletzt player.external_id
+  /// (die ist die Kader-/Roster-ID und taugt meist nicht). `null` wenn keine.
+  Future<String?> _resolveFupaPlayerId(
+    Team? team,
+    String teamId,
+    Player player,
+  ) async {
+    final key = player.dedupKey;
+    for (final s in await _repo.getStats(teamId)) {
+      final k =
+          '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}';
+      if (k == key) {
+        final e = s.externalId?.trim();
+        if (e != null && e.isNotEmpty) return e;
+      }
+    }
+    if (team?.fupaUrl?.isNotEmpty ?? false) {
+      for (final s in await _importer.importStats(team!.fupaUrl!)) {
         final k =
             '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}';
         if (k == key) {
-          ext = s.externalId?.trim();
-          break;
+          final e = s.externalId?.trim();
+          if (e != null && e.isNotEmpty) return e;
         }
       }
-      // Sonst live aus der FuPa-Saison-API (per Name).
-      if ((ext == null || ext.isEmpty) &&
-          (team?.fupaUrl?.isNotEmpty ?? false)) {
-        for (final s in await _importer.importStats(team!.fupaUrl!)) {
-          final k =
-              '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}';
-          if (k == key) {
-            final e = s.externalId?.trim();
-            if (e != null && e.isNotEmpty) {
-              ext = e;
-              break;
-            }
-          }
-        }
-      }
-      // Letzter Rückfall: player.external_id (nur falls es doch eine Profil-ID ist).
-      if (ext == null || ext.isEmpty) {
-        final pe = player.externalId?.trim();
-        if (pe != null && pe.isNotEmpty) ext = pe;
-      }
-      if (ext == null || ext.isEmpty) return null;
+    }
+    final pe = player.externalId?.trim();
+    return (pe != null && pe.isNotEmpty) ? pe : null;
+  }
+
+  Future<FupaClubCareer?> playerFupaClub(String teamId, Player player) async {
+    try {
+      final team = await _repo.getTeam(teamId);
+      final ext = await _resolveFupaPlayerId(team, teamId, player);
+      if (ext == null) return null;
       final holder = FupaClubCareer(
         career: await _importer.importPlayerCareer(ext),
         clubSlug: FupaReduxImporter.clubSlugFromTeamUrl(team?.fupaUrl),
@@ -2897,6 +2897,19 @@ class AppState extends ChangeNotifier {
       );
       // Nur zurückgeben, wenn es überhaupt Vereins-Daten gibt.
       return holder.total().hasAny ? holder : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Komplette FuPa-Laufbahn eines Spielers (alle Saisons/Vereine + Gesamt-
+  /// Bilanz) für das Spieler-Detail. Netzwerk; null bei Fehler/ohne FuPa.
+  Future<FupaCareer?> playerFupaCareer(String teamId, Player player) async {
+    try {
+      final team = await _repo.getTeam(teamId);
+      final ext = await _resolveFupaPlayerId(team, teamId, player);
+      if (ext == null) return null;
+      return await _importer.importPlayerCareer(ext);
     } catch (_) {
       return null;
     }

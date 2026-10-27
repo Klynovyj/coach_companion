@@ -8,6 +8,7 @@ import '../services/fupa/fupa_dtos.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import 'club_player_career_screen.dart';
 
 enum _ClubSort { games, goals, assists, scorer, name }
 
@@ -288,38 +289,46 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
   Widget _row(PlayerClubStats r) {
     final t = _t(r);
     final scheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 26,
-            child: PlayerAvatar(player: r.player, radius: 13),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  r.player.fullName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                if (!r.hasFupa)
-                  Text(
-                    'keine FuPa-Daten',
-                    style: TextStyle(fontSize: 10, color: scheme.error),
-                  ),
-              ],
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ClubPlayerCareerScreen(player: r.player),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 26,
+              child: PlayerAvatar(player: r.player, radius: 13),
             ),
-          ),
-          _num('${t.matches}'),
-          _num('${t.goals}'),
-          _num('${t.assists}'),
-          _num('${t.scorerPoints}', color: scheme.primary),
-        ],
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    r.player.fullName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  if (!r.hasFupa)
+                    Text(
+                      'keine FuPa-Daten',
+                      style: TextStyle(fontSize: 10, color: scheme.error),
+                    ),
+                ],
+              ),
+            ),
+            _num('${t.matches}'),
+            _num('${t.goals}'),
+            _num('${t.assists}'),
+            _num('${t.scorerPoints}', color: scheme.primary),
+          ],
+        ),
       ),
     );
   }
