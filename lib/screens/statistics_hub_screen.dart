@@ -54,6 +54,10 @@ class _StatisticsHubScreenState extends State<StatisticsHubScreen>
         bottom: TabBar(
           controller: _tab,
           isScrollable: true,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white70,
+          indicatorColor: Colors.white,
+          dividerColor: Colors.transparent,
           tabs: const [
             Tab(text: 'Team'),
             Tab(text: 'Spieler'),
