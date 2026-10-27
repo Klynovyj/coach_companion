@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import '../models/activity.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
@@ -69,9 +70,96 @@ class StartScreen extends StatelessWidget {
           _offenePunkte(context, state),
           const SizedBox(height: 8),
           _shortcuts(context, state),
+          const SizedBox(height: 8),
+          _activityFeed(context, state),
         ],
       ),
     );
+  }
+
+  /// Aktivitäten-Feed: die letzten Team-Aktionen (Trainer-übergreifend, cloud-
+  /// synchron) – Bewertungen, Tore/Karten, Zu-/Absagen, Status, u.a.
+  Widget _activityFeed(BuildContext context, AppState state) {
+    return FutureBuilder<List<Activity>>(
+      future: state.recentActivities(limit: 8),
+      builder: (context, snap) {
+        final items = snap.data ?? const <Activity>[];
+        return Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.bolt,
+                      size: 18,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Aktivitäten',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              if (items.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Text(
+                    'Noch keine Aktivitäten. Sie erscheinen hier, sobald im '
+                    'Team etwas erfasst wird (Bewertungen, Tore, Zu-/Absagen …).',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                )
+              else
+                for (final a in items) _activityTile(context, a),
+              const SizedBox(height: 6),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _activityTile(BuildContext context, Activity a) {
+    final scheme = Theme.of(context).colorScheme;
+    final main = a.subtitle == null ? a.title : '${a.title} · ${a.subtitle}';
+    return ListTile(
+      dense: true,
+      visualDensity: VisualDensity.compact,
+      leading: Icon(_activityIcon(a.type), color: scheme.primary, size: 20),
+      title: Text(main, maxLines: 1, overflow: TextOverflow.ellipsis),
+      subtitle: Text(
+        '${a.actorName} · ${_relativeTime(a.createdAt)}',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
+
+  IconData _activityIcon(ActivityType t) => switch (t) {
+    ActivityType.rating => Icons.star_rounded,
+    ActivityType.goal => Icons.sports_soccer,
+    ActivityType.card => Icons.style,
+    ActivityType.nomination => Icons.how_to_reg,
+    ActivityType.status => Icons.medical_services_outlined,
+    ActivityType.lineup => Icons.grid_view,
+    ActivityType.result => Icons.scoreboard_outlined,
+    ActivityType.todo => Icons.check_circle_outline,
+    ActivityType.playerOfMonth => Icons.emoji_events_outlined,
+    ActivityType.other => Icons.bolt,
+  };
+
+  String _relativeTime(DateTime dt) {
+    final d = DateTime.now().difference(dt);
+    if (d.inMinutes < 1) return 'gerade eben';
+    if (d.inMinutes < 60) return 'vor ${d.inMinutes} Min';
+    if (d.inHours < 24) return 'vor ${d.inHours} Std';
+    if (d.inDays < 7) return 'vor ${d.inDays} Tg';
+    return DateFormat('dd.MM.', 'de_DE').format(dt);
   }
 
   Widget _liveCard(BuildContext context, GameMatch m) {

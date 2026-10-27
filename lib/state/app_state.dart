@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 import 'package:uuid/uuid.dart';
 
 import '../data/coach_repository.dart';
+import '../models/activity.dart';
 import '../models/card_entry.dart';
 import '../models/enums.dart';
 import '../models/lineup.dart';
@@ -119,6 +120,7 @@ class AppState extends ChangeNotifier {
     'graphic_settings',
     'match_ratings',
     'player_of_month',
+    'activities',
     // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
     // referenzierten lokalen match_events bereits vorhanden sind.
     'event_mentions',
@@ -1674,6 +1676,10 @@ class AppState extends ChangeNotifier {
       ),
     );
     await updatePlayer(player.copyWith(status: status));
+    await logActivity(
+      ActivityType.status,
+      '${player.fullName}: ${status.label}',
+    );
   }
 
   Future<void> updateAbsence(PlayerAbsence a) async {
@@ -2015,6 +2021,17 @@ class AppState extends ChangeNotifier {
           updatedAt: DateTime.now(),
         ),
       );
+      final label = switch (status) {
+        NominationStatus.zugesagt => 'Zusage',
+        NominationStatus.abgesagt => 'Absage',
+        NominationStatus.unsicher => 'Unsicher',
+        NominationStatus.unterVorbehalt => 'Vorbehalt',
+        NominationStatus.open => 'Offen',
+      };
+      await logActivity(
+        ActivityType.nomination,
+        '$label: ${await _playerName(playerId)}',
+      );
     }
     notifyListeners();
   }
@@ -2261,6 +2278,20 @@ class AppState extends ChangeNotifier {
           note: note,
         ),
       );
+    }
+
+    // Feed: Tore & Karten des eigenen Teams (keine Phasen-Marken).
+    if (playerId != null && teamId == _ownTeam?.id && !type.isPhaseMarker) {
+      final name = await _playerName(playerId);
+      final (String? label, ActivityType kind) = switch (type) {
+        MatchEventType.goal => ('Tor: $name', ActivityType.goal),
+        MatchEventType.penalty => ('Tor (Elfmeter): $name', ActivityType.goal),
+        MatchEventType.yellowCard => ('Gelb: $name', ActivityType.card),
+        MatchEventType.secondYellow => ('Gelb-Rot: $name', ActivityType.card),
+        MatchEventType.redCard => ('Rot: $name', ActivityType.card),
+        _ => (null, ActivityType.other),
+      };
+      if (label != null) await logActivity(kind, label);
     }
 
     await _recomputeScore(matchId);
@@ -2708,6 +2739,15 @@ class AppState extends ChangeNotifier {
         createdAt: prior?.createdAt ?? DateTime.now(),
       ),
     );
+    // Nur die erste Bewertung je Spieler/Spiel protokollieren (kein Spam beim
+    // Nachjustieren der Note).
+    if (prior == null) {
+      await logActivity(
+        ActivityType.rating,
+        'Bewertung: ${await _playerName(playerId)}',
+        subtitle: 'Note ${rating.toStringAsFixed(1).replaceAll('.', ',')}',
+      );
+    }
     notifyListeners();
   }
 
@@ -2774,6 +2814,42 @@ class AppState extends ChangeNotifier {
   /// (ohne Monatsfilter) – für Ehrungen/Anlässe (z.B. „100. Spiel").
   Future<PlayerMonthStats> playerTotalStats(String teamId, String playerId) =>
       _aggregatePlayerStats(teamId, playerId);
+
+  // ----------------------------------------------------------- Aktivitäts-Feed
+  /// Die neuesten Aktivitäten für den Start-Feed (neueste zuerst).
+  Future<List<Activity>> recentActivities({int limit = 20}) =>
+      _repo.recentActivities(limit: limit);
+
+  /// Protokolliert eine Trainer-Aktion im team-weiten Aktivitäten-Feed
+  /// (lokal + Cloud). Fehler werden geschluckt – der Feed darf nie die
+  /// eigentliche Aktion stören.
+  Future<void> logActivity(
+    ActivityType type,
+    String title, {
+    String? subtitle,
+  }) async {
+    if (_ownTeam == null) return;
+    try {
+      await _repo.addActivity(
+        Activity(
+          id: _uuid.v4(),
+          actorId: CloudService.user?.id,
+          actorName: CloudService.displayName ?? 'Trainer',
+          type: type,
+          title: title,
+          subtitle: subtitle,
+          createdAt: DateTime.now(),
+        ),
+      );
+      notifyListeners();
+    } catch (_) {
+      // Feed-Eintrag ist optional.
+    }
+  }
+
+  /// Anzeigename eines Spielers (für Feed-Texte); Rückfall „Spieler".
+  Future<String> _playerName(String playerId) async =>
+      (await _repo.getPlayer(playerId))?.fullName ?? 'Spieler';
 
   /// FuPa-Laufbahn eines Spielers samt aufgelöstem Verein (für die Vereins-
   /// Gesamtstatistik in der Grafik, live umschaltbar alle/nur Pflichtspiele).
@@ -2871,6 +2947,10 @@ class AppState extends ChangeNotifier {
         playerId: playerId,
         createdAt: existing?.createdAt ?? DateTime.now(),
       ),
+    );
+    await logActivity(
+      ActivityType.playerOfMonth,
+      'Spieler des Monats: ${await _playerName(playerId)}',
     );
     notifyListeners();
   }
@@ -3464,6 +3544,9 @@ class AppState extends ChangeNotifier {
           ? todo.copyWith(done: true, completedAt: DateTime.now())
           : todo.copyWith(done: false, clearCompletedAt: true),
     );
+    if (done) {
+      await logActivity(ActivityType.todo, 'Aufgabe erledigt: ${todo.text}');
+    }
     notifyListeners();
   }
 

@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 43;
+  static const _dbVersion = 44;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -349,6 +349,13 @@ class AppDatabase {
         "UPDATE players SET position = 'Torwart' WHERE position = 'Tor'",
       );
     }
+    // v43 -> v44: Aktivitäten-Feed (team-weit, cloud-synchron).
+    if (oldV < 44) {
+      await db.execute(_activitiesTableSql);
+      await db.execute(
+        'CREATE INDEX idx_activities_created ON activities (created_at)',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -363,6 +370,20 @@ class AppDatabase {
       );
     }
   }
+
+  // Aktivitäten-Feed: team-weit protokollierte Aktionen (lokal ohne team_id;
+  // die Cloud-Zeile bekommt beim Push team_id ergänzt).
+  static const _activitiesTableSql = '''
+      CREATE TABLE activities (
+        id TEXT PRIMARY KEY,
+        actor_id TEXT,
+        actor_name TEXT,
+        type TEXT,
+        title TEXT,
+        subtitle TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''';
 
   static const _playerNotesTableSql = '''
       CREATE TABLE player_notes (
@@ -770,6 +791,10 @@ class AppDatabase {
     await db.execute(_eventAttendanceTableSql);
     await db.execute(
       'CREATE UNIQUE INDEX idx_att_event_player ON event_attendance (event_id, player_id)',
+    );
+    await db.execute(_activitiesTableSql);
+    await db.execute(
+      'CREATE INDEX idx_activities_created ON activities (created_at)',
     );
 
     await db.execute('''

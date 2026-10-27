@@ -12,7 +12,9 @@ class CloudService {
 
   static SupabaseClient get _c => Supabase.instance.client;
 
-  static User? get user => _c.auth.currentUser;
+  // Vor der Supabase-Initialisierung (z.B. in Tests) gibt es keinen Client –
+  // dann einfach „nicht angemeldet", statt auf den Client zuzugreifen.
+  static User? get user => ready ? _c.auth.currentUser : null;
   static bool get signedIn => user != null;
   static Stream<AuthState> get authChanges => _c.auth.onAuthStateChange;
 
@@ -504,6 +506,7 @@ class CloudService {
     'match_ratings',
     'player_of_month',
     'player_stats',
+    'activities',
     'opponent_teams',
     'opponent_players',
   ];

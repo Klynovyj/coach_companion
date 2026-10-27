@@ -17,6 +17,7 @@ import '../models/team_event.dart';
 import '../models/graphic_settings.dart';
 import '../models/match_rating.dart';
 import '../models/player_of_month.dart';
+import '../models/activity.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -830,6 +831,35 @@ class CoachRepository {
         await txn.insert('player_stats', s.toMap());
       }
     });
+  }
+
+  // -------------------------------------------------------------- Activities
+  /// Schreibt einen Aktivitäts-Eintrag (lokal + Cloud-Spiegelung über den
+  /// Sync-Haken) und hält die Tabelle schlank (nur die neuesten behalten).
+  Future<void> addActivity(Activity a) async {
+    await _upsertById('activities', a.toMap());
+    await _pruneActivities();
+  }
+
+  /// Die neuesten Aktivitäten (für den Start-Feed), neueste zuerst.
+  Future<List<Activity>> recentActivities({int limit = 30}) async {
+    final db = await _db;
+    final rows = await db.query(
+      'activities',
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+    return rows.map(Activity.fromMap).toList();
+  }
+
+  /// Behält nur die neuesten [keep] Einträge (lokaler Cache soll nicht wachsen).
+  Future<void> _pruneActivities({int keep = 200}) async {
+    final db = await _db;
+    await db.execute(
+      'DELETE FROM activities WHERE id NOT IN '
+      '(SELECT id FROM activities ORDER BY created_at DESC LIMIT ?)',
+      [keep],
+    );
   }
 
   // ------------------------------------------------------------- Nominations
