@@ -101,6 +101,10 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
     final c = _career!;
     final scheme = Theme.of(context).colorScheme;
     final spell = c.currentClubSpell();
+    final clubName =
+        spell?.clubName ??
+        (c.stations.isNotEmpty ? c.stations.first.clubName : 'Verein');
+    final ct = c.clubTotal(clubName: clubName);
     Widget stat(String v, String l) => Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -137,9 +141,12 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
                           fontSize: 16,
                         ),
                       ),
-                      const Text(
-                        'Karriere-Gesamt (FuPa, alle Vereine)',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                      Text(
+                        '$clubName · Pflichtspiele',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.grey,
+                        ),
                       ),
                       if (spell?.sinceYear != null)
                         Padding(
@@ -164,30 +171,33 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                stat('${c.totalMatches}', 'Spiele'),
-                stat('${c.totalGoals}', 'Tore'),
-                stat('${c.totalAssists}', 'Vorlagen'),
-                stat('${c.totalGoals + c.totalAssists}', 'Scorer'),
+                stat('${ct.matches}', 'Spiele'),
+                stat('${ct.goals}', 'Tore'),
+                stat('${ct.assists}', 'Vorlagen'),
+                stat('${ct.scorerPoints}', 'Scorer'),
                 if (c.totalTopEleven > 0)
                   stat('${c.totalTopEleven}', 'Elf d.W.'),
               ],
             ),
-            if (cards.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  cards,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Karriere gesamt (alle Vereine): ${c.totalMatches} Spiele · '
+                '${c.totalGoals} Tore · ${c.totalAssists} Vorlagen'
+                '${cards.isEmpty ? '' : '   $cards'}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
-            ],
+            ),
           ],
         ),
       ),
