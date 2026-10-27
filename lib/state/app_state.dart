@@ -4145,6 +4145,19 @@ class AppState extends ChangeNotifier {
                 ),
               );
             }
+          } else if (mine?.rating == null) {
+            // Kein Kader (keine Aufstellung/Nominierung): es gibt keine Spieler
+            // zu bewerten – offen bleibt es, bis der Trainer eine Gesamtnote
+            // abgibt oder „war nicht da" setzt.
+            items.add(
+              NachholenItem(
+                kind: NachholenKind.rating,
+                matchId: m.id,
+                title: 'vs ${m.opponentName}',
+                detail: 'Noch nicht bewertet',
+                kickoff: m.kickoff,
+              ),
+            );
           }
         }
       } else {
