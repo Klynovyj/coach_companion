@@ -32,26 +32,27 @@ class PitchFieldPainter extends CustomPainter {
     canvas.drawRect(field, line);
 
     // Mittellinie + Mittelkreis.
-    canvas.drawLine(
-        Offset(m, h / 2), Offset(w - m, h / 2), line);
+    canvas.drawLine(Offset(m, h / 2), Offset(w - m, h / 2), line);
     canvas.drawCircle(Offset(w / 2, h / 2), w * 0.12, line);
     canvas.drawCircle(Offset(w / 2, h / 2), 3, Paint()..color = lineColor);
 
     // Strafräume (oben = Gegner-Tor, unten = eigenes Tor).
     final boxW = w * 0.5;
     final boxH = h * 0.14;
+    canvas.drawRect(Rect.fromLTWH((w - boxW) / 2, m, boxW, boxH), line); // oben
     canvas.drawRect(
-        Rect.fromLTWH((w - boxW) / 2, m, boxW, boxH), line); // oben
-    canvas.drawRect(
-        Rect.fromLTWH((w - boxW) / 2, h - m - boxH, boxW, boxH), line); // unten
+      Rect.fromLTWH((w - boxW) / 2, h - m - boxH, boxW, boxH),
+      line,
+    ); // unten
 
     // Torräume (klein).
     final smallW = w * 0.25;
     final smallH = h * 0.06;
+    canvas.drawRect(Rect.fromLTWH((w - smallW) / 2, m, smallW, smallH), line);
     canvas.drawRect(
-        Rect.fromLTWH((w - smallW) / 2, m, smallW, smallH), line);
-    canvas.drawRect(
-        Rect.fromLTWH((w - smallW) / 2, h - m - smallH, smallW, smallH), line);
+      Rect.fromLTWH((w - smallW) / 2, h - m - smallH, smallW, smallH),
+      line,
+    );
   }
 
   @override
@@ -92,9 +93,7 @@ List<PitchSlot> slotsForFormation(String formation) {
   for (var r = 0; r < rows; r++) {
     final n = lines[r];
     final y = rows == 1 ? 0.45 : 0.74 - 0.60 * (r / (rows - 1));
-    final label = r == 0
-        ? 'ABW'
-        : (r == rows - 1 ? 'ANG' : 'MIT');
+    final label = r == 0 ? 'ABW' : (r == rows - 1 ? 'ANG' : 'MIT');
     for (var i = 0; i < n; i++) {
       final x = (i + 1) / (n + 1);
       slots.add(PitchSlot(idx++, x, y, label));

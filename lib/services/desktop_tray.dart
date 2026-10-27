@@ -28,11 +28,15 @@ class DesktopTray with WindowListener, TrayListener {
     try {
       await trayManager.setIcon('assets/icon/tray_icon.ico');
       await trayManager.setToolTip(_baseTooltip);
-      await trayManager.setContextMenu(Menu(items: [
-        MenuItem(key: 'show', label: 'myCoach öffnen'),
-        MenuItem.separator(),
-        MenuItem(key: 'exit', label: 'Beenden'),
-      ]));
+      await trayManager.setContextMenu(
+        Menu(
+          items: [
+            MenuItem(key: 'show', label: 'myCoach öffnen'),
+            MenuItem.separator(),
+            MenuItem(key: 'exit', label: 'Beenden'),
+          ],
+        ),
+      );
       _ready = true;
     } catch (e) {
       debugPrint('Tray-Einrichtung fehlgeschlagen: $e');
@@ -43,7 +47,9 @@ class DesktopTray with WindowListener, TrayListener {
 
   void _setTooltip(String? text) {
     if (!_ready) return;
-    trayManager.setToolTip((text == null || text.isEmpty) ? _baseTooltip : text);
+    trayManager.setToolTip(
+      (text == null || text.isEmpty) ? _baseTooltip : text,
+    );
   }
 
   Future<void> _restore() async {

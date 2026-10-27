@@ -18,9 +18,10 @@ enum DataSource {
   final String storageKey;
   final String label;
 
-  static DataSource fromKey(String? key) =>
-      DataSource.values.firstWhere((e) => e.storageKey == key,
-          orElse: () => DataSource.manual);
+  static DataSource fromKey(String? key) => DataSource.values.firstWhere(
+    (e) => e.storageKey == key,
+    orElse: () => DataSource.manual,
+  );
 }
 
 /// Status eines Spiels.
@@ -33,9 +34,10 @@ enum MatchStatus {
   final String storageKey;
   final String label;
 
-  static MatchStatus fromKey(String? key) =>
-      MatchStatus.values.firstWhere((e) => e.storageKey == key,
-          orElse: () => MatchStatus.scheduled);
+  static MatchStatus fromKey(String? key) => MatchStatus.values.firstWhere(
+    (e) => e.storageKey == key,
+    orElse: () => MatchStatus.scheduled,
+  );
 }
 
 /// Heim oder Auswärts (aus Sicht des eigenen Teams).
@@ -47,8 +49,10 @@ enum Venue {
   final String storageKey;
   final String label;
 
-  static Venue fromKey(String? key) => Venue.values
-      .firstWhere((e) => e.storageKey == key, orElse: () => Venue.home);
+  static Venue fromKey(String? key) => Venue.values.firstWhere(
+    (e) => e.storageKey == key,
+    orElse: () => Venue.home,
+  );
 }
 
 /// Rolle eines Spielers in einer Aufstellung.
@@ -61,9 +65,10 @@ enum LineupRole {
   final String storageKey;
   final String label;
 
-  static LineupRole fromKey(String? key) =>
-      LineupRole.values.firstWhere((e) => e.storageKey == key,
-          orElse: () => LineupRole.substitute);
+  static LineupRole fromKey(String? key) => LineupRole.values.firstWhere(
+    (e) => e.storageKey == key,
+    orElse: () => LineupRole.substitute,
+  );
 }
 
 /// Art eines Live-Ereignisses.
@@ -127,8 +132,10 @@ enum MatchEventType {
       this == MatchEventType.shootoutStart;
 
   static MatchEventType fromKey(String? key) =>
-      MatchEventType.values.firstWhere((e) => e.storageKey == key,
-          orElse: () => MatchEventType.goal);
+      MatchEventType.values.firstWhere(
+        (e) => e.storageKey == key,
+        orElse: () => MatchEventType.goal,
+      );
 }
 
 /// Verfügbarkeitsstatus eines Spielers (Stammdaten).
@@ -153,8 +160,10 @@ enum PlayerStatus {
       this == PlayerStatus.gesperrt ||
       this == PlayerStatus.urlaub;
 
-  static PlayerStatus fromKey(String? key) => PlayerStatus.values
-      .firstWhere((e) => e.storageKey == key, orElse: () => PlayerStatus.fit);
+  static PlayerStatus fromKey(String? key) => PlayerStatus.values.firstWhere(
+    (e) => e.storageKey == key,
+    orElse: () => PlayerStatus.fit,
+  );
 }
 
 /// Kapitäns-Rolle eines Spielers (je eine pro Mannschaft).
@@ -169,8 +178,10 @@ enum CaptainRole {
   final String label;
   final String badge;
 
-  static CaptainRole fromKey(String? key) => CaptainRole.values
-      .firstWhere((e) => e.storageKey == key, orElse: () => CaptainRole.none);
+  static CaptainRole fromKey(String? key) => CaptainRole.values.firstWhere(
+    (e) => e.storageKey == key,
+    orElse: () => CaptainRole.none,
+  );
 }
 
 /// Art eines Mannschafts-Termins (kein Pflichtspiel – dafür gibt es Spiele).
@@ -186,9 +197,10 @@ enum TeamEventType {
   final String label;
   final String symbol;
 
-  static TeamEventType fromKey(String? key) =>
-      TeamEventType.values.firstWhere((e) => e.storageKey == key,
-          orElse: () => TeamEventType.sonstiges);
+  static TeamEventType fromKey(String? key) => TeamEventType.values.firstWhere(
+    (e) => e.storageKey == key,
+    orElse: () => TeamEventType.sonstiges,
+  );
 }
 
 /// Kartentyp für den Disziplin-/Kartenverlauf eines Spielers.
@@ -202,8 +214,10 @@ enum CardType {
   final String label;
   final String symbol;
 
-  static CardType fromKey(String? key) => CardType.values
-      .firstWhere((e) => e.storageKey == key, orElse: () => CardType.yellow);
+  static CardType fromKey(String? key) => CardType.values.firstWhere(
+    (e) => e.storageKey == key,
+    orElse: () => CardType.yellow,
+  );
 
   /// Ableitung aus einem Live-Ereignistyp; null wenn keine Karte.
   static CardType? fromEvent(MatchEventType type) {
@@ -237,8 +251,10 @@ enum NominationStatus {
   bool get isAvailable => this == NominationStatus.zugesagt;
 
   static NominationStatus fromKey(String? key) =>
-      NominationStatus.values.firstWhere((e) => e.storageKey == key,
-          orElse: () => NominationStatus.open);
+      NominationStatus.values.firstWhere(
+        (e) => e.storageKey == key,
+        orElse: () => NominationStatus.open,
+      );
 }
 
 /// Ergebnis-Status eines Imports / einer Synchronisierung.

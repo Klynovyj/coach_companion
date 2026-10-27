@@ -38,8 +38,9 @@ Future<String?> shareOrSaveImage(
     final dir = await getTemporaryDirectory();
     final file = File('${dir.path}/$safe.png');
     await file.writeAsBytes(bytes);
-    await SharePlus.instance
-        .share(ShareParams(files: [XFile(file.path)], text: text));
+    await SharePlus.instance.share(
+      ShareParams(files: [XFile(file.path)], text: text),
+    );
     return null;
   }
   // Desktop: in den Downloads-Ordner speichern und direkt öffnen.
@@ -74,12 +75,15 @@ String buildMatchReport({
   final b = StringBuffer();
   b.writeln('Spielbericht');
   b.writeln('$ownName ${match.ownScore}:${match.opponentScore} $oppName');
-  b.writeln('${match.venue.label}'
-      '${match.kickoff != null ? ' · ${df.format(match.kickoff!.toLocal())}' : ''}'
-      '${match.competition != null ? ' · ${match.competition}' : ''}');
+  b.writeln(
+    '${match.venue.label}'
+    '${match.kickoff != null ? ' · ${df.format(match.kickoff!.toLocal())}' : ''}'
+    '${match.competition != null ? ' · ${match.competition}' : ''}',
+  );
 
   // Chronologisch: Minute, dann Nachspielzeit, dann Erfassungszeitpunkt.
-  final sorted = [...events]..sort((a, c) {
+  final sorted = [...events]
+    ..sort((a, c) {
       final m = a.minute.compareTo(c.minute);
       if (m != 0) return m;
       final me = a.minuteExtra.compareTo(c.minuteExtra);
@@ -110,8 +114,9 @@ String _tickerLine(
 ) {
   final min = e.minuteLabel; // enthält bereits das '
   final sym = e.type.symbol;
-  final note =
-      (e.note != null && e.note!.trim().isNotEmpty) ? ' – ${e.note!.trim()}' : '';
+  final note = (e.note != null && e.note!.trim().isNotEmpty)
+      ? ' – ${e.note!.trim()}'
+      : '';
   switch (e.type) {
     case MatchEventType.goal:
     case MatchEventType.penalty:
@@ -169,8 +174,10 @@ String buildNominationText({
 }) {
   final df = DateFormat('dd.MM.yyyy', 'de_DE');
   final b = StringBuffer();
-  b.writeln('Nominierung – $title'
-      '${kickoff != null ? ' (${df.format(kickoff)})' : ''}');
+  b.writeln(
+    'Nominierung – $title'
+    '${kickoff != null ? ' (${df.format(kickoff)})' : ''}',
+  );
 
   void group(NominationStatus s, String label) {
     final names = players

@@ -54,7 +54,7 @@ class MoreScreen extends StatelessWidget {
             _tile(
               context,
               icon: Icons.assessment_outlined,
-              label: 'Auswertung',
+              label: 'Spielbericht & Voting',
               screen: const RatingOverviewScreen(),
             ),
           _tile(

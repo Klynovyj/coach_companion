@@ -26,33 +26,31 @@ class PlayerNote {
     bool clearCategory = false,
     String? matchId,
     bool clearMatch = false,
-  }) =>
-      PlayerNote(
-        id: id,
-        playerId: playerId,
-        text: text ?? this.text,
-        createdAt: createdAt,
-        categoryId: clearCategory ? null : (categoryId ?? this.categoryId),
-        matchId: clearMatch ? null : (matchId ?? this.matchId),
-      );
+  }) => PlayerNote(
+    id: id,
+    playerId: playerId,
+    text: text ?? this.text,
+    createdAt: createdAt,
+    categoryId: clearCategory ? null : (categoryId ?? this.categoryId),
+    matchId: clearMatch ? null : (matchId ?? this.matchId),
+  );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'player_id': playerId,
-        'text': text,
-        'created_at': createdAt.toIso8601String(),
-        'category_id': categoryId,
-        'match_id': matchId,
-      };
+    'id': id,
+    'player_id': playerId,
+    'text': text,
+    'created_at': createdAt.toIso8601String(),
+    'category_id': categoryId,
+    'match_id': matchId,
+  };
 
   factory PlayerNote.fromMap(Map<String, Object?> m) => PlayerNote(
-        id: m['id'] as String,
-        playerId: m['player_id'] as String,
-        text: m['text'] as String? ?? '',
-        createdAt:
-            DateTime.tryParse(m['created_at'] as String? ?? '') ??
-                DateTime.now(),
-        categoryId: m['category_id'] as String?,
-        matchId: m['match_id'] as String?,
-      );
+    id: m['id'] as String,
+    playerId: m['player_id'] as String,
+    text: m['text'] as String? ?? '',
+    createdAt:
+        DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+    categoryId: m['category_id'] as String?,
+    matchId: m['match_id'] as String?,
+  );
 }

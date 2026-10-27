@@ -14,7 +14,8 @@ class PlayerAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bytes = TeamLogo.decode(player.photoPath);
-    final fallback = player.number?.toString() ??
+    final fallback =
+        player.number?.toString() ??
         (player.lastName.isNotEmpty ? player.lastName[0] : '?');
     return CircleAvatar(
       radius: radius,

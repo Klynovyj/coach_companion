@@ -44,17 +44,43 @@ class SquadPasteParser {
   // Erkennt gängige Positionsbezeichnungen und bildet sie auf eine
   // normalisierte deutsche Kategorie ab.
   static final List<MapEntry<RegExp, String>> _positions = [
-    MapEntry(RegExp(r'\b(torwart|torhüter|keeper|tw|goalie|tor)\b', caseSensitive: false), 'Tor'),
-    MapEntry(RegExp(r'\b(abwehr|verteidig\w*|innenverteidiger|iv|lv|rv|lib)\b', caseSensitive: false), 'Abwehr'),
-    MapEntry(RegExp(r'\b(mittelfeld\w*|zm|dm|om|zdm|zom|ms6|sechser|achter|zehner)\b', caseSensitive: false), 'Mittelfeld'),
-    MapEntry(RegExp(r'\b(sturm|stürmer|angriff|angreifer|st|ms|mittelstürmer|neuner)\b', caseSensitive: false), 'Sturm'),
+    MapEntry(
+      RegExp(
+        r'\b(torwart|torhüter|keeper|tw|goalie|tor)\b',
+        caseSensitive: false,
+      ),
+      'Tor',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(abwehr|verteidig\w*|innenverteidiger|iv|lv|rv|lib)\b',
+        caseSensitive: false,
+      ),
+      'Abwehr',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(mittelfeld\w*|zm|dm|om|zdm|zom|ms6|sechser|achter|zehner)\b',
+        caseSensitive: false,
+      ),
+      'Mittelfeld',
+    ),
+    MapEntry(
+      RegExp(
+        r'\b(sturm|stürmer|angriff|angreifer|st|ms|mittelstürmer|neuner)\b',
+        caseSensitive: false,
+      ),
+      'Sturm',
+    ),
   ];
 
-  static final _urlRegExp =
-      RegExp(r'https?:\/\/\S+', caseSensitive: false);
+  static final _urlRegExp = RegExp(r'https?:\/\/\S+', caseSensitive: false);
   static final _parenRegExp = RegExp(r'\(.*?\)');
   static final _leadingNumber = RegExp(r'^\s*(\d{1,2})\s*[.)\-:]?\s+');
-  static final _nrNumber = RegExp(r'\bnr\.?\s*(\d{1,2})\b', caseSensitive: false);
+  static final _nrNumber = RegExp(
+    r'\bnr\.?\s*(\d{1,2})\b',
+    caseSensitive: false,
+  );
 
   /// Zerlegt den eingefügten Text in Spieler-Vorschläge (eine Zeile = ein
   /// Spieler). Leere Zeilen und reine Nummern-/Link-Zeilen werden übersprungen.

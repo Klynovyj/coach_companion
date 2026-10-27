@@ -54,31 +54,30 @@ class MaterialDutyConfig {
     String? rules,
     List<DutyOverride>? overrides,
     Map<String, List<String>>? extras,
-  }) =>
-      MaterialDutyConfig(
-        rotationStart: rotationStart ?? this.rotationStart,
-        printFrom: printFrom ?? this.printFrom,
-        printTo: printTo ?? this.printTo,
-        startGroupIndex: startGroupIndex ?? this.startGroupIndex,
-        rules: rules ?? this.rules,
-        overrides: overrides ?? this.overrides,
-        extras: extras ?? this.extras,
-      );
+  }) => MaterialDutyConfig(
+    rotationStart: rotationStart ?? this.rotationStart,
+    printFrom: printFrom ?? this.printFrom,
+    printTo: printTo ?? this.printTo,
+    startGroupIndex: startGroupIndex ?? this.startGroupIndex,
+    rules: rules ?? this.rules,
+    overrides: overrides ?? this.overrides,
+    extras: extras ?? this.extras,
+  );
 
   static String _d(DateTime d) =>
       '${d.year.toString().padLeft(4, '0')}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Map<String, Object?> toJson() => {
-        'rotationStart': _d(rotationStart),
-        'printFrom': _d(printFrom),
-        'printTo': _d(printTo),
-        'startGroupIndex': startGroupIndex,
-        'rules': rules,
-        'overrides': overrides
-            .map((o) => {'playerId': o.playerId, 'groupIndex': o.groupIndex})
-            .toList(),
-        'extras': extras,
-      };
+    'rotationStart': _d(rotationStart),
+    'printFrom': _d(printFrom),
+    'printTo': _d(printTo),
+    'startGroupIndex': startGroupIndex,
+    'rules': rules,
+    'overrides': overrides
+        .map((o) => {'playerId': o.playerId, 'groupIndex': o.groupIndex})
+        .toList(),
+    'extras': extras,
+  };
 
   String encode() => jsonEncode(toJson());
 
@@ -97,13 +96,14 @@ class MaterialDutyConfig {
         for (final o in rawOv)
           if (o is Map && o['playerId'] != null)
             DutyOverride(
-                o['playerId'] as String, (o['groupIndex'] as num).toInt()),
+              o['playerId'] as String,
+              (o['groupIndex'] as num).toInt(),
+            ),
       ],
       extras: {
         for (final e in ((m['extras'] as Map?) ?? const {}).entries)
           e.key.toString(): [
-            for (final v in (e.value as List? ?? const []))
-              v.toString(),
+            for (final v in (e.value as List? ?? const [])) v.toString(),
           ],
       },
     );

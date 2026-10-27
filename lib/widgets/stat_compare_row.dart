@@ -27,16 +27,21 @@ class StatCompareRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         children: [
-          Text(label,
-              style:
-                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
           const SizedBox(height: 4),
           Row(
             children: [
               SizedBox(
-                  width: 34,
-                  child: Text('$own',
-                      textAlign: TextAlign.right, style: numStyle)),
+                width: 34,
+                child: Text(
+                  '$own',
+                  textAlign: TextAlign.right,
+                  style: numStyle,
+                ),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: ClipRRect(
@@ -46,18 +51,20 @@ class StatCompareRow extends StatelessWidget {
                       Expanded(
                         flex: total == 0 ? 1 : own,
                         child: Container(
-                            height: 10,
-                            color: total == 0
-                                ? ownColor.withValues(alpha: 0.2)
-                                : ownColor),
+                          height: 10,
+                          color: total == 0
+                              ? ownColor.withValues(alpha: 0.2)
+                              : ownColor,
+                        ),
                       ),
                       Expanded(
                         flex: total == 0 ? 1 : opp,
                         child: Container(
-                            height: 10,
-                            color: total == 0
-                                ? oppColor.withValues(alpha: 0.2)
-                                : oppColor),
+                          height: 10,
+                          color: total == 0
+                              ? oppColor.withValues(alpha: 0.2)
+                              : oppColor,
+                        ),
                       ),
                     ],
                   ),
@@ -65,9 +72,9 @@ class StatCompareRow extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               SizedBox(
-                  width: 34,
-                  child: Text('$opp',
-                      textAlign: TextAlign.left, style: numStyle)),
+                width: 34,
+                child: Text('$opp', textAlign: TextAlign.left, style: numStyle),
+              ),
             ],
           ),
         ],

@@ -85,18 +85,22 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
 
   void _save() {
     if (RichNote.isEmpty(RichNote.encode(_controller.document))) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Die Notiz ist leer.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Die Notiz ist leer.')));
       return;
     }
     // Nur ein noch existierendes Spiel verknüpfen.
-    final matchId =
-        widget.matches.any((m) => m.id == _matchId) ? _matchId : null;
+    final matchId = widget.matches.any((m) => m.id == _matchId)
+        ? _matchId
+        : null;
     Navigator.pop(
       context,
       NoteEditResult(
-          RichNote.encode(_controller.document), _categoryId, matchId),
+        RichNote.encode(_controller.document),
+        _categoryId,
+        matchId,
+      ),
     );
   }
 
@@ -125,13 +129,16 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
             final filtered = q.isEmpty
                 ? widget.matches
                 : widget.matches
-                    .where((m) =>
-                        m.opponentName.toLowerCase().contains(q) ||
-                        _matchDate(m).contains(q))
-                    .toList();
+                      .where(
+                        (m) =>
+                            m.opponentName.toLowerCase().contains(q) ||
+                            _matchDate(m).contains(q),
+                      )
+                      .toList();
             return Padding(
               padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(ctx).viewInsets.bottom),
+                bottom: MediaQuery.of(ctx).viewInsets.bottom,
+              ),
               child: SizedBox(
                 height: MediaQuery.of(ctx).size.height * 0.7,
                 child: Column(
@@ -195,8 +202,9 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
               widget.playerName,
               style: TextStyle(
                 fontSize: 13,
-                color: Theme.of(context).colorScheme.onPrimary.withValues(
-                    alpha: 0.85),
+                color: Theme.of(
+                  context,
+                ).colorScheme.onPrimary.withValues(alpha: 0.85),
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
@@ -206,8 +214,10 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
         actions: [
           TextButton(
             onPressed: _save,
-            child: const Text('Speichern',
-                style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Speichern',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -229,49 +239,59 @@ class _NoteEditorScreenState extends State<NoteEditorScreen> {
                     ),
                     items: [
                       const DropdownMenuItem<String?>(
-                          value: null, child: Text('Ohne Kategorie')),
-                      ..._categories.map((c) => DropdownMenuItem<String?>(
-                          value: c.id, child: Text(c.name))),
+                        value: null,
+                        child: Text('Ohne Kategorie'),
+                      ),
+                      ..._categories.map(
+                        (c) => DropdownMenuItem<String?>(
+                          value: c.id,
+                          child: Text(c.name),
+                        ),
+                      ),
                     ],
                     onChanged: (v) => setState(() => _categoryId = v),
                   ),
           ),
           // Spiel verknüpfen (optional) – durchsuchbares Sheet mit Datum.
           if (widget.matches.isNotEmpty)
-            Builder(builder: (context) {
-              final linked = widget.matches
-                  .cast<GameMatch?>()
-                  .firstWhere((m) => m?.id == _matchId, orElse: () => null);
-              return Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: InkWell(
-                  onTap: _pickMatch,
-                  child: InputDecorator(
-                    decoration: InputDecoration(
-                      labelText: 'Spiel verknüpfen (optional)',
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      prefixIcon: const Icon(Icons.sports_soccer, size: 20),
-                      suffixIcon: linked == null
-                          ? const Icon(Icons.search)
-                          : IconButton(
-                              icon: const Icon(Icons.clear),
-                              tooltip: 'Verknüpfung entfernen',
-                              onPressed: () => setState(() => _matchId = null),
-                            ),
-                    ),
-                    child: Text(
-                      linked == null ? 'Kein Spiel' : _matchLabel(linked),
-                      style: TextStyle(
-                        color: linked == null
-                            ? Theme.of(context).hintColor
-                            : null,
+            Builder(
+              builder: (context) {
+                final linked = widget.matches.cast<GameMatch?>().firstWhere(
+                  (m) => m?.id == _matchId,
+                  orElse: () => null,
+                );
+                return Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                  child: InkWell(
+                    onTap: _pickMatch,
+                    child: InputDecorator(
+                      decoration: InputDecoration(
+                        labelText: 'Spiel verknüpfen (optional)',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        prefixIcon: const Icon(Icons.sports_soccer, size: 20),
+                        suffixIcon: linked == null
+                            ? const Icon(Icons.search)
+                            : IconButton(
+                                icon: const Icon(Icons.clear),
+                                tooltip: 'Verknüpfung entfernen',
+                                onPressed: () =>
+                                    setState(() => _matchId = null),
+                              ),
+                      ),
+                      child: Text(
+                        linked == null ? 'Kein Spiel' : _matchLabel(linked),
+                        style: TextStyle(
+                          color: linked == null
+                              ? Theme.of(context).hintColor
+                              : null,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              );
-            }),
+                );
+              },
+            ),
           // Formatierungsleiste
           // Bewusst schlank: nur Fett/Kursiv/Unterstreichen, Listen & Haken –
           // kein Farbdialog, keine Überschriften/Einrückung/Ausrichtung.

@@ -32,6 +32,7 @@ class _Entry {
 
 class _RatingReportScreenState extends State<RatingReportScreen> {
   final _df = DateFormat('dd.MM.yyyy', 'de_DE');
+  final _dt = DateFormat('dd.MM.yyyy · HH:mm', 'de_DE');
   List<_Entry> _entries = [];
   Map<String, String> _names = {};
   bool _loading = true;
@@ -105,9 +106,12 @@ class _RatingReportScreenState extends State<RatingReportScreen> {
       );
       for (final r in e.ratings) {
         final note = (r.note ?? '').trim();
-        final star = r.rating != null ? ' ⭐ ${_stars(r.rating)}' : '';
+        final star = r.rating != null ? ' ★ ${_stars(r.rating)}' : '';
         b.writeln('• ${_trainerName(r.userId)}$star');
-        if (note.isNotEmpty) b.writeln('  „$note"');
+        if (note.isNotEmpty) {
+          b.writeln('  „$note"');
+          b.writeln('  (${_dt.format(r.editedAt.toLocal())})');
+        }
       }
     }
     final ok = await shareText(b.toString().trim());
@@ -264,7 +268,7 @@ class _RatingReportScreenState extends State<RatingReportScreen> {
               ],
             ],
           ),
-          if (note.isNotEmpty)
+          if (note.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.only(top: 1, left: 2),
               child: Text(
@@ -275,6 +279,16 @@ class _RatingReportScreenState extends State<RatingReportScreen> {
                 ),
               ),
             ),
+            Padding(
+              padding: const EdgeInsets.only(top: 1, left: 2),
+              child: Text(
+                _dt.format(r.editedAt.toLocal()),
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

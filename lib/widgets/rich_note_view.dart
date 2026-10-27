@@ -28,10 +28,10 @@ class _RichNoteViewState extends State<RichNoteView> {
   }
 
   QuillController _build() => QuillController(
-        document: RichNote.documentFrom(widget.stored),
-        selection: const TextSelection.collapsed(offset: 0),
-        readOnly: true,
-      );
+    document: RichNote.documentFrom(widget.stored),
+    selection: const TextSelection.collapsed(offset: 0),
+    readOnly: true,
+  );
 
   @override
   void didUpdateWidget(covariant RichNoteView old) {

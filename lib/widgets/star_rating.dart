@@ -23,8 +23,10 @@ class StarRating extends StatelessWidget {
           IconButton(
             visualDensity: VisualDensity.compact,
             padding: EdgeInsets.zero,
-            constraints:
-                BoxConstraints(minWidth: size + 6, minHeight: size + 6),
+            constraints: BoxConstraints(
+              minWidth: size + 6,
+              minHeight: size + 6,
+            ),
             icon: Icon(
               i <= value ? Icons.star : Icons.star_border,
               color: Colors.amber.shade700,

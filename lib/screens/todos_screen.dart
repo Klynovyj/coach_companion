@@ -32,7 +32,8 @@ class _TodosScreenState extends State<TodosScreen> {
   Future<void> _moveTodo(AppState state, Todo t, String? topicId) async {
     if (t.topicId == topicId) return;
     await state.saveTodo(
-        t.copyWith(topicId: topicId, clearTopicId: topicId == null));
+      t.copyWith(topicId: topicId, clearTopicId: topicId == null),
+    );
     if (mounted) setState(() {});
   }
 
@@ -46,10 +47,12 @@ class _TodosScreenState extends State<TodosScreen> {
   }
 
   Future<(List<TodoTopic>, List<Todo>, List<Player>)> _load(
-      AppState state) async {
+    AppState state,
+  ) async {
     final topics = await state.todoTopics();
-    final todos =
-        _showArchive ? await state.archivedTodos() : await state.todos();
+    final todos = _showArchive
+        ? await state.archivedTodos()
+        : await state.todos();
     final team = state.ownTeam;
     final players = team == null ? <Player>[] : await state.playersOf(team.id);
     return (topics, todos, players);
@@ -87,8 +90,7 @@ class _TodosScreenState extends State<TodosScreen> {
       _snack('Bitte mindestens einen Verantwortlichen wählen.');
       return;
     }
-    await state.addTodo(t,
-        dueDate: _quickDue, responsible: _quickResponsible);
+    await state.addTodo(t, dueDate: _quickDue, responsible: _quickResponsible);
     _quickCtrl.clear();
     setState(() {
       _quickDue = null;
@@ -107,16 +109,20 @@ class _TodosScreenState extends State<TodosScreen> {
           autofocus: true,
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
-              labelText: 'Thema', hintText: 'z.B. Organisation Sommerfest'),
+            labelText: 'Thema',
+            hintText: 'z.B. Organisation Sommerfest',
+          ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Anlegen')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Anlegen'),
+          ),
         ],
       ),
     );
@@ -141,11 +147,13 @@ class _TodosScreenState extends State<TodosScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
@@ -161,14 +169,17 @@ class _TodosScreenState extends State<TodosScreen> {
       builder: (ctx) => AlertDialog(
         title: Text('Thema „${topic.title}" löschen?'),
         content: const Text(
-            'Die Aufgaben bleiben erhalten und rutschen zu „Ohne Thema".'),
+          'Die Aufgaben bleiben erhalten und rutschen zu „Ohne Thema".',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Löschen')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Löschen'),
+          ),
         ],
       ),
     );
@@ -199,25 +210,29 @@ class _TodosScreenState extends State<TodosScreen> {
     );
     if (result == null || !mounted) return;
     if (todo == null) {
-      await state.addTodo(result.text,
-          dueDate: result.due,
-          topicId: result.topicId,
-          responsible: result.responsible);
-    } else {
-      await state.saveTodo(todo.copyWith(
-        text: result.text,
+      await state.addTodo(
+        result.text,
         dueDate: result.due,
-        clearDueDate: result.due == null,
         topicId: result.topicId,
-        clearTopicId: result.topicId == null,
         responsible: result.responsible,
-      ));
+      );
+    } else {
+      await state.saveTodo(
+        todo.copyWith(
+          text: result.text,
+          dueDate: result.due,
+          clearDueDate: result.due == null,
+          topicId: result.topicId,
+          clearTopicId: result.topicId == null,
+          responsible: result.responsible,
+        ),
+      );
     }
     if (mounted) setState(() {});
   }
 
-  void _snack(String msg) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(msg)));
+  void _snack(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   @override
   Widget build(BuildContext context) {
@@ -324,13 +339,15 @@ class _TodosScreenState extends State<TodosScreen> {
   }
 
   Widget _archiveView(
-      AppState state, List<Todo> todos, Map<String, Player> playerMap) {
+    AppState state,
+    List<Todo> todos,
+    Map<String, Player> playerMap,
+  ) {
     if (todos.isEmpty) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text('Archiv ist leer.',
-              style: TextStyle(color: Colors.grey)),
+          child: Text('Archiv ist leer.', style: TextStyle(color: Colors.grey)),
         ),
       );
     }
@@ -367,8 +384,12 @@ class _TodosScreenState extends State<TodosScreen> {
                   tooltip: 'Aufgabe hinzufügen',
                   icon: const Icon(Icons.add),
                   visualDensity: VisualDensity.compact,
-                  onPressed: () => _openTaskPage(state, players,
-                      topicId: topic.id, topics: allTopics),
+                  onPressed: () => _openTaskPage(
+                    state,
+                    players,
+                    topicId: topic.id,
+                    topics: allTopics,
+                  ),
                 ),
                 PopupMenuButton<String>(
                   onSelected: (v) {
@@ -378,7 +399,9 @@ class _TodosScreenState extends State<TodosScreen> {
                   itemBuilder: (_) => const [
                     PopupMenuItem(value: 'rename', child: Text('Umbenennen')),
                     PopupMenuItem(
-                        value: 'delete', child: Text('Thema löschen')),
+                      value: 'delete',
+                      child: Text('Thema löschen'),
+                    ),
                   ],
                 ),
               ];
@@ -402,15 +425,18 @@ class _TodosScreenState extends State<TodosScreen> {
                   child: Row(
                     children: [
                       Icon(
-                          collapsed
-                              ? Icons.chevron_right
-                              : Icons.expand_more,
-                          size: 22),
+                        collapsed ? Icons.chevron_right : Icons.expand_more,
+                        size: 22,
+                      ),
                       const SizedBox(width: 2),
                       Expanded(
-                        child: Text('$title  (${todos.length})',
-                            style: const TextStyle(
-                                fontWeight: FontWeight.bold, fontSize: 15)),
+                        child: Text(
+                          '$title  (${todos.length})',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                          ),
+                        ),
                       ),
                       ...actions,
                     ],
@@ -426,8 +452,7 @@ class _TodosScreenState extends State<TodosScreen> {
                     highlight
                         ? 'Hier ablegen'
                         : 'Noch keine Aufgaben – eine Aufgabe hierher ziehen.',
-                    style:
-                        TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                   ),
                 )
               else
@@ -441,42 +466,59 @@ class _TodosScreenState extends State<TodosScreen> {
   Widget _todoTile(AppState state, Todo t, Map<String, Player> playerMap) {
     final sub = <Widget>[];
     if (t.responsible.isNotEmpty) {
-      sub.add(Wrap(
-        spacing: 6,
-        runSpacing: 2,
-        children: t.responsible.map((r) {
-          final p = r.playerId == null ? null : playerMap[r.playerId];
-          return Chip(
-            avatar: p != null
-                ? PlayerAvatar(player: p, radius: 10)
-                : const CircleAvatar(radius: 10, child: Icon(Icons.person, size: 12)),
-            label: Text(r.name, style: const TextStyle(fontSize: 12)),
-            visualDensity: VisualDensity.compact,
-            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            padding: EdgeInsets.zero,
-          );
-        }).toList(),
-      ));
+      sub.add(
+        Wrap(
+          spacing: 6,
+          runSpacing: 2,
+          children: t.responsible.map((r) {
+            final p = r.playerId == null ? null : playerMap[r.playerId];
+            return Chip(
+              avatar: p != null
+                  ? PlayerAvatar(player: p, radius: 10)
+                  : const CircleAvatar(
+                      radius: 10,
+                      child: Icon(Icons.person, size: 12),
+                    ),
+              label: Text(r.name, style: const TextStyle(fontSize: 12)),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: EdgeInsets.zero,
+            );
+          }).toList(),
+        ),
+      );
     }
     if (t.dueDate != null) {
       final overdue = t.isOverdue;
-      sub.add(Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.event,
-              size: 14, color: overdue ? Colors.red : Colors.grey.shade600),
-          const SizedBox(width: 4),
-          Text('Fällig: ${_dueLabel(t.dueDate!)}',
+      sub.add(
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.event,
+              size: 14,
+              color: overdue ? Colors.red : Colors.grey.shade600,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'Fällig: ${_dueLabel(t.dueDate!)}',
               style: TextStyle(
-                  fontSize: 12.5,
-                  color: overdue ? Colors.red : Colors.grey.shade700,
-                  fontWeight: overdue ? FontWeight.bold : FontWeight.normal)),
-        ],
-      ));
+                fontSize: 12.5,
+                color: overdue ? Colors.red : Colors.grey.shade700,
+                fontWeight: overdue ? FontWeight.bold : FontWeight.normal,
+              ),
+            ),
+          ],
+        ),
+      );
     }
     if (t.done && t.completedAt != null) {
-      sub.add(Text('Erledigt: ${_dDateTime.format(t.completedAt!)}',
-          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600)));
+      sub.add(
+        Text(
+          'Erledigt: ${_dDateTime.format(t.completedAt!)}',
+          style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
+        ),
+      );
     }
 
     final tile = Dismissible(
@@ -498,7 +540,9 @@ class _TodosScreenState extends State<TodosScreen> {
           t.text,
           style: t.done
               ? const TextStyle(
-                  decoration: TextDecoration.lineThrough, color: Colors.grey)
+                  decoration: TextDecoration.lineThrough,
+                  color: Colors.grey,
+                )
               : null,
         ),
         subtitle: sub.isEmpty
@@ -510,7 +554,9 @@ class _TodosScreenState extends State<TodosScreen> {
                   children: [
                     for (final w in sub)
                       Padding(
-                          padding: const EdgeInsets.only(bottom: 2), child: w),
+                        padding: const EdgeInsets.only(bottom: 2),
+                        child: w,
+                      ),
                   ],
                 ),
               ),
@@ -519,8 +565,9 @@ class _TodosScreenState extends State<TodosScreen> {
           itemBuilder: (context) => [
             const PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
             PopupMenuItem(
-                value: t.archived ? 'unarchive' : 'archive',
-                child: Text(t.archived ? 'Wiederherstellen' : 'Archivieren')),
+              value: t.archived ? 'unarchive' : 'archive',
+              child: Text(t.archived ? 'Wiederherstellen' : 'Archivieren'),
+            ),
             const PopupMenuItem(value: 'delete', child: Text('Löschen')),
           ],
         ),
@@ -541,23 +588,31 @@ class _TodosScreenState extends State<TodosScreen> {
             borderRadius: BorderRadius.circular(10),
             boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 6)],
           ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.drag_indicator, size: 18),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(t.text,
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-          ]),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.drag_indicator, size: 18),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  t.text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
         ),
       ),
       childWhenDragging: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         alignment: Alignment.centerLeft,
-        child: Text(t.text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.grey.shade400)),
+        child: Text(
+          t.text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: Colors.grey.shade400),
+        ),
       ),
       child: tile,
     );
@@ -567,8 +622,9 @@ class _TodosScreenState extends State<TodosScreen> {
     switch (value) {
       case 'edit':
         final team = state.ownTeam;
-        final players =
-            team == null ? <Player>[] : await state.playersOf(team.id);
+        final players = team == null
+            ? <Player>[]
+            : await state.playersOf(team.id);
         final topics = await state.todoTopics();
         if (mounted) {
           await _openTaskPage(state, players, todo: t, topics: topics);
@@ -610,9 +666,11 @@ class _TodosScreenState extends State<TodosScreen> {
                         InputChip(
                           avatar: const Icon(Icons.person, size: 16),
                           label: Text(r.name),
-                          onDeleted: () => setState(() =>
-                              _quickResponsible =
-                                  _quickResponsible.where((x) => x != r).toList()),
+                          onDeleted: () => setState(
+                            () => _quickResponsible = _quickResponsible
+                                .where((x) => x != r)
+                                .toList(),
+                          ),
                         ),
                     ],
                   ),
@@ -622,21 +680,28 @@ class _TodosScreenState extends State<TodosScreen> {
               children: [
                 IconButton(
                   tooltip: 'Verantwortliche wählen',
-                  icon: Icon(Icons.group_add,
-                      color: hasResp
-                          ? Theme.of(context).colorScheme.primary
-                          : null),
+                  icon: Icon(
+                    Icons.group_add,
+                    color: hasResp
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
                   onPressed: () async {
-                    final res = await _pickResponsible(players, _quickResponsible);
+                    final res = await _pickResponsible(
+                      players,
+                      _quickResponsible,
+                    );
                     if (res != null) setState(() => _quickResponsible = res);
                   },
                 ),
                 IconButton(
                   tooltip: 'Fälligkeit',
-                  icon: Icon(Icons.event,
-                      color: _quickDue != null
-                          ? Theme.of(context).colorScheme.primary
-                          : null),
+                  icon: Icon(
+                    Icons.event,
+                    color: _quickDue != null
+                        ? Theme.of(context).colorScheme.primary
+                        : null,
+                  ),
                   onPressed: () async {
                     final d = await _pickDate(_quickDue);
                     if (d != null) setState(() => _quickDue = d);
@@ -667,11 +732,14 @@ class _TodosScreenState extends State<TodosScreen> {
   }
 
   Future<List<TodoResponsible>?> _pickResponsible(
-      List<Player> players, List<TodoResponsible> initial) {
+    List<Player> players,
+    List<TodoResponsible> initial,
+  ) {
     return Navigator.of(context).push<List<TodoResponsible>>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => _ResponsiblePickerPage(players: players, initial: initial),
+        builder: (_) =>
+            _ResponsiblePickerPage(players: players, initial: initial),
       ),
     );
   }
@@ -741,8 +809,8 @@ class _TaskEditPageState extends State<_TaskEditPage> {
     Navigator.pop(context, _TaskResult(text, _topicId, _due, _responsible));
   }
 
-  void _snack(String msg) => ScaffoldMessenger.of(context)
-      .showSnackBar(SnackBar(content: Text(msg)));
+  void _snack(String msg) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
 
   Future<void> _pickDue() async {
     final now = DateTime.now();
@@ -761,8 +829,10 @@ class _TaskEditPageState extends State<_TaskEditPage> {
     final res = await Navigator.of(context).push<List<TodoResponsible>>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) =>
-            _ResponsiblePickerPage(players: widget.players, initial: _responsible),
+        builder: (_) => _ResponsiblePickerPage(
+          players: widget.players,
+          initial: _responsible,
+        ),
       ),
     );
     if (res != null) setState(() => _responsible = res);
@@ -790,14 +860,19 @@ class _TaskEditPageState extends State<_TaskEditPage> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         children: [
           DropdownButtonFormField<String?>(
-            initialValue:
-                widget.topics.any((t) => t.id == _topicId) ? _topicId : null,
+            initialValue: widget.topics.any((t) => t.id == _topicId)
+                ? _topicId
+                : null,
             isExpanded: true,
             decoration: const InputDecoration(
-                labelText: 'Thema', border: OutlineInputBorder()),
+              labelText: 'Thema',
+              border: OutlineInputBorder(),
+            ),
             items: [
               const DropdownMenuItem<String?>(
-                  value: null, child: Text('Ohne Thema')),
+                value: null,
+                child: Text('Ohne Thema'),
+              ),
               for (final t in widget.topics)
                 DropdownMenuItem<String?>(value: t.id, child: Text(t.title)),
             ],
@@ -811,14 +886,18 @@ class _TaskEditPageState extends State<_TaskEditPage> {
             maxLines: 4,
             textCapitalization: TextCapitalization.sentences,
             decoration: const InputDecoration(
-                labelText: 'Aufgabe', border: OutlineInputBorder()),
+              labelText: 'Aufgabe',
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 20),
           Row(
             children: [
               const Expanded(
-                child: Text('Verantwortliche',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
+                child: Text(
+                  'Verantwortliche',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
               TextButton.icon(
                 onPressed: _pickResponsible,
@@ -828,8 +907,10 @@ class _TaskEditPageState extends State<_TaskEditPage> {
             ],
           ),
           if (_responsible.isEmpty)
-            Text('Noch niemand gewählt.',
-                style: TextStyle(color: Colors.grey.shade600))
+            Text(
+              'Noch niemand gewählt.',
+              style: TextStyle(color: Colors.grey.shade600),
+            )
           else
             Wrap(
               spacing: 6,
@@ -840,25 +921,32 @@ class _TaskEditPageState extends State<_TaskEditPage> {
                   avatar: p != null
                       ? PlayerAvatar(player: p, radius: 10)
                       : const CircleAvatar(
-                          radius: 10, child: Icon(Icons.person, size: 12)),
+                          radius: 10,
+                          child: Icon(Icons.person, size: 12),
+                        ),
                   label: Text(r.name),
-                  onDeleted: () => setState(() =>
-                      _responsible = _responsible.where((x) => x != r).toList()),
+                  onDeleted: () => setState(
+                    () => _responsible = _responsible
+                        .where((x) => x != r)
+                        .toList(),
+                  ),
                 );
               }).toList(),
             ),
           const SizedBox(height: 20),
-          const Text('Fälligkeit (optional)',
-              style: TextStyle(fontWeight: FontWeight.w600)),
+          const Text(
+            'Fälligkeit (optional)',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
           const SizedBox(height: 4),
           Row(
             children: [
               OutlinedButton.icon(
                 onPressed: _pickDue,
                 icon: const Icon(Icons.event),
-                label: Text(_due == null
-                    ? 'Datum wählen'
-                    : _dDate.format(_due!)),
+                label: Text(
+                  _due == null ? 'Datum wählen' : _dDate.format(_due!),
+                ),
               ),
               if (_due != null)
                 IconButton(
@@ -934,8 +1022,8 @@ class _ResponsiblePickerPageState extends State<_ResponsiblePickerPage> {
     final list = q.isEmpty
         ? widget.players
         : widget.players
-            .where((p) => p.displayName.toLowerCase().contains(q))
-            .toList();
+              .where((p) => p.displayName.toLowerCase().contains(q))
+              .toList();
     // Trainerteam zuerst, dann Spieler.
     final staff = list.where((p) => p.isStaff).toList();
     final rest = list.where((p) => !p.isStaff).toList();
@@ -979,7 +1067,9 @@ class _ResponsiblePickerPageState extends State<_ResponsiblePickerPage> {
               ),
               const SizedBox(width: 8),
               IconButton.filled(
-                  icon: const Icon(Icons.add), onPressed: _addManual),
+                icon: const Icon(Icons.add),
+                onPressed: _addManual,
+              ),
             ],
           ),
           if (_manual.isNotEmpty) ...[
@@ -988,12 +1078,16 @@ class _ResponsiblePickerPageState extends State<_ResponsiblePickerPage> {
               spacing: 6,
               runSpacing: 4,
               children: _manual
-                  .map((n) => InputChip(
-                        avatar: const CircleAvatar(
-                            radius: 10, child: Icon(Icons.person, size: 12)),
-                        label: Text(n),
-                        onDeleted: () => setState(() => _manual.remove(n)),
-                      ))
+                  .map(
+                    (n) => InputChip(
+                      avatar: const CircleAvatar(
+                        radius: 10,
+                        child: Icon(Icons.person, size: 12),
+                      ),
+                      label: Text(n),
+                      onDeleted: () => setState(() => _manual.remove(n)),
+                    ),
+                  )
                   .toList(),
             ),
           ],

@@ -29,7 +29,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               leading: const Icon(Icons.cloud_outlined),
               title: const Text('Konto & Team'),
               subtitle: const Text(
-                  'Anmelden, Team anlegen/beitreten und aktives Team wählen'),
+                'Anmelden, Team anlegen/beitreten und aktives Team wählen',
+              ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => Navigator.push(
                 context,
@@ -75,40 +76,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-                controller: ctrl,
-                autofocus: true,
-                decoration: const InputDecoration(labelText: 'Teamname')),
+              controller: ctrl,
+              autofocus: true,
+              decoration: const InputDecoration(labelText: 'Teamname'),
+            ),
             const SizedBox(height: 10),
             TextField(
-                controller: shortCtrl,
-                decoration: const InputDecoration(labelText: 'Kurzname')),
+              controller: shortCtrl,
+              decoration: const InputDecoration(labelText: 'Kurzname'),
+            ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
     if (name != null && name.isNotEmpty && context.mounted) {
-      await context.read<AppState>().renameTeam(team.id, name,
-          shortName:
-              shortCtrl.text.trim().isEmpty ? null : shortCtrl.text.trim());
+      await context.read<AppState>().renameTeam(
+        team.id,
+        name,
+        shortName: shortCtrl.text.trim().isEmpty ? null : shortCtrl.text.trim(),
+      );
     }
   }
 
   Widget _sectionTitle(BuildContext context, String text) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-        child: Text(text,
-            style: Theme.of(context)
-                .textTheme
-                .titleSmall
-                ?.copyWith(color: Theme.of(context).colorScheme.primary)),
-      );
+    padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+    child: Text(
+      text,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    ),
+  );
 }
 
 /// Verwaltung der Notiz-Rubriken (zentral): anlegen, umbenennen, löschen.
@@ -137,8 +145,10 @@ class _RubrikenCard extends StatelessWidget {
                 if (cats.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(8),
-                    child: Text('Noch keine Kategorien.',
-                        style: TextStyle(color: Colors.grey)),
+                    child: Text(
+                      'Noch keine Kategorien.',
+                      style: TextStyle(color: Colors.grey),
+                    ),
                   )
                 else
                   for (final c in cats)
@@ -186,8 +196,11 @@ class _RubrikenCard extends StatelessWidget {
   }
 
   Future<void> _rename(BuildContext context, NoteCategory c) async {
-    final name = await _promptName(context,
-        title: 'Kategorie umbenennen', initial: c.name);
+    final name = await _promptName(
+      context,
+      title: 'Kategorie umbenennen',
+      initial: c.name,
+    );
     if (name == null || name.isEmpty || !context.mounted) return;
     await state.updateNoteCategory(c.copyWith(name: name));
   }
@@ -198,15 +211,18 @@ class _RubrikenCard extends StatelessWidget {
       builder: (context) => AlertDialog(
         title: const Text('Kategorie löschen?'),
         content: Text(
-            '„${c.name}" wird entfernt. Vorhandene Notizen bleiben erhalten, '
-            'landen aber unter „Ohne Kategorie".'),
+          '„${c.name}" wird entfernt. Vorhandene Notizen bleiben erhalten, '
+          'landen aber unter „Ohne Kategorie".',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Löschen')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Löschen'),
+          ),
         ],
       ),
     );
@@ -215,8 +231,11 @@ class _RubrikenCard extends StatelessWidget {
     }
   }
 
-  Future<String?> _promptName(BuildContext context,
-      {required String title, String? initial}) {
+  Future<String?> _promptName(
+    BuildContext context, {
+    required String title,
+    String? initial,
+  }) {
     final ctrl = TextEditingController(text: initial ?? '');
     return showDialog<String>(
       context: context,
@@ -230,11 +249,13 @@ class _RubrikenCard extends StatelessWidget {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, ctrl.text.trim()),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(context, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );

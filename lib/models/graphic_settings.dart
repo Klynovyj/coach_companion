@@ -45,40 +45,39 @@ class GraphicSettings {
     String? gradBottom,
     int? overlayOpacity,
     bool? showOpponentLogo,
-  }) =>
-      GraphicSettings(
-        id: id ?? this.id,
-        title: clearTitle ? null : (title ?? this.title),
-        logo: clearLogo ? null : (logo ?? this.logo),
-        bgImage: clearBgImage ? null : (bgImage ?? this.bgImage),
-        gradTop: gradTop ?? this.gradTop,
-        gradBottom: gradBottom ?? this.gradBottom,
-        overlayOpacity: overlayOpacity ?? this.overlayOpacity,
-        showOpponentLogo: showOpponentLogo ?? this.showOpponentLogo,
-      );
+  }) => GraphicSettings(
+    id: id ?? this.id,
+    title: clearTitle ? null : (title ?? this.title),
+    logo: clearLogo ? null : (logo ?? this.logo),
+    bgImage: clearBgImage ? null : (bgImage ?? this.bgImage),
+    gradTop: gradTop ?? this.gradTop,
+    gradBottom: gradBottom ?? this.gradBottom,
+    overlayOpacity: overlayOpacity ?? this.overlayOpacity,
+    showOpponentLogo: showOpponentLogo ?? this.showOpponentLogo,
+  );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'title': title,
-        'logo': logo,
-        'bg_image': bgImage,
-        'grad_top': gradTop,
-        'grad_bottom': gradBottom,
-        'overlay_opacity': overlayOpacity,
-        'show_opponent_logo': showOpponentLogo ? 1 : 0,
-      };
+    'id': id,
+    'title': title,
+    'logo': logo,
+    'bg_image': bgImage,
+    'grad_top': gradTop,
+    'grad_bottom': gradBottom,
+    'overlay_opacity': overlayOpacity,
+    'show_opponent_logo': showOpponentLogo ? 1 : 0,
+  };
 
   factory GraphicSettings.fromMap(Map<String, Object?> m) => GraphicSettings(
-        id: m['id'] as String,
-        title: (m['title'] as String?)?.trim().isEmpty == true
-            ? null
-            : m['title'] as String?,
-        logo: m['logo'] as String?,
-        bgImage: m['bg_image'] as String?,
-        gradTop: (m['grad_top'] as String?) ?? defaultGradTop,
-        gradBottom: (m['grad_bottom'] as String?) ?? defaultGradBottom,
-        overlayOpacity: (m['overlay_opacity'] as num?)?.toInt() ?? defaultOverlay,
-        showOpponentLogo:
-            m['show_opponent_logo'] == true || m['show_opponent_logo'] == 1,
-      );
+    id: m['id'] as String,
+    title: (m['title'] as String?)?.trim().isEmpty == true
+        ? null
+        : m['title'] as String?,
+    logo: m['logo'] as String?,
+    bgImage: m['bg_image'] as String?,
+    gradTop: (m['grad_top'] as String?) ?? defaultGradTop,
+    gradBottom: (m['grad_bottom'] as String?) ?? defaultGradBottom,
+    overlayOpacity: (m['overlay_opacity'] as num?)?.toInt() ?? defaultOverlay,
+    showOpponentLogo:
+        m['show_opponent_logo'] == true || m['show_opponent_logo'] == 1,
+  );
 }

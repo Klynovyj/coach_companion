@@ -36,24 +36,23 @@ class PlayerRating {
       );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'match_id': matchId,
-        'player_id': playerId,
-        'user_id': userId,
-        'rating': rating,
-        'note': note,
-        'created_at': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'match_id': matchId,
+    'player_id': playerId,
+    'user_id': userId,
+    'rating': rating,
+    'note': note,
+    'created_at': createdAt.toIso8601String(),
+  };
 
   factory PlayerRating.fromMap(Map<String, Object?> m) => PlayerRating(
-        id: m['id'] as String,
-        matchId: m['match_id'] as String,
-        playerId: m['player_id'] as String,
-        userId: m['user_id'] as String?,
-        rating: (m['rating'] as num?)?.toDouble() ?? 3.0,
-        note: m['note'] as String?,
-        createdAt:
-            DateTime.tryParse(m['created_at'] as String? ?? '') ??
-                DateTime.now(),
-      );
+    id: m['id'] as String,
+    matchId: m['match_id'] as String,
+    playerId: m['player_id'] as String,
+    userId: m['user_id'] as String?,
+    rating: (m['rating'] as num?)?.toDouble() ?? 3.0,
+    note: m['note'] as String?,
+    createdAt:
+        DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+  );
 }

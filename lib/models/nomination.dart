@@ -20,19 +20,19 @@ class Nomination {
   });
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'match_id': matchId,
-        'player_id': playerId,
-        'status': status.storageKey,
-        'updated_at': updatedAt.toIso8601String(),
-      };
+    'id': id,
+    'match_id': matchId,
+    'player_id': playerId,
+    'status': status.storageKey,
+    'updated_at': updatedAt.toIso8601String(),
+  };
 
   factory Nomination.fromMap(Map<String, Object?> m) => Nomination(
-        id: m['id'] as String,
-        matchId: m['match_id'] as String,
-        playerId: m['player_id'] as String,
-        status: NominationStatus.fromKey(m['status'] as String?),
-        updatedAt: DateTime.tryParse(m['updated_at'] as String? ?? '') ??
-            DateTime.now(),
-      );
+    id: m['id'] as String,
+    matchId: m['match_id'] as String,
+    playerId: m['player_id'] as String,
+    status: NominationStatus.fromKey(m['status'] as String?),
+    updatedAt:
+        DateTime.tryParse(m['updated_at'] as String? ?? '') ?? DateTime.now(),
+  );
 }

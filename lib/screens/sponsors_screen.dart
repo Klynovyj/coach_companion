@@ -71,9 +71,13 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(existing == null ? 'Sponsor anlegen' : 'Sponsor bearbeiten',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 16)),
+                  Text(
+                    existing == null ? 'Sponsor anlegen' : 'Sponsor bearbeiten',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                   const SizedBox(height: 14),
                   Row(
                     children: [
@@ -81,20 +85,26 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
                         width: 56,
                         height: 56,
                         decoration: BoxDecoration(
-                          color: Theme.of(ctx).colorScheme.surfaceContainerHighest,
+                          color: Theme.of(
+                            ctx,
+                          ).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         alignment: Alignment.center,
                         child: logo != null
                             ? TeamLogo(logoPath: logo, size: 48)
-                            : Icon(Icons.image_outlined,
-                                color: Theme.of(ctx).hintColor),
+                            : Icon(
+                                Icons.image_outlined,
+                                color: Theme.of(ctx).hintColor,
+                              ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.upload, size: 18),
-                          label: Text(logo == null ? 'Logo wählen' : 'Logo ändern'),
+                          label: Text(
+                            logo == null ? 'Logo wählen' : 'Logo ändern',
+                          ),
                           onPressed: () async {
                             final picked = await _pickLogo();
                             if (picked != null) setSheet(() => logo = picked);
@@ -108,7 +118,9 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
                     controller: nameCtrl,
                     textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
-                        labelText: 'Name', border: OutlineInputBorder()),
+                      labelText: 'Name',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   SwitchListTile(
@@ -152,7 +164,8 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
       await state.addSponsor(name, logo: logo, isMain: isMain);
     } else {
       await state.saveSponsor(
-          existing.copyWith(name: name, logo: logo, isMain: isMain));
+        existing.copyWith(name: name, logo: logo, isMain: isMain),
+      );
     }
     await _load();
   }
@@ -173,7 +186,8 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
       return 'data:image/png;base64,${base64Encode(bytes)}';
     } catch (e) {
       messenger.showSnackBar(
-          SnackBar(content: Text('Logo konnte nicht geladen werden: $e')));
+        SnackBar(content: Text('Logo konnte nicht geladen werden: $e')),
+      );
       return null;
     }
   }
@@ -186,11 +200,13 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
         content: Text('„${s.name}" wird entfernt.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Löschen')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Löschen'),
+          ),
         ],
       ),
     );
@@ -211,28 +227,28 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _sponsors.isEmpty
-              ? _empty(context)
-              : Column(
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                      child: Text(
-                        'Diese Logos erscheinen automatisch auf der Startelf-Grafik. '
-                        'Ziehen zum Sortieren – Haupt-Sponsor bleibt oben.',
-                        style: TextStyle(fontSize: 12.5, color: Colors.grey),
-                      ),
-                    ),
-                    Expanded(
-                      child: ReorderableListView.builder(
-                        padding: const EdgeInsets.only(bottom: 88),
-                        buildDefaultDragHandles: false,
-                        itemCount: _sponsors.length,
-                        onReorder: _onReorder,
-                        itemBuilder: (ctx, i) => _row(_sponsors[i], i),
-                      ),
-                    ),
-                  ],
+          ? _empty(context)
+          : Column(
+              children: [
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Text(
+                    'Diese Logos erscheinen automatisch auf der Startelf-Grafik. '
+                    'Ziehen zum Sortieren – Haupt-Sponsor bleibt oben.',
+                    style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                  ),
                 ),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    padding: const EdgeInsets.only(bottom: 88),
+                    buildDefaultDragHandles: false,
+                    itemCount: _sponsors.length,
+                    onReorder: _onReorder,
+                    itemBuilder: (ctx, i) => _row(_sponsors[i], i),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -295,11 +311,16 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.handshake_outlined,
-                size: 56, color: Theme.of(context).hintColor),
+            Icon(
+              Icons.handshake_outlined,
+              size: 56,
+              color: Theme.of(context).hintColor,
+            ),
             const SizedBox(height: 12),
-            const Text('Noch keine Sponsoren',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            const Text(
+              'Noch keine Sponsoren',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+            ),
             const SizedBox(height: 6),
             const Text(
               'Lege Sponsoren mit Logo an – sie erscheinen automatisch auf der '

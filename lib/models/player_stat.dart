@@ -38,43 +38,41 @@ class PlayerStat {
     this.topEleven = 0,
   });
 
-  String get fullName => [firstName, lastName]
-      .where((s) => s.trim().isNotEmpty)
-      .join(' ')
-      .trim();
+  String get fullName =>
+      [firstName, lastName].where((s) => s.trim().isNotEmpty).join(' ').trim();
 
   /// Tor-Beteiligungen (Tore + Vorlagen).
   int get scorerPoints => goals + assists;
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'team_id': teamId,
-        'external_id': externalId,
-        'first_name': firstName,
-        'last_name': lastName,
-        'matches': matches,
-        'goals': goals,
-        'assists': assists,
-        'yellow_cards': yellowCards,
-        'yellow_red_cards': yellowRedCards,
-        'red_cards': redCards,
-        'minutes': minutes,
-        'top_eleven': topEleven,
-      };
+    'id': id,
+    'team_id': teamId,
+    'external_id': externalId,
+    'first_name': firstName,
+    'last_name': lastName,
+    'matches': matches,
+    'goals': goals,
+    'assists': assists,
+    'yellow_cards': yellowCards,
+    'yellow_red_cards': yellowRedCards,
+    'red_cards': redCards,
+    'minutes': minutes,
+    'top_eleven': topEleven,
+  };
 
   factory PlayerStat.fromMap(Map<String, Object?> m) => PlayerStat(
-        id: m['id'] as String,
-        teamId: m['team_id'] as String,
-        externalId: m['external_id'] as String?,
-        firstName: m['first_name'] as String? ?? '',
-        lastName: m['last_name'] as String? ?? '',
-        matches: m['matches'] as int? ?? 0,
-        goals: m['goals'] as int? ?? 0,
-        assists: m['assists'] as int? ?? 0,
-        yellowCards: m['yellow_cards'] as int? ?? 0,
-        yellowRedCards: m['yellow_red_cards'] as int? ?? 0,
-        redCards: m['red_cards'] as int? ?? 0,
-        minutes: m['minutes'] as int? ?? 0,
-        topEleven: m['top_eleven'] as int? ?? 0,
-      );
+    id: m['id'] as String,
+    teamId: m['team_id'] as String,
+    externalId: m['external_id'] as String?,
+    firstName: m['first_name'] as String? ?? '',
+    lastName: m['last_name'] as String? ?? '',
+    matches: m['matches'] as int? ?? 0,
+    goals: m['goals'] as int? ?? 0,
+    assists: m['assists'] as int? ?? 0,
+    yellowCards: m['yellow_cards'] as int? ?? 0,
+    yellowRedCards: m['yellow_red_cards'] as int? ?? 0,
+    redCards: m['red_cards'] as int? ?? 0,
+    minutes: m['minutes'] as int? ?? 0,
+    topEleven: m['top_eleven'] as int? ?? 0,
+  );
 }

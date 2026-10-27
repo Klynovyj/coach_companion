@@ -11,9 +11,9 @@ class TodoResponsible {
   Map<String, Object?> toJson() => {'id': playerId, 'name': name};
 
   factory TodoResponsible.fromJson(Map<String, Object?> m) => TodoResponsible(
-        playerId: m['id'] as String?,
-        name: m['name'] as String? ?? '',
-      );
+    playerId: m['id'] as String?,
+    name: m['name'] as String? ?? '',
+  );
 }
 
 /// Eine eigene Aufgabe/Merker für die „Nachholen"-Liste.
@@ -73,47 +73,44 @@ class Todo {
     String? topicId,
     bool clearTopicId = false,
     List<TodoResponsible>? responsible,
-  }) =>
-      Todo(
-        id: id,
-        text: text ?? this.text,
-        done: done ?? this.done,
-        createdAt: createdAt,
-        dueDate: clearDueDate ? null : (dueDate ?? this.dueDate),
-        completedAt:
-            clearCompletedAt ? null : (completedAt ?? this.completedAt),
-        archived: archived ?? this.archived,
-        topicId: clearTopicId ? null : (topicId ?? this.topicId),
-        responsible: responsible ?? this.responsible,
-      );
+  }) => Todo(
+    id: id,
+    text: text ?? this.text,
+    done: done ?? this.done,
+    createdAt: createdAt,
+    dueDate: clearDueDate ? null : (dueDate ?? this.dueDate),
+    completedAt: clearCompletedAt ? null : (completedAt ?? this.completedAt),
+    archived: archived ?? this.archived,
+    topicId: clearTopicId ? null : (topicId ?? this.topicId),
+    responsible: responsible ?? this.responsible,
+  );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'text': text,
-        'done': done ? 1 : 0,
-        'created_at': createdAt.toIso8601String(),
-        'due_date': dueDate?.toIso8601String(),
-        'completed_at': completedAt?.toIso8601String(),
-        'archived': archived ? 1 : 0,
-        'topic_id': topicId,
-        'responsible': responsible.isEmpty
-            ? null
-            : jsonEncode(responsible.map((r) => r.toJson()).toList()),
-      };
+    'id': id,
+    'text': text,
+    'done': done ? 1 : 0,
+    'created_at': createdAt.toIso8601String(),
+    'due_date': dueDate?.toIso8601String(),
+    'completed_at': completedAt?.toIso8601String(),
+    'archived': archived ? 1 : 0,
+    'topic_id': topicId,
+    'responsible': responsible.isEmpty
+        ? null
+        : jsonEncode(responsible.map((r) => r.toJson()).toList()),
+  };
 
   factory Todo.fromMap(Map<String, Object?> m) => Todo(
-        id: m['id'] as String,
-        text: m['text'] as String? ?? '',
-        done: (m['done'] as int? ?? 0) == 1,
-        createdAt:
-            DateTime.tryParse(m['created_at'] as String? ?? '') ??
-                DateTime.now(),
-        dueDate: _parseDate(m['due_date']),
-        completedAt: _parseDate(m['completed_at']),
-        archived: (m['archived'] as int? ?? 0) == 1,
-        topicId: m['topic_id'] as String?,
-        responsible: _parseResponsible(m['responsible']),
-      );
+    id: m['id'] as String,
+    text: m['text'] as String? ?? '',
+    done: (m['done'] as int? ?? 0) == 1,
+    createdAt:
+        DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+    dueDate: _parseDate(m['due_date']),
+    completedAt: _parseDate(m['completed_at']),
+    archived: (m['archived'] as int? ?? 0) == 1,
+    topicId: m['topic_id'] as String?,
+    responsible: _parseResponsible(m['responsible']),
+  );
 
   static List<TodoResponsible> _parseResponsible(Object? v) {
     final s = v as String?;

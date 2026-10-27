@@ -601,6 +601,43 @@ class _TeamsViewState extends State<_TeamsView> {
             ),
           ),
         ),
+        // Deutlicher Hinweis, solange kein Name hinterlegt ist: andere Trainer
+        // und das Teilen zeigen sonst die E-Mail statt des Namens.
+        if (name == null)
+          Material(
+            color: Colors.amber.shade100,
+            child: InkWell(
+              onTap: _editName,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.warning_amber_rounded,
+                      size: 20,
+                      color: Colors.amber.shade900,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Kein Name hinterlegt – andere Trainer sehen deine '
+                        'E-Mail (auch beim Teilen). Jetzt Namen festlegen.',
+                        style: TextStyle(
+                          color: Colors.amber.shade900,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    FilledButton(
+                      onPressed: _editName,
+                      child: const Text('Name'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         Padding(
           padding: const EdgeInsets.all(12),
           child: Row(

@@ -56,22 +56,22 @@ class MatchClockData {
   /// Aktuell gespielte Sekunden (bei laufender Uhr echtzeit-korrigiert).
   int currentElapsed() {
     if (!running) return baseElapsed;
-    final delta =
-        ((DateTime.now().millisecondsSinceEpoch - startedAtMs) / 1000).floor();
+    final delta = ((DateTime.now().millisecondsSinceEpoch - startedAtMs) / 1000)
+        .floor();
     return baseElapsed + (delta < 0 ? 0 : delta);
   }
 
   Map<String, dynamic> toJson() => {
-        'running': running,
-        'base': baseElapsed,
-        'ts': startedAtMs,
-        'half': half,
-        'label': phaseLabel,
-        'own': ownName,
-        'opp': oppName,
-        'os': ownScore,
-        'ps': oppScore,
-      };
+    'running': running,
+    'base': baseElapsed,
+    'ts': startedAtMs,
+    'half': half,
+    'label': phaseLabel,
+    'own': ownName,
+    'opp': oppName,
+    'os': ownScore,
+    'ps': oppScore,
+  };
 
   static MatchClockData? fromJson(Map<String, dynamic> j) {
     try {
@@ -101,7 +101,8 @@ class MatchClockData {
 /// Fasst Notification-Titel/Text aus den Uhr-Daten zusammen.
 ({String title, String text}) _notificationContent(MatchClockData d) {
   final title = '${d.ownName} ${d.ownScore}:${d.oppScore} ${d.oppName}';
-  final text = '${d.phaseLabel} · ${MatchClockData.formatClock(d.currentElapsed())}';
+  final text =
+      '${d.phaseLabel} · ${MatchClockData.formatClock(d.currentElapsed())}';
   return (title: title, text: text);
 }
 
@@ -164,8 +165,10 @@ class LiveClock {
         guid: 'b3f6d1c2-8a4e-4f2b-9e3a-2c7d5e9f1a60',
       );
       await _fln.initialize(
-        settings:
-            const InitializationSettings(android: android, windows: windows),
+        settings: const InitializationSettings(
+          android: android,
+          windows: windows,
+        ),
       );
       _flnReady = true;
     } catch (e) {
@@ -180,13 +183,17 @@ class LiveClock {
     if (Platform.isAndroid) {
       await _requestAndroidPermissions();
       await FlutterForegroundTask.saveData(
-          key: _dataKey, value: jsonEncode(d.toJson()));
+        key: _dataKey,
+        value: jsonEncode(d.toJson()),
+      );
       await FlutterForegroundTask.saveData(key: '${_dataKey}_ah', value: false);
       await FlutterForegroundTask.saveData(key: '${_dataKey}_af', value: false);
       final content = _notificationContent(d);
       if (await FlutterForegroundTask.isRunningService) {
         await FlutterForegroundTask.updateService(
-            notificationTitle: content.title, notificationText: content.text);
+          notificationTitle: content.title,
+          notificationText: content.text,
+        );
       } else {
         await FlutterForegroundTask.startService(
           serviceId: 4711,
@@ -205,7 +212,9 @@ class LiveClock {
   static Future<void> update(MatchClockData d) async {
     if (Platform.isAndroid) {
       await FlutterForegroundTask.saveData(
-          key: _dataKey, value: jsonEncode(d.toJson()));
+        key: _dataKey,
+        value: jsonEncode(d.toJson()),
+      );
       // Der Dienst aktualisiert die Benachrichtigung selbst (jede Sekunde).
       return;
     }
@@ -291,15 +300,17 @@ void startMatchClockCallback() {
 }
 
 class _MatchClockHandler extends TaskHandler {
-  final FlutterLocalNotificationsPlugin _fln = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _fln =
+      FlutterLocalNotificationsPlugin();
   bool _flnReady = false;
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
     try {
       const android = AndroidInitializationSettings('@mipmap/ic_launcher');
-      await _fln
-          .initialize(settings: const InitializationSettings(android: android));
+      await _fln.initialize(
+        settings: const InitializationSettings(android: android),
+      );
       _flnReady = true;
     } catch (_) {
       _flnReady = false;
@@ -334,19 +345,23 @@ class _MatchClockHandler extends TaskHandler {
     if (d.half == 1 && sec >= 45 * 60) {
       final already =
           await FlutterForegroundTask.getData<bool>(key: 'match_clock_ah') ??
-              false;
+          false;
       if (!already) {
         await FlutterForegroundTask.saveData(
-            key: 'match_clock_ah', value: true);
+          key: 'match_clock_ah',
+          value: true,
+        );
         await _alert('Halbzeit', '45:00 erreicht');
       }
     } else if (d.half == 2 && sec >= 90 * 60) {
       final already =
           await FlutterForegroundTask.getData<bool>(key: 'match_clock_af') ??
-              false;
+          false;
       if (!already) {
         await FlutterForegroundTask.saveData(
-            key: 'match_clock_af', value: true);
+          key: 'match_clock_af',
+          value: true,
+        );
         await _alert('90. Minute', 'Reguläre Spielzeit vorbei');
       }
     }

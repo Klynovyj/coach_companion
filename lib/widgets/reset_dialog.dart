@@ -25,14 +25,18 @@ Future<ResetChoice?> showResetMatchDialog(BuildContext context) {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Was soll gelöscht werden? Das kann nicht rückgängig '
-                'gemacht werden.'),
+            const Text(
+              'Was soll gelöscht werden? Das kann nicht rückgängig '
+              'gemacht werden.',
+            ),
             const SizedBox(height: 8),
             CheckboxListTile(
               value: verlauf,
               onChanged: (v) => setState(() => verlauf = v ?? false),
               title: const Text('Spielverlauf'),
-              subtitle: const Text('Protokoll, Tore, Karten, Wechsel, Stand 0:0'),
+              subtitle: const Text(
+                'Protokoll, Tore, Karten, Wechsel, Stand 0:0',
+              ),
               contentPadding: EdgeInsets.zero,
             ),
             CheckboxListTile(
@@ -51,13 +55,16 @@ Future<ResetChoice?> showResetMatchDialog(BuildContext context) {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
             style: FilledButton.styleFrom(backgroundColor: Colors.red),
             onPressed: (verlauf || aufstellung || nominierung)
                 ? () => Navigator.pop(
-                    context, ResetChoice(verlauf, aufstellung, nominierung))
+                    context,
+                    ResetChoice(verlauf, aufstellung, nominierung),
+                  )
                 : null,
             child: const Text('Zurücksetzen'),
           ),

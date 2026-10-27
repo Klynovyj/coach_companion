@@ -46,26 +46,28 @@ class _PlayerPickerPageState extends State<PlayerPickerPage> {
       required Widget leading,
       required String label,
       required VoidCallback onTap,
-    }) =>
-        Card(
-          elevation: 0,
-          margin: const EdgeInsets.symmetric(vertical: 3),
-          color: selected ? scheme.primaryContainer : scheme.surfaceContainerHighest,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: BorderSide(
-              color: selected ? scheme.primary : Colors.transparent,
-              width: 1.5,
-            ),
-          ),
-          child: ListTile(
-            leading: leading,
-            title: Text(label),
-            trailing:
-                selected ? Icon(Icons.check_circle, color: scheme.primary) : null,
-            onTap: onTap,
-          ),
-        );
+    }) => Card(
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(vertical: 3),
+      color: selected
+          ? scheme.primaryContainer
+          : scheme.surfaceContainerHighest,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: selected ? scheme.primary : Colors.transparent,
+          width: 1.5,
+        ),
+      ),
+      child: ListTile(
+        leading: leading,
+        title: Text(label),
+        trailing: selected
+            ? Icon(Icons.check_circle, color: scheme.primary)
+            : null,
+        onTap: onTap,
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
@@ -92,7 +94,9 @@ class _PlayerPickerPageState extends State<PlayerPickerPage> {
             tile(
               selected: widget.selected == null,
               leading: const CircleAvatar(
-                  radius: 18, child: Icon(Icons.block, size: 18)),
+                radius: 18,
+                child: Icon(Icons.block, size: 18),
+              ),
               label: '— ohne —',
               onTap: () => Navigator.pop(context, kPlayerPickNone),
             ),

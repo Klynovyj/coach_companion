@@ -25,19 +25,36 @@ class DateBlock extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: d == null
             ? [
-                Text('—',
-                    style: TextStyle(
-                        color: fg, fontWeight: FontWeight.bold, fontSize: 18)),
+                Text(
+                  '—',
+                  style: TextStyle(
+                    color: fg,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 18,
+                  ),
+                ),
               ]
             : [
-                Text(DateFormat('EEE', 'de_DE').format(d).toUpperCase(),
-                    style: TextStyle(
-                        color: fg, fontSize: 10, fontWeight: FontWeight.w600)),
-                Text(DateFormat('dd').format(d),
-                    style: TextStyle(
-                        color: fg, fontSize: 18, fontWeight: FontWeight.w800)),
-                Text(DateFormat('MMM', 'de_DE').format(d),
-                    style: TextStyle(color: fg, fontSize: 10)),
+                Text(
+                  DateFormat('EEE', 'de_DE').format(d).toUpperCase(),
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  DateFormat('dd').format(d),
+                  style: TextStyle(
+                    color: fg,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  DateFormat('MMM', 'de_DE').format(d),
+                  style: TextStyle(color: fg, fontSize: 10),
+                ),
               ],
       ),
     );
@@ -46,12 +63,7 @@ class DateBlock extends StatelessWidget {
 
 /// Farbige Pille mit Text (z.B. Ergebnis, Status, Wettbewerb).
 class Pill extends StatelessWidget {
-  const Pill({
-    super.key,
-    required this.text,
-    this.color,
-    this.filled = false,
-  });
+  const Pill({super.key, required this.text, this.color, this.filled = false});
 
   final String text;
   final Color? color;
@@ -66,12 +78,14 @@ class Pill extends StatelessWidget {
         color: filled ? c : c.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(20),
       ),
-      child: Text(text,
-          style: TextStyle(
-            color: filled ? Colors.white : c,
-            fontWeight: FontWeight.w700,
-            fontSize: 12,
-          )),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: filled ? Colors.white : c,
+          fontWeight: FontWeight.w700,
+          fontSize: 12,
+        ),
+      ),
     );
   }
 }
@@ -89,11 +103,12 @@ class SectionHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 16, 8, 4),
       child: Row(
         children: [
-          Text(title,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleMedium
-                  ?.copyWith(fontWeight: FontWeight.w800)),
+          Text(
+            title,
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
           const Spacer(),
           ?action,
         ],

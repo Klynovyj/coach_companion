@@ -69,30 +69,29 @@ class MatchEvent {
   }
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'match_id': matchId,
-        'team_id': teamId,
-        'minute': minute,
-        'minute_extra': minuteExtra,
-        'type': type.storageKey,
-        'player_id': playerId,
-        'assist_player_id': assistPlayerId,
-        'note': note,
-        'created_at': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'match_id': matchId,
+    'team_id': teamId,
+    'minute': minute,
+    'minute_extra': minuteExtra,
+    'type': type.storageKey,
+    'player_id': playerId,
+    'assist_player_id': assistPlayerId,
+    'note': note,
+    'created_at': createdAt.toIso8601String(),
+  };
 
   factory MatchEvent.fromMap(Map<String, Object?> m) => MatchEvent(
-        id: m['id'] as String,
-        matchId: m['match_id'] as String,
-        teamId: m['team_id'] as String,
-        minute: m['minute'] as int? ?? 0,
-        minuteExtra: m['minute_extra'] as int? ?? 0,
-        type: MatchEventType.fromKey(m['type'] as String?),
-        playerId: m['player_id'] as String?,
-        assistPlayerId: m['assist_player_id'] as String?,
-        note: m['note'] as String?,
-        createdAt:
-            DateTime.tryParse(m['created_at'] as String? ?? '') ??
-                DateTime.now(),
-      );
+    id: m['id'] as String,
+    matchId: m['match_id'] as String,
+    teamId: m['team_id'] as String,
+    minute: m['minute'] as int? ?? 0,
+    minuteExtra: m['minute_extra'] as int? ?? 0,
+    type: MatchEventType.fromKey(m['type'] as String?),
+    playerId: m['player_id'] as String?,
+    assistPlayerId: m['assist_player_id'] as String?,
+    note: m['note'] as String?,
+    createdAt:
+        DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+  );
 }

@@ -42,40 +42,39 @@ class CardEntry {
     int? minute,
     String? matchId,
     bool clearMatchId = false,
-  }) =>
-      CardEntry(
-        id: id,
-        playerId: playerId,
-        type: type ?? this.type,
-        date: date ?? this.date,
-        matchId: clearMatchId ? null : (matchId ?? this.matchId),
-        matchEventId: matchEventId,
-        minute: minute ?? this.minute,
-        minuteExtra: minuteExtra,
-        note: note ?? this.note,
-      );
+  }) => CardEntry(
+    id: id,
+    playerId: playerId,
+    type: type ?? this.type,
+    date: date ?? this.date,
+    matchId: clearMatchId ? null : (matchId ?? this.matchId),
+    matchEventId: matchEventId,
+    minute: minute ?? this.minute,
+    minuteExtra: minuteExtra,
+    note: note ?? this.note,
+  );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'player_id': playerId,
-        'type': type.storageKey,
-        'date': date.toIso8601String(),
-        'match_id': matchId,
-        'match_event_id': matchEventId,
-        'minute': minute,
-        'minute_extra': minuteExtra,
-        'note': note,
-      };
+    'id': id,
+    'player_id': playerId,
+    'type': type.storageKey,
+    'date': date.toIso8601String(),
+    'match_id': matchId,
+    'match_event_id': matchEventId,
+    'minute': minute,
+    'minute_extra': minuteExtra,
+    'note': note,
+  };
 
   factory CardEntry.fromMap(Map<String, Object?> m) => CardEntry(
-        id: m['id'] as String,
-        playerId: m['player_id'] as String,
-        type: CardType.fromKey(m['type'] as String?),
-        date: DateTime.tryParse(m['date'] as String? ?? '') ?? DateTime.now(),
-        matchId: m['match_id'] as String?,
-        matchEventId: m['match_event_id'] as String?,
-        minute: m['minute'] as int?,
-        minuteExtra: m['minute_extra'] as int? ?? 0,
-        note: m['note'] as String?,
-      );
+    id: m['id'] as String,
+    playerId: m['player_id'] as String,
+    type: CardType.fromKey(m['type'] as String?),
+    date: DateTime.tryParse(m['date'] as String? ?? '') ?? DateTime.now(),
+    matchId: m['match_id'] as String?,
+    matchEventId: m['match_event_id'] as String?,
+    minute: m['minute'] as int?,
+    minuteExtra: m['minute_extra'] as int? ?? 0,
+    note: m['note'] as String?,
+  );
 }

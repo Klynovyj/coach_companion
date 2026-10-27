@@ -65,31 +65,30 @@ class Team {
   }
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'name': name,
-        'short_name': shortName,
-        'fupa_url': fupaUrl,
-        'fupa_ref': fupaRef,
-        'logo_path': logoPath,
-        'is_own_team': isOwnTeam ? 1 : 0,
-        'source': source.storageKey,
-        'last_synced_at': lastSyncedAt?.toIso8601String(),
-        'created_at': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    'short_name': shortName,
+    'fupa_url': fupaUrl,
+    'fupa_ref': fupaRef,
+    'logo_path': logoPath,
+    'is_own_team': isOwnTeam ? 1 : 0,
+    'source': source.storageKey,
+    'last_synced_at': lastSyncedAt?.toIso8601String(),
+    'created_at': createdAt.toIso8601String(),
+  };
 
   factory Team.fromMap(Map<String, Object?> m) => Team(
-        id: m['id'] as String,
-        name: m['name'] as String,
-        shortName: m['short_name'] as String?,
-        fupaUrl: m['fupa_url'] as String?,
-        fupaRef: m['fupa_ref'] as String?,
-        logoPath: m['logo_path'] as String?,
-        isOwnTeam: (m['is_own_team'] as int? ?? 0) == 1,
-        source: DataSource.fromKey(m['source'] as String?),
-        lastSyncedAt: _parseDate(m['last_synced_at'] as String?),
-        createdAt:
-            _parseDate(m['created_at'] as String?) ?? DateTime.now(),
-      );
+    id: m['id'] as String,
+    name: m['name'] as String,
+    shortName: m['short_name'] as String?,
+    fupaUrl: m['fupa_url'] as String?,
+    fupaRef: m['fupa_ref'] as String?,
+    logoPath: m['logo_path'] as String?,
+    isOwnTeam: (m['is_own_team'] as int? ?? 0) == 1,
+    source: DataSource.fromKey(m['source'] as String?),
+    lastSyncedAt: _parseDate(m['last_synced_at'] as String?),
+    createdAt: _parseDate(m['created_at'] as String?) ?? DateTime.now(),
+  );
 }
 
 DateTime? _parseDate(String? s) => s == null ? null : DateTime.tryParse(s);

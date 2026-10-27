@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 44;
+  static const _dbVersion = 45;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -356,6 +356,11 @@ class AppDatabase {
         'CREATE INDEX idx_activities_created ON activities (created_at)',
       );
     }
+    // v44 -> v45: Zeitstempel der letzten Bearbeitung einer Spiel-Bewertung/
+    // eines Spielberichts (für die Anzeige „geschrieben/bearbeitet am").
+    if (oldV < 45) {
+      await db.execute('ALTER TABLE match_ratings ADD COLUMN updated_at TEXT');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -575,6 +580,7 @@ class AppDatabase {
         abstained INTEGER NOT NULL DEFAULT 0,
         note TEXT,
         created_at TEXT NOT NULL,
+        updated_at TEXT,
         FOREIGN KEY (match_id) REFERENCES matches (id) ON DELETE CASCADE
       )
   ''';

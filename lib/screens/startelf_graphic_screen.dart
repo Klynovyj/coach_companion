@@ -93,8 +93,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   // Effektive Anzeige-Werte (Einstellung überschreibt die Defaults).
   String get _title =>
       (_settings.title != null && _settings.title!.trim().isNotEmpty)
-          ? _settings.title!.trim()
-          : widget.teamName;
+      ? _settings.title!.trim()
+      : widget.teamName;
   String? get _logo => _settings.logo ?? widget.teamLogo;
 
   Sponsor? get _mainSponsor {
@@ -122,7 +122,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       return 'data:$mime;base64,${base64Encode(bytes)}';
     } catch (e) {
       messenger.showSnackBar(
-          SnackBar(content: Text('Bild konnte nicht geladen werden: $e')));
+        SnackBar(content: Text('Bild konnte nicht geladen werden: $e')),
+      );
       return null;
     }
   }
@@ -141,8 +142,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           }
 
           return Padding(
-            padding:
-                EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            ),
             child: DraggableScrollableSheet(
               expand: false,
               initialChildSize: 0.8,
@@ -152,9 +154,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 controller: scroll,
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 children: [
-                  const Text('Grafik anpassen',
-                      style:
-                          TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                  const Text(
+                    'Grafik anpassen',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
                   const SizedBox(height: 14),
                   // Titel ------------------------------------------------
                   TextField(
@@ -165,8 +168,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                       hintText: widget.teamName,
                       border: const OutlineInputBorder(),
                     ),
-                    onChanged: (v) => apply(_settings.copyWith(
-                        title: v.trim(), clearTitle: v.trim().isEmpty)),
+                    onChanged: (v) => apply(
+                      _settings.copyWith(
+                        title: v.trim(),
+                        clearTitle: v.trim().isEmpty,
+                      ),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   // Logo -------------------------------------------------
@@ -209,9 +216,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                   const SizedBox(height: 8),
                   // Abdunkeln / Transparenz -----------------------------
-                  Text(_settings.bgImage == null
-                      ? 'Abdunkeln (nur mit Hintergrundbild wirksam)'
-                      : 'Abdunkeln / Transparenz: ${_settings.overlayOpacity}%'),
+                  Text(
+                    _settings.bgImage == null
+                        ? 'Abdunkeln (nur mit Hintergrundbild wirksam)'
+                        : 'Abdunkeln / Transparenz: ${_settings.overlayOpacity}%',
+                  ),
                   Slider(
                     value: _settings.overlayOpacity.toDouble(),
                     min: 0,
@@ -259,8 +268,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                             ),
                           ),
                           label: Text(p.$1),
-                          onPressed: () => apply(_settings.copyWith(
-                              gradTop: p.$2, gradBottom: p.$3)),
+                          onPressed: () => apply(
+                            _settings.copyWith(gradTop: p.$2, gradBottom: p.$3),
+                          ),
                         ),
                     ],
                   ),
@@ -305,14 +315,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           alignment: Alignment.center,
           clipBehavior: Clip.antiAlias,
           child: preview != null
-              ? Image.memory(TeamLogo.decode(preview) ?? Uint8List(0),
-                  fit: BoxFit.cover, errorBuilder: (_, _, _) => const Icon(Icons.image))
+              ? Image.memory(
+                  TeamLogo.decode(preview) ?? Uint8List(0),
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) => const Icon(Icons.image),
+                )
               : Icon(Icons.image_outlined, color: Theme.of(context).hintColor),
         ),
         const SizedBox(width: 12),
         Expanded(
-            child: Text(label,
-                style: const TextStyle(fontWeight: FontWeight.w600))),
+          child: Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ),
         if (onClear != null)
           TextButton(onPressed: onClear, child: Text(clearLabel)),
         OutlinedButton(onPressed: onPick, child: const Text('Wählen')),
@@ -320,7 +336,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     );
   }
 
-  Widget _swatches({required String selected, required void Function(String) onPick}) {
+  Widget _swatches({
+    required String selected,
+    required void Function(String) onPick,
+  }) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -353,7 +372,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final boundary =
-          _boundaryKey.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+          _boundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
       if (boundary == null) return;
       final logicalWidth = _story ? _storyW : _postW;
       final image = await boundary.toImage(pixelRatio: 1080 / logicalWidth);
@@ -365,13 +385,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         text: 'Startelf – $_title',
       );
       if (savedPath != null && mounted) {
-        messenger.showSnackBar(SnackBar(
-          content: Text('Als Bild gespeichert und geöffnet:\n$savedPath'),
-          duration: const Duration(seconds: 6),
-        ));
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Als Bild gespeichert und geöffnet:\n$savedPath'),
+            duration: const Duration(seconds: 6),
+          ),
+        );
       }
     } catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text('Teilen fehlgeschlagen: $e')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
+      );
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
@@ -457,7 +481,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                       ? const SizedBox(
                           width: 18,
                           height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2))
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
                       : const Icon(Icons.share),
                   label: const Text('Teilen (WhatsApp)'),
                 ),
@@ -472,8 +497,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
 
 // Kuratierte Farbpalette für die Verlaufsfarben.
 const _palette = <String>[
-  '#0E3325', '#15603F', '#0B6B43', '#064E3B', '#0C4A6E', '#1E3A8A',
-  '#111827', '#1F2937', '#000000', '#7F1D1D', '#92400E', '#3F3F46',
+  '#0E3325',
+  '#15603F',
+  '#0B6B43',
+  '#064E3B',
+  '#0C4A6E',
+  '#1E3A8A',
+  '#111827',
+  '#1F2937',
+  '#000000',
+  '#7F1D1D',
+  '#92400E',
+  '#3F3F46',
 ];
 
 // Fertige Verlauf-Vorlagen (Name, oben, unten).
@@ -596,17 +631,17 @@ class _StartelfGraphic extends StatelessWidget {
 
   /// Dünne Trennlinie zwischen Kopfbereich (Logo/Spielinfo) und Spielerliste.
   Widget _divider() => Container(
-        height: 1.5,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(1),
-          gradient: LinearGradient(
-            colors: [
-              Colors.white.withValues(alpha: 0.35),
-              Colors.white.withValues(alpha: 0.08),
-            ],
-          ),
-        ),
-      );
+    height: 1.5,
+    decoration: BoxDecoration(
+      borderRadius: BorderRadius.circular(1),
+      gradient: LinearGradient(
+        colors: [
+          Colors.white.withValues(alpha: 0.35),
+          Colors.white.withValues(alpha: 0.08),
+        ],
+      ),
+    ),
+  );
 
   Widget _header() {
     return Row(
@@ -651,21 +686,27 @@ class _StartelfGraphic extends StatelessWidget {
     final logoBytes = TeamLogo.decode(s.logo);
     return Row(
       children: [
-        Text('PRÄSENTIERT VON',
-            style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.8),
-                fontSize: compact ? 9 : 10,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1)),
+        Text(
+          'PRÄSENTIERT VON',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.8),
+            fontSize: compact ? 9 : 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1,
+          ),
+        ),
         const SizedBox(width: 8),
         if (logoBytes != null)
           _logoChip(logoBytes, height: compact ? 24 : 30)
         else
-          Text(s.name,
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: compact ? 13 : 15,
-                  fontWeight: FontWeight.bold)),
+          Text(
+            s.name,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 13 : 15,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
       ],
     );
   }
@@ -676,7 +717,8 @@ class _StartelfGraphic extends StatelessWidget {
     final line1 = <String>[isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL'];
     if (matchDate != null) {
       line1.add(
-          DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(matchDate!.toLocal()));
+        DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(matchDate!.toLocal()),
+      );
     }
     final oppBytes = TeamLogo.decode(opponentLogo);
     return Column(
@@ -750,8 +792,9 @@ class _StartelfGraphic extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                    width: 38,
-                    child: Text(p.number?.toString() ?? '', style: numStyle)),
+                  width: 38,
+                  child: Text(p.number?.toString() ?? '', style: numStyle),
+                ),
                 const SizedBox(width: 10),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -770,22 +813,26 @@ class _StartelfGraphic extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('BANK',
-                  style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 1)),
+              Text(
+                'BANK',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                ),
+              ),
               const SizedBox(width: 12),
               SizedBox(
                 width: 260,
                 child: Text(
                   benchNames.map((n) => n.toUpperCase()).join(', '),
                   style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.92),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      height: 1.3),
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.3,
+                  ),
                 ),
               ),
             ],

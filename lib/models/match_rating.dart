@@ -15,6 +15,10 @@ class MatchRating {
   final String? note;
   final DateTime createdAt;
 
+  /// Zeitpunkt der letzten Änderung (Note/Bericht geschrieben oder bearbeitet).
+  /// Null bei Altzeilen vor Cloud-Stufe 32 – dann gilt [createdAt].
+  final DateTime? updatedAt;
+
   const MatchRating({
     required this.id,
     required this.matchId,
@@ -23,6 +27,7 @@ class MatchRating {
     this.abstained = false,
     this.note,
     required this.createdAt,
+    this.updatedAt,
   });
 
   MatchRating copyWith({
@@ -32,6 +37,7 @@ class MatchRating {
     String? note,
     bool clearNote = false,
     String? userId,
+    DateTime? updatedAt,
   }) => MatchRating(
     id: id,
     matchId: matchId,
@@ -40,7 +46,11 @@ class MatchRating {
     abstained: abstained ?? this.abstained,
     note: clearNote ? null : (note ?? this.note),
     createdAt: createdAt,
+    updatedAt: updatedAt ?? this.updatedAt,
   );
+
+  /// Zeitpunkt für die Anzeige „zuletzt bearbeitet": [updatedAt], sonst Anlage.
+  DateTime get editedAt => updatedAt ?? createdAt;
 
   Map<String, Object?> toMap() => {
     'id': id,
@@ -50,6 +60,7 @@ class MatchRating {
     'abstained': abstained ? 1 : 0,
     'note': note,
     'created_at': createdAt.toIso8601String(),
+    'updated_at': updatedAt?.toIso8601String(),
   };
 
   factory MatchRating.fromMap(Map<String, Object?> m) => MatchRating(
@@ -61,5 +72,6 @@ class MatchRating {
     note: m['note'] as String?,
     createdAt:
         DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+    updatedAt: DateTime.tryParse(m['updated_at'] as String? ?? ''),
   );
 }

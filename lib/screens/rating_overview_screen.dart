@@ -150,7 +150,7 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
     }
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Auswertung'),
+        title: const Text('Spielbericht & Voting'),
         actions: _actionButtons(),
       ),
       body: content,

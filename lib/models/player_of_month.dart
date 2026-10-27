@@ -14,17 +14,17 @@ class PlayerOfMonth {
   });
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'year_month': yearMonth,
-        'player_id': playerId,
-        'created_at': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'year_month': yearMonth,
+    'player_id': playerId,
+    'created_at': createdAt.toIso8601String(),
+  };
 
   factory PlayerOfMonth.fromMap(Map<String, Object?> m) => PlayerOfMonth(
-        id: m['id'] as String,
-        yearMonth: m['year_month'] as String? ?? '',
-        playerId: m['player_id'] as String? ?? '',
-        createdAt: DateTime.tryParse(m['created_at'] as String? ?? '') ??
-            DateTime.now(),
-      );
+    id: m['id'] as String,
+    yearMonth: m['year_month'] as String? ?? '',
+    playerId: m['player_id'] as String? ?? '',
+    createdAt:
+        DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+  );
 }

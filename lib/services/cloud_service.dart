@@ -376,11 +376,27 @@ class CloudService {
 
   /// Spiegelt eine Zeile in die Cloud (Insert oder Update). [onConflict] gibt
   /// bei Bedarf die Konflikt-Spalten an (z.B. 'match_id,player_id').
+  ///
+  /// Robust gegen eine noch nicht angelegte `updated_at`-Spalte (Cloud-Stufe 32
+  /// noch nicht ausgeführt): in dem Fall wird die Zeile ohne dieses Feld erneut
+  /// gesendet, damit Noten/Berichte weiterhin synchronisieren.
   static Future<void> upsertRow(
     String table,
     Map<String, dynamic> row, {
     String? onConflict,
-  }) => _c.from(table).upsert(row, onConflict: onConflict);
+  }) async {
+    try {
+      await _c.from(table).upsert(row, onConflict: onConflict);
+    } on PostgrestException catch (e) {
+      final msg = e.message.toLowerCase();
+      if (row.containsKey('updated_at') && msg.contains('updated_at')) {
+        final fallback = Map<String, dynamic>.from(row)..remove('updated_at');
+        await _c.from(table).upsert(fallback, onConflict: onConflict);
+      } else {
+        rethrow;
+      }
+    }
+  }
 
   /// Löscht Cloud-Zeilen anhand eines Spalten-Filters (z.B. {id: …} oder
   /// {match_id: …, player_id: …}).

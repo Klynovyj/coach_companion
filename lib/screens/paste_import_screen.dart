@@ -17,12 +17,11 @@ class _EditableRow {
   bool selected;
 
   _EditableRow(ParsedPlayer p)
-      : first = TextEditingController(text: p.firstName),
-        last = TextEditingController(text: p.lastName),
-        number =
-            TextEditingController(text: p.number?.toString() ?? ''),
-        position = TextEditingController(text: p.position ?? ''),
-        selected = true;
+    : first = TextEditingController(text: p.firstName),
+      last = TextEditingController(text: p.lastName),
+      number = TextEditingController(text: p.number?.toString() ?? ''),
+      position = TextEditingController(text: p.position ?? ''),
+      selected = true;
 
   bool get hasName =>
       first.text.trim().isNotEmpty || last.text.trim().isNotEmpty;
@@ -35,11 +34,11 @@ class _EditableRow {
   }
 
   PlayerData toData() => PlayerData(
-        firstName: first.text.trim(),
-        lastName: last.text.trim(),
-        number: int.tryParse(number.text.trim()),
-        position: position.text.trim().isEmpty ? null : position.text.trim(),
-      );
+    firstName: first.text.trim(),
+    lastName: last.text.trim(),
+    number: int.tryParse(number.text.trim()),
+    position: position.text.trim().isEmpty ? null : position.text.trim(),
+  );
 }
 
 /// Einfügen-Import für einen Kader (eigenes Team oder Gegner).
@@ -88,8 +87,9 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
         .toList();
     final teamUrls = lines.where(FupaReduxImporter.isTeamUrl).toList();
     final playerUrls = lines.where(FupaReduxImporter.isPlayerUrl).toList();
-    final textLines =
-        lines.where((l) => !FupaReduxImporter.isFupaUrl(l)).toList();
+    final textLines = lines
+        .where((l) => !FupaReduxImporter.isFupaUrl(l))
+        .toList();
 
     final parsedText = SquadPasteParser.parse(textLines.join('\n'));
 
@@ -142,14 +142,18 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
     if (all.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text(
-                'Keine Spieler erkannt. Tipp: einen FuPa-Team-/Spielerlink oder eine Zeile pro Spieler einfügen.')),
+          content: Text(
+            'Keine Spieler erkannt. Tipp: einen FuPa-Team-/Spielerlink oder eine Zeile pro Spieler einfügen.',
+          ),
+        ),
       );
     } else if (failed > 0) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-            content: Text(
-                '$failed von $urlCount FuPa-Links konnten nicht geladen werden – bitte manuell ergänzen.')),
+          content: Text(
+            '$failed von $urlCount FuPa-Links konnten nicht geladen werden – bitte manuell ergänzen.',
+          ),
+        ),
       );
     }
   }
@@ -189,8 +193,10 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
 
     messenger.showSnackBar(
       SnackBar(
-          content: Text(
-              '${data.length} Spieler übernommen ($added neu, ${data.length - added} aktualisiert).')),
+        content: Text(
+          '${data.length} Spieler übernommen ($added neu, ${data.length - added} aktualisiert).',
+        ),
+      ),
     );
     navigator.pop(added);
   }
@@ -205,8 +211,10 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
           if (rows != null)
             TextButton(
               onPressed: _import,
-              child: const Text('Übernehmen',
-                  style: TextStyle(color: Colors.white)),
+              child: const Text(
+                'Übernehmen',
+                style: TextStyle(color: Colors.white),
+              ),
             ),
         ],
       ),
@@ -237,10 +245,9 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
         Text(
           'Hinweis: FuPa-Links lädt die App von der öffentlichen Spielerseite. '
           'Ändert FuPa das Layout, muss der Import angepasst werden.',
-          style: Theme.of(context)
-              .textTheme
-              .bodySmall
-              ?.copyWith(fontStyle: FontStyle.italic),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
         ),
         const SizedBox(height: 16),
         if (widget.fupaUrl != null)
@@ -277,7 +284,8 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
               ? const SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2))
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
               : const Icon(Icons.auto_fix_high),
           label: const Text('Erkennen'),
         ),
@@ -297,7 +305,8 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
             secondary: TeamLogo(logoPath: meta.logoDataUrl, size: 36),
             title: Text(meta.name ?? 'Vereinsdaten'),
             subtitle: Text(
-                'Teamname${meta.shortName != null ? ' (${meta.shortName})' : ''} & Logo übernehmen'),
+              'Teamname${meta.shortName != null ? ' (${meta.shortName})' : ''} & Logo übernehmen',
+            ),
             controlAffinity: ListTileControlAffinity.trailing,
           ),
         Container(
@@ -307,7 +316,9 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
           child: Row(
             children: [
               Expanded(
-                child: Text('$selectedCount von ${rows.length} werden übernommen'),
+                child: Text(
+                  '$selectedCount von ${rows.length} werden übernommen',
+                ),
               ),
               TextButton(
                 onPressed: () => setState(() {
@@ -362,7 +373,9 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
                       child: TextField(
                         controller: row.first,
                         decoration: const InputDecoration(
-                            hintText: 'Vorname', isDense: true),
+                          hintText: 'Vorname',
+                          isDense: true,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -371,7 +384,9 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
                         controller: row.last,
                         onChanged: (_) => setState(() {}),
                         decoration: const InputDecoration(
-                            hintText: 'Nachname', isDense: true),
+                          hintText: 'Nachname',
+                          isDense: true,
+                        ),
                       ),
                     ),
                   ],
@@ -379,7 +394,9 @@ class _PasteImportScreenState extends State<PasteImportScreen> {
                 TextField(
                   controller: row.position,
                   decoration: const InputDecoration(
-                      hintText: 'Position', isDense: true),
+                    hintText: 'Position',
+                    isDense: true,
+                  ),
                 ),
               ],
             ),

@@ -105,30 +105,38 @@ class UpdateService {
 
   /// Prüft beim Start und zeigt ggf. den Update-Dialog. [silent] = bei „aktuell"
   /// keine Rückmeldung (für den Auto-Check). Bei false kommt ein Hinweis.
-  static Future<void> promptIfAvailable(BuildContext context,
-      {bool silent = true}) async {
+  static Future<void> promptIfAvailable(
+    BuildContext context, {
+    bool silent = true,
+  }) async {
     final info = await check();
     if (!context.mounted) return;
     if (info == null) {
       if (!silent) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('myCoach ist aktuell.')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('myCoach ist aktuell.')));
       }
       return;
     }
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Update verfügbar${info.versionName.isEmpty ? '' : ' (${info.versionName})'}'),
+        title: Text(
+          'Update verfügbar${info.versionName.isEmpty ? '' : ' (${info.versionName})'}',
+        ),
         content: SingleChildScrollView(
-          child: Text(info.notes.isEmpty
-              ? 'Eine neuere Version von myCoach ist verfügbar.'
-              : info.notes),
+          child: Text(
+            info.notes.isEmpty
+                ? 'Eine neuere Version von myCoach ist verfügbar.'
+                : info.notes,
+          ),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Später')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Später'),
+          ),
           FilledButton.icon(
             onPressed: () => Navigator.pop(ctx, true),
             icon: const Icon(Icons.system_update),
@@ -142,7 +150,9 @@ class UpdateService {
   }
 
   static Future<void> _runDownload(
-      BuildContext context, UpdateInfo info) async {
+    BuildContext context,
+    UpdateInfo info,
+  ) async {
     final progress = ValueNotifier<double>(-1);
     showDialog(
       context: context,
@@ -168,8 +178,9 @@ class UpdateService {
     );
     if (context.mounted) Navigator.of(context).pop(); // Fortschritts-Dialog
     if (error != null && context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(error)));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error)));
     }
     progress.dispose();
   }

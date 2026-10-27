@@ -148,8 +148,9 @@ DateTime startOfIsoWeek(DateTime date) {
 ({int week, int year}) isoWeek(DateTime date) {
   final d = _u(date);
   final thursday = d.add(Duration(days: 4 - d.weekday));
-  final week1Monday = _u(DateTime.utc(thursday.year, 1, 4))
-      .subtract(Duration(days: DateTime.utc(thursday.year, 1, 4).weekday - 1));
+  final week1Monday = _u(
+    DateTime.utc(thursday.year, 1, 4),
+  ).subtract(Duration(days: DateTime.utc(thursday.year, 1, 4).weekday - 1));
   final week = (thursday.difference(week1Monday).inDays / 7).round() + 1;
   return (week: week, year: thursday.year);
 }
@@ -170,12 +171,14 @@ List<DutyWeek> listWeeks(DateTime from, DateTime to) {
   while (!cursor.isAfter(end)) {
     final sunday = cursor.add(const Duration(days: 6));
     final iw = isoWeek(cursor);
-    result.add(DutyWeek(
-      DateTime(cursor.year, cursor.month, cursor.day),
-      DateTime(sunday.year, sunday.month, sunday.day),
-      iw.week,
-      iw.year,
-    ));
+    result.add(
+      DutyWeek(
+        DateTime(cursor.year, cursor.month, cursor.day),
+        DateTime(sunday.year, sunday.month, sunday.day),
+        iw.week,
+        iw.year,
+      ),
+    );
     cursor = cursor.add(const Duration(days: 7));
   }
   return result;
@@ -183,15 +186,22 @@ List<DutyWeek> listWeeks(DateTime from, DateTime to) {
 
 /// Gruppen-Index für eine Woche – zyklische Rotation ab [rotationStart].
 /// [startGroup] = Gruppe (0-basiert), die in der Start-Woche dran ist.
-int groupIndexForWeek(DateTime weekMonday, DateTime rotationStart, int groupCount,
-    {int startGroup = 0}) {
+int groupIndexForWeek(
+  DateTime weekMonday,
+  DateTime rotationStart,
+  int groupCount, {
+  int startGroup = 0,
+}) {
   if (groupCount <= 0) return 0;
   final off = weekOffset(rotationStart, weekMonday) + startGroup;
   return ((off % groupCount) + groupCount) % groupCount;
 }
 
 bool _vacationOverlapsWeek(
-    DutyVacation v, DateTime weekMonday, DateTime weekSunday) {
+  DutyVacation v,
+  DateTime weekMonday,
+  DateTime weekSunday,
+) {
   final vs = DateTime(v.start.year, v.start.month, v.start.day);
   final ve = DateTime(v.end.year, v.end.month, v.end.day);
   final wm = DateTime(weekMonday.year, weekMonday.month, weekMonday.day);
@@ -226,16 +236,24 @@ List<ScheduleEntry> buildSchedule({
 }) {
   if (groups.isEmpty || weeks.isEmpty) return const [];
   return weeks.map((w) {
-    final idx = groupIndexForWeek(w.monday, rotationStart, groups.length,
-        startGroup: startGroup);
+    final idx = groupIndexForWeek(
+      w.monday,
+      rotationStart,
+      groups.length,
+      startGroup: startGroup,
+    );
     return ScheduleEntry(
       monday: w.monday,
       sunday: w.sunday,
       week: w.week,
       year: w.year,
       groupIdx: idx,
-      vacationingIds:
-          vacationingInWeek(groups[idx], w.monday, w.sunday, vacations),
+      vacationingIds: vacationingInWeek(
+        groups[idx],
+        w.monday,
+        w.sunday,
+        vacations,
+      ),
     );
   }).toList();
 }

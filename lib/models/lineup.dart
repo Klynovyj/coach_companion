@@ -47,44 +47,42 @@ class Lineup {
     String? creatorName,
     bool? released,
     String? suggestionOf,
-  }) =>
-      Lineup(
-        id: id,
-        matchId: matchId,
-        teamId: teamId,
-        formation: formation ?? this.formation,
-        createdBy: createdBy ?? this.createdBy,
-        creatorName: creatorName ?? this.creatorName,
-        released: released ?? this.released,
-        suggestionOf: suggestionOf ?? this.suggestionOf,
-        createdAt: createdAt,
-      );
+  }) => Lineup(
+    id: id,
+    matchId: matchId,
+    teamId: teamId,
+    formation: formation ?? this.formation,
+    createdBy: createdBy ?? this.createdBy,
+    creatorName: creatorName ?? this.creatorName,
+    released: released ?? this.released,
+    suggestionOf: suggestionOf ?? this.suggestionOf,
+    createdAt: createdAt,
+  );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'match_id': matchId,
-        'team_id': teamId,
-        'formation': formation,
-        'created_by': createdBy,
-        'creator_name': creatorName,
-        'released': released ? 1 : 0,
-        'suggestion_of': suggestionOf,
-        'created_at': createdAt.toIso8601String(),
-      };
+    'id': id,
+    'match_id': matchId,
+    'team_id': teamId,
+    'formation': formation,
+    'created_by': createdBy,
+    'creator_name': creatorName,
+    'released': released ? 1 : 0,
+    'suggestion_of': suggestionOf,
+    'created_at': createdAt.toIso8601String(),
+  };
 
   factory Lineup.fromMap(Map<String, Object?> m) => Lineup(
-        id: m['id'] as String,
-        matchId: m['match_id'] as String,
-        teamId: m['team_id'] as String,
-        formation: m['formation'] as String? ?? '4-4-2',
-        createdBy: m['created_by'] as String?,
-        creatorName: m['creator_name'] as String?,
-        released: (m['released'] as num?)?.toInt() == 1,
-        suggestionOf: m['suggestion_of'] as String?,
-        createdAt:
-            DateTime.tryParse(m['created_at'] as String? ?? '') ??
-                DateTime.now(),
-      );
+    id: m['id'] as String,
+    matchId: m['match_id'] as String,
+    teamId: m['team_id'] as String,
+    formation: m['formation'] as String? ?? '4-4-2',
+    createdBy: m['created_by'] as String?,
+    creatorName: m['creator_name'] as String?,
+    released: (m['released'] as num?)?.toInt() == 1,
+    suggestionOf: m['suggestion_of'] as String?,
+    createdAt:
+        DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+  );
 }
 
 /// Eintrag einer Aufstellung: ordnet einen Spieler einer Rolle zu.
@@ -115,42 +113,42 @@ class LineupEntry {
     this.posY,
   });
 
-  LineupEntry copyWith(
-          {LineupRole? role,
-          String? positionLabel,
-          int? orderIndex,
-          double? posX,
-          double? posY}) =>
-      LineupEntry(
-        id: id,
-        lineupId: lineupId,
-        playerId: playerId,
-        role: role ?? this.role,
-        positionLabel: positionLabel ?? this.positionLabel,
-        orderIndex: orderIndex ?? this.orderIndex,
-        posX: posX ?? this.posX,
-        posY: posY ?? this.posY,
-      );
+  LineupEntry copyWith({
+    LineupRole? role,
+    String? positionLabel,
+    int? orderIndex,
+    double? posX,
+    double? posY,
+  }) => LineupEntry(
+    id: id,
+    lineupId: lineupId,
+    playerId: playerId,
+    role: role ?? this.role,
+    positionLabel: positionLabel ?? this.positionLabel,
+    orderIndex: orderIndex ?? this.orderIndex,
+    posX: posX ?? this.posX,
+    posY: posY ?? this.posY,
+  );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'lineup_id': lineupId,
-        'player_id': playerId,
-        'role': role.storageKey,
-        'position_label': positionLabel,
-        'order_index': orderIndex,
-        'pos_x': posX,
-        'pos_y': posY,
-      };
+    'id': id,
+    'lineup_id': lineupId,
+    'player_id': playerId,
+    'role': role.storageKey,
+    'position_label': positionLabel,
+    'order_index': orderIndex,
+    'pos_x': posX,
+    'pos_y': posY,
+  };
 
   factory LineupEntry.fromMap(Map<String, Object?> m) => LineupEntry(
-        id: m['id'] as String,
-        lineupId: m['lineup_id'] as String,
-        playerId: m['player_id'] as String,
-        role: LineupRole.fromKey(m['role'] as String?),
-        positionLabel: m['position_label'] as String?,
-        orderIndex: m['order_index'] as int? ?? 0,
-        posX: (m['pos_x'] as num?)?.toDouble(),
-        posY: (m['pos_y'] as num?)?.toDouble(),
-      );
+    id: m['id'] as String,
+    lineupId: m['lineup_id'] as String,
+    playerId: m['player_id'] as String,
+    role: LineupRole.fromKey(m['role'] as String?),
+    positionLabel: m['position_label'] as String?,
+    orderIndex: m['order_index'] as int? ?? 0,
+    posX: (m['pos_x'] as num?)?.toDouble(),
+    posY: (m['pos_y'] as num?)?.toDouble(),
+  );
 }

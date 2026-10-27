@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
@@ -22,6 +23,7 @@ class RatingSummaryScreen extends StatefulWidget {
 }
 
 class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
+  final _dt = DateFormat('dd.MM.yyyy · HH:mm', 'de_DE');
   GameMatch? _match;
   List<MatchRating> _ratings = [];
   MatchRating? _myMatch; // eigene Note/Bericht (inline bearbeitbar)
@@ -228,7 +230,9 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
       ..sort((a, b) => b.value.$1.compareTo(a.value.$1));
 
     return Scaffold(
-      appBar: AppBar(title: Text('Auswertung · vs ${match.opponentName}')),
+      appBar: AppBar(
+        title: Text('Spielbericht & Voting · vs ${match.opponentName}'),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
         children: [
@@ -358,9 +362,17 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
               children: [
                 const Icon(Icons.edit_note, size: 18),
                 const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    _trainerName(r.userId),
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
                 Text(
-                  _trainerName(r.userId),
-                  style: const TextStyle(fontWeight: FontWeight.bold),
+                  _dt.format(r.editedAt.toLocal()),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).hintColor,
+                  ),
                 ),
               ],
             ),

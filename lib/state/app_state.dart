@@ -3160,10 +3160,12 @@ class AppState extends ChangeNotifier {
   Future<void> setMatchRating(String matchId, double? rating) async {
     final mine = await myMatchRating(matchId);
     await _repo.upsertMatchRating(
-      _baseMatchRating(
-        matchId,
-        mine,
-      ).copyWith(userId: _me, rating: rating, clearRating: rating == null),
+      _baseMatchRating(matchId, mine).copyWith(
+        userId: _me,
+        rating: rating,
+        clearRating: rating == null,
+        updatedAt: DateTime.now(),
+      ),
     );
     notifyListeners();
   }
@@ -3175,10 +3177,12 @@ class AppState extends ChangeNotifier {
     final trimmed = note?.trim();
     final empty = trimmed == null || trimmed.isEmpty;
     await _repo.upsertMatchRating(
-      _baseMatchRating(
-        matchId,
-        mine,
-      ).copyWith(userId: _me, note: trimmed, clearNote: empty),
+      _baseMatchRating(matchId, mine).copyWith(
+        userId: _me,
+        note: trimmed,
+        clearNote: empty,
+        updatedAt: DateTime.now(),
+      ),
     );
     notifyListeners();
   }
@@ -3191,7 +3195,7 @@ class AppState extends ChangeNotifier {
       _baseMatchRating(
         matchId,
         mine,
-      ).copyWith(userId: _me, abstained: abstained),
+      ).copyWith(userId: _me, abstained: abstained, updatedAt: DateTime.now()),
     );
     notifyListeners();
   }

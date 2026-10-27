@@ -51,7 +51,9 @@ class _ScoutSheetState extends State<_ScoutSheet> {
     final markers = await _state.scoutMarkersOf(widget.player.id);
     final comment = await _state.scoutCommentOf(widget.player.id);
     final stat = await _state.playerSeasonStat(
-        widget.player.teamId, widget.player.dedupKey);
+      widget.player.teamId,
+      widget.player.dedupKey,
+    );
     if (!mounted) return;
     setState(() {
       _markers = markers;
@@ -63,14 +65,15 @@ class _ScoutSheetState extends State<_ScoutSheet> {
   }
 
   Widget _statCol(String label, String value) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(value,
-              style: const TextStyle(
-                  fontSize: 18, fontWeight: FontWeight.bold)),
-          Text(label, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        value,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+      ),
+      Text(label, style: Theme.of(context).textTheme.bodySmall),
+    ],
+  );
 
   void _commitComment() {
     if (_commentCtrl.text == _savedComment) return;
@@ -115,27 +118,33 @@ class _ScoutSheetState extends State<_ScoutSheet> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(p.fullName,
-                              style: Theme.of(context).textTheme.titleLarge,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis),
-                          Text([
-                            if (p.number != null) 'Nr. ${p.number}',
-                            if (p.position != null) p.position!,
-                          ].join('  ·  ')),
+                          Text(
+                            p.fullName,
+                            style: Theme.of(context).textTheme.titleLarge,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            [
+                              if (p.number != null) 'Nr. ${p.number}',
+                              if (p.position != null) p.position!,
+                            ].join('  ·  '),
+                          ),
                         ],
                       ),
                     ),
                     if (widget.goals > 0)
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: widget.goals >= 5
                               ? Colors.red.withValues(alpha: 0.12)
-                              : Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest,
+                              : Theme.of(
+                                  context,
+                                ).colorScheme.surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -143,9 +152,12 @@ class _ScoutSheetState extends State<_ScoutSheet> {
                           children: [
                             const Text('⚽', style: TextStyle(fontSize: 14)),
                             const SizedBox(width: 4),
-                            Text('${widget.goals}',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold)),
+                            Text(
+                              '${widget.goals}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -156,13 +168,19 @@ class _ScoutSheetState extends State<_ScoutSheet> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Row(
                       children: [
-                        Icon(Icons.local_fire_department,
-                            size: 16, color: Colors.red.shade700),
+                        Icon(
+                          Icons.local_fire_department,
+                          size: 16,
+                          color: Colors.red.shade700,
+                        ),
                         const SizedBox(width: 4),
-                        Text('Torjäger – ${widget.goals} Saisontore',
-                            style: TextStyle(
-                                color: Colors.red.shade700,
-                                fontWeight: FontWeight.w600)),
+                        Text(
+                          'Torjäger – ${widget.goals} Saisontore',
+                          style: TextStyle(
+                            color: Colors.red.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
                       ],
                     ),
                   ),
@@ -171,10 +189,13 @@ class _ScoutSheetState extends State<_ScoutSheet> {
                 if (_stat != null)
                   Container(
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 10),
+                      horizontal: 8,
+                      vertical: 10,
+                    ),
                     decoration: BoxDecoration(
-                      color:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Row(
@@ -188,14 +209,17 @@ class _ScoutSheetState extends State<_ScoutSheet> {
                     ),
                   )
                 else
-                  Text('Keine FuPa-Saisonstatistik für diesen Spieler.',
-                      style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    'Keine FuPa-Saisonstatistik für diesen Spieler.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 const SizedBox(height: 16),
-                Text('Besondere Marker',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Besondere Marker',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -220,11 +244,12 @@ class _ScoutSheetState extends State<_ScoutSheet> {
                   }).toList(),
                 ),
                 const SizedBox(height: 16),
-                Text('Kommentar',
-                    style: Theme.of(context)
-                        .textTheme
-                        .titleSmall
-                        ?.copyWith(fontWeight: FontWeight.bold)),
+                Text(
+                  'Kommentar',
+                  style: Theme.of(
+                    context,
+                  ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 8),
                 TextField(
                   controller: _commentCtrl,
@@ -236,7 +261,8 @@ class _ScoutSheetState extends State<_ScoutSheet> {
                     _commitComment();
                   },
                   decoration: const InputDecoration(
-                    hintText: 'z.B. „links sehr offensiv, Standards gefährlich"',
+                    hintText:
+                        'z.B. „links sehr offensiv, Standards gefährlich"',
                     border: OutlineInputBorder(),
                   ),
                 ),

@@ -14,20 +14,20 @@ class NoteCategory {
   });
 
   NoteCategory copyWith({String? name, int? sortOrder}) => NoteCategory(
-        id: id,
-        name: name ?? this.name,
-        sortOrder: sortOrder ?? this.sortOrder,
-      );
+    id: id,
+    name: name ?? this.name,
+    sortOrder: sortOrder ?? this.sortOrder,
+  );
 
   Map<String, Object?> toMap() => {
-        'id': id,
-        'name': name,
-        'sort_order': sortOrder,
-      };
+    'id': id,
+    'name': name,
+    'sort_order': sortOrder,
+  };
 
   factory NoteCategory.fromMap(Map<String, Object?> m) => NoteCategory(
-        id: m['id'] as String,
-        name: m['name'] as String? ?? '',
-        sortOrder: m['sort_order'] as int? ?? 0,
-      );
+    id: m['id'] as String,
+    name: m['name'] as String? ?? '',
+    sortOrder: m['sort_order'] as int? ?? 0,
+  );
 }

@@ -11,7 +11,12 @@ class PlayerEditData {
   final String? position;
   final String? wishPosition;
   const PlayerEditData(
-      this.firstName, this.lastName, this.number, this.position, this.wishPosition);
+    this.firstName,
+    this.lastName,
+    this.number,
+    this.position,
+    this.wishPosition,
+  );
 }
 
 /// Vollbild-Formular zum Anlegen eines Spielers.
@@ -87,8 +92,10 @@ class _PlayerAddPageState extends State<_PlayerAddPage> {
         actions: [
           TextButton(
             onPressed: _save,
-            child: const Text('Speichern',
-                style: TextStyle(color: Colors.white)),
+            child: const Text(
+              'Speichern',
+              style: TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -101,18 +108,22 @@ class _PlayerAddPageState extends State<_PlayerAddPage> {
               controller: _first,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
-                  labelText: 'Vorname', border: OutlineInputBorder()),
+                labelText: 'Vorname',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 14),
             TextFormField(
               controller: _last,
               textInputAction: TextInputAction.next,
               decoration: const InputDecoration(
-                  labelText: 'Nachname', border: OutlineInputBorder()),
+                labelText: 'Nachname',
+                border: OutlineInputBorder(),
+              ),
               validator: (v) =>
                   (v == null || v.trim().isEmpty) && _first.text.trim().isEmpty
-                      ? 'Bitte einen Namen angeben'
-                      : null,
+                  ? 'Bitte einen Namen angeben'
+                  : null,
             ),
             const SizedBox(height: 14),
             Row(
@@ -124,7 +135,9 @@ class _PlayerAddPageState extends State<_PlayerAddPage> {
                     controller: _number,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                        labelText: 'Nr.', border: OutlineInputBorder()),
+                      labelText: 'Nr.',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -132,7 +145,9 @@ class _PlayerAddPageState extends State<_PlayerAddPage> {
                   child: TextFormField(
                     controller: _pos,
                     decoration: const InputDecoration(
-                        labelText: 'Position', border: OutlineInputBorder()),
+                      labelText: 'Position',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
                 ),
               ],
@@ -141,7 +156,9 @@ class _PlayerAddPageState extends State<_PlayerAddPage> {
             TextFormField(
               controller: _wish,
               decoration: const InputDecoration(
-                  labelText: 'Wunschposition', border: OutlineInputBorder()),
+                labelText: 'Wunschposition',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 24),
             FilledButton.icon(

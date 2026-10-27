@@ -41,7 +41,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     setState(() {
       _event = event;
       _players = players;
-      _status = {for (final p in players) p.id: att[p.id] ?? NominationStatus.open};
+      _status = {
+        for (final p in players) p.id: att[p.id] ?? NominationStatus.open,
+      };
       _loading = false;
     });
   }
@@ -60,13 +62,15 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
   Future<void> _edit() async {
     final data = await showEventDialog(context, existing: _event);
     if (data == null || !mounted) return;
-    await context.read<AppState>().updateTeamEvent(_event!.copyWith(
-          title: data.title,
-          type: data.type,
-          date: data.date,
-          location: data.location,
-          note: data.note,
-        ));
+    await context.read<AppState>().updateTeamEvent(
+      _event!.copyWith(
+        title: data.title,
+        type: data.type,
+        date: data.date,
+        location: data.location,
+        note: data.note,
+      ),
+    );
     await _load();
   }
 
@@ -90,11 +94,13 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         content: Text('„${_event?.title}" wirklich entfernen?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Löschen')),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Löschen'),
+          ),
         ],
       ),
     );
@@ -111,7 +117,9 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
     }
     final e = _event;
     if (e == null) {
-      return const Scaffold(body: Center(child: Text('Termin nicht gefunden.')));
+      return const Scaffold(
+        body: Center(child: Text('Termin nicht gefunden.')),
+      );
     }
     final df = DateFormat('EEEE, dd.MM.yyyy • HH:mm', 'de_DE');
 
@@ -120,13 +128,15 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
         title: Text(e.title),
         actions: [
           IconButton(
-              tooltip: 'Termin teilen (WhatsApp)',
-              onPressed: _share,
-              icon: const Icon(Icons.share)),
+            tooltip: 'Termin teilen (WhatsApp)',
+            onPressed: _share,
+            icon: const Icon(Icons.share),
+          ),
+          IconButton(onPressed: _edit, icon: const Icon(Icons.edit)),
           IconButton(
-              onPressed: _edit, icon: const Icon(Icons.edit)),
-          IconButton(
-              onPressed: _delete, icon: const Icon(Icons.delete_outline)),
+            onPressed: _delete,
+            icon: const Icon(Icons.delete_outline),
+          ),
         ],
       ),
       body: ListView(
@@ -142,52 +152,65 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
                   children: [
                     Text(e.type.symbol, style: const TextStyle(fontSize: 22)),
                     const SizedBox(width: 8),
-                    Text(e.type.label,
-                        style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onPrimary
-                                .withValues(alpha: 0.9))),
+                    Text(
+                      e.type.label,
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onPrimary.withValues(alpha: 0.9),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
-                Text(df.format(e.date),
-                    style: TextStyle(
-                        color: Theme.of(context).colorScheme.onPrimary,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16)),
+                Text(
+                  df.format(e.date),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
                 if (e.location != null)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Row(children: [
-                      Icon(Icons.place,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.place,
                           size: 16,
-                          color: Theme.of(context).colorScheme.onPrimary),
-                      const SizedBox(width: 4),
-                      Text(e.location!,
+                          color: Theme.of(context).colorScheme.onPrimary,
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          e.location!,
                           style: TextStyle(
-                              color:
-                                  Theme.of(context).colorScheme.onPrimary)),
-                    ]),
+                            color: Theme.of(context).colorScheme.onPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 if (e.note != null && e.note!.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
-                    child: Text(e.note!,
-                        style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onPrimary
-                                .withValues(alpha: 0.9))),
+                    child: Text(
+                      e.note!,
+                      style: TextStyle(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onPrimary.withValues(alpha: 0.9),
+                      ),
+                    ),
                   ),
               ],
             ),
           ),
           Padding(
             padding: const EdgeInsets.all(12),
-            child: AvailabilitySummary(counts: {
-              for (final s in NominationStatus.values) s: _count(s),
-            }),
+            child: AvailabilitySummary(
+              counts: {for (final s in NominationStatus.values) s: _count(s)},
+            ),
           ),
           const Divider(height: 1),
           if (_players.isEmpty)
@@ -196,14 +219,16 @@ class _EventDetailScreenState extends State<EventDetailScreen> {
               child: Text('Noch keine Spieler im Kader.'),
             )
           else
-            ..._players.map((p) => ListTile(
-                  leading: PlayerAvatar(player: p, radius: 18),
-                  title: Text(p.fullName),
-                  trailing: AvailabilityChoices(
-                    current: _statusOf(p),
-                    onChanged: (s) => _set(p, s),
-                  ),
-                )),
+            ..._players.map(
+              (p) => ListTile(
+                leading: PlayerAvatar(player: p, radius: 18),
+                title: Text(p.fullName),
+                trailing: AvailabilityChoices(
+                  current: _statusOf(p),
+                  onChanged: (s) => _set(p, s),
+                ),
+              ),
+            ),
           const SizedBox(height: 24),
         ],
       ),

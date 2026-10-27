@@ -18,16 +18,18 @@ class OpponentSyncService {
   OpponentSyncService({
     required CoachRepository repository,
     FupaReduxImporter? importer,
-  })  : _repo = repository,
-        _persist = FupaPersistence(repository),
-        _importer = importer ?? FupaReduxImporter();
+  }) : _repo = repository,
+       _persist = FupaPersistence(repository),
+       _importer = importer ?? FupaReduxImporter();
 
   final CoachRepository _repo;
   final FupaPersistence _persist;
   final FupaReduxImporter _importer;
 
-  Future<ImportResult> ensureOpponentForMatch(GameMatch match,
-      {bool force = false}) async {
+  Future<ImportResult> ensureOpponentForMatch(
+    GameMatch match, {
+    bool force = false,
+  }) async {
     if (!force && match.opponentImported && match.opponentTeamId != null) {
       final team = await _repo.getTeam(match.opponentTeamId!);
       return ImportResult(
@@ -47,19 +49,23 @@ class OpponentSyncService {
           source: DataSource.fupaApproved,
         );
         // Vereinsdaten (Kurzname/Logo/Link) nachtragen.
-        await _repo.upsertTeam(team.copyWith(
-          shortName: data.shortName,
-          logoPath: data.logoDataUrl ?? match.opponentLogoPath,
-          fupaUrl: url,
-          lastSyncedAt: DateTime.now(),
-        ));
+        await _repo.upsertTeam(
+          team.copyWith(
+            shortName: data.shortName,
+            logoPath: data.logoDataUrl ?? match.opponentLogoPath,
+            fupaUrl: url,
+            lastSyncedAt: DateTime.now(),
+          ),
+        );
         final players = await _importer.toPlayerDataWithPhotos(data.players);
         final added = await _persist.syncPlayers(
-            team.id, players, DataSource.fupaApproved);
-        await _repo.upsertMatch(match.copyWith(
-          opponentTeamId: team.id,
-          opponentImported: true,
-        ));
+          team.id,
+          players,
+          DataSource.fupaApproved,
+        );
+        await _repo.upsertMatch(
+          match.copyWith(opponentTeamId: team.id, opponentImported: true),
+        );
         return ImportResult(
           status: ImportStatus.success,
           message:

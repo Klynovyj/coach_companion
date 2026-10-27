@@ -101,11 +101,21 @@ class BirthdayNotifications {
 
   /// Nächster 8:00-Termin am Geburtstag (dieses Jahr, sonst nächstes Jahr).
   static tz.TZDateTime _next8am(tz.TZDateTime now, DateTime birthdate) {
-    var when =
-        tz.TZDateTime(tz.local, now.year, birthdate.month, birthdate.day, 8);
+    var when = tz.TZDateTime(
+      tz.local,
+      now.year,
+      birthdate.month,
+      birthdate.day,
+      8,
+    );
     if (!when.isAfter(now)) {
       when = tz.TZDateTime(
-          tz.local, now.year + 1, birthdate.month, birthdate.day, 8);
+        tz.local,
+        now.year + 1,
+        birthdate.month,
+        birthdate.day,
+        8,
+      );
     }
     return when;
   }
