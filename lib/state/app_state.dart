@@ -2871,6 +2871,60 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Vereins-Bilanz aller aktiven Feldspieler aus FuPa: je Spieler die
+  /// Laufbahn-Summen beim aktuellen Verein (gesamt + nur Pflichtspiele) plus
+  /// die Minuten der laufenden Saison. Lädt je Spieler die FuPa-Spielerseite
+  /// (parallel, Netzwerk); Spieler ohne FuPa/ohne Daten erscheinen mit 0.
+  Future<List<PlayerClubStats>> squadFupaClubStats(String teamId) async {
+    final team = await _repo.getTeam(teamId);
+    final clubSlug = FupaReduxImporter.clubSlugFromTeamUrl(team?.fupaUrl);
+    final clubName = team?.name ?? team?.shortName;
+    final players = (await _repo.getPlayers(
+      teamId,
+    )).where((p) => !p.isStaffOnly && p.active).toList();
+    final stats = await _repo.getStats(teamId);
+    final minutesByKey = <String, int>{
+      for (final s in stats)
+        '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}':
+            s.minutes,
+    };
+    // Karrieren parallel laden (ein Abruf je Spieler mit FuPa-ID).
+    final careers = await Future.wait(
+      players.map((p) async {
+        final ext = p.externalId?.trim();
+        if (ext == null || ext.isEmpty) return null;
+        try {
+          return await _importer.importPlayerCareer(ext);
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
+    final out = <PlayerClubStats>[];
+    for (var i = 0; i < players.length; i++) {
+      final p = players[i];
+      final career = careers[i];
+      out.add(
+        PlayerClubStats(
+          player: p,
+          all:
+              career?.clubTotal(clubSlug: clubSlug, clubName: clubName) ??
+              const FupaClubTotal(),
+          pflicht:
+              career?.clubTotal(
+                clubSlug: clubSlug,
+                clubName: clubName,
+                pflichtOnly: true,
+              ) ??
+              const FupaClubTotal(),
+          seasonMinutes: minutesByKey[p.dedupKey] ?? 0,
+          hasFupa: career != null,
+        ),
+      );
+    }
+    return out;
+  }
+
   /// Aggregiert Tracking-Werte eines Spielers über die getrackten eigenen Spiele;
   /// mit [yearMonth] (YYYY-MM) nur diesen Monat, sonst alle.
   Future<PlayerMonthStats> _aggregatePlayerStats(
@@ -3737,6 +3791,24 @@ class PlayerStatusInfo {
 }
 
 /// Karten-Übersicht eines Spielers: FuPa-Saisonkarten + eigene erfasste Karten.
+/// Vereins-Bilanz eines Spielers aus FuPa: Laufbahn-Summen beim Verein
+/// (gesamt + nur Pflicht) plus Saison-Minuten. Für die Ehrungen-Übersicht.
+class PlayerClubStats {
+  final Player player;
+  final FupaClubTotal all; // alle Spiele (inkl. Freundschaft/Test)
+  final FupaClubTotal pflicht; // nur Pflichtspiele (Pokal zählt)
+  final int seasonMinutes; // nur laufende Saison (FuPa)
+  final bool hasFupa; // Laufbahn konnte geladen werden
+
+  const PlayerClubStats({
+    required this.player,
+    required this.all,
+    required this.pflicht,
+    required this.seasonMinutes,
+    required this.hasFupa,
+  });
+}
+
 class PlayerCardSummary {
   final Player player;
   final int fupaYellow;

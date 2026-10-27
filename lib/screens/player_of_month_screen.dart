@@ -6,6 +6,7 @@ import '../models/player.dart';
 import '../models/player_of_month.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import 'club_stats_screen.dart';
 import 'player_of_month_graphic_screen.dart';
 
 /// Spieler des Monats: pro Kalendermonat eine Rangliste der Spieler nach
@@ -173,6 +174,7 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
               padding: const EdgeInsets.only(bottom: 24),
               children: [
                 _createHonorCard(),
+                _clubStatsTile(),
                 _sectionHeader('Spieler des Monats'),
                 _monthSelector(),
                 _honorCard(),
@@ -212,6 +214,26 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
             ),
     );
   }
+
+  /// Einstieg zur Vereins-Bilanz (FuPa) aller Spieler.
+  Widget _clubStatsTile() => Card(
+    margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+    child: ListTile(
+      leading: const Icon(Icons.leaderboard, color: _gold),
+      title: const Text(
+        'Vereins-Bilanz (FuPa)',
+        style: TextStyle(fontWeight: FontWeight.bold),
+      ),
+      subtitle: const Text(
+        'Alle Spieler: Spiele/Tore/Vorlagen für den Verein (gesamt / nur Pflicht)',
+      ),
+      trailing: const Icon(Icons.chevron_right),
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ClubStatsScreen()),
+      ),
+    ),
+  );
 
   Widget _sectionHeader(String title) => Padding(
     padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
