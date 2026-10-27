@@ -170,6 +170,7 @@ class _AbsenceOverviewScreenState extends State<AbsenceOverviewScreen> {
       if (s.isAbsence && info.until != null) 'bis ${_df.format(info.until!)}',
     ];
     return ListTile(
+      key: ValueKey('absence_${p.id}'),
       leading: PlayerAvatar(player: p, radius: 20),
       title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
       subtitle: subtitleParts.isEmpty ? null : Text(subtitleParts.join(' · ')),

@@ -135,14 +135,17 @@ class _SquadListViewState extends State<SquadListView> {
                       children: [
                         for (var i = 0; i < players.length; i++) ...[
                           if (i > 0) const Divider(height: 1),
-                          _playerTile(
-                            context,
-                            players[i],
-                            cards,
-                            ratings,
-                            markers,
-                            goals,
-                            stats,
+                          KeyedSubtree(
+                            key: ValueKey('player_${players[i].id}'),
+                            child: _playerTile(
+                              context,
+                              players[i],
+                              cards,
+                              ratings,
+                              markers,
+                              goals,
+                              stats,
+                            ),
                           ),
                         ],
                         if (staff.isNotEmpty) ...[

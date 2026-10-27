@@ -45,6 +45,10 @@ class PlayerPhoto extends StatelessWidget {
               child: bytes != null
                   ? Image.memory(
                       bytes,
+                      // Stabiler Key je Spieler: verhindert, dass beim
+                      // Neuaufbau der Liste (gaplessPlayback) das alte Bild
+                      // einer anderen Zeile stehen bleibt (falsches Foto).
+                      key: ValueKey('photo_${player.id}'),
                       fit: BoxFit.cover,
                       gaplessPlayback: true,
                     )
