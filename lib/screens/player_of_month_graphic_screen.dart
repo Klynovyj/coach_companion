@@ -121,13 +121,12 @@ class _PlayerOfMonthGraphicScreenState
   late bool _showTotal = !_hasMonth; // Gesamt (alle getrackten Spiele)
   bool _showFupa = true; // FuPa-Saison
   late bool _showFupaClub = !_hasMonth; // FuPa gesamt (Verein)
-  bool _fupaClubPflicht = true; // nur Pflichtspiele (Pokal zählt)
-
-  /// Vereins-Gesamtwerte entsprechend dem Pflichtspiel-Schalter; null ohne Daten.
+  /// Vereins-Gesamtwerte (offizielle Spiele; FuPa führt keine Freundschafts-
+  /// spiele in der Laufbahn). Null ohne Daten.
   FupaClubTotal? get _fupaClub {
     final c = _fupaCareer;
     if (c == null) return null;
-    final t = c.total(pflichtOnly: _fupaClubPflicht);
+    final t = c.total();
     return t.hasAny ? t : null;
   }
 
@@ -541,19 +540,17 @@ class _PlayerOfMonthGraphicScreenState
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     )
-                  else if (_fupaCareer != null) ...[
+                  else if (_fupaCareer != null)
                     Builder(
                       builder: (_) {
-                        final club = _fupaCareer!.total(
-                          pflichtOnly: _fupaClubPflicht,
-                        );
+                        final club = _fupaCareer!.total();
                         return SwitchListTile(
                           contentPadding: EdgeInsets.zero,
                           title: Text(
                             'FuPa gesamt (${club.clubName.isEmpty ? 'Verein' : club.clubName})',
                           ),
                           subtitle: Text(
-                            '${_fupaClubPflicht ? 'Nur Pflichtspiele' : 'Alle Spiele'}: '
+                            'Pflichtspiele beim Verein: '
                             '${club.matches} Spiele, ${club.goals} Tore, '
                             '${club.assists} Vorlagen',
                           ),
@@ -564,24 +561,8 @@ class _PlayerOfMonthGraphicScreenState
                           },
                         );
                       },
-                    ),
-                    if (_showFupaClub)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 16),
-                        child: SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Nur Pflichtspiele'),
-                          subtitle: const Text(
-                            'Freundschafts-/Testspiele ausschließen (Pokal zählt)',
-                          ),
-                          value: _fupaClubPflicht,
-                          onChanged: (v) {
-                            setState(() => _fupaClubPflicht = v);
-                            setSheet(() {});
-                          },
-                        ),
-                      ),
-                  ] else
+                    )
+                  else
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       enabled: false,

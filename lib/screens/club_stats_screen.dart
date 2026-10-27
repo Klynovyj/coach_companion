@@ -1,17 +1,20 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
 
 import '../services/fupa/fupa_dtos.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 
-enum _Mode { all, pflicht }
-
-enum _ClubSort { games, goals, assists, scorer, minutes, name }
+enum _ClubSort { games, goals, assists, scorer, name }
 
 /// Vereins-Bilanz aller Spieler aus der FuPa-Laufbahn: Spiele/Tore/Vorlagen/
-/// Scorer beim aktuellen Verein (umschaltbar gesamt / nur Pflichtspiele) plus
-/// Saison-Minuten. Pro Spieler ein FuPa-Abruf beim Öffnen.
+/// Scorer beim aktuellen Verein (offizielle Pflichtspiele – FuPa führt in der
+/// Laufbahn keine Freundschaftsspiele) plus Saison-Minuten. Pro Spieler ein
+/// FuPa-Abruf beim Öffnen.
 class ClubStatsScreen extends StatefulWidget {
   const ClubStatsScreen({super.key});
 
@@ -20,11 +23,12 @@ class ClubStatsScreen extends StatefulWidget {
 }
 
 class _ClubStatsScreenState extends State<ClubStatsScreen> {
-  _Mode _mode = _Mode.all;
   _ClubSort _sort = _ClubSort.scorer;
   List<PlayerClubStats> _rows = [];
-  String _diag = '';
   bool _loading = true;
+  bool _sharing = false;
+  final GlobalKey _tableKey = GlobalKey();
+  String _teamName = '';
 
   @override
   void initState() {
@@ -39,16 +43,51 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
       if (mounted) setState(() => _loading = false);
       return;
     }
-    final (rows, diag) = await state.squadFupaClubStats(team.id);
+    final (rows, _) = await state.squadFupaClubStats(team.id);
     if (!mounted) return;
     setState(() {
       _rows = rows;
-      _diag = diag;
+      _teamName = team.name;
       _loading = false;
     });
   }
 
-  FupaClubTotal _t(PlayerClubStats r) => _mode == _Mode.all ? r.all : r.pflicht;
+  /// Teilt die Tabelle als Bild (RepaintBoundary → PNG → WhatsApp/Download).
+  Future<void> _share() async {
+    if (_sharing) return;
+    setState(() => _sharing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final b =
+          _tableKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (b == null) return;
+      final image = await b.toImage(pixelRatio: 2.5);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (data == null) return;
+      final name = _teamName.isEmpty ? 'Team' : _teamName;
+      final path = await shareOrSaveImage(
+        data.buffer.asUint8List(),
+        'Vereins-Bilanz_$name',
+        text: 'Vereins-Bilanz – $name',
+      );
+      if (path != null && mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Als Bild gespeichert:\n$path')),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  // FuPa listet in der Laufbahn nur offizielle Spiele (Liga/Pokal) – das sind
+  // bereits die Pflichtspiele; Freundschaftsspiele gibt es dort nicht.
+  FupaClubTotal _t(PlayerClubStats r) => r.all;
 
   List<PlayerClubStats> _sorted() {
     final list = [..._rows];
@@ -62,8 +101,6 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
           return _t(b).assists.compareTo(_t(a).assists);
         case _ClubSort.scorer:
           return _t(b).scorerPoints.compareTo(_t(a).scorerPoints);
-        case _ClubSort.minutes:
-          return b.seasonMinutes.compareTo(a.seasonMinutes);
         case _ClubSort.name:
           return a.player.fullName.toLowerCase().compareTo(
             b.player.fullName.toLowerCase(),
@@ -77,8 +114,25 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final sorted = _sorted();
     return Scaffold(
-      appBar: AppBar(title: const Text('Vereins-Bilanz (FuPa)')),
+      appBar: AppBar(
+        title: const Text('Vereins-Bilanz (FuPa)'),
+        actions: [
+          IconButton(
+            tooltip: 'Als Bild teilen (WhatsApp)',
+            icon: _sharing
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.ios_share),
+            onPressed: (_loading || _rows.isEmpty || _sharing) ? null : _share,
+          ),
+        ],
+      ),
       body: _loading
           ? const Center(
               child: Column(
@@ -101,13 +155,41 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
               children: [
                 _controls(),
                 const Divider(height: 1),
-                _headerRow(),
-                const Divider(height: 1),
                 Expanded(
-                  child: ListView.separated(
-                    itemCount: _sorted().length,
-                    separatorBuilder: (_, _) => const Divider(height: 1),
-                    itemBuilder: (context, i) => _row(_sorted()[i], i),
+                  child: SingleChildScrollView(
+                    child: RepaintBoundary(
+                      key: _tableKey,
+                      child: Container(
+                        color: scheme.surface,
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 2),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'Vereins-Bilanz · ${_teamName.isEmpty ? 'Verein' : _teamName}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            _headerRow(),
+                            const Divider(height: 1),
+                            for (final r in sorted) ...[
+                              _row(r),
+                              const Divider(height: 1),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -123,24 +205,14 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
         children: [
           Row(
             children: [
-              Expanded(
-                child: SegmentedButton<_Mode>(
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  segments: const [
-                    ButtonSegment(value: _Mode.all, label: Text('Gesamt')),
-                    ButtonSegment(
-                      value: _Mode.pflicht,
-                      label: Text('Nur Pflicht'),
-                    ),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: (s) => setState(() => _mode = s.first),
+              const Expanded(
+                child: Text(
+                  'Pflichtspiele beim Verein (Liga + Pokal)',
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
               const SizedBox(width: 8),
+              const Text('Sortieren: '),
               DropdownButton<_ClubSort>(
                 value: _sort,
                 onChanged: (v) => setState(() => _sort = v ?? _sort),
@@ -158,10 +230,6 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
                     value: _ClubSort.assists,
                     child: Text('Vorlagen'),
                   ),
-                  DropdownMenuItem(
-                    value: _ClubSort.minutes,
-                    child: Text('Minuten'),
-                  ),
                   DropdownMenuItem(value: _ClubSort.name, child: Text('Name')),
                 ],
               ),
@@ -170,22 +238,11 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              '${_mode == _Mode.all ? 'Alle Spiele (inkl. Freundschaft/Test)' : 'Nur Pflichtspiele (Liga + Pokal)'} '
-              '· Min = nur laufende Saison',
+              'FuPa führt in der Laufbahn nur offizielle Spiele – '
+              'Freundschafts-/Testspiele sind dort nicht enthalten.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-          if (_diag.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                _diag,
-                style: TextStyle(
-                  fontSize: 10,
-                  color: Theme.of(context).hintColor,
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -223,13 +280,12 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
           _num('⚽', header: true),
           _num('🅰', header: true),
           _num('Scr', header: true),
-          _num('Min', header: true),
         ],
       ),
     );
   }
 
-  Widget _row(PlayerClubStats r, int index) {
+  Widget _row(PlayerClubStats r) {
     final t = _t(r);
     final scheme = Theme.of(context).colorScheme;
     return Padding(
@@ -263,7 +319,6 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
           _num('${t.goals}'),
           _num('${t.assists}'),
           _num('${t.scorerPoints}', color: scheme.primary),
-          _num(r.seasonMinutes > 0 ? '${r.seasonMinutes}' : '–'),
         ],
       ),
     );
