@@ -50,7 +50,7 @@ class AvailabilityChoices extends StatelessWidget {
         const SizedBox(width: 4),
         _choice(NominationStatus.unsicher, Icons.help_outline),
         const SizedBox(width: 4),
-        _choice(NominationStatus.unterVorbehalt, Icons.pending_outlined),
+        _choice(NominationStatus.unterVorbehalt, Icons.flaky),
         const SizedBox(width: 4),
         _choice(NominationStatus.abgesagt, Icons.close),
       ],
