@@ -1,6 +1,6 @@
 {
-  "versionCode": 54,
-  "versionName": "1.3.49",
+  "versionCode": 55,
+  "versionName": "1.3.50",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
   "notes": "Neuerungen:\n- Posteingang: persoenliche Benachrichtigungen je Trainer (Vorschlag uebernommen/abgelehnt, zu Aufgabe hinzugefuegt, erwaehnt, Team-Ereignisse) - Glocke auf Start + Mehr-Menue\n- Erststart: erst anmelden/registrieren, dann Team waehlen; Registrieren mit Vor- und Nachname\n- Neuer Menuepunkt Abwesenheit: alle Spieler auf einen Blick, Status + Abwesenheit pro Spieler eintragen, mit Suche\n- Status: Fit/Krank/Verletzt/Inaktiv; Krank/Verletzt mit Zeitraum, Status folgt automatisch dem Datum; neuer Grund Abwesend (z.B. Dienstreise)\n- Nominierung: Status als Ecke direkt auf dem Foto (wie im Kader)\n- Spielbericht & Voting (frueher Auswertung): Zeitstempel je Bericht, Teilen ohne Fragezeichen\n- Aufstellung: Vorschlag ablehnen + Trainer wird informiert\n- Nachholen zeigt alle offenen Bewertungen; diverse Fixes (Name statt E-Mail, klareres Vorbehalt-Icon)\n\nWichtig (Cloud): im Supabase-SQL-Editor stage11, stage32, stage33, stage34 ausfuehren; fuer Handy-Push notify-inbox deployen."
 }
