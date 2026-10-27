@@ -6,6 +6,7 @@ import 'cards_suspensions_screen.dart';
 import 'material_duty_screen.dart';
 import 'nachholen_screen.dart';
 import 'player_of_month_screen.dart';
+import 'absence_overview_screen.dart';
 import 'inbox_screen.dart';
 import 'rating_overview_screen.dart';
 import 'settings_screen.dart';
@@ -45,6 +46,12 @@ class MoreScreen extends StatelessWidget {
             screen: const StatisticsHubScreen(),
           ),
           _group(context, 'Team'),
+          _tile(
+            context,
+            icon: Icons.event_busy,
+            label: 'Abwesenheit',
+            screen: const AbsenceOverviewScreen(),
+          ),
           _tile(
             context,
             icon: Icons.record_voice_over,

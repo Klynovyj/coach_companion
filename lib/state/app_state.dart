@@ -1642,13 +1642,16 @@ class AppState extends ChangeNotifier {
   Future<List<PlayerAbsence>> absencesOf(String playerId) =>
       _repo.getAbsences(playerId);
 
-  /// Kader-Status-Übersicht: je Feldspieler Status + (bei befristeter
-  /// Abwesenheit) das „bis"-Datum und ein optionaler Grund. Für die
-  /// Status-Ansicht in der Statistik.
-  Future<List<PlayerStatusInfo>> squadStatus(String teamId) async {
+  /// Kader-Status-Übersicht: je Spieler Status + (bei befristeter Abwesenheit)
+  /// das „bis"-Datum und ein optionaler Grund. [includeStaff] = auch reine
+  /// Trainer/Betreuer (für die zentrale Abwesenheits-Verwaltung).
+  Future<List<PlayerStatusInfo>> squadStatus(
+    String teamId, {
+    bool includeStaff = false,
+  }) async {
     final players = (await _repo.getPlayers(
       teamId,
-    )).where((p) => !p.isStaffOnly).toList();
+    )).where((p) => includeStaff || !p.isStaffOnly).toList();
     final out = <PlayerStatusInfo>[];
     for (final p in players) {
       DateTime? until;
