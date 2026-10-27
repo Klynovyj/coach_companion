@@ -143,6 +143,23 @@ class CloudService {
     } catch (_) {}
   }
 
+  /// Push an bestimmte Empfänger (Posteingang-Eintrag), via Edge-Function
+  /// „notify-inbox". Fehler werden geschluckt (In-App-Posteingang reicht auch
+  /// ohne Push). Die Function muss deployt sein, sonst passiert nichts.
+  static Future<void> notifyInbox(
+    List<String> recipientIds,
+    String title,
+    String body,
+  ) async {
+    if (recipientIds.isEmpty) return;
+    try {
+      await _c.functions.invoke(
+        'notify-inbox',
+        body: {'recipient_ids': recipientIds, 'title': title, 'body': body},
+      );
+    } catch (_) {}
+  }
+
   /// Leichter Abgleich von Status + Ergebnis aller Spiele (für den Live-/
   /// Zurücksetzen-Poll – ohne Logos/Details).
   static Future<List<Map<String, dynamic>>> matchSyncRows(String teamId) async {
@@ -586,6 +603,34 @@ class CloudService {
         )
         .subscribe();
     channels.add(teamCh);
+    // Persönlicher Posteingang: nur MEINE Zeilen abonnieren (recipient_id), damit
+    // keine fremden Einträge über Realtime hereinkommen.
+    final myId = user?.id;
+    if (myId != null) {
+      final inboxCh = _c.channel('team_${teamId}_inbox_$myId');
+      inboxCh
+          .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'inbox',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'recipient_id',
+              value: myId,
+            ),
+            callback: (payload) {
+              final isDelete = payload.eventType == PostgresChangeEvent.delete;
+              final rec = isDelete ? payload.oldRecord : payload.newRecord;
+              onChange(
+                'inbox',
+                payload.eventType.name,
+                Map<String, dynamic>.from(rec),
+              );
+            },
+          )
+          .subscribe();
+      channels.add(inboxCh);
+    }
     return channels;
   }
 

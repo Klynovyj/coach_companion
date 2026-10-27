@@ -7,6 +7,7 @@ import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import '../widgets/trainer_mention_field.dart';
 
 /// Eigene Aufgaben/To-Dos. Aufgaben werden unter Themen (Überschriften)
 /// einsortiert; Schnellaufgaben (unten) laufen ohne Thema. Jede Aufgabe hat
@@ -215,6 +216,7 @@ class _TodosScreenState extends State<TodosScreen> {
         dueDate: result.due,
         topicId: result.topicId,
         responsible: result.responsible,
+        mentionUserIds: result.mentionUserIds,
       );
     } else {
       await state.saveTodo(
@@ -226,6 +228,7 @@ class _TodosScreenState extends State<TodosScreen> {
           clearTopicId: result.topicId == null,
           responsible: result.responsible,
         ),
+        mentionUserIds: result.mentionUserIds,
       );
     }
     if (mounted) setState(() {});
@@ -751,7 +754,14 @@ class _TaskResult {
   final String? topicId;
   final DateTime? due;
   final List<TodoResponsible> responsible;
-  const _TaskResult(this.text, this.topicId, this.due, this.responsible);
+  final List<String> mentionUserIds;
+  const _TaskResult(
+    this.text,
+    this.topicId,
+    this.due,
+    this.responsible,
+    this.mentionUserIds,
+  );
 }
 
 /// Vollbild-Seite zum Anlegen/Bearbeiten einer Aufgabe (Thema + Text +
@@ -778,6 +788,7 @@ class _TaskEditPageState extends State<_TaskEditPage> {
   String? _topicId;
   DateTime? _due;
   List<TodoResponsible> _responsible = [];
+  final List<String> _mentions = [];
 
   static final _dDate = DateFormat('dd.MM.yyyy', 'de_DE');
 
@@ -806,7 +817,10 @@ class _TaskEditPageState extends State<_TaskEditPage> {
       _snack('Bitte mindestens einen Verantwortlichen wählen.');
       return;
     }
-    Navigator.pop(context, _TaskResult(text, _topicId, _due, _responsible));
+    Navigator.pop(
+      context,
+      _TaskResult(text, _topicId, _due, _responsible, List.of(_mentions)),
+    );
   }
 
   void _snack(String msg) =>
@@ -955,6 +969,12 @@ class _TaskEditPageState extends State<_TaskEditPage> {
                   onPressed: () => setState(() => _due = null),
                 ),
             ],
+          ),
+          const SizedBox(height: 20),
+          TrainerMentionField(
+            onChanged: (v) => _mentions
+              ..clear()
+              ..addAll(v),
           ),
         ],
       ),

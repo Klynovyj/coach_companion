@@ -18,6 +18,7 @@ import '../models/graphic_settings.dart';
 import '../models/match_rating.dart';
 import '../models/player_of_month.dart';
 import '../models/activity.dart';
+import '../models/inbox_message.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -860,6 +861,50 @@ class CoachRepository {
       '(SELECT id FROM activities ORDER BY created_at DESC LIMIT ?)',
       [keep],
     );
+  }
+
+  // ----------------------------------------------------------------- Inbox
+  /// Meine Posteingang-Einträge (lokal nur die eigenen), neueste zuerst.
+  Future<List<InboxMessage>> getInbox({int limit = 100}) async {
+    final db = await _db;
+    final rows = await db.query(
+      'inbox',
+      orderBy: 'created_at DESC',
+      limit: limit,
+    );
+    return rows.map(InboxMessage.fromMap).toList();
+  }
+
+  /// Anzahl ungelesener Einträge.
+  Future<int> unreadInboxCount() async {
+    final db = await _db;
+    final rows = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM inbox WHERE read_at IS NULL',
+    );
+    return (rows.first['c'] as int?) ?? 0;
+  }
+
+  /// Markiert einen Eintrag als gelesen (Cloud-Spiegelung über den Sync-Haken).
+  Future<void> markInboxRead(String id) async {
+    final db = await _db;
+    final rows = await db.query('inbox', where: 'id = ?', whereArgs: [id]);
+    if (rows.isEmpty) return;
+    final msg = InboxMessage.fromMap(rows.first);
+    if (!msg.unread) return;
+    await _upsertById('inbox', msg.copyWith(readAt: DateTime.now()).toMap());
+  }
+
+  /// Markiert alle ungelesenen Einträge als gelesen.
+  Future<void> markAllInboxRead() async {
+    final db = await _db;
+    final rows = await db.query('inbox', where: 'read_at IS NULL');
+    final now = DateTime.now();
+    for (final r in rows) {
+      await _upsertById(
+        'inbox',
+        InboxMessage.fromMap(r).copyWith(readAt: now).toMap(),
+      );
+    }
   }
 
   // ------------------------------------------------------------- Nominations

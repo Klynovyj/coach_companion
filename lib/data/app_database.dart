@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 45;
+  static const _dbVersion = 46;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -361,6 +361,11 @@ class AppDatabase {
     if (oldV < 45) {
       await db.execute('ALTER TABLE match_ratings ADD COLUMN updated_at TEXT');
     }
+    // v45 -> v46: persönlicher Posteingang (Benachrichtigungen je Trainer).
+    if (oldV < 46) {
+      await db.execute(_inboxTableSql);
+      await db.execute('CREATE INDEX idx_inbox_created ON inbox (created_at)');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -387,6 +392,24 @@ class AppDatabase {
         title TEXT,
         subtitle TEXT,
         created_at TEXT NOT NULL
+      )
+    ''';
+
+  // Persönlicher Posteingang je Trainer (lokal nur die eigenen Einträge; die
+  // Cloud-Zeile bekommt beim Push team_id, der Pull liefert dank RLS nur meine).
+  static const _inboxTableSql = '''
+      CREATE TABLE inbox (
+        id TEXT PRIMARY KEY,
+        recipient_id TEXT,
+        actor_id TEXT,
+        actor_name TEXT,
+        type TEXT,
+        title TEXT,
+        subtitle TEXT,
+        link_type TEXT,
+        link_id TEXT,
+        created_at TEXT NOT NULL,
+        read_at TEXT
       )
     ''';
 
@@ -802,6 +825,8 @@ class AppDatabase {
     await db.execute(
       'CREATE INDEX idx_activities_created ON activities (created_at)',
     );
+    await db.execute(_inboxTableSql);
+    await db.execute('CREATE INDEX idx_inbox_created ON inbox (created_at)');
 
     await db.execute('''
       CREATE TABLE settings (

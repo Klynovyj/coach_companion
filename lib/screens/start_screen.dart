@@ -9,6 +9,7 @@ import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
 import 'cards_suspensions_screen.dart';
 import 'home_screen.dart';
+import 'inbox_screen.dart';
 import 'live_match_screen.dart';
 import 'match_center_screen.dart';
 import 'material_duty_screen.dart';
@@ -58,6 +59,7 @@ class StartScreen extends StatelessWidget {
             ),
           ],
         ),
+        actions: [_inboxBell(context, state)],
       ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
@@ -74,6 +76,26 @@ class StartScreen extends StatelessWidget {
           _activityFeed(context, state),
         ],
       ),
+    );
+  }
+
+  /// Glocke mit Zähler ungelesener Posteingang-Einträge.
+  Widget _inboxBell(BuildContext context, AppState state) {
+    return FutureBuilder<int>(
+      future: state.inboxUnreadCount(),
+      builder: (context, snap) {
+        final n = snap.data ?? 0;
+        final icon = IconButton(
+          tooltip: 'Posteingang',
+          icon: const Icon(Icons.notifications_outlined),
+          onPressed: () => Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const InboxScreen()),
+          ),
+        );
+        if (n <= 0) return icon;
+        return Badge.count(count: n, child: icon);
+      },
     );
   }
 

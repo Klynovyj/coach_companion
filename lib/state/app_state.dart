@@ -7,6 +7,7 @@ import 'package:uuid/uuid.dart';
 
 import '../data/coach_repository.dart';
 import '../models/activity.dart';
+import '../models/inbox_message.dart';
 import '../models/card_entry.dart';
 import '../models/enums.dart';
 import '../models/lineup.dart';
@@ -121,6 +122,8 @@ class AppState extends ChangeNotifier {
     'match_ratings',
     'player_of_month',
     'activities',
+    // Persönlicher Posteingang: Pull liefert dank RLS nur die eigenen Zeilen.
+    'inbox',
     // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
     // referenzierten lokalen match_events bereits vorhanden sind.
     'event_mentions',
@@ -2212,6 +2215,15 @@ class AppState extends ChangeNotifier {
           ? 'Vorschlag von $proposer wurde übernommen'
           : 'Ein Vorschlag wurde übernommen',
     );
+    await _notify(
+      suggestion.createdBy,
+      InboxType.lineupAdopted,
+      'Dein Aufstellungs-Vorschlag wurde übernommen',
+      subtitle:
+          '${CloudService.displayName ?? 'Ein Trainer'} hat ihn übernommen',
+      linkType: 'match',
+      linkId: suggestion.matchId,
+    );
     notifyListeners();
   }
 
@@ -2226,6 +2238,15 @@ class AppState extends ChangeNotifier {
       subtitle: (proposer != null && proposer.isNotEmpty)
           ? 'Vorschlag von $proposer wurde abgelehnt'
           : 'Ein Vorschlag wurde abgelehnt',
+    );
+    await _notify(
+      suggestion.createdBy,
+      InboxType.lineupRejected,
+      'Dein Aufstellungs-Vorschlag wurde abgelehnt',
+      subtitle:
+          '${CloudService.displayName ?? 'Ein Trainer'} hat ihn abgelehnt',
+      linkType: 'match',
+      linkId: suggestion.matchId,
     );
     notifyListeners();
   }
@@ -2691,6 +2712,20 @@ class AppState extends ChangeNotifier {
           match.opponentName,
         );
       }
+      // Abpfiff: Spielergebnis team-weit in den Posteingang.
+      if (status == MatchStatus.finished &&
+          match.status != MatchStatus.finished) {
+        final m = await _repo.getMatch(matchId);
+        if (m != null) {
+          await _notifyTeam(
+            InboxType.result,
+            'Spielergebnis steht',
+            subtitle: 'vs ${m.opponentName} ${m.ownScore}:${m.opponentScore}',
+            linkType: 'match',
+            linkId: matchId,
+          );
+        }
+      }
     }
   }
 
@@ -2867,6 +2902,145 @@ class AppState extends ChangeNotifier {
       notifyListeners();
     } catch (_) {
       // Feed-Eintrag ist optional.
+    }
+  }
+
+  // ----------------------------------------------------------------- Posteingang
+  /// Meine Posteingang-Einträge (neueste zuerst).
+  Future<List<InboxMessage>> inboxMessages() => _repo.getInbox();
+
+  /// Anzahl ungelesener Posteingang-Einträge (für Glocke/Badge).
+  Future<int> inboxUnreadCount() => _repo.unreadInboxCount();
+
+  Future<void> markInboxRead(String id) async {
+    await _repo.markInboxRead(id);
+    notifyListeners();
+  }
+
+  Future<void> markAllInboxRead() async {
+    await _repo.markAllInboxRead();
+    notifyListeners();
+  }
+
+  /// Legt einen Posteingang-Eintrag für EINEN Empfänger an – direkt in der Cloud
+  /// (nicht lokal; meine eigenen Einträge kommen per Pull/Realtime). Für mich
+  /// selbst wird nichts erzeugt. Stößt zusätzlich eine Push an (best effort).
+  Future<void> _notify(
+    String? recipientUserId,
+    InboxType type,
+    String title, {
+    String? subtitle,
+    String? linkType,
+    String? linkId,
+  }) async {
+    final team = _activeCloudTeamId;
+    final me = _me;
+    if (team == null ||
+        recipientUserId == null ||
+        recipientUserId.isEmpty ||
+        recipientUserId == me ||
+        !CloudService.ready ||
+        !CloudService.signedIn) {
+      return;
+    }
+    final msg = InboxMessage(
+      id: _uuid.v4(),
+      recipientId: recipientUserId,
+      actorId: CloudService.user?.id,
+      actorName: CloudService.displayName ?? CloudService.email ?? 'Trainer',
+      type: type,
+      title: title,
+      subtitle: subtitle,
+      linkType: linkType,
+      linkId: linkId,
+      createdAt: DateTime.now(),
+    );
+    try {
+      await CloudService.upsertRow('inbox', {...msg.toMap(), 'team_id': team});
+    } catch (_) {
+      return; // ohne Cloud kein Eintrag für andere
+    }
+    await CloudService.notifyInbox([recipientUserId], title, subtitle ?? '');
+  }
+
+  /// Wie [_notify], aber an alle Team-Mitglieder außer mir (team-weite Info).
+  /// [exclude] lässt zusätzlich bestimmte Konten aus (z.B. bereits per
+  /// Erwähnung Benachrichtigte, damit sie keinen Doppel-Eintrag bekommen).
+  Future<void> _notifyTeam(
+    InboxType type,
+    String title, {
+    String? subtitle,
+    String? linkType,
+    String? linkId,
+    Set<String> exclude = const <String>{},
+  }) async {
+    final team = _activeCloudTeamId;
+    if (team == null || !CloudService.ready || !CloudService.signedIn) return;
+    final me = _me;
+    List<Map<String, dynamic>> members;
+    try {
+      members = await CloudService.teamMembers(team);
+    } catch (_) {
+      return;
+    }
+    for (final m in members) {
+      final uid = m['user_id'] as String?;
+      if (uid == null || uid == me || exclude.contains(uid)) continue;
+      await _notify(
+        uid,
+        type,
+        title,
+        subtitle: subtitle,
+        linkType: linkType,
+        linkId: linkId,
+      );
+    }
+  }
+
+  /// Mit-Trainer des aktiven Teams (ohne mich) für die „Erwähnen"-Auswahl:
+  /// (user_id, Anzeigename). Leer ohne Cloud.
+  Future<List<({String userId, String name})>> teamTrainers() async {
+    final team = _activeCloudTeamId;
+    if (team == null || !CloudService.ready || !CloudService.signedIn) {
+      return const [];
+    }
+    try {
+      final rows = await CloudService.teamMembers(team);
+      final me = _me;
+      final out = <({String userId, String name})>[];
+      for (final r in rows) {
+        final uid = r['user_id'] as String?;
+        if (uid == null || uid == me) continue;
+        final name = (r['display_name'] as String?)?.trim();
+        final mail = (r['email'] as String?)?.trim();
+        out.add((
+          userId: uid,
+          name: (name != null && name.isNotEmpty)
+              ? name
+              : (mail != null && mail.isNotEmpty ? mail : 'Trainer'),
+        ));
+      }
+      return out;
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// Konten (user_id), die mit einem Spielerprofil verknüpft sind (für „zu
+  /// Aufgabe hinzugefügt"). Leer ohne Cloud.
+  Future<List<String>> _accountsForPlayer(String playerId) async {
+    final team = _activeCloudTeamId;
+    if (team == null || !CloudService.ready || !CloudService.signedIn) {
+      return const [];
+    }
+    try {
+      final map = await CloudService.memberPlayers(team);
+      return [
+        for (final e in map.entries)
+          if (e.value.contains(playerId)) e.key,
+      ];
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -3195,8 +3369,13 @@ class AppState extends ChangeNotifier {
 
   /// Eigener Spielbericht/Kommentar zum Spiel (Freitext, je Trainer einer).
   /// Leer = Bericht entfernen. Liegt auf der eigenen match_ratings-Zeile.
-  Future<void> setMatchNote(String matchId, String? note) async {
+  Future<void> setMatchNote(
+    String matchId,
+    String? note, {
+    List<String> mentionUserIds = const [],
+  }) async {
     final mine = await myMatchRating(matchId);
+    final wasEmpty = (mine?.note ?? '').trim().isEmpty;
     final trimmed = note?.trim();
     final empty = trimmed == null || trimmed.isEmpty;
     await _repo.upsertMatchRating(
@@ -3208,6 +3387,27 @@ class AppState extends ChangeNotifier {
       ),
     );
     notifyListeners();
+    // Erwähnte Trainer benachrichtigen.
+    await _notifyMentions(
+      mentionUserIds,
+      'Im Spielbericht erwähnt',
+      trimmed,
+      linkType: 'match',
+      linkId: matchId,
+    );
+    // Neuer Bericht (vorher leer, jetzt vorhanden): Team-weite Info – ohne die
+    // bereits per Erwähnung benachrichtigten Trainer.
+    if (!empty && wasEmpty) {
+      final m = await _repo.getMatch(matchId);
+      await _notifyTeam(
+        InboxType.report,
+        'Neuer Spielbericht',
+        subtitle: m != null ? 'vs ${m.opponentName}' : null,
+        linkType: 'match',
+        linkId: matchId,
+        exclude: mentionUserIds.toSet(),
+      );
+    }
   }
 
   /// „War nicht da / bewerte nicht": setzt nur das Kennzeichen auf der eigenen
@@ -3546,26 +3746,98 @@ class AppState extends ChangeNotifier {
     DateTime? dueDate,
     String? topicId,
     List<TodoResponsible> responsible = const [],
+    List<String> mentionUserIds = const [],
   }) async {
     final t = text.trim();
     if (t.isEmpty) return;
-    await _repo.upsertTodo(
-      Todo(
-        id: _uuid.v4(),
-        text: t,
-        createdAt: DateTime.now(),
-        dueDate: dueDate,
-        topicId: topicId,
-        responsible: responsible,
-      ),
+    final todo = Todo(
+      id: _uuid.v4(),
+      text: t,
+      createdAt: DateTime.now(),
+      dueDate: dueDate,
+      topicId: topicId,
+      responsible: responsible,
     );
+    await _repo.upsertTodo(todo);
     notifyListeners();
+    await _notifyTodoAdded(todo, const <String>{});
+    await _notifyMentions(
+      mentionUserIds,
+      'In einer Aufgabe erwähnt',
+      todo.text,
+      linkType: 'todo',
+      linkId: todo.id,
+    );
   }
 
   /// Komplette Aufgabe speichern (z.B. nach dem Bearbeiten im Dialog).
-  Future<void> saveTodo(Todo todo) async {
+  Future<void> saveTodo(
+    Todo todo, {
+    List<String> mentionUserIds = const [],
+  }) async {
+    // Vorherige Verantwortliche ermitteln, um nur NEU hinzugekommene zu melden.
+    Set<String> prevPlayerIds = const <String>{};
+    try {
+      final old = (await _repo.getTodos()).where((x) => x.id == todo.id);
+      if (old.isNotEmpty) {
+        prevPlayerIds = {
+          for (final r in old.first.responsible)
+            if (r.playerId != null) r.playerId!,
+        };
+      }
+    } catch (_) {}
     await _repo.upsertTodo(todo);
     notifyListeners();
+    await _notifyTodoAdded(todo, prevPlayerIds);
+    await _notifyMentions(
+      mentionUserIds,
+      'In einer Aufgabe erwähnt',
+      todo.text,
+      linkType: 'todo',
+      linkId: todo.id,
+    );
+  }
+
+  /// Benachrichtigt die mit NEU hinzugekommenen Verantwortlichen verknüpften
+  /// Konten (Spielerprofil → Konto via member_players).
+  Future<void> _notifyTodoAdded(
+    Todo todo,
+    Set<String> previousPlayerIds,
+  ) async {
+    for (final r in todo.responsible) {
+      final pid = r.playerId;
+      if (pid == null || previousPlayerIds.contains(pid)) continue;
+      for (final uid in await _accountsForPlayer(pid)) {
+        await _notify(
+          uid,
+          InboxType.taskAssigned,
+          'Du wurdest zu einer Aufgabe hinzugefügt',
+          subtitle: todo.text,
+          linkType: 'todo',
+          linkId: todo.id,
+        );
+      }
+    }
+  }
+
+  /// Benachrichtigt erwähnte Trainer (user_ids) – für Aufgaben und Berichte.
+  Future<void> _notifyMentions(
+    List<String> userIds,
+    String title,
+    String? subtitle, {
+    String? linkType,
+    String? linkId,
+  }) async {
+    for (final uid in userIds) {
+      await _notify(
+        uid,
+        InboxType.mention,
+        title,
+        subtitle: subtitle,
+        linkType: linkType,
+        linkId: linkId,
+      );
+    }
   }
 
   // -------------------------------------------------------- Aufgaben-Themen

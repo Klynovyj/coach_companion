@@ -9,6 +9,7 @@ import '../models/player.dart';
 import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import '../widgets/trainer_mention_field.dart';
 import 'rating_screen.dart';
 
 /// Auswertung eines Spiels: Gesamtnoten der Trainer (+ Schnitt), ihre
@@ -83,19 +84,34 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
 
   Future<void> _editMyNote() async {
     final ctrl = TextEditingController(text: _myMatch?.note ?? '');
+    final mentions = <String>[];
     final res = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Mein Spielbericht'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          minLines: 4,
-          maxLines: 10,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            hintText: 'Dein Kommentar/Bericht zum Spiel …',
-            border: OutlineInputBorder(),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                minLines: 4,
+                maxLines: 10,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'Dein Kommentar/Bericht zum Spiel …',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TrainerMentionField(
+                onChanged: (v) => mentions
+                  ..clear()
+                  ..addAll(v),
+              ),
+            ],
           ),
         ),
         actions: [
@@ -111,7 +127,11 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
       ),
     );
     if (res == null || !mounted) return;
-    await context.read<AppState>().setMatchNote(widget.matchId, res);
+    await context.read<AppState>().setMatchNote(
+      widget.matchId,
+      res,
+      mentionUserIds: mentions,
+    );
     await _load();
   }
 

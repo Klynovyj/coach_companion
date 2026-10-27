@@ -6,6 +6,7 @@ import 'cards_suspensions_screen.dart';
 import 'material_duty_screen.dart';
 import 'nachholen_screen.dart';
 import 'player_of_month_screen.dart';
+import 'inbox_screen.dart';
 import 'rating_overview_screen.dart';
 import 'settings_screen.dart';
 import 'statistics_hub_screen.dart';
@@ -28,6 +29,14 @@ class MoreScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Mehr')),
       body: ListView(
         children: [
+          _group(context, 'Posteingang'),
+          _tile(
+            context,
+            icon: Icons.inbox,
+            label: 'Posteingang',
+            screen: const InboxScreen(),
+            trailing: _Badge(future: state.inboxUnreadCount()),
+          ),
           _group(context, 'Statistik'),
           _tile(
             context,
