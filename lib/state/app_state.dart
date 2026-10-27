@@ -1703,9 +1703,10 @@ class AppState extends ChangeNotifier {
   /// FuPa-Gelben absteigend.
   Future<List<PlayerCardSummary>> cardSummaries(String teamId) async {
     await ensureOwnStats(teamId);
+    // Nur aktive Feldspieler – inaktive/abgemeldete erscheinen hier nicht.
     final players = (await _repo.getPlayers(
       teamId,
-    )).where((p) => !p.isStaffOnly).toList();
+    )).where((p) => !p.isStaffOnly && p.active).toList();
     final stats = await _repo.getStats(teamId);
     final byKey = <String, PlayerStat>{
       for (final s in stats)
@@ -1729,11 +1730,24 @@ class AppState extends ChangeNotifier {
         ),
       );
     }
+    // Gefährdung zuerst: gesperrt → Sperre fällig → gefährdet (ab 3 Gelben) →
+    // Rest; innerhalb desselben Rangs nach Gelben, dann Name.
+    int rank(PlayerCardSummary s) {
+      if (s.player.suspendedGames > 0) return 3;
+      if (s.yellowBanDue) return 2;
+      if (s.yellowWarn) return 1;
+      return 0;
+    }
+
     out.sort((a, b) {
-      final sa = a.player.suspendedGames > 0 ? 1 : 0;
-      final sb = b.player.suspendedGames > 0 ? 1 : 0;
-      if (sa != sb) return sb - sa;
-      return b.fupaYellow.compareTo(a.fupaYellow);
+      final ra = rank(a), rb = rank(b);
+      if (ra != rb) return rb - ra;
+      if (a.fupaYellow != b.fupaYellow) {
+        return b.fupaYellow.compareTo(a.fupaYellow);
+      }
+      return a.player.fullName.toLowerCase().compareTo(
+        b.player.fullName.toLowerCase(),
+      );
     });
     return out;
   }
@@ -3648,6 +3662,13 @@ class PlayerCardSummary {
 
   /// true = FuPa-Gelbe hat ein Vielfaches der Schwelle erreicht (Sperre fällig).
   bool get yellowBanDue => fupaYellow > 0 && fupaYellow % yellowThreshold == 0;
+
+  /// Gelbe im laufenden 5er-Zyklus (0..4).
+  int get yellowCycle => fupaYellow % yellowThreshold;
+
+  /// Besonders gefährdet: 3 oder 4 Gelbe im Zyklus (1–2 bis zur Sperre),
+  /// aber noch nicht fällig/gesperrt.
+  bool get yellowWarn => yellowCycle >= 3 && !yellowBanDue;
 }
 
 /// Monats-Kennzahlen eines Spielers aus live getrackten Spielen (ein Monat).

@@ -60,8 +60,8 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
   Future<void> _editSuspension(PlayerCardSummary s) async {
     final p = s.player;
     final comps = _app.competitionsInSchedule();
-    String? comp = p.suspensionCompetition ??
-        (comps.isNotEmpty ? comps.first : null);
+    String? comp =
+        p.suspensionCompetition ?? (comps.isNotEmpty ? comps.first : null);
     var from = p.suspensionFrom ?? DateTime.now();
     var games = p.suspendedGames > 0 ? p.suspendedGames : 1;
     final df = DateFormat('dd.MM.yyyy', 'de_DE');
@@ -75,8 +75,10 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (comps.isEmpty)
-                const Text('Kein Wettbewerb im Spielplan gefunden – '
-                    'die Sperre gilt dann für alle Spiele.')
+                const Text(
+                  'Kein Wettbewerb im Spielplan gefunden – '
+                  'die Sperre gilt dann für alle Spiele.',
+                )
               else
                 DropdownButtonFormField<String>(
                   initialValue: comp,
@@ -117,8 +119,10 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
                     icon: const Icon(Icons.remove_circle_outline),
                     visualDensity: VisualDensity.compact,
                   ),
-                  Text('$games',
-                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(
+                    '$games',
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
                   IconButton(
                     onPressed: () => setD(() => games++),
                     icon: const Icon(Icons.add_circle_outline),
@@ -130,11 +134,13 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Abbrechen')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen'),
+            ),
             FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Speichern')),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Speichern'),
+            ),
           ],
         ),
       ),
@@ -151,22 +157,22 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _rows.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'Keine Spieler.\nKader importieren bzw. anlegen.',
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                )
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 24),
-                  children: [
-                    _legend(context),
-                    for (final s in _rows) _row(context, s),
-                  ],
+          ? const Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'Keine Spieler.\nKader importieren bzw. anlegen.',
+                  textAlign: TextAlign.center,
                 ),
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.only(bottom: 24),
+              children: [
+                _legend(context),
+                for (final s in _rows) _row(context, s),
+              ],
+            ),
     );
   }
 
@@ -187,10 +193,21 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
     final p = s.player;
     final suspended = p.suspendedGames > 0;
     final banDue = s.yellowBanDue;
+    final warn = s.yellowWarn;
+
+    // Farbliche Hervorhebung nach Gefährdung: gesperrt (rot) → Sperre fällig
+    // (kräftiges Orange) → gefährdet ab 3 Gelben (helles Amber).
+    final Color? cardColor = suspended
+        ? scheme.errorContainer
+        : banDue
+        ? const Color(0xFFFFE0B2)
+        : warn
+        ? const Color(0xFFFFF8E1)
+        : null;
 
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-      color: suspended ? scheme.errorContainer : null,
+      color: cardColor,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
         child: Row(
@@ -208,7 +225,9 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
                         child: Text(
                           p.displayName,
                           style: const TextStyle(
-                              fontWeight: FontWeight.w700, fontSize: 15),
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -220,24 +239,43 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
                           Colors.white,
                         )
                       else if (banDue)
-                        _badge('SPERRE FÄLLIG', const Color(0xFFEF6C00),
-                            Colors.white),
+                        _badge(
+                          'SPERRE FÄLLIG',
+                          const Color(0xFFEF6C00),
+                          Colors.white,
+                        )
+                      else if (warn)
+                        _badge(
+                          'GEFÄHRDET',
+                          const Color(0xFFF9A825),
+                          Colors.white,
+                        ),
                     ],
                   ),
                   const SizedBox(height: 6),
-                  _cardsLine(context, 'FuPa', s.fupaYellow, s.fupaYellowRed,
-                      s.fupaRed),
+                  _cardsLine(
+                    context,
+                    'FuPa',
+                    s.fupaYellow,
+                    s.fupaYellowRed,
+                    s.fupaRed,
+                  ),
                   const SizedBox(height: 2),
-                  _cardsLine(context, 'Eigene', s.ownYellow, s.ownYellowRed,
-                      s.ownRed),
+                  _cardsLine(
+                    context,
+                    'Eigene',
+                    s.ownYellow,
+                    s.ownYellowRed,
+                    s.ownRed,
+                  ),
                   if (!suspended && s.yellowToBan > 0 && s.fupaYellow > 0) ...[
                     const SizedBox(height: 4),
                     Text(
                       'noch ${s.yellowToBan} Gelbe bis zur Sperre',
                       style: TextStyle(
-                          fontSize: 12,
-                          color:
-                              Theme.of(context).textTheme.bodySmall?.color),
+                        fontSize: 12,
+                        color: Theme.of(context).textTheme.bodySmall?.color,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 6),
@@ -252,15 +290,25 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
   }
 
   Widget _cardsLine(
-      BuildContext context, String label, int yellow, int yellowRed, int red) {
+    BuildContext context,
+    String label,
+    int yellow,
+    int yellowRed,
+    int red,
+  ) {
     final subtle = Theme.of(context).textTheme.bodySmall?.color;
     return Row(
       children: [
         SizedBox(
           width: 52,
-          child: Text(label,
-              style: TextStyle(
-                  fontSize: 12, fontWeight: FontWeight.w600, color: subtle)),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: subtle,
+            ),
+          ),
         ),
         _chip('🟨', yellow),
         const SizedBox(width: 10),
@@ -272,11 +320,14 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
   }
 
   Widget _chip(String symbol, int count) {
-    return Text('$symbol $count',
-        style: TextStyle(
-            fontSize: 13,
-            fontWeight: count > 0 ? FontWeight.w700 : FontWeight.w400,
-            color: count > 0 ? null : Colors.grey));
+    return Text(
+      '$symbol $count',
+      style: TextStyle(
+        fontSize: 13,
+        fontWeight: count > 0 ? FontWeight.w700 : FontWeight.w400,
+        color: count > 0 ? null : Colors.grey,
+      ),
+    );
   }
 
   Widget _suspensionControls(BuildContext context, PlayerCardSummary s) {
@@ -306,22 +357,30 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
         if (info.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 2),
-            child: Text(info,
-                style: TextStyle(
-                    fontSize: 12, color: Theme.of(context).hintColor)),
+            child: Text(
+              info,
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
           ),
         Row(
           children: [
-            const Text('Gesperrt für',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            const Text(
+              'Gesperrt für',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
             IconButton(
               onPressed: () => _setSuspension(s, p.suspendedGames - 1),
               icon: const Icon(Icons.remove_circle_outline),
               visualDensity: VisualDensity.compact,
               tooltip: 'Ein Spiel weniger',
             ),
-            Text('${p.suspendedGames} Spiel(e)',
-                style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text(
+              '${p.suspendedGames} Spiel(e)',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
             IconButton(
               onPressed: () => _setSuspension(s, p.suspendedGames + 1),
               icon: const Icon(Icons.add_circle_outline),
@@ -345,11 +404,14 @@ class _CardsSuspensionsScreenState extends State<CardsSuspensionsScreen> {
   Widget _badge(String text, Color bg, Color fg) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration:
-          BoxDecoration(color: bg, borderRadius: BorderRadius.circular(6)),
-      child: Text(text,
-          style: TextStyle(
-              color: fg, fontSize: 11, fontWeight: FontWeight.w800)),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w800),
+      ),
     );
   }
 }
