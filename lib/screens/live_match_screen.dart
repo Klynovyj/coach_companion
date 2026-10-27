@@ -142,17 +142,28 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   /// ohne eigene Cloud-Spalte. Die späteste Marke gewinnt (robust gegen
   /// Reihenfolge und „Verlängerung nach Abpfiff").
   ({_Phase phase, int base, bool running, int? anchorMs}) _deriveClock(
-      List<MatchEvent> events) {
+    List<MatchEvent> events,
+  ) {
     const markers = <MatchEventType, (_Phase, int, bool)>{
       MatchEventType.kickoff: (_Phase.firstHalf, 0, true),
       MatchEventType.halftime: (_Phase.halftime, _halfSeconds, false),
       MatchEventType.secondHalfStart: (_Phase.secondHalf, _halfSeconds, true),
       MatchEventType.fulltime: (_Phase.finished, _fullSeconds, false),
-      MatchEventType.extraFirstStart: (_Phase.extraFirstHalf, _fullSeconds, true),
-      MatchEventType.extraHalftimeMark:
-          (_Phase.extraHalftime, _extraFirstEnd, false),
-      MatchEventType.extraSecondStart:
-          (_Phase.extraSecondHalf, _extraFirstEnd, true),
+      MatchEventType.extraFirstStart: (
+        _Phase.extraFirstHalf,
+        _fullSeconds,
+        true,
+      ),
+      MatchEventType.extraHalftimeMark: (
+        _Phase.extraHalftime,
+        _extraFirstEnd,
+        false,
+      ),
+      MatchEventType.extraSecondStart: (
+        _Phase.extraSecondHalf,
+        _extraFirstEnd,
+        true,
+      ),
       MatchEventType.shootoutStart: (_Phase.shootout, _fullExtra, false),
     };
     MatchEvent? latest;
@@ -161,7 +172,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       if (latest == null || e.createdAt.isAfter(latest.createdAt)) latest = e;
     }
     if (latest == null) {
-      return (phase: _Phase.notStarted, base: 0, running: false, anchorMs: null);
+      return (
+        phase: _Phase.notStarted,
+        base: 0,
+        running: false,
+        anchorMs: null,
+      );
     }
     final (phase, base, running) = markers[latest.type]!;
     return (
@@ -231,8 +247,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final half = _phase == _Phase.firstHalf || _phase == _Phase.halftime
         ? 1
         : _phase == _Phase.secondHalf
-            ? 2
-            : 3;
+        ? 2
+        : 3;
     return MatchClockData(
       running: _running,
       baseElapsed: _elapsedSeconds,
@@ -291,8 +307,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final noms = await state.nominationsOf(widget.matchId);
     // Startelf aus der FREIGEGEBENEN Aufstellung (für Wechsel: Feld vs Bank).
     final starterIds = <String>{};
-    final lineup =
-        await state.repository.getReleasedLineup(widget.matchId, match.ownTeamId);
+    final lineup = await state.repository.getReleasedLineup(
+      widget.matchId,
+      match.ownTeamId,
+    );
     if (lineup != null) {
       final entries = await state.lineupEntries(lineup.id);
       for (final e in entries) {
@@ -333,7 +351,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         final a = _anchorMs;
         _elapsedSeconds = a != null
             ? _baseElapsed +
-                ((DateTime.now().millisecondsSinceEpoch - a) ~/ 1000)
+                  ((DateTime.now().millisecondsSinceEpoch - a) ~/ 1000)
             : _elapsedSeconds + 1;
       });
       // Auf Desktop die Hintergrund-Uhr (Tray-Tooltip + Halbzeit/Abpfiff-
@@ -369,18 +387,21 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   Future<void> _logPhase(MatchEventType type, int minute, int extra) async {
     final m = _match!;
     await context.read<AppState>().addEvent(
-          matchId: widget.matchId,
-          teamId: m.ownTeamId,
-          minute: minute,
-          minuteExtra: extra,
-          type: type,
-          note: '${m.ownScore}:${m.opponentScore}',
-        );
+      matchId: widget.matchId,
+      teamId: m.ownTeamId,
+      minute: minute,
+      minuteExtra: extra,
+      type: type,
+      note: '${m.ownScore}:${m.opponentScore}',
+    );
   }
 
   /// Anpfiff 1. Halbzeit.
   Future<void> _kickoff() async {
-    await context.read<AppState>().setMatchStatus(widget.matchId, MatchStatus.live);
+    await context.read<AppState>().setMatchStatus(
+      widget.matchId,
+      MatchStatus.live,
+    );
     setState(() {
       _phase = _Phase.firstHalf;
       _elapsedSeconds = 0;
@@ -430,9 +451,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   /// Verlängerung starten (ab 90:00). Auch nach dem Abpfiff möglich.
   Future<void> _startExtra() async {
-    await context
-        .read<AppState>()
-        .setMatchStatus(widget.matchId, MatchStatus.live);
+    await context.read<AppState>().setMatchStatus(
+      widget.matchId,
+      MatchStatus.live,
+    );
     setState(() {
       _phase = _Phase.extraFirstHalf;
       _elapsedSeconds = _fullSeconds;
@@ -478,8 +500,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   }
 
   /// Ein Schuss im Elfmeterschießen (Tor oder kein Tor), optional mit Schütze.
-  Future<void> _addShootoutShot(
-      {required bool ownSide, required bool scored}) async {
+  Future<void> _addShootoutShot({
+    required bool ownSide,
+    required bool scored,
+  }) async {
     final state = context.read<AppState>();
     // Platzverwiesene dürfen nicht zum Elfmeterschießen antreten.
     final players = ownSide
@@ -521,40 +545,43 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final oppName = _opponentTeam?.name ?? match.opponentName;
 
     Widget teamCard(String name, bool ownSide, Color color) => Card(
-          margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              name,
+              style: TextStyle(fontWeight: FontWeight.bold, color: color),
+            ),
+            const SizedBox(height: 8),
+            Row(
               children: [
-                Text(name,
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, color: color)),
-                const SizedBox(height: 8),
-                Row(children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      style: FilledButton.styleFrom(backgroundColor: color),
-                      onPressed: () =>
-                          _addShootoutShot(ownSide: ownSide, scored: true),
-                      icon: const Text('⚽'),
-                      label: const Text('Tor'),
-                    ),
+                Expanded(
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(backgroundColor: color),
+                    onPressed: () =>
+                        _addShootoutShot(ownSide: ownSide, scored: true),
+                    icon: const Text('⚽'),
+                    label: const Text('Tor'),
                   ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () =>
-                          _addShootoutShot(ownSide: ownSide, scored: false),
-                      icon: const Icon(Icons.close, size: 18),
-                      label: const Text('Kein Tor'),
-                    ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () =>
+                        _addShootoutShot(ownSide: ownSide, scored: false),
+                    icon: const Icon(Icons.close, size: 18),
+                    label: const Text('Kein Tor'),
                   ),
-                ]),
+                ),
               ],
             ),
-          ),
-        );
+          ],
+        ),
+      ),
+    );
 
     return Column(
       children: [
@@ -565,12 +592,18 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             padding: const EdgeInsets.all(14),
             child: Column(
               children: [
-                const Text('Elfmeterschießen',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text(
+                  'Elfmeterschießen',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
                 const SizedBox(height: 4),
-                Text('$ownName  $own : $opp  $oppName',
-                    style: const TextStyle(
-                        fontSize: 20, fontWeight: FontWeight.bold)),
+                Text(
+                  '$ownName  $own : $opp  $oppName',
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ],
             ),
           ),
@@ -589,7 +622,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   /// Schmaler Hinweisstreifen oben im Live-Screen.
   Widget _banner(
-      BuildContext context, Color color, IconData icon, String text) {
+    BuildContext context,
+    Color color,
+    IconData icon,
+    String text,
+  ) {
     return Container(
       width: double.infinity,
       color: color,
@@ -599,7 +636,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           Icon(icon, size: 16),
           const SizedBox(width: 8),
           Expanded(
-              child: Text(text, style: Theme.of(context).textTheme.bodySmall)),
+            child: Text(text, style: Theme.of(context).textTheme.bodySmall),
+          ),
         ],
       ),
     );
@@ -622,15 +660,18 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Steuerung übernehmen?'),
         content: Text(
-            'Du übernimmst die Live-Steuerung. $prev kann das Spiel dann nicht '
-            'mehr bedienen.'),
+          'Du übernimmst die Live-Steuerung. $prev kann das Spiel dann nicht '
+          'mehr bedienen.',
+        ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Übernehmen')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Übernehmen'),
+          ),
         ],
       ),
     );
@@ -694,7 +735,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               },
               itemBuilder: (_) => const [
                 PopupMenuItem(
-                    value: 'reset', child: Text('Spiel zurücksetzen')),
+                  value: 'reset',
+                  child: Text('Spiel zurücksetzen'),
+                ),
               ],
             ),
         ],
@@ -751,10 +794,13 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             running: _running,
             shootoutOwn: _shootoutScore(true),
             shootoutOpp: _shootoutScore(false),
-            showShootout: _phase == _Phase.shootout ||
-                _events.any((e) =>
-                    e.type == MatchEventType.soGoal ||
-                    e.type == MatchEventType.soMiss),
+            showShootout:
+                _phase == _Phase.shootout ||
+                _events.any(
+                  (e) =>
+                      e.type == MatchEventType.soGoal ||
+                      e.type == MatchEventType.soMiss,
+                ),
           ),
           if (canEdit && !_watchMode)
             _lock(
@@ -779,9 +825,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                 if (canEdit && !_watchMode && _phase == _Phase.shootout)
                   _lock(canRecord, _shootoutPanel(context, match)),
                 if (_phase != _Phase.shootout &&
-                    _events.any((e) =>
-                        e.type == MatchEventType.soGoal ||
-                        e.type == MatchEventType.soMiss))
+                    _events.any(
+                      (e) =>
+                          e.type == MatchEventType.soGoal ||
+                          e.type == MatchEventType.soMiss,
+                    ))
                   Card(
                     margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                     color: Theme.of(context).colorScheme.secondaryContainer,
@@ -806,14 +854,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                       children: [
                         // Nachtragen-Schalter: bei beendetem/pausiertem Spiel
                         // Aktionen mit abgefragter Minute erfassen.
-                        if (!_actionsEnabled &&
-                            _phase != _Phase.notStarted)
+                        if (!_actionsEnabled && _phase != _Phase.notStarted)
                           SwitchListTile(
                             dense: true,
                             secondary: const Icon(Icons.edit_calendar),
                             title: const Text('Aktionen nachtragen'),
                             subtitle: const Text(
-                                'Minute wird beim Hinzufügen abgefragt'),
+                              'Minute wird beim Hinzufügen abgefragt',
+                            ),
                             value: _addLater,
                             onChanged: (v) => setState(() => _addLater = v),
                           ),
@@ -962,8 +1010,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Abbrechen'),
+          ),
           FilledButton(
             onPressed: () {
               final m = int.tryParse(minCtrl.text.trim());
@@ -996,12 +1045,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   /// gestellt, dürfen nicht mehr mitspielen (kein Tor/Karte, nicht ein-/aus-
   /// wechselbar).
   Set<String> get _sentOffIds => {
-        for (final e in _events)
-          if ((e.type == MatchEventType.redCard ||
-                  e.type == MatchEventType.secondYellow) &&
-              e.playerId != null)
-            e.playerId!,
-      };
+    for (final e in _events)
+      if ((e.type == MatchEventType.redCard ||
+              e.type == MatchEventType.secondYellow) &&
+          e.playerId != null)
+        e.playerId!,
+  };
 
   /// Wer aktuell auf dem Feld steht: Startelf, fortgeschrieben durch alle
   /// bisherigen Wechsel (ein Spieler kann hin- und zurückgewechselt werden).
@@ -1055,19 +1104,24 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           maxLines: 3,
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
-              hintText: 'z.B. Traumtor aus 20 m', border: OutlineInputBorder()),
+            hintText: 'z.B. Traumtor aus 20 m',
+            border: OutlineInputBorder(),
+          ),
           onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
         ),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, '\u0000cancel'),
-              child: const Text('Abbrechen')),
+            onPressed: () => Navigator.pop(ctx, '\u0000cancel'),
+            child: const Text('Abbrechen'),
+          ),
           TextButton(
-              onPressed: () => Navigator.pop(ctx, ''),
-              child: const Text('Ohne')),
+            onPressed: () => Navigator.pop(ctx, ''),
+            child: const Text('Ohne'),
+          ),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Speichern')),
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
@@ -1146,9 +1200,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     if (player == _pickCancelled || !mounted) return;
     final pid = player == _pickUnknown ? null : player;
     // Hat der Spieler in diesem Spiel schon Gelb? Dann kein zweites Gelb.
-    final hasYellow = pid != null &&
-        _events.any((e) =>
-            e.type == MatchEventType.yellowCard && e.playerId == pid);
+    final hasYellow =
+        pid != null &&
+        _events.any(
+          (e) => e.type == MatchEventType.yellowCard && e.playerId == pid,
+        );
     final type = await showModalBottomSheet<MatchEventType>(
       context: context,
       builder: (_) => _CardTypeSheet(hideYellow: hasYellow),
@@ -1288,9 +1344,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Parade – Schussart',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  'Parade – Schussart',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
               ),
             ),
             const Divider(height: 1),
@@ -1300,8 +1357,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                 children: [
                   for (final t in types)
                     ListTile(
-                      leading:
-                          const Text('🧤', style: TextStyle(fontSize: 20)),
+                      leading: const Text('🧤', style: TextStyle(fontSize: 20)),
                       title: Text(t),
                       onTap: () => Navigator.pop(context, t),
                     ),
@@ -1345,9 +1401,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Ereignis',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  'Ereignis',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
               ),
             ),
             const Divider(height: 1),
@@ -1357,8 +1414,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                 children: [
                   for (final t in types)
                     ListTile(
-                      leading:
-                          Text(t.symbol, style: const TextStyle(fontSize: 20)),
+                      leading: Text(
+                        t.symbol,
+                        style: const TextStyle(fontSize: 20),
+                      ),
                       title: Text(t.label),
                       onTap: () => Navigator.pop(context, t),
                     ),
@@ -1385,14 +1444,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final detail = await _eventDetail(resolved, _pickPool(ownSide));
     if (detail == null || !mounted) return;
     await context.read<AppState>().addEvent(
-          matchId: widget.matchId,
-          teamId: _teamIdFor(ownSide),
-          minute: _currentMinute,
-          minuteExtra: _currentExtra,
-          type: resolved,
-          playerId: detail.playerId,
-          note: detail.note,
-        );
+      matchId: widget.matchId,
+      teamId: _teamIdFor(ownSide),
+      minute: _currentMinute,
+      minuteExtra: _currentExtra,
+      type: resolved,
+      playerId: detail.playerId,
+      note: detail.note,
+    );
     await _refreshEvents();
   }
 
@@ -1442,10 +1501,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     if (!mounted) return;
     // Ersatz von der Bank (optional: „Ohne Einwechslung").
     final bench = players
-        .where((p) =>
-            !onIds.contains(p.id) &&
-            !sentOff.contains(p.id) &&
-            p.id != offId)
+        .where(
+          (p) =>
+              !onIds.contains(p.id) && !sentOff.contains(p.id) && p.id != offId,
+        )
         .toList();
     String? onId;
     if (bench.isNotEmpty) {
@@ -1483,9 +1542,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Elfmeter – Ausgang',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  'Elfmeter – Ausgang',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
               ),
             ),
             const Divider(height: 1),
@@ -1512,9 +1572,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   /// Vollbild-Seite: optionaler Spieler (mit Foto) + optionale Notiz.
   Future<({String? playerId, String? note, List<String> mentions})?>
-      _eventDetail(MatchEventType type, List<Player> players) {
-    return Navigator.of(context)
-        .push<({String? playerId, String? note, List<String> mentions})>(
+  _eventDetail(MatchEventType type, List<Player> players) {
+    return Navigator.of(
+      context,
+    ).push<({String? playerId, String? note, List<String> mentions})>(
       MaterialPageRoute(
         fullscreenDialog: true,
         builder: (_) => _EventDetailPage(type: type, players: players),
@@ -1525,8 +1586,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   /// Neutraler Freitext-Kommentar (ebenfalls als Vollbild-Seite). Erwähnte
   /// Spieler werden verknüpft und erscheinen im jeweiligen Profil.
   Future<void> _addComment() async {
-    final detail =
-        await _eventDetail(MatchEventType.comment, _playersFor(true));
+    final detail = await _eventDetail(
+      MatchEventType.comment,
+      _playersFor(true),
+    );
     if (detail == null ||
         detail.note == null ||
         detail.note!.isEmpty ||
@@ -1534,14 +1597,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       return;
     }
     await context.read<AppState>().addEvent(
-          matchId: widget.matchId,
-          teamId: _teamIdFor(true),
-          minute: _currentMinute,
-          minuteExtra: _currentExtra,
-          type: MatchEventType.comment,
-          note: detail.note,
-          mentions: detail.mentions,
-        );
+      matchId: widget.matchId,
+      teamId: _teamIdFor(true),
+      minute: _currentMinute,
+      minuteExtra: _currentExtra,
+      type: MatchEventType.comment,
+      note: detail.note,
+      mentions: detail.mentions,
+    );
     await _refreshEvents();
   }
 
@@ -1565,9 +1628,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             const Divider(height: 1),
             ListTile(
               leading: const Icon(Icons.edit_outlined),
-              title: Text(e.type == MatchEventType.comment
-                  ? 'Text ändern'
-                  : 'Text/Spieler ändern'),
+              title: Text(
+                e.type == MatchEventType.comment
+                    ? 'Text ändern'
+                    : 'Text/Spieler ändern',
+              ),
               onTap: () => Navigator.pop(context, 'edit'),
             ),
             // Aktion (Typ) ändern – nicht für Phasen-Marken / Elfmeterschießen.
@@ -1614,12 +1679,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           ),
           actions: [
             TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: const Text('Abbrechen')),
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen'),
+            ),
             FilledButton(
-                onPressed: () =>
-                    Navigator.pop(context, int.tryParse(ctrl.text.trim())),
-                child: const Text('Speichern')),
+              onPressed: () =>
+                  Navigator.pop(context, int.tryParse(ctrl.text.trim())),
+              child: const Text('Speichern'),
+            ),
           ],
         ),
       );
@@ -1670,11 +1737,15 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       if (needsPlayer.contains(newType)) {
         final players = ownSide ? _onFieldPlayers(true) : _opponentPlayers;
         final res = await _pickPlayer(
-            title: 'Spieler', players: players, allowUnknown: true);
+          title: 'Spieler',
+          players: players,
+          allowUnknown: true,
+        );
         if (res != _pickCancelled) {
           playerId = res == _pickUnknown ? null : res;
         } else if (teamChanged) {
-          playerId = null; // Abbruch + Team gewechselt → alter Spieler passt nicht
+          playerId =
+              null; // Abbruch + Team gewechselt → alter Spieler passt nicht
         }
       } else if (teamChanged) {
         playerId = null;
@@ -1732,16 +1803,19 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Aktion wählen',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  'Aktion wählen',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
               ),
             ),
             const Divider(height: 1),
             for (final en in entries)
               ListTile(
-                leading:
-                    Text(en.$2.symbol, style: const TextStyle(fontSize: 20)),
+                leading: Text(
+                  en.$2.symbol,
+                  style: const TextStyle(fontSize: 20),
+                ),
                 title: Text(en.$1),
                 onTap: () => Navigator.pop(context, en.$2),
               ),
@@ -1765,9 +1839,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               padding: EdgeInsets.fromLTRB(16, 14, 16, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text('Team',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  'Team',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
               ),
             ),
             const Divider(height: 1),
@@ -1796,16 +1871,16 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final players = isComment ? _playersFor(true) : _onFieldPlayers(own);
     final detail = await Navigator.of(context)
         .push<({String? playerId, String? note, List<String> mentions})>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) => _EventDetailPage(
-          type: e.type,
-          players: players,
-          initialPlayerId: e.playerId,
-          initialNote: e.note,
-        ),
-      ),
-    );
+          MaterialPageRoute(
+            fullscreenDialog: true,
+            builder: (_) => _EventDetailPage(
+              type: e.type,
+              players: players,
+              initialPlayerId: e.playerId,
+              initialNote: e.note,
+            ),
+          ),
+        );
     if (detail == null || !mounted) return;
     // Direkt neu bauen (copyWith kann playerId/note nicht auf null setzen).
     final updated = MatchEvent(
@@ -1825,8 +1900,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   }
 
   void _snack(String msg) {
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(msg)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _resetMatch() async {
@@ -1836,12 +1910,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     if (choice == null || !choice.any || !mounted) return;
     _timer?.cancel();
     await context.read<AppState>().resetMatchParts(
-          widget.matchId,
-          match.ownTeamId,
-          verlauf: choice.verlauf,
-          aufstellung: choice.aufstellung,
-          nominierung: choice.nominierung,
-        );
+      widget.matchId,
+      match.ownTeamId,
+      verlauf: choice.verlauf,
+      aufstellung: choice.aufstellung,
+      nominierung: choice.nominierung,
+    );
     if (!mounted) return;
     if (choice.verlauf) {
       // Die Uhr leitet sich aus den Marken-Ereignissen ab; durch das Löschen
@@ -1874,8 +1948,30 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   }
 
   // ------------------------------------------------------------- Dashboard
+  /// Halbzeit eines Ereignisses: 1 = 1. HZ, 2 = 2. HZ (inkl. Verlängerung).
+  /// Ermittelt über die Phasen-Marken (Anpfiff 2. HZ bzw. Halbzeit), sonst
+  /// als Rückfall über die Spielminute (≤ 45 → 1. HZ).
+  int _halfOf(MatchEvent e) {
+    final secondStart = _events
+        .where((x) => x.type == MatchEventType.secondHalfStart)
+        .map((x) => x.createdAt)
+        .firstOrNull;
+    if (secondStart != null) {
+      return e.createdAt.isBefore(secondStart) ? 1 : 2;
+    }
+    final halftime = _events
+        .where((x) => x.type == MatchEventType.halftime)
+        .map((x) => x.createdAt)
+        .firstOrNull;
+    if (halftime != null) {
+      return e.createdAt.isAfter(halftime) ? 2 : 1;
+    }
+    return e.minute <= 45 ? 1 : 2;
+  }
+
   /// Statistik-Übersicht (Wir vs. Gegner) als Bottom-Sheet. Zählt die
-  /// erfassten Aktionen je Seite aus den aktuellen Ereignissen (Snapshot).
+  /// erfassten Aktionen je Seite aus den aktuellen Ereignissen (Snapshot),
+  /// wahlweise gesamt oder je Halbzeit.
   Future<void> _openDashboard() async {
     final match = _match;
     if (match == null) return;
@@ -1884,14 +1980,6 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final ownName = _ownTeam?.shortName ?? _ownTeam?.name ?? 'Wir';
     final oppName = _opponentTeam?.name ?? match.opponentName;
 
-    int count(bool own, Set<MatchEventType> types) => _events
-        .where((e) =>
-            types.contains(e.type) &&
-            (own
-                ? e.teamId == match.ownTeamId
-                : e.teamId != match.ownTeamId))
-        .length;
-
     const rows = <(String, Set<MatchEventType>)>[
       ('Tore', {MatchEventType.goal, MatchEventType.penalty}),
       ('Eigentore', {MatchEventType.ownGoal}),
@@ -1899,11 +1987,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       ('Distanzschüsse', {MatchEventType.longShot}),
       ('Kopfbälle', {MatchEventType.header}),
       ('Großchancen', {MatchEventType.bigChance}),
-      ('Elfmeter', {
-        MatchEventType.penalty,
-        MatchEventType.penaltyMissed,
-        MatchEventType.penaltySaved,
-      }),
+      (
+        'Elfmeter',
+        {
+          MatchEventType.penalty,
+          MatchEventType.penaltyMissed,
+          MatchEventType.penaltySaved,
+        },
+      ),
       ('Ecken', {MatchEventType.corner}),
       ('Freistöße', {MatchEventType.freeKick}),
       ('Fouls', {MatchEventType.foul}),
@@ -1928,89 +2019,155 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         minChildSize: 0.4,
         builder: (ctx, scroll) {
           final boundaryKey = GlobalKey();
-          // Statistik als Bild teilen (RepaintBoundary → PNG → WhatsApp).
-          Future<void> shareStats() async {
-            final nav = Navigator.of(ctx);
-            try {
-              final b = boundaryKey.currentContext?.findRenderObject()
-                  as RenderRepaintBoundary?;
-              if (b == null) return;
-              final image = await b.toImage(pixelRatio: 2.5);
-              final data =
-                  await image.toByteData(format: ui.ImageByteFormat.png);
-              if (data == null) return;
-              nav.pop();
-              final path = await shareOrSaveImage(
-                data.buffer.asUint8List(),
-                'Statistik_$ownName',
-                text: 'Statistik – $ownName',
-              );
-              if (path != null && mounted) _snack('Als Bild gespeichert:\n$path');
-            } catch (e) {
-              if (mounted) _snack('Teilen fehlgeschlagen: $e');
-            }
-          }
+          int half = 0; // 0 = gesamt, 1 = 1. HZ, 2 = 2. HZ
+          return StatefulBuilder(
+            builder: (ctx, setSheet) {
+              final halfLabel = half == 1
+                  ? '1. Halbzeit'
+                  : half == 2
+                  ? '2. Halbzeit'
+                  : 'Gesamt';
+              int count(bool own, Set<MatchEventType> types) => _events
+                  .where(
+                    (e) =>
+                        types.contains(e.type) &&
+                        (own
+                            ? e.teamId == match.ownTeamId
+                            : e.teamId != match.ownTeamId) &&
+                        (half == 0 || _halfOf(e) == half),
+                  )
+                  .length;
+              // Statistik als Bild teilen (RepaintBoundary → PNG → WhatsApp).
+              Future<void> shareStats() async {
+                final nav = Navigator.of(ctx);
+                try {
+                  final b =
+                      boundaryKey.currentContext?.findRenderObject()
+                          as RenderRepaintBoundary?;
+                  if (b == null) return;
+                  final image = await b.toImage(pixelRatio: 2.5);
+                  final data = await image.toByteData(
+                    format: ui.ImageByteFormat.png,
+                  );
+                  if (data == null) return;
+                  nav.pop();
+                  final suffix = half == 0 ? '' : '_${half}HZ';
+                  final path = await shareOrSaveImage(
+                    data.buffer.asUint8List(),
+                    'Statistik_$ownName$suffix',
+                    text: 'Statistik ($halfLabel) – $ownName',
+                  );
+                  if (path != null && mounted) {
+                    _snack('Als Bild gespeichert:\n$path');
+                  }
+                } catch (e) {
+                  if (mounted) _snack('Teilen fehlgeschlagen: $e');
+                }
+              }
 
-          final content = Container(
-            color: scheme.surface,
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-            child: Column(
-              children: [
-                const Text('Statistik',
-                    style:
-                        TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                const SizedBox(height: 12),
-                Row(
+              final content = Container(
+                color: scheme.surface,
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+                child: Column(
                   children: [
-                    Expanded(child: _dashTeam(_ownTeam?.logoPath, ownName)),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        '${match.ownScore} : ${match.opponentScore}',
-                        style: const TextStyle(
-                            fontSize: 28, fontWeight: FontWeight.bold),
+                    const Text(
+                      'Statistik',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
                       ),
                     ),
-                    Expanded(
-                      child: _dashTeam(
-                          _opponentTeam?.logoPath ?? match.opponentLogoPath,
-                          oppName),
+                    if (half != 0)
+                      Text(
+                        halfLabel,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                          color: scheme.primary,
+                        ),
+                      ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: _dashTeam(_ownTeam?.logoPath, ownName)),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            '${match.ownScore} : ${match.opponentScore}',
+                            style: const TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: _dashTeam(
+                            _opponentTeam?.logoPath ?? match.opponentLogoPath,
+                            oppName,
+                          ),
+                        ),
+                      ],
                     ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _dashLegend('Wir', scheme.primary),
+                        _dashLegend('Gegner', oppColor),
+                      ],
+                    ),
+                    const Divider(height: 20),
+                    for (final r in rows)
+                      _dashStatRow(
+                        r.$1,
+                        count(true, r.$2),
+                        count(false, r.$2),
+                        scheme.primary,
+                        oppColor,
+                      ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _dashLegend('Wir', scheme.primary),
-                    _dashLegend('Gegner', oppColor),
-                  ],
-                ),
-                const Divider(height: 20),
-                for (final r in rows)
-                  _dashStatRow(r.$1, count(true, r.$2), count(false, r.$2),
-                      scheme.primary, oppColor),
-              ],
-            ),
-          );
+              );
 
-          return Column(
-            children: [
-              Align(
-                alignment: Alignment.centerRight,
-                child: IconButton(
-                  tooltip: 'Als Bild teilen (WhatsApp)',
-                  icon: const Icon(Icons.share),
-                  onPressed: shareStats,
-                ),
-              ),
-              Expanded(
-                child: SingleChildScrollView(
-                  controller: scroll,
-                  child: RepaintBoundary(key: boundaryKey, child: content),
-                ),
-              ),
-            ],
+              return Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: SegmentedButton<int>(
+                            showSelectedIcon: false,
+                            style: const ButtonStyle(
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            segments: const [
+                              ButtonSegment(value: 0, label: Text('Gesamt')),
+                              ButtonSegment(value: 1, label: Text('1. HZ')),
+                              ButtonSegment(value: 2, label: Text('2. HZ')),
+                            ],
+                            selected: {half},
+                            onSelectionChanged: (s) =>
+                                setSheet(() => half = s.first),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Als Bild teilen (WhatsApp)',
+                          icon: const Icon(Icons.share),
+                          onPressed: shareStats,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: scroll,
+                      child: RepaintBoundary(key: boundaryKey, child: content),
+                    ),
+                  ),
+                ],
+              );
+            },
           );
         },
       ),
@@ -2018,32 +2175,36 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   }
 
   Widget _dashTeam(String? logo, String name) => Column(
-        children: [
-          if (logo != null) ...[
-            TeamLogo(logoPath: logo, size: 36),
-            const SizedBox(height: 4),
-          ],
-          Text(name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.bold)),
-        ],
-      );
+    children: [
+      if (logo != null) ...[
+        TeamLogo(logoPath: logo, size: 36),
+        const SizedBox(height: 4),
+      ],
+      Text(
+        name,
+        textAlign: TextAlign.center,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontWeight: FontWeight.bold),
+      ),
+    ],
+  );
 
   Widget _dashLegend(String label, Color c) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 12,
-            height: 12,
-            decoration: BoxDecoration(
-                color: c, borderRadius: BorderRadius.circular(3)),
-          ),
-          const SizedBox(width: 6),
-          Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 12,
+        height: 12,
+        decoration: BoxDecoration(
+          color: c,
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ),
+      const SizedBox(width: 6),
+      Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+    ],
+  );
 
   Widget _dashStatRow(String label, int own, int opp, Color ownC, Color oppC) {
     final total = own + opp;
@@ -2052,16 +2213,21 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         children: [
-          Text(label,
-              style:
-                  const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+          Text(
+            label,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+          ),
           const SizedBox(height: 4),
           Row(
             children: [
               SizedBox(
-                  width: 34,
-                  child: Text('$own',
-                      textAlign: TextAlign.right, style: numStyle)),
+                width: 34,
+                child: Text(
+                  '$own',
+                  textAlign: TextAlign.right,
+                  style: numStyle,
+                ),
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: ClipRRect(
@@ -2071,18 +2237,20 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                       Expanded(
                         flex: total == 0 ? 1 : own,
                         child: Container(
-                            height: 10,
-                            color: total == 0
-                                ? ownC.withValues(alpha: 0.2)
-                                : ownC),
+                          height: 10,
+                          color: total == 0
+                              ? ownC.withValues(alpha: 0.2)
+                              : ownC,
+                        ),
                       ),
                       Expanded(
                         flex: total == 0 ? 1 : opp,
                         child: Container(
-                            height: 10,
-                            color: total == 0
-                                ? oppC.withValues(alpha: 0.2)
-                                : oppC),
+                          height: 10,
+                          color: total == 0
+                              ? oppC.withValues(alpha: 0.2)
+                              : oppC,
+                        ),
                       ),
                     ],
                   ),
@@ -2090,9 +2258,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               ),
               const SizedBox(width: 8),
               SizedBox(
-                  width: 34,
-                  child: Text('$opp',
-                      textAlign: TextAlign.left, style: numStyle)),
+                width: 34,
+                child: Text('$opp', textAlign: TextAlign.left, style: numStyle),
+              ),
             ],
           ),
         ],
@@ -2203,27 +2371,32 @@ class _Scoreboard extends StatelessWidget {
                   width: 10,
                   height: 10,
                   decoration: const BoxDecoration(
-                      color: Colors.red, shape: BoxShape.circle),
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                  ),
                 ),
               Text(
                 phase == _Phase.finished ? 'Beendet' : clockText,
                 style: TextStyle(
-                    color: scheme.onPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600),
+                  color: scheme.onPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
               const SizedBox(width: 10),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: scheme.onPrimary.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Text(_minuteLabel,
-                    style: TextStyle(
-                        color: scheme.onPrimary,
-                        fontWeight: FontWeight.bold)),
+                child: Text(
+                  _minuteLabel,
+                  style: TextStyle(
+                    color: scheme.onPrimary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
             ],
           ),
@@ -2231,22 +2404,28 @@ class _Scoreboard extends StatelessWidget {
           Row(
             children: [
               Expanded(child: _side(scheme, ownLogo, ownName)),
-              Text('${match.ownScore} : ${match.opponentScore}',
-                  style: TextStyle(
-                      color: scheme.onPrimary,
-                      fontSize: 34,
-                      fontWeight: FontWeight.bold)),
+              Text(
+                '${match.ownScore} : ${match.opponentScore}',
+                style: TextStyle(
+                  color: scheme.onPrimary,
+                  fontSize: 34,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
               Expanded(child: _side(scheme, oppLogo, oppName)),
             ],
           ),
           // Elfmeterschießen oben mitzählen.
           if (showShootout) ...[
             const SizedBox(height: 4),
-            Text('Elfmeterschießen  $shootoutOwn : $shootoutOpp',
-                style: TextStyle(
-                    color: scheme.onPrimary,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700)),
+            Text(
+              'Elfmeterschießen  $shootoutOwn : $shootoutOpp',
+              style: TextStyle(
+                color: scheme.onPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
           ],
         ],
       ),
@@ -2260,12 +2439,16 @@ class _Scoreboard extends StatelessWidget {
           TeamLogo(logoPath: logo, size: 40),
           const SizedBox(height: 4),
         ],
-        Text(name,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                color: scheme.onPrimary, fontWeight: FontWeight.bold)),
+        Text(
+          name,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: scheme.onPrimary,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ],
     );
   }
@@ -2297,17 +2480,19 @@ class _Controls extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget full(Widget button) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: SizedBox(width: double.infinity, child: button),
-        );
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: SizedBox(width: double.infinity, child: button),
+    );
     Widget two(Widget a, Widget b) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Row(children: [
-            Expanded(child: a),
-            const SizedBox(width: 8),
-            Expanded(child: b),
-          ]),
-        );
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(child: a),
+          const SizedBox(width: 8),
+          Expanded(child: b),
+        ],
+      ),
+    );
 
     final finishBtn = FilledButton.icon(
       style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -2318,23 +2503,29 @@ class _Controls extends StatelessWidget {
 
     switch (phase) {
       case _Phase.notStarted:
-        return full(FilledButton.icon(
-          onPressed: onKickoff,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Anpfiff'),
-        ));
+        return full(
+          FilledButton.icon(
+            onPressed: onKickoff,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Anpfiff'),
+          ),
+        );
       case _Phase.firstHalf:
-        return full(FilledButton.icon(
-          onPressed: onHalftime,
-          icon: const Icon(Icons.timer),
-          label: const Text('Halbzeit'),
-        ));
+        return full(
+          FilledButton.icon(
+            onPressed: onHalftime,
+            icon: const Icon(Icons.timer),
+            label: const Text('Halbzeit'),
+          ),
+        );
       case _Phase.halftime:
-        return full(FilledButton.icon(
-          onPressed: onSecondHalf,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Anpfiff 2. Halbzeit'),
-        ));
+        return full(
+          FilledButton.icon(
+            onPressed: onSecondHalf,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Anpfiff 2. Halbzeit'),
+          ),
+        );
       case _Phase.secondHalf:
         return two(
           finishBtn,
@@ -2358,17 +2549,21 @@ class _Controls extends StatelessWidget {
           ),
         );
       case _Phase.extraFirstHalf:
-        return full(FilledButton.icon(
-          onPressed: onExtraHalftime,
-          icon: const Icon(Icons.timer),
-          label: const Text('Halbzeit Verlängerung'),
-        ));
+        return full(
+          FilledButton.icon(
+            onPressed: onExtraHalftime,
+            icon: const Icon(Icons.timer),
+            label: const Text('Halbzeit Verlängerung'),
+          ),
+        );
       case _Phase.extraHalftime:
-        return full(FilledButton.icon(
-          onPressed: onExtraSecond,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Anpfiff 2. Verlängerung'),
-        ));
+        return full(
+          FilledButton.icon(
+            onPressed: onExtraSecond,
+            icon: const Icon(Icons.play_arrow),
+            label: const Text('Anpfiff 2. Verlängerung'),
+          ),
+        );
       case _Phase.extraSecondHalf:
         return two(
           finishBtn,
@@ -2379,12 +2574,14 @@ class _Controls extends StatelessWidget {
           ),
         );
       case _Phase.shootout:
-        return full(FilledButton.icon(
-          style: FilledButton.styleFrom(backgroundColor: Colors.red),
-          onPressed: onFinish,
-          icon: const Icon(Icons.emoji_events),
-          label: const Text('Spiel beenden'),
-        ));
+        return full(
+          FilledButton.icon(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: onFinish,
+            icon: const Icon(Icons.emoji_events),
+            label: const Text('Spiel beenden'),
+          ),
+        );
     }
   }
 }
@@ -2423,23 +2620,25 @@ class _TeamActionBar extends StatelessWidget {
   // Icon über Label – Text bleibt auch auf schmalen Handys lesbar.
   static final _actionStyle = ButtonStyle(
     padding: WidgetStateProperty.all(
-        const EdgeInsets.symmetric(horizontal: 4, vertical: 8)),
+      const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+    ),
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
   );
 
   Widget _actionChild(Widget icon, String text) => Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          icon,
-          const SizedBox(height: 2),
-          Text(text,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.visible,
-              style:
-                  const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-        ],
-      );
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      icon,
+      const SizedBox(height: 2),
+      Text(
+        text,
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.visible,
+        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -2465,28 +2664,37 @@ class _TeamActionBar extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(isOwn ? Icons.home : Icons.flag_outlined,
-                    size: 16, color: color),
+                Icon(
+                  isOwn ? Icons.home : Icons.flag_outlined,
+                  size: 16,
+                  color: color,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontWeight: FontWeight.bold, color: color)),
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontWeight: FontWeight.bold, color: color),
+                  ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: color,
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  child: Text(isOwn ? 'MEIN TEAM' : 'GEGNER',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold)),
+                  child: Text(
+                    isOwn ? 'MEIN TEAM' : 'GEGNER',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -2499,7 +2707,9 @@ class _TeamActionBar extends StatelessWidget {
                     onPressed: enabled ? onGoal : null,
                     style: torStyle,
                     child: _actionChild(
-                        const Text('⚽', style: TextStyle(fontSize: 18)), 'Tor'),
+                      const Text('⚽', style: TextStyle(fontSize: 18)),
+                      'Tor',
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -2510,7 +2720,9 @@ class _TeamActionBar extends StatelessWidget {
                           onPressed: enabled ? onCard : null,
                           style: outStyle,
                           child: _actionChild(
-                              const Icon(Icons.style, size: 20), 'Karte'),
+                            const Icon(Icons.style, size: 20),
+                            'Karte',
+                          ),
                         ),
                 ),
                 const SizedBox(width: 8),
@@ -2521,7 +2733,9 @@ class _TeamActionBar extends StatelessWidget {
                           onPressed: enabled ? onSub : null,
                           style: outStyle,
                           child: _actionChild(
-                              const Icon(Icons.swap_horiz, size: 20), 'Wechsel'),
+                            const Icon(Icons.swap_horiz, size: 20),
+                            'Wechsel',
+                          ),
                         ),
                 ),
                 const SizedBox(width: 8),
@@ -2532,7 +2746,9 @@ class _TeamActionBar extends StatelessWidget {
                           onPressed: enabled ? onSave : null,
                           style: outStyle,
                           child: _actionChild(
-                              const Icon(Icons.sports_handball, size: 20), 'TW'),
+                            const Icon(Icons.sports_handball, size: 20),
+                            'TW',
+                          ),
                         ),
                 ),
               ],
@@ -2588,8 +2804,10 @@ class _EventLog extends StatelessWidget {
       return const Padding(
         padding: EdgeInsets.all(24),
         child: Center(
-          child: Text('Noch keine Ereignisse erfasst.',
-              style: TextStyle(color: Colors.grey)),
+          child: Text(
+            'Noch keine Ereignisse erfasst.',
+            style: TextStyle(color: Colors.grey),
+          ),
         ),
       );
     }
@@ -2600,7 +2818,10 @@ class _EventLog extends StatelessWidget {
           padding: EdgeInsets.fromLTRB(16, 4, 16, 4),
           child: Align(
             alignment: Alignment.centerLeft,
-            child: Text('Ticker', style: TextStyle(fontWeight: FontWeight.bold)),
+            child: Text(
+              'Ticker',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ),
         ...reversed.map((e) {
@@ -2609,7 +2830,8 @@ class _EventLog extends StatelessWidget {
           // Zeigt der Avatar links ein Foto (Spieler/Wechsel), gehört das
           // Typ-Symbol wieder in den Titel. Nur ohne Spieler (Symbol-Kreis
           // links) würde es sonst doppelt erscheinen.
-          final leadingIsPhoto = e.type == MatchEventType.substitution ||
+          final leadingIsPhoto =
+              e.type == MatchEventType.substitution ||
               (e.type == MatchEventType.injuredOff &&
                   (resolvePlayer(e.playerId) != null ||
                       resolvePlayer(e.assistPlayerId) != null)) ||
@@ -2618,8 +2840,10 @@ class _EventLog extends StatelessWidget {
           // beide Seiten auf einen Blick unterscheidbar. Neutral (Kommentar)
           // bleibt links.
           final rightSide = !e.type.isNeutral && !own;
-          const titleStyle =
-              TextStyle(fontWeight: FontWeight.w500, height: 1.2);
+          const titleStyle = TextStyle(
+            fontWeight: FontWeight.w500,
+            height: 1.2,
+          );
           final describe = _describe(e);
           // „Verletzt raus": rotes Kreuz im Text (statt 🚑). Behandlung bleibt.
           final Widget title = e.type == MatchEventType.injuredOff
@@ -2628,9 +2852,12 @@ class _EventLog extends StatelessWidget {
                   children: rightSide
                       ? [
                           Flexible(
-                              child: Text(describe,
-                                  textAlign: TextAlign.right,
-                                  style: titleStyle)),
+                            child: Text(
+                              describe,
+                              textAlign: TextAlign.right,
+                              style: titleStyle,
+                            ),
+                          ),
                           const SizedBox(width: 5),
                           const InjuryCross(size: 15),
                         ]
@@ -2647,8 +2874,9 @@ class _EventLog extends StatelessWidget {
                 );
           final textCol = Expanded(
             child: Column(
-              crossAxisAlignment:
-                  rightSide ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              crossAxisAlignment: rightSide
+                  ? CrossAxisAlignment.end
+                  : CrossAxisAlignment.start,
               children: [title, ..._subtitleLine(context, e, rightSide)],
             ),
           );
@@ -2663,7 +2891,12 @@ class _EventLog extends StatelessWidget {
           final minute = _MinuteBadge(label: _minuteLabel(e), own: own);
           final avatar = _eventAvatar(context, e, own);
           final content = Padding(
-            padding: EdgeInsets.fromLTRB(rightSide ? 4 : 16, 8, rightSide ? 16 : 4, 8),
+            padding: EdgeInsets.fromLTRB(
+              rightSide ? 4 : 16,
+              8,
+              rightSide ? 16 : 4,
+              8,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: rightSide
@@ -2696,10 +2929,7 @@ class _EventLog extends StatelessWidget {
               child: const Icon(Icons.delete, color: Colors.white),
             ),
             onDismissed: (_) => onDelete!(e),
-            child: InkWell(
-              onTap: () => onEdit!(e),
-              child: content,
-            ),
+            child: InkWell(onTap: () => onEdit!(e), child: content),
           );
         }),
       ],
@@ -2725,10 +2955,13 @@ class _EventLog extends StatelessWidget {
             const Expanded(child: Divider()),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text(label,
-                  style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Theme.of(context).colorScheme.outline)),
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
             ),
             const Expanded(child: Divider()),
           ],
@@ -2751,8 +2984,9 @@ class _EventLog extends StatelessWidget {
         if (e.playerId == null && e.assistPlayerId == null) return 'Wechsel';
         return 'Wechsel – ${resolveName(e.playerId)} für ${resolveName(e.assistPlayerId)}';
       case MatchEventType.injuredOff:
-        final off =
-            e.assistPlayerId == null ? '' : ' – ${resolveName(e.assistPlayerId)}';
+        final off = e.assistPlayerId == null
+            ? ''
+            : ' – ${resolveName(e.assistPlayerId)}';
         if (e.playerId != null) {
           return 'Verletzt raus$off (Ersatz: ${resolveName(e.playerId)})';
         }
@@ -2813,17 +3047,24 @@ class _EventLog extends StatelessWidget {
   /// Untertitel im Ticker: Team + Notiz; beim Kommentar steht der Text schon
   /// im Titel, daher kein Untertitel.
   List<Widget> _subtitleLine(
-      BuildContext context, MatchEvent e, bool rightSide) {
+    BuildContext context,
+    MatchEvent e,
+    bool rightSide,
+  ) {
     // Die Seite (links/rechts) zeigt bereits das Team – nur noch die Notiz.
     final note = e.note?.trim();
     if (e.type == MatchEventType.comment || note == null || note.isEmpty) {
       return const [];
     }
     return [
-      Text(note,
-          textAlign: rightSide ? TextAlign.right : TextAlign.left,
-          style: TextStyle(
-              fontSize: 12, color: Theme.of(context).colorScheme.outline)),
+      Text(
+        note,
+        textAlign: rightSide ? TextAlign.right : TextAlign.left,
+        style: TextStyle(
+          fontSize: 12,
+          color: Theme.of(context).colorScheme.outline,
+        ),
+      ),
     ];
   }
 
@@ -2875,7 +3116,10 @@ class _EventLog extends StatelessWidget {
         : const CircleAvatar(radius: 14, child: Icon(Icons.person, size: 14));
     return Column(
       mainAxisSize: MainAxisSize.min,
-      children: [avatar, Icon(arrow, size: 13, color: color)],
+      children: [
+        avatar,
+        Icon(arrow, size: 13, color: color),
+      ],
     );
   }
 }
@@ -2956,8 +3200,11 @@ class _EventDetailPageState extends State<_EventDetailPage> {
   }
 
   Future<void> _pickPlayer() async {
-    final res = await showPlayerPickSheet(context, widget.players,
-        selected: _selPlayer);
+    final res = await showPlayerPickSheet(
+      context,
+      widget.players,
+      selected: _selPlayer,
+    );
     if (res == null) return; // abgebrochen → unverändert
     setState(() => _selPlayer = res == _kPickNone ? null : res);
   }
@@ -3019,8 +3266,10 @@ class _EventDetailPageState extends State<_EventDetailPage> {
             if (showPlayers) ...[
               Row(
                 children: [
-                  Text('Spieler:',
-                      style: Theme.of(context).textTheme.titleSmall),
+                  Text(
+                    'Spieler:',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Align(
@@ -3035,7 +3284,8 @@ class _EventDetailPageState extends State<_EventDetailPage> {
                               avatar: PlayerAvatar(player: sel, radius: 11),
                               label: Text(sel.displayName),
                               onPressed: _pickPlayer,
-                              onDeleted: () => setState(() => _selPlayer = null),
+                              onDeleted: () =>
+                                  setState(() => _selPlayer = null),
                             ),
                     ),
                   ),
@@ -3076,8 +3326,9 @@ class _EventDetailPageState extends State<_EventDetailPage> {
                 textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   labelText: isComment ? 'Kommentar' : 'Notiz (optional)',
-                  hintText:
-                      isComment ? 'Was passiert gerade?' : 'Notiz zum Ereignis …',
+                  hintText: isComment
+                      ? 'Was passiert gerade?'
+                      : 'Notiz zum Ereignis …',
                   border: const OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
@@ -3096,8 +3347,11 @@ const String _kPickNone = '\u0000none';
 /// Spieler-Einzelauswahl als Bottom-Sheet (wie beim Einwechseln): Foto + Name
 /// + Nr./Position, antippen wählt aus. Mit Suchfeld und „— ohne —".
 /// Gibt die Spieler-ID zurück, [_kPickNone] für „ohne", oder null bei Abbruch.
-Future<String?> showPlayerPickSheet(BuildContext context, List<Player> players,
-    {String? selected}) {
+Future<String?> showPlayerPickSheet(
+  BuildContext context,
+  List<Player> players, {
+  String? selected,
+}) {
   return showModalBottomSheet<String>(
     context: context,
     isScrollControlled: true,
@@ -3140,11 +3394,12 @@ class _EventPlayerSheetState extends State<_EventPlayerSheet> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-              child: Text('Spieler wählen',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
+              child: Text(
+                'Spieler wählen',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
             ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -3171,7 +3426,9 @@ class _EventPlayerSheetState extends State<_EventPlayerSheet> {
                 children: [
                   ListTile(
                     leading: const CircleAvatar(
-                        radius: 20, child: Icon(Icons.block)),
+                      radius: 20,
+                      child: Icon(Icons.block),
+                    ),
                     title: const Text('— ohne —'),
                     trailing: widget.selected == null
                         ? Icon(Icons.check_circle, color: scheme.primary)
@@ -3182,10 +3439,12 @@ class _EventPlayerSheetState extends State<_EventPlayerSheet> {
                     ListTile(
                       leading: PlayerAvatar(player: p),
                       title: Text(p.fullName),
-                      subtitle: Text([
-                        if (p.number != null) 'Nr. ${p.number}',
-                        if (p.position != null) p.position!,
-                      ].join('  ·  ')),
+                      subtitle: Text(
+                        [
+                          if (p.number != null) 'Nr. ${p.number}',
+                          if (p.position != null) p.position!,
+                        ].join('  ·  '),
+                      ),
                       trailing: widget.selected == p.id
                           ? Icon(Icons.check_circle, color: scheme.primary)
                           : null,
@@ -3272,11 +3531,12 @@ class _PlayerPickSheet extends StatelessWidget {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-              child: Text(title,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleLarge
-                      ?.copyWith(fontWeight: FontWeight.bold)),
+              child: Text(
+                title,
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+              ),
             ),
             const Divider(height: 1),
             if (players.isEmpty)
@@ -3292,23 +3552,25 @@ class _PlayerPickSheet extends StatelessWidget {
                     ListTile(
                       leading: PlayerAvatar(player: p),
                       title: Text(p.fullName),
-                      subtitle: Text([
-                        if (p.number != null) 'Nr. ${p.number}',
-                        if (p.position != null) p.position!,
-                      ].join('  ·  ')),
+                      subtitle: Text(
+                        [
+                          if (p.number != null) 'Nr. ${p.number}',
+                          if (p.position != null) p.position!,
+                        ].join('  ·  '),
+                      ),
                       onTap: () => Navigator.pop(context, p.id),
                     ),
                   if (allowUnknown)
                     ListTile(
                       leading: const CircleAvatar(
-                          child: Icon(Icons.help_outline)),
+                        child: Icon(Icons.help_outline),
+                      ),
                       title: const Text('Unbekannt'),
                       onTap: () => Navigator.pop(context, unknownValue),
                     ),
                   if (allowNone)
                     ListTile(
-                      leading:
-                          const CircleAvatar(child: Icon(Icons.block)),
+                      leading: const CircleAvatar(child: Icon(Icons.block)),
                       title: Text(noneLabel),
                       onTap: () => Navigator.pop(context, noneValue),
                     ),
@@ -3358,8 +3620,9 @@ class _SubstitutionSheetState extends State<_SubstitutionSheet> {
     final scheme = Theme.of(context).colorScheme;
     final usedOff = _pairs.map((e) => e.off).toSet();
     final usedOn = _pairs.map((e) => e.on).toSet();
-    final availOff =
-        widget.onField.where((p) => !usedOff.contains(p.id)).toList();
+    final availOff = widget.onField
+        .where((p) => !usedOff.contains(p.id))
+        .toList();
     final availOn = widget.bench.where((p) => !usedOn.contains(p.id)).toList();
     final selectingIn = _pendingOff != null;
     final candidates = selectingIn ? availOn : availOff;
@@ -3379,17 +3642,21 @@ class _SubstitutionSheetState extends State<_SubstitutionSheet> {
                 children: [
                   const Icon(Icons.swap_horiz),
                   const SizedBox(width: 8),
-                  Text('Wechsel',
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleLarge
-                          ?.copyWith(fontWeight: FontWeight.bold)),
+                  Text(
+                    'Wechsel',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const Spacer(),
                   if (_pairs.isNotEmpty)
-                    Text('${_pairs.length} geplant',
-                        style: TextStyle(
-                            color: scheme.primary,
-                            fontWeight: FontWeight.w600)),
+                    Text(
+                      '${_pairs.length} geplant',
+                      style: TextStyle(
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -3397,8 +3664,10 @@ class _SubstitutionSheetState extends State<_SubstitutionSheet> {
             if (_pairs.isNotEmpty) ...[
               const Divider(height: 1),
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 4,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [for (final pair in _pairs) _plannedPairRow(pair)],
@@ -3419,23 +3688,26 @@ class _SubstitutionSheetState extends State<_SubstitutionSheet> {
                           ),
                         ),
                         TextButton(
-                          onPressed: () =>
-                              setState(() => _pendingOff = null),
+                          onPressed: () => setState(() => _pendingOff = null),
                           child: const Text('Zurück'),
                         ),
                       ],
                     )
-                  : const Text('Wer geht raus? (Feldspieler antippen)',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  : const Text(
+                      'Wer geht raus? (Feldspieler antippen)',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
             ),
             // Auswahlliste
             Flexible(
               child: candidates.isEmpty
                   ? Padding(
                       padding: const EdgeInsets.all(16),
-                      child: Text(selectingIn
-                          ? 'Keine Spieler mehr auf der Bank.'
-                          : 'Keine Feldspieler mehr verfügbar.'),
+                      child: Text(
+                        selectingIn
+                            ? 'Keine Spieler mehr auf der Bank.'
+                            : 'Keine Feldspieler mehr verfügbar.',
+                      ),
                     )
                   : ListView(
                       padding: const EdgeInsets.only(bottom: 8),
@@ -3444,10 +3716,12 @@ class _SubstitutionSheetState extends State<_SubstitutionSheet> {
                           ListTile(
                             leading: PlayerAvatar(player: p),
                             title: Text(p.fullName),
-                            subtitle: Text([
-                              if (p.number != null) 'Nr. ${p.number}',
-                              if (p.position != null) p.position!,
-                            ].join('  ·  ')),
+                            subtitle: Text(
+                              [
+                                if (p.number != null) 'Nr. ${p.number}',
+                                if (p.position != null) p.position!,
+                              ].join('  ·  '),
+                            ),
                             trailing: Icon(
                               selectingIn ? Icons.login : Icons.logout,
                               color: selectingIn
@@ -3470,9 +3744,11 @@ class _SubstitutionSheetState extends State<_SubstitutionSheet> {
                       ? null
                       : () => Navigator.pop(context, _pairs),
                   icon: const Icon(Icons.check),
-                  label: Text(_pairs.length <= 1
-                      ? 'Wechsel bestätigen'
-                      : '${_pairs.length} Wechsel bestätigen'),
+                  label: Text(
+                    _pairs.length <= 1
+                        ? 'Wechsel bestätigen'
+                        : '${_pairs.length} Wechsel bestätigen',
+                  ),
                 ),
               ),
             ),
@@ -3492,7 +3768,8 @@ class _SubstitutionSheetState extends State<_SubstitutionSheet> {
           const Icon(Icons.logout, size: 16, color: Colors.redAccent),
           const SizedBox(width: 4),
           Expanded(
-              child: Text(off.displayName, overflow: TextOverflow.ellipsis)),
+            child: Text(off.displayName, overflow: TextOverflow.ellipsis),
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 4),
             child: Icon(Icons.arrow_forward, size: 16),
@@ -3500,7 +3777,8 @@ class _SubstitutionSheetState extends State<_SubstitutionSheet> {
           const Icon(Icons.login, size: 16, color: Colors.green),
           const SizedBox(width: 4),
           Expanded(
-              child: Text(on.displayName, overflow: TextOverflow.ellipsis)),
+            child: Text(on.displayName, overflow: TextOverflow.ellipsis),
+          ),
           IconButton(
             icon: const Icon(Icons.close, size: 18),
             visualDensity: VisualDensity.compact,
