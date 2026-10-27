@@ -395,7 +395,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
     // Karteikarten: weniger auf einen Blick, kein endloses Scrollen.
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: Text(p.fullName.isEmpty ? 'Spieler' : p.fullName),
@@ -426,10 +426,12 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             Material(
               color: Theme.of(context).colorScheme.surface,
               child: TabBar(
+                isScrollable: true,
                 tabs: [
                   const Tab(text: 'Profil'),
                   const Tab(text: 'Karte'),
                   const Tab(text: 'Statistik'),
+                  const Tab(text: 'Abwesenheit'),
                   Tab(text: isTrainer ? 'Trainer' : 'Gespräche'),
                 ],
               ),
@@ -449,8 +451,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     _cardsCard(context, state, df),
                     _fupaCardsCard(context, state),
                     _eventsCard(context, state, df),
-                    _absencesCard(context, state),
                   ]),
+                  // Abwesenheit: eigener Reiter.
+                  _tabList([_absencesCard(context, state)]),
                   // Trainer: Gespräche + (nur Trainer) Notizen & Bewertungen.
                   _tabList([
                     _talksCard(context, state),
