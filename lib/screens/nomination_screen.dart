@@ -7,7 +7,7 @@ import '../models/player.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
-import '../widgets/team_logo.dart';
+import '../widgets/player_photo.dart';
 
 class NominationScreen extends StatefulWidget {
   const NominationScreen({
@@ -205,48 +205,14 @@ class _NominationScreenState extends State<NominationScreen> {
 
   Widget _row(Player p) {
     final suspended = _match != null && _app.isSuspendedForMatch(p, _match!);
-    final absent =
-        p.status != PlayerStatus.fit && p.status != PlayerStatus.inaktiv;
-    // Status am Foto (Icon oben, Text darunter): Sperre hat Vorrang, sonst
-    // Verletzt/Krank/Urlaub. Spieler bleibt in allen Fällen wählbar.
-    final String? statusEmoji = suspended
-        ? '⛔'
-        : (absent ? p.status.symbol : null);
-    final String? statusLabel = suspended
-        ? 'Gesperrt${p.suspendedGames > 0 ? ' ${p.suspendedGames}' : ''}'
-        : (absent ? p.status.label : null);
-    final Color statusColor = suspended
-        ? Theme.of(context).colorScheme.error
-        : const Color(0xFF8A4B00);
     final pos = p.position;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          SizedBox(
-            width: 56,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _playerPhoto(p, emoji: statusEmoji),
-                if (statusLabel != null) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    statusLabel,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 9,
-                      height: 1.0,
-                      fontWeight: FontWeight.w800,
-                      color: statusColor,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
+          // Status als Overlay-Ecke auf dem Foto (wie im Kader); Sperre hat
+          // Vorrang vor dem Spielerstatus.
+          _photo(p, suspended),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -273,49 +239,33 @@ class _NominationScreenState extends State<NominationScreen> {
     );
   }
 
-  /// Quadratisches Spielerfoto (abgerundete Ecken) mit optionalem Status-Icon
-  /// in der Ecke; Rückfall auf Initiale.
-  Widget _playerPhoto(Player p, {String? emoji}) {
-    final bytes = TeamLogo.decode(p.photoPath);
-    final fallback = p.lastName.isNotEmpty
-        ? p.lastName[0].toUpperCase()
-        : (p.firstName.isNotEmpty ? p.firstName[0].toUpperCase() : '?');
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: bytes != null
-                ? Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true)
-                : Container(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    alignment: Alignment.center,
-                    child: Text(
-                      fallback,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ),
-          ),
-        ),
-        if (emoji != null)
-          Positioned(
-            top: -4,
-            right: -4,
-            child: Container(
-              padding: const EdgeInsets.all(1),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                shape: BoxShape.circle,
+  /// Spielerfoto mit Status-Ecke (wie im Kader). Bei Sperre eine Gesperrt-Ecke
+  /// (Vorrang), sonst zeigt [PlayerPhoto] den Spielerstatus (Verletzt/Krank …).
+  Widget _photo(Player p, bool suspended) {
+    if (!suspended) return PlayerPhoto(player: p, size: 44);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Stack(
+          children: [
+            Positioned.fill(
+              child: PlayerPhoto(
+                player: p,
+                size: 44,
+                showStatus: false,
+                radius: 0,
               ),
-              child: Text(emoji, style: const TextStyle(fontSize: 13)),
             ),
-          ),
-      ],
+            const Positioned(
+              left: 0,
+              top: 0,
+              child: StatusCorner(status: PlayerStatus.gesperrt, size: 22),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
