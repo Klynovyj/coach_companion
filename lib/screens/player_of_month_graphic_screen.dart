@@ -103,6 +103,8 @@ class _PlayerOfMonthGraphicScreenState
   PlayerMonthStats _total = const PlayerMonthStats();
   PlayerStat? _fupa;
   FupaClubCareer? _fupaCareer; // FuPa-Laufbahn + aufgelöster Verein
+  bool _fupaLoading = true; // Laufbahn wird (nach dem Hauptladen) geholt
+  StateSetter? _sheetSetState; // damit das offene Sheet nachladen kann
   GraphicSettings _settings = const GraphicSettings(id: 'local');
 
   // Anlass (Eyebrow) + Untertitel – editierbar.
@@ -168,10 +170,6 @@ class _PlayerOfMonthGraphicScreenState
       widget.player.teamId,
       widget.player.dedupKey,
     );
-    final fupaCareer = await state.playerFupaClub(
-      widget.player.teamId,
-      widget.player,
-    );
     if (!mounted) return;
     setState(() {
       _sponsors = sponsors;
@@ -179,9 +177,25 @@ class _PlayerOfMonthGraphicScreenState
       _month = month;
       _total = total;
       _fupa = fupa;
-      _fupaCareer = fupaCareer;
       _loading = false;
     });
+    // FuPa-Laufbahn (Netzwerk) im Hintergrund – blockiert die Ansicht nicht.
+    _loadFupaClub();
+  }
+
+  Future<void> _loadFupaClub() async {
+    final state = context.read<AppState>();
+    final career = await state.playerFupaClub(
+      widget.player.teamId,
+      widget.player,
+    );
+    if (!mounted) return;
+    setState(() {
+      _fupaCareer = career;
+      _fupaLoading = false;
+    });
+    // Falls das Anpassen-Sheet gerade offen ist: dort ebenfalls aktualisieren.
+    _sheetSetState?.call(() {});
   }
 
   List<Sponsor> get _barSponsors =>
@@ -243,6 +257,7 @@ class _PlayerOfMonthGraphicScreenState
       showDragHandle: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheet) {
+          _sheetSetState = setSheet;
           void apply(GraphicSettings s) {
             setState(() => _settings = s); // Live-Vorschau hinter dem Sheet
             setSheet(() {});
@@ -514,7 +529,19 @@ class _PlayerOfMonthGraphicScreenState
                       setSheet(() {});
                     },
                   ),
-                  if (_fupaCareer != null) ...[
+                  // FuPa gesamt (Verein) – immer sichtbar, mit Lade-/Leer-Zustand.
+                  if (_fupaLoading)
+                    const ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('FuPa gesamt (Verein)'),
+                      subtitle: Text('FuPa-Laufbahn wird geladen …'),
+                      trailing: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else if (_fupaCareer != null) ...[
                     Builder(
                       builder: (_) {
                         final club = _fupaCareer!.total(
@@ -554,7 +581,17 @@ class _PlayerOfMonthGraphicScreenState
                           },
                         ),
                       ),
-                  ],
+                  ] else
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      enabled: false,
+                      title: const Text('FuPa gesamt (Verein)'),
+                      subtitle: Text(
+                        (widget.player.externalId ?? '').trim().isEmpty
+                            ? 'Spieler ist nicht mit FuPa verknüpft.'
+                            : 'Keine FuPa-Laufbahndaten gefunden.',
+                      ),
+                    ),
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -570,6 +607,7 @@ class _PlayerOfMonthGraphicScreenState
         },
       ),
     );
+    _sheetSetState = null;
     if (!mounted) return;
     final state = context.read<AppState>();
     await state.saveGraphicSettings(_settings);
