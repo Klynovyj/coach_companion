@@ -2204,10 +2204,33 @@ class AppState extends ChangeNotifier {
     await _repo.upsertLineup(orig.copyWith(formation: suggestion.formation));
     await _repo.replaceLineupEntries(orig.id, copies);
     await _repo.deleteLineupById(suggestion.id);
+    final proposer = suggestion.creatorName?.trim();
+    await logActivity(
+      ActivityType.lineup,
+      'Aufstellungs-Vorschlag übernommen',
+      subtitle: (proposer != null && proposer.isNotEmpty)
+          ? 'Vorschlag von $proposer wurde übernommen'
+          : 'Ein Vorschlag wurde übernommen',
+    );
     notifyListeners();
   }
 
-  /// Verwirft einen Vorschlag (löscht ihn).
+  /// Lehnt einen Vorschlag ab (löscht ihn) und informiert das Team (Feed), damit
+  /// der vorschlagende Trainer erfährt, dass sein Vorschlag abgelehnt wurde.
+  Future<void> rejectSuggestion(Lineup suggestion) async {
+    await _repo.deleteLineupById(suggestion.id);
+    final proposer = suggestion.creatorName?.trim();
+    await logActivity(
+      ActivityType.lineup,
+      'Aufstellungs-Vorschlag abgelehnt',
+      subtitle: (proposer != null && proposer.isNotEmpty)
+          ? 'Vorschlag von $proposer wurde abgelehnt'
+          : 'Ein Vorschlag wurde abgelehnt',
+    );
+    notifyListeners();
+  }
+
+  /// Verwirft einen Vorschlag (löscht ihn, ohne Feed-Eintrag).
   Future<void> discardSuggestion(Lineup suggestion) async {
     await _repo.deleteLineupById(suggestion.id);
     notifyListeners();

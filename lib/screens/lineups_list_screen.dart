@@ -207,7 +207,48 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
 
   Future<void> _adopt(Lineup sugg) async {
     await _app.adoptSuggestion(sugg);
-    if (mounted) _load();
+    if (!mounted) return;
+    _load();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Vorschlag übernommen – Trainer informiert.'),
+      ),
+    );
+  }
+
+  Future<void> _reject(Lineup sugg) async {
+    final who = sugg.creatorName?.trim().isNotEmpty == true
+        ? sugg.creatorName!.trim()
+        : 'des Trainers';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Vorschlag ablehnen?'),
+        content: Text(
+          'Der Vorschlag von $who wird gelöscht. Der Trainer wird darüber '
+          'informiert.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Ablehnen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _app.rejectSuggestion(sugg);
+    if (!mounted) return;
+    _load();
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Vorschlag abgelehnt – Trainer informiert.'),
+      ),
+    );
   }
 
   Widget _lineupCard(BuildContext context, Lineup l) {
@@ -372,12 +413,24 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
                   icon: const Icon(Icons.visibility, size: 15),
                   label: const Text('Ansehen'),
                 ),
-              if (iAmOwner)
+              if (iAmOwner) ...[
+                OutlinedButton.icon(
+                  onPressed: () => _reject(s),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: scheme.error,
+                    side: BorderSide(
+                      color: scheme.error.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  icon: const Icon(Icons.close, size: 15),
+                  label: const Text('Ablehnen'),
+                ),
                 FilledButton.icon(
                   onPressed: () => _adopt(s),
                   icon: const Icon(Icons.download_done, size: 15),
                   label: const Text('Übernehmen'),
                 ),
+              ],
             ],
           ),
         ],
