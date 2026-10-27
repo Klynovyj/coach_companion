@@ -112,27 +112,41 @@ class _AbsenceOverviewScreenState extends State<AbsenceOverviewScreen> {
                       if (!snap.hasData) {
                         return const Center(child: CircularProgressIndicator());
                       }
-                      final list = snap.data!
+                      final all = snap.data!;
+                      final list = all
                           .where((i) => _matches(i.player))
                           .toList();
-                      if (list.isEmpty) {
-                        return Center(
-                          child: Padding(
-                            padding: const EdgeInsets.all(24),
-                            child: Text(
-                              _query.isEmpty
-                                  ? 'Noch keine Spieler.'
-                                  : 'Keine Treffer für „$_query".',
-                            ),
+                      return Column(
+                        children: [
+                          _summaryBar(context, all),
+                          Expanded(
+                            child: list.isEmpty
+                                ? Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(24),
+                                      child: Text(
+                                        _query.isEmpty
+                                            ? 'Noch keine Spieler.'
+                                            : 'Keine Treffer für „$_query".',
+                                      ),
+                                    ),
+                                  )
+                                : ListView.separated(
+                                    padding: const EdgeInsets.symmetric(
+                                      vertical: 6,
+                                    ),
+                                    itemCount: list.length,
+                                    separatorBuilder: (_, _) =>
+                                        const Divider(height: 1),
+                                    itemBuilder: (context, i) => _row(
+                                      context,
+                                      state,
+                                      list[i],
+                                      isTrainer,
+                                    ),
+                                  ),
                           ),
-                        );
-                      }
-                      return ListView.separated(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
-                        itemCount: list.length,
-                        separatorBuilder: (_, _) => const Divider(height: 1),
-                        itemBuilder: (context, i) =>
-                            _row(context, state, list[i], isTrainer),
+                        ],
                       );
                     },
                   ),
@@ -181,6 +195,85 @@ class _AbsenceOverviewScreenState extends State<AbsenceOverviewScreen> {
           Text(
             s.label,
             style: TextStyle(color: c, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // Reihenfolge der Zähl-Chips oben.
+  static const _summaryOrder = <PlayerStatus>[
+    PlayerStatus.fit,
+    PlayerStatus.verletzt,
+    PlayerStatus.krank,
+    PlayerStatus.gesperrt,
+    PlayerStatus.urlaub,
+    PlayerStatus.abwesend,
+    PlayerStatus.inaktiv,
+  ];
+
+  /// Zähl-Leiste: wie viele Spieler je Status (Fit/Verletzt/Krank …).
+  Widget _summaryBar(BuildContext context, List<PlayerStatusInfo> all) {
+    int countOf(PlayerStatus s) =>
+        all.where((i) => i.player.status == s).length;
+    final chips = <Widget>[
+      _summaryChip(
+        context,
+        const Icon(Icons.groups, size: 14),
+        'Kader',
+        all.length,
+        strong: true,
+      ),
+      for (final s in _summaryOrder)
+        if (countOf(s) > 0)
+          _summaryChip(
+            context,
+            absenceReasonIcon(s, size: 13),
+            s.label,
+            countOf(s),
+            color: playerStatusColor(s),
+          ),
+    ];
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+        children: [
+          for (final c in chips)
+            Padding(padding: const EdgeInsets.only(right: 8), child: c),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryChip(
+    BuildContext context,
+    Widget icon,
+    String label,
+    int n, {
+    Color? color,
+    bool strong = false,
+  }) {
+    final c = color ?? Theme.of(context).colorScheme.primary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: strong ? 0.18 : 0.10),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          icon,
+          const SizedBox(width: 6),
+          Text(
+            '$n $label',
+            style: TextStyle(
+              color: c,
+              fontWeight: FontWeight.w700,
+              fontSize: 12,
+            ),
           ),
         ],
       ),
