@@ -73,7 +73,7 @@ Future<PlayerStatus?> pickAbsenceReason(BuildContext context) {
               ),
             ),
           ),
-          for (final s in PlayerStatus.absenceReasons)
+          for (final s in PlayerStatus.absenceOnlyReasons)
             ListTile(
               leading: absenceReasonIcon(s, size: 20),
               title: Text(s.label),
@@ -196,6 +196,32 @@ Future<(DateTime, DateTime, String?)?> showAbsenceDateDialog(
       },
     ),
   );
+}
+
+/// Status aus dem Status-Menü setzen: Fit/Inaktiv → Grundstatus (ohne Datum);
+/// Krank/Verletzt → befristete Abwesenheit (Zeitraum-Dialog). Gibt true zurück,
+/// wenn etwas geändert wurde.
+Future<bool> setStatusFlow(
+  BuildContext context,
+  AppState state,
+  Player player,
+  PlayerStatus chosen,
+) async {
+  if (chosen == PlayerStatus.fit || chosen == PlayerStatus.inaktiv) {
+    await state.setBaseStatus(player, chosen);
+    return true;
+  }
+  // Krank/Verletzt: wie eine Abwesenheit mit Zeitraum.
+  final res = await showAbsenceDateDialog(context, reason: chosen);
+  if (res == null) return false;
+  await state.addAbsence(
+    player: player,
+    status: chosen,
+    from: res.$1,
+    until: res.$2,
+    note: res.$3,
+  );
+  return true;
 }
 
 /// Vollständiger Ablauf „Abwesenheit eintragen": Grund wählen → Zeitraum →

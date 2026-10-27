@@ -172,6 +172,23 @@ enum PlayerStatus {
     PlayerStatus.abwesend,
   ];
 
+  /// Direkt im Status-Menü wählbar. Krank/Verletzt legen dabei eine befristete
+  /// Abwesenheit an (mit Zeitraum), Fit/Inaktiv setzen den Grundstatus.
+  static const List<PlayerStatus> settableStatuses = [
+    PlayerStatus.fit,
+    PlayerStatus.krank,
+    PlayerStatus.verletzt,
+    PlayerStatus.inaktiv,
+  ];
+
+  /// Reine Abwesenheits-Gründe (über „Abwesenheit eintragen"), nicht im
+  /// Status-Menü.
+  static const List<PlayerStatus> absenceOnlyReasons = [
+    PlayerStatus.gesperrt,
+    PlayerStatus.urlaub,
+    PlayerStatus.abwesend,
+  ];
+
   static PlayerStatus fromKey(String? key) => PlayerStatus.values.firstWhere(
     (e) => e.storageKey == key,
     orElse: () => PlayerStatus.fit,

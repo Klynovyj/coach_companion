@@ -259,28 +259,30 @@ class _PlayerAbsenceSheetState extends State<_PlayerAbsenceSheet> {
                   ),
                   const SizedBox(height: 12),
                   const Text(
-                    'Grundstatus',
+                    'Status',
                     style: TextStyle(fontWeight: FontWeight.w600),
                   ),
                   const SizedBox(height: 6),
-                  SegmentedButton<PlayerStatus>(
-                    segments: const [
-                      ButtonSegment(
-                        value: PlayerStatus.fit,
-                        label: Text('Fit'),
-                        icon: Icon(Icons.check_circle_outline),
-                      ),
-                      ButtonSegment(
-                        value: PlayerStatus.inaktiv,
-                        label: Text('Inaktiv'),
-                        icon: Icon(Icons.pause_circle_outline),
-                      ),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final s in PlayerStatus.settableStatuses)
+                        ChoiceChip(
+                          avatar: absenceReasonIcon(s, size: 16),
+                          label: Text(s.label),
+                          selected: p.status == s,
+                          onSelected: (_) async {
+                            final ok = await setStatusFlow(
+                              context,
+                              widget.state,
+                              p,
+                              s,
+                            );
+                            if (ok) await _reload();
+                          },
+                        ),
                     ],
-                    selected: {p.baseStatus},
-                    onSelectionChanged: (sel) async {
-                      await widget.state.setBaseStatus(p, sel.first);
-                      await _reload();
-                    },
                   ),
                   const SizedBox(height: 16),
                   Row(

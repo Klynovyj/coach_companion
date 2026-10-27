@@ -186,11 +186,16 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     return 'data:image/jpeg;base64,${base64Encode(jpg)}';
   }
 
-  /// Grundstatus setzen (nur Fit/Inaktiv). Eine laufende Abwesenheit überlagert
-  /// die Anzeige weiterhin; der effektive Status wird neu berechnet.
+  /// Status setzen: Fit/Inaktiv = Grundstatus; Krank/Verletzt = befristete
+  /// Abwesenheit (Zeitraum). Danach den effektiven Status neu anzeigen.
   Future<void> _setStatus(PlayerStatus s) async {
-    await context.read<AppState>().setBaseStatus(_player, s);
-    await _refreshPlayer();
+    final ok = await setStatusFlow(
+      context,
+      context.read<AppState>(),
+      _player,
+      s,
+    );
+    if (ok && mounted) await _refreshPlayer();
   }
 
   /// „Abwesenheit eintragen": erst Grund wählen (Krank/Verletzt/Gesperrt/
@@ -651,20 +656,20 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         editable: false,
       );
     }
-    // Status-Menü: nur der Grundstatus (Fit/Inaktiv). Abwesenheiten (krank,
-    // verletzt, abwesend …) laufen über „Abwesenheit eintragen" (eigener Zeitraum)
-    // und überlagern die Anzeige, solange sie aktiv sind.
+    // Status-Menü: Fit/Krank/Verletzt/Inaktiv. Krank/Verletzt legen eine
+    // befristete Abwesenheit an (Zeitraum). Gesperrt/Urlaub/Abwesend laufen über
+    // „Abwesenheit eintragen" und überlagern die Anzeige, solange aktiv.
     return PopupMenuButton<PlayerStatus>(
-      tooltip: 'Grundstatus ändern',
+      tooltip: 'Status ändern',
       onSelected: _setStatus,
       itemBuilder: (_) => [
-        for (final s in const [PlayerStatus.fit, PlayerStatus.inaktiv])
+        for (final s in PlayerStatus.settableStatuses)
           PopupMenuItem(
             value: s,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(s.symbol),
+                absenceReasonIcon(s, size: 16),
                 const SizedBox(width: 8),
                 Text(s.label),
               ],
