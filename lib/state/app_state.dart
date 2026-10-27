@@ -1678,8 +1678,8 @@ class AppState extends ChangeNotifier {
         createdAt: DateTime.now(),
       ),
     );
-    // Status aus den Abwesenheiten relativ zu HEUTE ableiten (eine Abwesenheit,
-    // die erst in der Zukunft beginnt, ändert den Status noch nicht).
+    // Status aus den Abwesenheiten ableiten (laufende ODER bevorstehende
+    // Abwesenheit → Status wird gesetzt; abgelaufene zählen nicht).
     await _syncStatusFromAbsences(player.id);
     await logActivity(
       ActivityType.status,
@@ -1706,30 +1706,42 @@ class AppState extends ChangeNotifier {
   Future<Player?> playerById(String id) => _repo.getPlayer(id);
 
   /// Setzt den Spielerstatus passend zu seinen Abwesenheiten und dem heutigen
-  /// Datum: deckt eine Abwesenheit heute ab → deren Status; sonst, wenn der
-  /// Spieler gerade einen Abwesenheits-Status hat → zurück auf „Fit". „Fit"/
-  /// „inaktiv" ohne deckende Abwesenheit bleiben unverändert.
+  /// Datum. Eine Abwesenheit gilt als aktiv, solange ihr Enddatum NICHT vor
+  /// heute liegt (laufend ODER noch bevorstehend) → deren Status wird angezeigt.
+  /// Eine heute laufende Abwesenheit hat Vorrang, sonst die mit spätestem Ende.
+  /// Ist keine Abwesenheit mehr aktiv und der Spieler hatte einen Abwesenheits-
+  /// Status → zurück auf „Fit". „Fit"/„inaktiv" ohne aktive Abwesenheit bleiben
+  /// unverändert (inaktiv ist keine Abwesenheit).
   Future<void> _syncStatusFromAbsences(String playerId) async {
     final p = await _repo.getPlayer(playerId);
     if (p == null) return;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final abs = await _repo.getAbsences(playerId);
-    PlayerAbsence? covering;
+    PlayerAbsence? best;
+    bool bestCovers = false;
     for (final a in abs) {
       final from = DateTime(a.from.year, a.from.month, a.from.day);
       final until = DateTime(a.until.year, a.until.month, a.until.day);
-      final coversToday = !today.isBefore(from) && !today.isAfter(until);
-      if (!coversToday) continue;
-      if (covering == null || a.until.isAfter(covering.until)) covering = a;
+      if (until.isBefore(today)) continue; // vorbei → zählt nicht
+      final covers = !today.isBefore(from) && !today.isAfter(until);
+      if (best == null) {
+        best = a;
+        bestCovers = covers;
+      } else if (covers && !bestCovers) {
+        best = a;
+        bestCovers = true;
+      } else if (covers == bestCovers && a.until.isAfter(best.until)) {
+        best = a;
+      }
     }
     final PlayerStatus target;
-    if (covering != null) {
-      target = covering.status;
+    if (best != null) {
+      target = best.status;
     } else if (p.status.isAbsence) {
       target = PlayerStatus.fit;
     } else {
-      return; // Fit/inaktiv ohne deckende Abwesenheit: nichts tun.
+      return; // Fit/inaktiv ohne aktive Abwesenheit: nichts tun.
     }
     if (target != p.status) {
       await updatePlayer(p.copyWith(status: target));

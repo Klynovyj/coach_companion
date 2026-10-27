@@ -302,7 +302,49 @@ class CloudService {
     final rows = [
       for (final p in roster) {'team_id': teamId, ...p},
     ];
-    await _c.from('players').upsert(rows, onConflict: 'id');
+    await _upsertStrippingUnknown('players', rows, onConflict: 'id');
+  }
+
+  /// Upsert, das gegen in der Cloud (noch) fehlende Spalten robust ist: scheitert
+  /// der Upsert an einer unbekannten Spalte (z.B. eine noch nicht ausgeführte
+  /// Migration), wird DIESE Spalte aus allen Zeilen entfernt und erneut
+  /// versucht. So gehen die übrigen Felder (u.a. `status`/`active`) NICHT
+  /// verloren – sonst würde ein einziges fehlendes Feld den ganzen Push
+  /// verwerfen und z.B. „inaktiv" nie in die Cloud gelangen.
+  static Future<void> _upsertStrippingUnknown(
+    String table,
+    List<Map<String, dynamic>> rows, {
+    String? onConflict,
+  }) async {
+    var current = rows;
+    for (var attempt = 0; attempt < 12; attempt++) {
+      try {
+        await _c.from(table).upsert(current, onConflict: onConflict);
+        return;
+      } on PostgrestException catch (e) {
+        final col = _unknownColumnFrom(e, current);
+        if (col == null) rethrow;
+        current = [
+          for (final r in current) {...r}..remove(col),
+        ];
+      }
+    }
+  }
+
+  /// Ermittelt aus einem PostgREST-Fehler die unbekannte Spalte (PGRST204 bzw.
+  /// „column \"x\" ... does not exist"), falls sie zu den gesendeten Feldern
+  /// gehört. `id`/`team_id` werden nie entfernt.
+  static String? _unknownColumnFrom(
+    PostgrestException e,
+    List<Map<String, dynamic>> rows,
+  ) {
+    if (rows.isEmpty) return null;
+    final msg = e.message.toLowerCase();
+    for (final key in rows.first.keys) {
+      if (key == 'id' || key == 'team_id') continue;
+      if (msg.contains("'$key'") || msg.contains('"$key"')) return key;
+    }
+    return null;
   }
 
   // --------------------------------------------------------------- Spiele
