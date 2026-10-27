@@ -6,6 +6,7 @@ import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import 'rating_report_screen.dart';
 import 'rating_summary_screen.dart';
 
 enum _SortBy { date, rating, result }
@@ -91,6 +92,14 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
       appBar: AppBar(
         title: const Text('Auswertung'),
         actions: [
+          IconButton(
+            tooltip: 'Bericht: alle Noten & Kommentare',
+            icon: const Icon(Icons.article_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const RatingReportScreen()),
+            ),
+          ),
           IconButton(
             tooltip: _desc ? 'Absteigend' : 'Aufsteigend',
             icon: Icon(_desc ? Icons.arrow_downward : Icons.arrow_upward),
