@@ -474,7 +474,7 @@ class _TodosScreenState extends State<TodosScreen> {
           spacing: 6,
           runSpacing: 2,
           children: t.responsible.map((r) {
-            final p = r.playerId == null ? null : playerMap[r.playerId];
+            final p = _resolveResponsible(r, playerMap);
             return Chip(
               avatar: p != null
                   ? PlayerAvatar(player: p, radius: 10)
@@ -930,7 +930,7 @@ class _TaskEditPageState extends State<_TaskEditPage> {
               spacing: 6,
               runSpacing: 4,
               children: _responsible.map((r) {
-                final p = r.playerId == null ? null : playerMap[r.playerId];
+                final p = _resolveResponsible(r, playerMap);
                 return InputChip(
                   avatar: p != null
                       ? PlayerAvatar(player: p, radius: 10)
@@ -1159,4 +1159,20 @@ class _ResponsiblePickerPageState extends State<_ResponsiblePickerPage> {
       ),
     );
   }
+}
+
+/// Spieler zu einem Verantwortlichen aufloesen: zuerst ueber die ID, sonst ueber
+/// den Namen (falls die gespeicherte ID veraltet ist oder der Name frei
+/// eingetragen wurde) – damit auch Trainer/Staff ihr Foto behalten.
+Player? _resolveResponsible(TodoResponsible r, Map<String, Player> playerMap) {
+  if (r.playerId != null) {
+    final byId = playerMap[r.playerId];
+    if (byId != null) return byId;
+  }
+  final name = r.name.trim().toLowerCase();
+  if (name.isEmpty) return null;
+  for (final p in playerMap.values) {
+    if (p.displayName.trim().toLowerCase() == name) return p;
+  }
+  return null;
 }
