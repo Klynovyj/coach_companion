@@ -108,6 +108,16 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   int get _currentMinute => _ovMinute ?? _footMinute.$1;
   int get _currentExtra => _ovMinute != null ? _ovExtra : _footMinute.$2;
 
+  /// Normalisiert (Minute, Nachspielzeit) zur Fußball-Schreibweise: liegt die
+  /// Minute über der Halbzeit-Grenze (45 bzw. 90), wandert der Überhang in die
+  /// Nachspielzeit (z.B. 47 → 45+2, 93 → 90+3).
+  static (int, int) _normStoppage(int minute, int extra, int boundary) {
+    final m = minute < 1 ? 1 : minute;
+    final e = extra < 0 ? 0 : extra;
+    if (m > boundary) return (boundary, (m - boundary) + e);
+    return (m, e);
+  }
+
   /// „Nachtragen" ist aktiv: Modus an, aber keine laufende Halbzeit (und kein
   /// Zuschauen). Dann sind die Aktions-Buttons nutzbar und fragen die Minute ab.
   bool get _nachtragen => _addLater && !_actionsEnabled && !_watchMode;
@@ -981,48 +991,89 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   Future<(int, int)?> _askMinute() async {
     final minCtrl = TextEditingController(text: '90');
     final extraCtrl = TextEditingController();
+    int half = 2; // Vorbelegung: 2. Halbzeit (90')
     final result = await showDialog<(int, int)>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Minute der Aktion'),
-        content: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 90,
-              child: TextField(
-                controller: minCtrl,
-                keyboardType: TextInputType.number,
-                autofocus: true,
-                decoration: const InputDecoration(labelText: 'Minute'),
+      builder: (context) => StatefulBuilder(
+        builder: (context, setD) => AlertDialog(
+          title: const Text('Minute der Aktion'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<int>(
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: 1, label: Text('1. HZ')),
+                  ButtonSegment(value: 2, label: Text('2. HZ')),
+                ],
+                selected: {half},
+                onSelectionChanged: (s) {
+                  final was = half;
+                  final def = was == 1 ? '45' : '90';
+                  setD(() {
+                    half = s.first;
+                    // Standard-Minute mitschalten, wenn noch unverändert.
+                    if (minCtrl.text.trim() == def) {
+                      minCtrl.text = half == 1 ? '45' : '90';
+                    }
+                  });
+                },
               ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 90,
+                    child: TextField(
+                      controller: minCtrl,
+                      keyboardType: TextInputType.number,
+                      autofocus: true,
+                      decoration: const InputDecoration(labelText: 'Minute'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 90,
+                    child: TextField(
+                      controller: extraCtrl,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: '+ (optional)',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 8),
+                child: Text(
+                  'Über 45 (1. HZ) bzw. 90 (2. HZ) wird automatisch zur '
+                  'Nachspielzeit (z.B. 47 → 45+2).',
+                  style: TextStyle(fontSize: 11, color: Colors.grey),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Abbrechen'),
             ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 90,
-              child: TextField(
-                controller: extraCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: '+ (optional)'),
-              ),
+            FilledButton(
+              onPressed: () {
+                final m = int.tryParse(minCtrl.text.trim());
+                if (m == null) return;
+                final ex = int.tryParse(extraCtrl.text.trim()) ?? 0;
+                Navigator.pop(
+                  context,
+                  _normStoppage(m, ex < 0 ? 0 : ex, half == 1 ? 45 : 90),
+                );
+              },
+              child: const Text('Weiter'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Abbrechen'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final m = int.tryParse(minCtrl.text.trim());
-              if (m == null) return;
-              final ex = int.tryParse(extraCtrl.text.trim()) ?? 0;
-              Navigator.pop(context, (m, ex < 0 ? 0 : ex));
-            },
-            child: const Text('Weiter'),
-          ),
-        ],
       ),
     );
     return result;
@@ -1666,16 +1717,36 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     } else if (action == 'action') {
       await _changeEventType(e);
     } else if (action == 'minute') {
-      final ctrl = TextEditingController(text: '${e.minute}');
-      final newMin = await showDialog<int>(
+      final minCtrl = TextEditingController(text: '${e.minute}');
+      final extraCtrl = TextEditingController(
+        text: e.minuteExtra > 0 ? '${e.minuteExtra}' : '',
+      );
+      final res = await showDialog<(int, int)>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Minute'),
-          content: TextField(
-            controller: ctrl,
-            keyboardType: TextInputType.number,
-            autofocus: true,
-            decoration: const InputDecoration(labelText: 'Spielminute'),
+          content: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 90,
+                child: TextField(
+                  controller: minCtrl,
+                  keyboardType: TextInputType.number,
+                  autofocus: true,
+                  decoration: const InputDecoration(labelText: 'Minute'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              SizedBox(
+                width: 90,
+                child: TextField(
+                  controller: extraCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: '+ (optional)'),
+                ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
@@ -1683,15 +1754,27 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               child: const Text('Abbrechen'),
             ),
             FilledButton(
-              onPressed: () =>
-                  Navigator.pop(context, int.tryParse(ctrl.text.trim())),
+              onPressed: () {
+                final m = int.tryParse(minCtrl.text.trim());
+                if (m == null) return;
+                final ex = int.tryParse(extraCtrl.text.trim()) ?? 0;
+                Navigator.pop(context, (m, ex < 0 ? 0 : ex));
+              },
               child: const Text('Speichern'),
             ),
           ],
         ),
       );
-      if (newMin != null && mounted) {
-        await context.read<AppState>().updateEvent(e.copyWith(minute: newMin));
+      if (res != null && mounted) {
+        // Grenze aus der bisherigen Minute ableiten (1. HZ ≤ 45, sonst 90);
+        // Verlängerung (> 90) bleibt unverändert.
+        final boundary = e.minute <= 45 ? 45 : (e.minute <= 90 ? 90 : null);
+        final (nm, nx) = boundary == null
+            ? res
+            : _normStoppage(res.$1, res.$2, boundary);
+        await context.read<AppState>().updateEvent(
+          e.copyWith(minute: nm, minuteExtra: nx),
+        );
         await _refreshEvents();
       }
     }
