@@ -280,7 +280,7 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
                         ),
                       ),
                       Text(
-                        '$clubName · Pflichtspiele',
+                        '$clubName · Liga-Pflichtspiele',
                         style: const TextStyle(
                           fontSize: 11,
                           color: Colors.grey,

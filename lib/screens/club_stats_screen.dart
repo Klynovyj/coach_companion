@@ -245,7 +245,7 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
                 child: Text(
                   _view == _View.staff
                       ? 'Trainer-Bilanz (Karriere): Sp·S·U·N·Punkte'
-                      : 'Pflichtspiele beim Verein (Liga + Pokal)',
+                      : 'Liga-Pflichtspiele beim Verein',
                   style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
@@ -286,8 +286,9 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
             child: Text(
               _view == _View.staff
                   ? 'Trainer-Werte über die gesamte Trainerlaufbahn (FuPa, alle Vereine).'
-                  : 'FuPa führt in der Laufbahn nur offizielle Spiele – '
-                        'Freundschafts-/Testspiele sind dort nicht enthalten.',
+                  : 'FuPa zählt in der Laufbahn nur Liga-Pflichtspiele – '
+                        'Pokal-, Freundschafts- und Testspiele sind dort nicht '
+                        'enthalten.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
