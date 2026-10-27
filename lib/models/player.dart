@@ -37,8 +37,14 @@ class Player {
   bool get isStaffOnly =>
       isStaff && !staffRole!.toLowerCase().contains('spielend');
 
-  /// Verfügbarkeitsstatus (Fit/Verletzt/Krank/Gesperrt).
+  /// Effektiver Verfügbarkeitsstatus (abgeleitet): laufende Abwesenheit (Grund)
+  /// falls vorhanden, sonst der Grundstatus [baseStatus]. Überall für die
+  /// Anzeige/Logik genutzt.
   final PlayerStatus status;
+
+  /// Grundstatus (manuell im Status-Menü gesetzt): nur Fit oder Inaktiv.
+  /// Abwesenheiten (krank, verletzt, abwesend …) überlagern ihn nur zeitweise.
+  final PlayerStatus baseStatus;
 
   /// Kapitäns-Rolle (je eine pro Mannschaft).
   final CaptainRole captainRole;
@@ -97,6 +103,7 @@ class Player {
     this.isStarter = false,
     this.staffRole,
     this.status = PlayerStatus.fit,
+    this.baseStatus = PlayerStatus.fit,
     this.captainRole = CaptainRole.none,
     this.birthdate,
     this.externalId,
@@ -158,6 +165,7 @@ class Player {
     String? staffRole,
     bool clearStaffRole = false,
     PlayerStatus? status,
+    PlayerStatus? baseStatus,
     CaptainRole? captainRole,
     DateTime? birthdate,
     bool clearBirthdate = false,
@@ -190,6 +198,7 @@ class Player {
       isStarter: isStarter ?? this.isStarter,
       staffRole: clearStaffRole ? null : (staffRole ?? this.staffRole),
       status: status ?? this.status,
+      baseStatus: baseStatus ?? this.baseStatus,
       captainRole: captainRole ?? this.captainRole,
       birthdate: clearBirthdate ? null : (birthdate ?? this.birthdate),
       externalId: externalId ?? this.externalId,
@@ -222,6 +231,7 @@ class Player {
     'is_starter': isStarter ? 1 : 0,
     'staff_role': staffRole,
     'status': status.storageKey,
+    'base_status': baseStatus.storageKey,
     'captain_role': captainRole.storageKey,
     'birthdate': birthdate?.toIso8601String(),
     'external_id': externalId,
@@ -255,6 +265,13 @@ class Player {
     isStarter: (m['is_starter'] as int? ?? 0) == 1,
     staffRole: m['staff_role'] as String?,
     status: PlayerStatus.fromKey(m['status'] as String?),
+    // Grundstatus: fehlt er (Altzeile/Altschema), aus dem Status ableiten
+    // (inaktiv bleibt inaktiv, alles andere fit).
+    baseStatus: m['base_status'] != null
+        ? PlayerStatus.fromKey(m['base_status'] as String?)
+        : (PlayerStatus.fromKey(m['status'] as String?) == PlayerStatus.inaktiv
+              ? PlayerStatus.inaktiv
+              : PlayerStatus.fit),
     captainRole: CaptainRole.fromKey(m['captain_role'] as String?),
     birthdate: DateTime.tryParse(m['birthdate'] as String? ?? ''),
     externalId: m['external_id'] as String?,

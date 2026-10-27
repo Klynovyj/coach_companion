@@ -1094,6 +1094,11 @@ class AppState extends ChangeNotifier {
     useCustomPhoto: (p['use_custom_photo'] as num?)?.toInt() != 0,
     birthdate: DateTime.tryParse((p['birthdate'] as String?) ?? ''),
     status: PlayerStatus.fromKey(p['status'] as String?),
+    baseStatus: p['base_status'] != null
+        ? PlayerStatus.fromKey(p['base_status'] as String?)
+        : (PlayerStatus.fromKey(p['status'] as String?) == PlayerStatus.inaktiv
+              ? PlayerStatus.inaktiv
+              : PlayerStatus.fit),
     captainRole: CaptainRole.fromKey(p['captain_role'] as String?),
     active: (p['active'] as bool?) ?? true,
     nickname: p['nickname'] as String?,
@@ -1130,6 +1135,7 @@ class AppState extends ChangeNotifier {
     'use_custom_photo': p.useCustomPhoto ? 1 : 0,
     'birthdate': p.birthdate?.toIso8601String(),
     'status': p.status.storageKey,
+    'base_status': p.baseStatus.storageKey,
     'active': p.active,
     'captain_role': p.captainRole.storageKey,
     'nickname': p.nickname,
@@ -1188,6 +1194,9 @@ class AppState extends ChangeNotifier {
             : (record['use_custom_photo'] as num).toInt() != 0,
         birthdate: DateTime.tryParse((record['birthdate'] as String?) ?? ''),
         status: statusRaw == null ? null : PlayerStatus.fromKey(statusRaw),
+        baseStatus: record['base_status'] == null
+            ? null
+            : PlayerStatus.fromKey(record['base_status'] as String?),
         captainRole: captainRaw == null
             ? null
             : CaptainRole.fromKey(captainRaw),
@@ -1735,17 +1744,19 @@ class AppState extends ChangeNotifier {
         best = a;
       }
     }
-    final PlayerStatus target;
-    if (best != null) {
-      target = best.status;
-    } else if (p.status.isAbsence) {
-      target = PlayerStatus.fit;
-    } else {
-      return; // Fit/inaktiv ohne aktive Abwesenheit: nichts tun.
-    }
+    // Effektiver Status = aktive Abwesenheit (Grund), sonst der Grundstatus
+    // (Fit/Inaktiv). So überlagert eine Abwesenheit nur zeitweise.
+    final target = best?.status ?? p.baseStatus;
     if (target != p.status) {
       await updatePlayer(p.copyWith(status: target));
     }
+  }
+
+  /// Setzt den Grundstatus (nur Fit/Inaktiv) und berechnet den effektiven Status
+  /// neu (eine laufende Abwesenheit bleibt davon unberührt sichtbar).
+  Future<void> setBaseStatus(Player player, PlayerStatus base) async {
+    await updatePlayer(player.copyWith(baseStatus: base));
+    await _syncStatusFromAbsences(player.id);
   }
 
   /// FuPa-Saisonstatistik eines Spielers (über den Namen zugeordnet).

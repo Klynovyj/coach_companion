@@ -185,24 +185,56 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     return 'data:image/jpeg;base64,${base64Encode(jpg)}';
   }
 
-  /// Statuswechsel: Abwesenheiten (Verletzt/Krank/Gesperrt/Urlaub) fragen den
-  /// Zeitraum + Grund ab und werden protokolliert; sonst direkt setzen.
+  /// Grundstatus setzen (nur Fit/Inaktiv). Eine laufende Abwesenheit überlagert
+  /// die Anzeige weiterhin; der effektive Status wird neu berechnet.
   Future<void> _setStatus(PlayerStatus s) async {
-    if (!s.isAbsence) {
-      await _apply(_player.copyWith(status: s));
-      return;
-    }
-    final res = await _showAbsenceDialog(s);
+    await context.read<AppState>().setBaseStatus(_player, s);
+    await _refreshPlayer();
+  }
+
+  /// „Abwesenheit eintragen": erst Grund wählen (Krank/Verletzt/Gesperrt/
+  /// Urlaub/Abwesend), dann Zeitraum. Legt eine Abwesenheit an; der effektive
+  /// Status zeigt sie, solange sie läuft bzw. bevorsteht.
+  Future<void> _addAbsence() async {
+    final reason = await showModalBottomSheet<PlayerStatus>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Abwesenheit – Grund wählen',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+            for (final s in PlayerStatus.absenceReasons)
+              ListTile(
+                leading: s == PlayerStatus.verletzt
+                    ? const InjuryCross(size: 20)
+                    : Text(s.symbol, style: const TextStyle(fontSize: 18)),
+                title: Text(s.label),
+                onTap: () => Navigator.pop(ctx, s),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (reason == null || !mounted) return;
+    final res = await _showAbsenceDialog(reason);
     if (res == null || !mounted) return;
     await context.read<AppState>().addAbsence(
       player: _player,
-      status: s,
+      status: reason,
       from: res.$1,
       until: res.$2,
       note: res.$3,
     );
-    // Status kommt aus den Abwesenheiten + heutigem Datum (zukünftige
-    // Abwesenheit ändert den Status noch nicht).
     await _refreshPlayer();
   }
 
@@ -471,7 +503,15 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   spacing: 6,
                   runSpacing: 6,
                   crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [_statusMenu(context, p)],
+                  children: [
+                    _statusMenu(context, p),
+                    if (isTrainer)
+                      OutlinedButton.icon(
+                        onPressed: _addAbsence,
+                        icon: const Icon(Icons.event_busy, size: 16),
+                        label: const Text('Abwesenheit'),
+                      ),
+                  ],
                 ),
                 // Bewertungen (Gesamt + laufender Monat) – per Tipp aufs Foto
                 // ein-/ausklappbar. Nur für Trainer sichtbar.
@@ -787,20 +827,20 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         editable: false,
       );
     }
+    // Status-Menü: nur der Grundstatus (Fit/Inaktiv). Abwesenheiten (krank,
+    // verletzt, abwesend …) laufen über „Abwesenheit eintragen" (eigener Zeitraum)
+    // und überlagern die Anzeige, solange sie aktiv sind.
     return PopupMenuButton<PlayerStatus>(
-      tooltip: 'Status ändern',
+      tooltip: 'Grundstatus ändern',
       onSelected: _setStatus,
       itemBuilder: (_) => [
-        for (final s in PlayerStatus.values)
+        for (final s in const [PlayerStatus.fit, PlayerStatus.inaktiv])
           PopupMenuItem(
             value: s,
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (s == PlayerStatus.verletzt)
-                  const InjuryCross(size: 16)
-                else
-                  Text(s.symbol),
+                Text(s.symbol),
                 const SizedBox(width: 8),
                 Text(s.label),
               ],
@@ -1078,9 +1118,17 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   // ------------------------------------------------------- Abwesenheiten
   Widget _absencesCard(BuildContext context, AppState state) {
     final df = DateFormat('dd.MM.yyyy', 'de_DE');
+    final isTrainer = state.isTrainerHere;
     return _SectionCard(
       icon: Icons.event_busy,
       title: 'Abwesenheiten',
+      action: isTrainer
+          ? TextButton.icon(
+              onPressed: _addAbsence,
+              icon: const Icon(Icons.add),
+              label: const Text('Abwesenheit'),
+            )
+          : null,
       child: FutureBuilder<List<PlayerAbsence>>(
         future: state.absencesOf(_player.id),
         builder: (context, snap) {
@@ -1097,8 +1145,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Keine Einträge. Status Verletzt/Krank/Gesperrt/Urlaub '
-                  'oben setzen – mit Zeitraum.',
+                  'Keine Einträge. Über „Abwesenheit" einen Grund '
+                  '(Krank/Verletzt/Gesperrt/Urlaub/Abwesend) mit Zeitraum '
+                  'eintragen.',
                   style: TextStyle(color: Colors.grey),
                 ),
               ),

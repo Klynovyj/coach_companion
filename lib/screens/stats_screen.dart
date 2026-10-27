@@ -141,6 +141,7 @@ class _StatsScreenState extends State<StatsScreen> {
     PlayerStatus.gesperrt,
     PlayerStatus.krank,
     PlayerStatus.urlaub,
+    PlayerStatus.abwesend,
     PlayerStatus.fit,
     PlayerStatus.inaktiv,
   ];

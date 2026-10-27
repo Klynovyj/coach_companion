@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 46;
+  static const _dbVersion = 47;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -366,6 +366,16 @@ class AppDatabase {
       await db.execute(_inboxTableSql);
       await db.execute('CREATE INDEX idx_inbox_created ON inbox (created_at)');
     }
+    // v46 -> v47: Grundstatus (Fit/Inaktiv) getrennt vom effektiven Status.
+    // Backfill: inaktiv bleibt inaktiv, alles andere wird fit.
+    if (oldV < 47) {
+      await db.execute(
+        "ALTER TABLE players ADD COLUMN base_status TEXT NOT NULL DEFAULT 'fit'",
+      );
+      await db.execute(
+        "UPDATE players SET base_status = 'inaktiv' WHERE status = 'inaktiv'",
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -654,6 +664,7 @@ class AppDatabase {
         position TEXT,
         wish_position TEXT,
         status TEXT NOT NULL DEFAULT 'fit',
+        base_status TEXT NOT NULL DEFAULT 'fit',
         captain_role TEXT NOT NULL DEFAULT 'none',
         birthdate TEXT,
         positions TEXT,

@@ -25,6 +25,7 @@ Color playerStatusColor(PlayerStatus s) => switch (s) {
   PlayerStatus.krank => const Color(0xFFEF6C00), // Orange
   PlayerStatus.gesperrt => const Color(0xFF6A1B9A), // Violett
   PlayerStatus.urlaub => const Color(0xFF1565C0), // Blau
+  PlayerStatus.abwesend => const Color(0xFF00796B), // Teal (z.B. Dienstreise)
   PlayerStatus.inaktiv => const Color(0xFF757575), // Grau
 };
 

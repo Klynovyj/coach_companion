@@ -83,6 +83,7 @@ IconData playerStatusIcon(PlayerStatus s) => switch (s) {
   PlayerStatus.krank => Icons.sick,
   PlayerStatus.gesperrt => Icons.block,
   PlayerStatus.urlaub => Icons.beach_access,
+  PlayerStatus.abwesend => Icons.business_center,
   PlayerStatus.inaktiv => Icons.pause,
   PlayerStatus.fit => Icons.check,
 };
