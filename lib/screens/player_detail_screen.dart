@@ -68,6 +68,13 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     await context.read<AppState>().updatePlayer(updated);
   }
 
+  /// Spieler neu laden (z.B. nach einer Abwesenheits-Änderung, damit der oben
+  /// angezeigte Status zum aktuellen Datum passt).
+  Future<void> _refreshPlayer() async {
+    final p = await context.read<AppState>().playerById(_player.id);
+    if (p != null && mounted) setState(() => _player = p);
+  }
+
   /// Spielerfoto wählen: Datei/Galerie (Desktop & Handy), Kamera (nur Handy),
   /// oder vorhandenes Foto entfernen. Wird als Data-URL am Spieler gespeichert.
   Future<void> _changePhoto() async {
@@ -194,7 +201,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       until: res.$2,
       note: res.$3,
     );
-    if (mounted) setState(() => _player = _player.copyWith(status: s));
+    // Status kommt aus den Abwesenheiten + heutigem Datum (zukünftige
+    // Abwesenheit ändert den Status noch nicht).
+    await _refreshPlayer();
   }
 
   Future<void> _editAbsence(PlayerAbsence a) async {
@@ -216,7 +225,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
         createdAt: a.createdAt,
       ),
     );
-    if (mounted) setState(() {});
+    await _refreshPlayer();
   }
 
   /// Dialog für Zeitraum (von–bis) + optionalen Grund einer Abwesenheit.
@@ -1109,7 +1118,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     padding: const EdgeInsets.only(right: 20),
                     child: const Icon(Icons.delete, color: Colors.white),
                   ),
-                  onDismissed: (_) => state.deleteAbsence(a.id),
+                  onDismissed: (_) async {
+                    await state.deleteAbsence(a);
+                    await _refreshPlayer();
+                  },
                   child: ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: a.status == PlayerStatus.verletzt

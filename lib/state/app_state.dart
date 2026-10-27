@@ -1678,21 +1678,62 @@ class AppState extends ChangeNotifier {
         createdAt: DateTime.now(),
       ),
     );
-    await updatePlayer(player.copyWith(status: status));
+    // Status aus den Abwesenheiten relativ zu HEUTE ableiten (eine Abwesenheit,
+    // die erst in der Zukunft beginnt, ändert den Status noch nicht).
+    await _syncStatusFromAbsences(player.id);
     await logActivity(
       ActivityType.status,
       '${player.fullName}: ${status.label}',
     );
   }
 
+  /// Abwesenheit geändert (z.B. Zeitraum verlängert): Status des Spielers
+  /// automatisch an das aktuelle Datum anpassen.
   Future<void> updateAbsence(PlayerAbsence a) async {
     await _repo.upsertAbsence(a);
+    await _syncStatusFromAbsences(a.playerId);
     notifyListeners();
   }
 
-  Future<void> deleteAbsence(String id) async {
-    await _repo.deleteAbsence(id);
+  Future<void> deleteAbsence(PlayerAbsence a) async {
+    await _repo.deleteAbsence(a.id);
+    await _syncStatusFromAbsences(a.playerId);
     notifyListeners();
+  }
+
+  /// Einzelnen Spieler neu laden (z.B. um den Status nach einer Abwesenheits-
+  /// Änderung aktuell anzuzeigen).
+  Future<Player?> playerById(String id) => _repo.getPlayer(id);
+
+  /// Setzt den Spielerstatus passend zu seinen Abwesenheiten und dem heutigen
+  /// Datum: deckt eine Abwesenheit heute ab → deren Status; sonst, wenn der
+  /// Spieler gerade einen Abwesenheits-Status hat → zurück auf „Fit". „Fit"/
+  /// „inaktiv" ohne deckende Abwesenheit bleiben unverändert.
+  Future<void> _syncStatusFromAbsences(String playerId) async {
+    final p = await _repo.getPlayer(playerId);
+    if (p == null) return;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final abs = await _repo.getAbsences(playerId);
+    PlayerAbsence? covering;
+    for (final a in abs) {
+      final from = DateTime(a.from.year, a.from.month, a.from.day);
+      final until = DateTime(a.until.year, a.until.month, a.until.day);
+      final coversToday = !today.isBefore(from) && !today.isAfter(until);
+      if (!coversToday) continue;
+      if (covering == null || a.until.isAfter(covering.until)) covering = a;
+    }
+    final PlayerStatus target;
+    if (covering != null) {
+      target = covering.status;
+    } else if (p.status.isAbsence) {
+      target = PlayerStatus.fit;
+    } else {
+      return; // Fit/inaktiv ohne deckende Abwesenheit: nichts tun.
+    }
+    if (target != p.status) {
+      await updatePlayer(p.copyWith(status: target));
+    }
   }
 
   /// FuPa-Saisonstatistik eines Spielers (über den Namen zugeordnet).
@@ -1834,25 +1875,13 @@ class AppState extends ChangeNotifier {
   Future<void> _autoRevertAbsences() async {
     final team = _ownTeam;
     if (team == null) return;
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    // Für jeden Spieler den Status an die Abwesenheiten + das heutige Datum
+    // angleichen: neu begonnene Abwesenheit → Status setzen; abgelaufene →
+    // zurück auf „Fit". Über updatePlayer, damit es in die Cloud gespiegelt wird
+    // und nicht beim nächsten Pull wieder überschrieben wird.
     final players = await _repo.getPlayers(team.id);
     for (final p in players) {
-      if (!p.status.isAbsence) continue;
-      final abs = await _repo.getAbsences(p.id);
-      PlayerAbsence? current;
-      for (final a in abs) {
-        if (a.status == p.status) {
-          current = a;
-          break;
-        }
-      }
-      // Abgelaufen (letzter Tag liegt vor heute) -> wieder Fit. Über
-      // updatePlayer, damit „Fit" auch in die Cloud gespiegelt wird und nicht
-      // beim nächsten Pull wieder von „Krank/Verletzt" überschrieben wird.
-      if (current != null && current.until.isBefore(today)) {
-        await updatePlayer(p.copyWith(status: PlayerStatus.fit));
-      }
+      await _syncStatusFromAbsences(p.id);
     }
   }
 
