@@ -3011,13 +3011,12 @@ class AppState extends ChangeNotifier {
       for (final r in rows) {
         final uid = r['user_id'] as String?;
         if (uid == null || uid == me) continue;
-        final name = (r['display_name'] as String?)?.trim();
-        final mail = (r['email'] as String?)?.trim();
         out.add((
           userId: uid,
-          name: (name != null && name.isNotEmpty)
-              ? name
-              : (mail != null && mail.isNotEmpty ? mail : 'Trainer'),
+          name: _trainerLabel(
+            r['display_name'] as String?,
+            r['email'] as String?,
+          ),
         ));
       }
       return out;
@@ -3425,6 +3424,20 @@ class AppState extends ChangeNotifier {
 
   /// Anzeigenamen je Benutzer-ID im Cloud-Team (für Auswertungen). Ohne Cloud
   /// leer (Best effort); der eigene Nutzer wird vom Aufrufer ggf. ergänzt.
+  /// Anzeigename aus display_name, sonst E-Mail OHNE Domain (z.B. „a.chenfeld"
+  /// statt „a.chenfeld@gmail.com"). Rückfall „Trainer". Den echten Namen kann
+  /// nur der jeweilige Trainer selbst setzen (Konto & Team → Name).
+  String _trainerLabel(String? displayName, String? email) {
+    final n = displayName?.trim();
+    if (n != null && n.isNotEmpty) return n;
+    final mail = email?.trim();
+    if (mail != null && mail.isNotEmpty) {
+      final at = mail.indexOf('@');
+      return at > 0 ? mail.substring(0, at) : mail;
+    }
+    return 'Trainer';
+  }
+
   Future<Map<String, String>> teamMemberNames(String teamId) async {
     if (!CloudService.ready || !CloudService.signedIn) return const {};
     try {
@@ -3433,11 +3446,10 @@ class AppState extends ChangeNotifier {
       for (final r in rows) {
         final uid = r['user_id'] as String?;
         if (uid == null) continue;
-        final name = (r['display_name'] as String?)?.trim();
-        final mail = (r['email'] as String?)?.trim();
-        map[uid] = (name != null && name.isNotEmpty)
-            ? name
-            : (mail != null && mail.isNotEmpty ? mail : 'Trainer');
+        map[uid] = _trainerLabel(
+          r['display_name'] as String?,
+          r['email'] as String?,
+        );
       }
       return map;
     } catch (_) {
@@ -4079,13 +4091,11 @@ class AppState extends ChangeNotifier {
       final finished = m.status == MatchStatus.finished;
       if (finished) {
         // Offene EIGENE Bewertungen: Bewertungen sind pro Trainer – jeder muss
-        // selbst bewerten. Nur zeigen, solange die Frist (3 Tage) läuft und der
-        // Trainer nicht „war nicht da / bewerte nicht" gesetzt hat.
-        final deadline = await ratingDeadline(m.id);
-        final withinDeadline = deadline == null || now.isBefore(deadline);
+        // selbst bewerten. ALLE gelaufenen Spiele bleiben hier, bis sie erledigt
+        // sind (alle Spieler bewertet ODER „war nicht da / bewerte nicht").
         final mine = await myMatchRating(m.id);
         final abstained = mine?.abstained == true;
-        if (withinDeadline && !abstained) {
+        if (!abstained) {
           final roster = await _ratingRoster(m);
           if (roster.isNotEmpty) {
             final me = _me;
