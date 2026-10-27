@@ -1,6 +1,6 @@
 {
-  "versionCode": 52,
-  "versionName": "1.3.47",
+  "versionCode": 53,
+  "versionName": "1.3.48",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Vereins-Bilanz: Spieler-Detail (Laufbahn) als Bild teilbar\n- Trainer-Detail mit Trainer-Bilanz (Spiele/Siege/Unent./Niederl./Punkte)\n- Spieler-Detail zeigt Vereins-Summe gross + Karriere-Gesamt darunter\n- Text praezisiert: Liga-Pflichtspiele (FuPa fuehrt keinen Pokal in der Laufbahn)\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27-stage31 ausfuehren."
+  "notes": "Neuerungen:\n- Neue zentrale Statistik-Seite: Reiter Team / Spieler / Verein / Noten / Karten an einem Ort (ueber Mehr + Start)\n- Vereins-Bilanz (FuPa) mit Spieler-/Trainer-Detail, als Bild teilbar\n- Text praezisiert: Liga-Pflichtspiele (FuPa fuehrt keinen Pokal in der Laufbahn)\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27-stage31 ausfuehren."
 }
