@@ -2925,9 +2925,11 @@ class AppState extends ChangeNotifier {
     final team = await _repo.getTeam(teamId);
     final clubSlug = FupaReduxImporter.clubSlugFromTeamUrl(team?.fupaUrl);
     final clubName = team?.name ?? team?.shortName;
+    // Alle aktiven Personen inkl. Trainerteam (Spieler, spielende Co-Trainer
+    // und reine Trainer). Reine Trainer ohne FuPa-Daten fliegen unten raus.
     final players = (await _repo.getPlayers(
       teamId,
-    )).where((p) => !p.isStaffOnly && p.active).toList();
+    )).where((p) => p.active).toList();
     final stats = await _repo.getStats(teamId);
     final minutesByKey = <String, int>{};
     final extByKey = <String, String>{};
@@ -2996,9 +2998,14 @@ class AppState extends ChangeNotifier {
               const FupaClubTotal(),
           seasonMinutes: minutesByKey[p.dedupKey] ?? 0,
           hasFupa: career != null,
+          isStaff: p.isStaff,
+          isFieldPlayer: !p.isStaffOnly,
+          spell: career?.currentClubSpell(),
         ),
       );
     }
+    // Reine Trainer (nicht spielend) ohne FuPa-Spielerdaten weglassen.
+    out.removeWhere((r) => r.player.isStaffOnly && !r.hasFupa);
     final careerOk = careers.where((c) => c != null).length;
     final diag =
         'FuPa-Link: ${(teamUrl != null && teamUrl.isNotEmpty) ? 'ja' : 'nein'} · '
@@ -3883,6 +3890,9 @@ class PlayerClubStats {
   final FupaClubTotal pflicht; // nur Pflichtspiele (Pokal zählt)
   final int seasonMinutes; // nur laufende Saison (FuPa)
   final bool hasFupa; // Laufbahn konnte geladen werden
+  final bool isStaff; // hat eine Trainerrolle
+  final bool isFieldPlayer; // ist (auch) Feldspieler
+  final FupaClubSpell? spell; // ununterbrochener Vereins-Lauf (seit wann)
 
   const PlayerClubStats({
     required this.player,
@@ -3890,6 +3900,9 @@ class PlayerClubStats {
     required this.pflicht,
     required this.seasonMinutes,
     required this.hasFupa,
+    this.isStaff = false,
+    this.isFieldPlayer = true,
+    this.spell,
   });
 }
 

@@ -100,6 +100,7 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
   Widget _bilanzCard() {
     final c = _career!;
     final scheme = Theme.of(context).colorScheme;
+    final spell = c.currentClubSpell();
     Widget stat(String v, String l) => Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -140,6 +141,20 @@ class _ClubPlayerCareerScreenState extends State<ClubPlayerCareerScreen> {
                         'Karriere-Gesamt (FuPa, alle Vereine)',
                         style: TextStyle(fontSize: 11, color: Colors.grey),
                       ),
+                      if (spell?.sinceYear != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            '${spell!.clubName} seit ${spell.sinceYear} · '
+                            '${spell.yearsUntil(DateTime.now().year)} Jahre '
+                            '(ohne Unterbrechung)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: _gold,
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),

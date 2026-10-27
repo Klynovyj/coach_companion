@@ -12,6 +12,8 @@ import 'club_player_career_screen.dart';
 
 enum _ClubSort { games, goals, assists, scorer, name }
 
+enum _View { players, staff, all }
+
 /// Vereins-Bilanz aller Spieler aus der FuPa-Laufbahn: Spiele/Tore/Vorlagen/
 /// Scorer beim aktuellen Verein (offizielle Pflichtspiele – FuPa führt in der
 /// Laufbahn keine Freundschaftsspiele) plus Saison-Minuten. Pro Spieler ein
@@ -25,6 +27,7 @@ class ClubStatsScreen extends StatefulWidget {
 
 class _ClubStatsScreenState extends State<ClubStatsScreen> {
   _ClubSort _sort = _ClubSort.scorer;
+  _View _view = _View.players;
   List<PlayerClubStats> _rows = [];
   bool _loading = true;
   bool _sharing = false;
@@ -91,7 +94,16 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
   FupaClubTotal _t(PlayerClubStats r) => r.all;
 
   List<PlayerClubStats> _sorted() {
-    final list = [..._rows];
+    final list = _rows.where((r) {
+      switch (_view) {
+        case _View.players:
+          return r.isFieldPlayer;
+        case _View.staff:
+          return r.isStaff;
+        case _View.all:
+          return true;
+      }
+    }).toList();
     int cmp(PlayerClubStats a, PlayerClubStats b) {
       switch (_sort) {
         case _ClubSort.games:
@@ -204,6 +216,21 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          SizedBox(
+            width: double.infinity,
+            child: SegmentedButton<_View>(
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: const [
+                ButtonSegment(value: _View.players, label: Text('Spieler')),
+                ButtonSegment(value: _View.staff, label: Text('Trainer')),
+                ButtonSegment(value: _View.all, label: Text('Alle')),
+              ],
+              selected: {_view},
+              onSelectionChanged: (s) => setState(() => _view = s.first),
+            ),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               const Expanded(
@@ -315,6 +342,15 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
+                  if (r.spell?.sinceYear != null)
+                    Text(
+                      'beim Verein seit ${r.spell!.sinceYear} · '
+                      '${r.spell!.yearsUntil(DateTime.now().year)} J.',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
                   if (!r.hasFupa)
                     Text(
                       'keine FuPa-Daten',

@@ -184,6 +184,49 @@ class FupaCareer {
     this.totalTopEleven = 0,
   });
 
+  static String _clubBase(String teamSlug) {
+    final m = RegExp(r'^(.*?)-m\d+').firstMatch(teamSlug);
+    return m?.group(1) ?? teamSlug;
+  }
+
+  /// Start-Jahr einer Saison-/Wettbewerbs-Bezeichnung (z.B. „… 24/25" → 2024,
+  /// „Frühjahr 24" → 2024). Null, wenn nicht erkennbar.
+  static int? _seasonStartYear(String comp) {
+    var m = RegExp(r'(\d{4})/\d{2}').firstMatch(comp);
+    if (m != null) return int.tryParse(m.group(1)!);
+    m = RegExp(r'(\d{2})/\d{2}').firstMatch(comp);
+    if (m != null) return 2000 + int.parse(m.group(1)!);
+    m = RegExp(r'\b(\d{2})\b').firstMatch(comp);
+    if (m != null) return 2000 + int.parse(m.group(1)!);
+    m = RegExp(r'(\d{4})').firstMatch(comp);
+    if (m != null) return int.tryParse(m.group(1)!);
+    return null;
+  }
+
+  /// Aktueller, ununterbrochener Vereins-Lauf: beginnend bei der jüngsten
+  /// Station (= aktueller Verein) rückwärts, solange derselbe Verein. Liefert
+  /// Beitrittsjahr und Anzahl Saisons; null ohne Stationen.
+  FupaClubSpell? currentClubSpell() {
+    if (stations.isEmpty) return null;
+    final targetBase = _clubBase(stations.first.teamSlug);
+    final targetName = stations.first.clubName;
+    var count = 0;
+    String earliestComp = '';
+    for (final s in stations) {
+      final same =
+          _clubBase(s.teamSlug) == targetBase || s.clubName == targetName;
+      if (!same) break;
+      count++;
+      earliestComp = s.competition; // neueste zuerst → zuletzt = früheste
+    }
+    return FupaClubSpell(
+      clubName: targetName,
+      sinceSeason: earliestComp,
+      sinceYear: _seasonStartYear(earliestComp),
+      seasons: count,
+    );
+  }
+
   /// Summiert die Stationen **eines Vereins** (alle Saisons dort) zu
   /// Spiele/Tore/Vorlagen. Ein Verein wird am [clubSlug] (Vereins-Slug ohne
   /// Team-/Saison-Suffix) erkannt; [clubName] dient als Rückfall.
@@ -243,6 +286,26 @@ class FupaClubTotal {
 
   int get scorerPoints => goals + assists;
   bool get hasAny => matches > 0 || goals > 0 || assists > 0;
+}
+
+/// Ununterbrochener Vereins-Lauf eines Spielers (seit wann, wie viele Saisons).
+class FupaClubSpell {
+  final String clubName;
+  final String sinceSeason; // Wettbewerb/Saison der ersten Saison des Laufs
+  final int? sinceYear; // Start-Kalenderjahr, falls erkannt
+  final int seasons; // Anzahl zusammenhängender Saisons beim Verein
+
+  const FupaClubSpell({
+    this.clubName = '',
+    this.sinceSeason = '',
+    this.sinceYear,
+    this.seasons = 0,
+  });
+
+  /// Jahre beim Verein (Kalenderjahre seit Beitritt, mind. 1).
+  int yearsUntil(int nowYear) => sinceYear == null
+      ? 0
+      : (nowYear - sinceYear! < 1 ? 1 : nowYear - sinceYear!);
 }
 
 /// Bündelt die FuPa-Laufbahn eines Spielers mit dem aufgelösten Verein, damit
