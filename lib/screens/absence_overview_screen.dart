@@ -22,6 +22,22 @@ class AbsenceOverviewScreen extends StatefulWidget {
 
 class _AbsenceOverviewScreenState extends State<AbsenceOverviewScreen> {
   final _df = DateFormat('dd.MM.yyyy', 'de_DE');
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  bool _matches(Player p) {
+    final q = _query.trim().toLowerCase();
+    if (q.isEmpty) return true;
+    return p.fullName.toLowerCase().contains(q) ||
+        (p.nickname ?? '').toLowerCase().contains(q) ||
+        (p.number?.toString() ?? '').contains(q);
+  }
 
   // Sortier-Rang: Abwesende/Ausfälle zuerst, dann Fit, dann Inaktiv.
   static const _order = <PlayerStatus>[
@@ -65,29 +81,63 @@ class _AbsenceOverviewScreenState extends State<AbsenceOverviewScreen> {
                 child: Text('Keine Mannschaft.', textAlign: TextAlign.center),
               ),
             )
-          : FutureBuilder<List<PlayerStatusInfo>>(
-              future: _load(state, team.id),
-              builder: (context, snap) {
-                if (!snap.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final list = snap.data!;
-                if (list.isEmpty) {
-                  return const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('Noch keine Spieler.'),
+          : Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    onChanged: (v) => setState(() => _query = v),
+                    decoration: InputDecoration(
+                      hintText: 'Spieler suchen …',
+                      prefixIcon: const Icon(Icons.search),
+                      isDense: true,
+                      border: const OutlineInputBorder(),
+                      suffixIcon: _query.isEmpty
+                          ? null
+                          : IconButton(
+                              icon: const Icon(Icons.clear),
+                              onPressed: () {
+                                _searchCtrl.clear();
+                                setState(() => _query = '');
+                              },
+                            ),
                     ),
-                  );
-                }
-                return ListView.separated(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  itemCount: list.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (context, i) =>
-                      _row(context, state, list[i], isTrainer),
-                );
-              },
+                  ),
+                ),
+                Expanded(
+                  child: FutureBuilder<List<PlayerStatusInfo>>(
+                    future: _load(state, team.id),
+                    builder: (context, snap) {
+                      if (!snap.hasData) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final list = snap.data!
+                          .where((i) => _matches(i.player))
+                          .toList();
+                      if (list.isEmpty) {
+                        return Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              _query.isEmpty
+                                  ? 'Noch keine Spieler.'
+                                  : 'Keine Treffer für „$_query".',
+                            ),
+                          ),
+                        );
+                      }
+                      return ListView.separated(
+                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        itemCount: list.length,
+                        separatorBuilder: (_, _) => const Divider(height: 1),
+                        itemBuilder: (context, i) =>
+                            _row(context, state, list[i], isTrainer),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
     );
   }
@@ -126,7 +176,7 @@ class _AbsenceOverviewScreenState extends State<AbsenceOverviewScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(s.symbol, style: const TextStyle(fontSize: 12)),
+          absenceReasonIcon(s, size: 12),
           const SizedBox(width: 6),
           Text(
             s.label,
@@ -283,7 +333,7 @@ class _PlayerAbsenceSheetState extends State<_PlayerAbsenceSheet> {
     final expired = a.until.isBefore(today);
     return ListTile(
       contentPadding: EdgeInsets.zero,
-      leading: Text(a.status.symbol, style: const TextStyle(fontSize: 20)),
+      leading: absenceReasonIcon(a.status, size: 20),
       title: Text(
         '${a.status.label} · ${_df.format(a.from)} – ${_df.format(a.until)}',
       ),

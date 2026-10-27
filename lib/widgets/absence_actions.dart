@@ -6,6 +6,15 @@ import '../models/enums.dart';
 import '../models/player.dart';
 import '../models/player_absence.dart';
 import '../state/app_state.dart';
+import 'injury_icon.dart';
+
+/// Symbol je Abwesenheits-/Status-Grund: „Verletzt" bekommt das rote Kreuz
+/// (`InjuryCross`), alle anderen ihr Emoji. Einheitlich für alle Abwesenheits-
+/// Ansichten.
+Widget absenceReasonIcon(PlayerStatus s, {double size = 18}) =>
+    s == PlayerStatus.verletzt
+    ? InjuryCross(size: size)
+    : Text(s.symbol, style: TextStyle(fontSize: size));
 
 /// Gemeinsame Abwesenheits-Eingabe (Grund-Auswahl + Datums-Dialog), damit sie
 /// sowohl im Spielerprofil als auch in der zentralen Abwesenheits-Übersicht
@@ -66,7 +75,7 @@ Future<PlayerStatus?> pickAbsenceReason(BuildContext context) {
           ),
           for (final s in PlayerStatus.absenceReasons)
             ListTile(
-              leading: Text(s.symbol, style: const TextStyle(fontSize: 18)),
+              leading: absenceReasonIcon(s, size: 20),
               title: Text(s.label),
               onTap: () => Navigator.pop(ctx, s),
             ),
