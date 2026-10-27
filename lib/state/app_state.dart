@@ -2902,7 +2902,9 @@ class AppState extends ChangeNotifier {
   /// Laufbahn-Summen beim aktuellen Verein (gesamt + nur Pflichtspiele) plus
   /// die Minuten der laufenden Saison. Lädt je Spieler die FuPa-Spielerseite
   /// (parallel, Netzwerk); Spieler ohne FuPa/ohne Daten erscheinen mit 0.
-  Future<List<PlayerClubStats>> squadFupaClubStats(String teamId) async {
+  Future<(List<PlayerClubStats>, String)> squadFupaClubStats(
+    String teamId,
+  ) async {
     final team = await _repo.getTeam(teamId);
     final clubSlug = FupaReduxImporter.clubSlugFromTeamUrl(team?.fupaUrl);
     final clubName = team?.name ?? team?.shortName;
@@ -2937,15 +2939,19 @@ class AppState extends ChangeNotifier {
     }
     // Karrieren parallel laden. FuPa-ID: vom Spieler, sonst live-API, sonst
     // aus der lokalen Saison-Statistik (jeweils per Name).
+    var resolved = 0;
+    String? firstErr;
     final careers = await Future.wait(
       players.map((p) async {
         final ext = (p.externalId?.trim().isNotEmpty ?? false)
             ? p.externalId!.trim()
             : (apiExtByKey[p.dedupKey] ?? extByKey[p.dedupKey]);
         if (ext == null || ext.isEmpty) return null;
+        resolved++;
         try {
           return await _importer.importPlayerCareer(ext);
-        } catch (_) {
+        } catch (e) {
+          firstErr ??= e.toString();
           return null;
         }
       }),
@@ -2972,7 +2978,14 @@ class AppState extends ChangeNotifier {
         ),
       );
     }
-    return out;
+    final careerOk = careers.where((c) => c != null).length;
+    final diag =
+        'FuPa-Link: ${(teamUrl != null && teamUrl.isNotEmpty) ? 'ja' : 'nein'} · '
+        'Verein: ${clubSlug ?? clubName ?? '—'} · '
+        'IDs API/lokal: ${apiExtByKey.length}/${extByKey.length} · '
+        'aufgelöst: $resolved/${players.length} · Laufbahn ok: $careerOk'
+        '${firstErr != null ? ' · Fehler: $firstErr' : ''}';
+    return (out, diag);
   }
 
   /// Aggregiert Tracking-Werte eines Spielers über die getrackten eigenen Spiele;

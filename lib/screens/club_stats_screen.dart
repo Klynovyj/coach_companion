@@ -23,6 +23,7 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
   _Mode _mode = _Mode.all;
   _ClubSort _sort = _ClubSort.scorer;
   List<PlayerClubStats> _rows = [];
+  String _diag = '';
   bool _loading = true;
 
   @override
@@ -38,10 +39,11 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
       if (mounted) setState(() => _loading = false);
       return;
     }
-    final rows = await state.squadFupaClubStats(team.id);
+    final (rows, diag) = await state.squadFupaClubStats(team.id);
     if (!mounted) return;
     setState(() {
       _rows = rows;
+      _diag = diag;
       _loading = false;
     });
   }
@@ -173,6 +175,17 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
+          if (_diag.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                _diag,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            ),
         ],
       ),
     );
