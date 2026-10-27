@@ -7,7 +7,7 @@ import '../models/player.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/availability_controls.dart';
-import '../widgets/player_avatar.dart';
+import '../widgets/team_logo.dart';
 
 class NominationScreen extends StatefulWidget {
   const NominationScreen({
@@ -205,31 +205,117 @@ class _NominationScreenState extends State<NominationScreen> {
 
   Widget _row(Player p) {
     final suspended = _match != null && _app.isSuspendedForMatch(p, _match!);
+    final absent =
+        p.status != PlayerStatus.fit && p.status != PlayerStatus.inaktiv;
+    // Status am Foto (Icon oben, Text darunter): Sperre hat Vorrang, sonst
+    // Verletzt/Krank/Urlaub. Spieler bleibt in allen Fällen wählbar.
+    final String? statusEmoji = suspended
+        ? '⛔'
+        : (absent ? p.status.symbol : null);
+    final String? statusLabel = suspended
+        ? 'Gesperrt${p.suspendedGames > 0 ? ' ${p.suspendedGames}' : ''}'
+        : (absent ? p.status.label : null);
+    final Color statusColor = suspended
+        ? Theme.of(context).colorScheme.error
+        : const Color(0xFF8A4B00);
     final pos = p.position;
-    return ListTile(
-      leading: PlayerAvatar(player: p, radius: 18),
-      title: Row(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
         children: [
-          Flexible(child: Text(p.fullName)),
-          if (suspended) ...[
-            const SizedBox(width: 8),
-            _suspendedBadge(context, p.suspendedGames),
-          ],
-          // Verletzt/krank/Urlaub bleiben wählbar, werden aber markiert.
-          if (p.status != PlayerStatus.fit &&
-              p.status != PlayerStatus.inaktiv) ...[
-            const SizedBox(width: 6),
-            _statusBadge(context, p.status),
-          ],
+          SizedBox(
+            width: 56,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _playerPhoto(p, emoji: statusEmoji),
+                if (statusLabel != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    statusLabel,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 9,
+                      height: 1.0,
+                      fontWeight: FontWeight.w800,
+                      color: statusColor,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  p.fullName,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                if (pos != null && pos.isNotEmpty)
+                  Text(pos, style: Theme.of(context).textTheme.bodySmall),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          widget.readOnly
+              ? _statusChip(_statusOf(p))
+              : AvailabilityChoices(
+                  current: _statusOf(p),
+                  onChanged: (s) => _set(p, s),
+                ),
         ],
       ),
-      subtitle: pos == null ? null : Text(pos),
-      trailing: widget.readOnly
-          ? _statusChip(_statusOf(p))
-          : AvailabilityChoices(
-              current: _statusOf(p),
-              onChanged: (s) => _set(p, s),
+    );
+  }
+
+  /// Quadratisches Spielerfoto (abgerundete Ecken) mit optionalem Status-Icon
+  /// in der Ecke; Rückfall auf Initiale.
+  Widget _playerPhoto(Player p, {String? emoji}) {
+    final bytes = TeamLogo.decode(p.photoPath);
+    final fallback = p.lastName.isNotEmpty
+        ? p.lastName[0].toUpperCase()
+        : (p.firstName.isNotEmpty ? p.firstName[0].toUpperCase() : '?');
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox(
+            width: 44,
+            height: 44,
+            child: bytes != null
+                ? Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true)
+                : Container(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    alignment: Alignment.center,
+                    child: Text(
+                      fallback,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+          ),
+        ),
+        if (emoji != null)
+          Positioned(
+            top: -4,
+            right: -4,
+            child: Container(
+              padding: const EdgeInsets.all(1),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+              ),
+              child: Text(emoji, style: const TextStyle(fontSize: 13)),
             ),
+          ),
+      ],
     );
   }
 
@@ -275,43 +361,6 @@ class _NominationScreenState extends State<NominationScreen> {
       child: Text(
         label,
         style: TextStyle(color: c, fontWeight: FontWeight.w600, fontSize: 12),
-      ),
-    );
-  }
-
-  /// Kleines Status-Badge (Verletzt/Krank/Urlaub) – Spieler bleibt wählbar.
-  Widget _statusBadge(BuildContext context, PlayerStatus st) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFE0B2),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Text(
-        '${st.symbol} ${st.label}',
-        style: const TextStyle(
-          color: Color(0xFF8A4B00),
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
-
-  Widget _suspendedBadge(BuildContext context, int games) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.error,
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Text(
-        '⛔ Gesperrt · $games',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 10,
-          fontWeight: FontWeight.w800,
-        ),
       ),
     );
   }
