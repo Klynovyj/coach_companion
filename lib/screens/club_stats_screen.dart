@@ -104,6 +104,14 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
           return true;
       }
     }).toList();
+    // Trainer-Ansicht: nach Punkten (Trainer-Bilanz).
+    if (_view == _View.staff) {
+      list.sort((a, b) {
+        final c = b.coachPoints.compareTo(a.coachPoints);
+        return c != 0 ? c : b.coachMatches.compareTo(a.coachMatches);
+      });
+      return list;
+    }
     int cmp(PlayerClubStats a, PlayerClubStats b) {
       switch (_sort) {
         case _ClubSort.games:
@@ -233,41 +241,53 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
           const SizedBox(height: 8),
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  'Pflichtspiele beim Verein (Liga + Pokal)',
-                  style: TextStyle(fontWeight: FontWeight.w700),
+                  _view == _View.staff
+                      ? 'Trainer-Bilanz (Karriere): Sp·S·U·N·Punkte'
+                      : 'Pflichtspiele beim Verein (Liga + Pokal)',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
-              const SizedBox(width: 8),
-              const Text('Sortieren: '),
-              DropdownButton<_ClubSort>(
-                value: _sort,
-                onChanged: (v) => setState(() => _sort = v ?? _sort),
-                items: const [
-                  DropdownMenuItem(
-                    value: _ClubSort.scorer,
-                    child: Text('Scorer'),
-                  ),
-                  DropdownMenuItem(
-                    value: _ClubSort.games,
-                    child: Text('Spiele'),
-                  ),
-                  DropdownMenuItem(value: _ClubSort.goals, child: Text('Tore')),
-                  DropdownMenuItem(
-                    value: _ClubSort.assists,
-                    child: Text('Vorlagen'),
-                  ),
-                  DropdownMenuItem(value: _ClubSort.name, child: Text('Name')),
-                ],
-              ),
+              if (_view != _View.staff) ...[
+                const SizedBox(width: 8),
+                const Text('Sortieren: '),
+                DropdownButton<_ClubSort>(
+                  value: _sort,
+                  onChanged: (v) => setState(() => _sort = v ?? _sort),
+                  items: const [
+                    DropdownMenuItem(
+                      value: _ClubSort.scorer,
+                      child: Text('Scorer'),
+                    ),
+                    DropdownMenuItem(
+                      value: _ClubSort.games,
+                      child: Text('Spiele'),
+                    ),
+                    DropdownMenuItem(
+                      value: _ClubSort.goals,
+                      child: Text('Tore'),
+                    ),
+                    DropdownMenuItem(
+                      value: _ClubSort.assists,
+                      child: Text('Vorlagen'),
+                    ),
+                    DropdownMenuItem(
+                      value: _ClubSort.name,
+                      child: Text('Name'),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              'FuPa führt in der Laufbahn nur offizielle Spiele – '
-              'Freundschafts-/Testspiele sind dort nicht enthalten.',
+              _view == _View.staff
+                  ? 'Trainer-Werte über die gesamte Trainerlaufbahn (FuPa, alle Vereine).'
+                  : 'FuPa führt in der Laufbahn nur offizielle Spiele – '
+                        'Freundschafts-/Testspiele sind dort nicht enthalten.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -293,27 +313,37 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
   );
 
   Widget _headerRow() {
+    final staff = _view == _View.staff;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       child: Row(
         children: [
           const SizedBox(width: 26),
-          const Expanded(
+          Expanded(
             child: Text(
-              'Spieler',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+              staff ? 'Trainer' : 'Spieler',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
             ),
           ),
-          _num('Sp', header: true),
-          _num('⚽', header: true),
-          _num('🅰', header: true),
-          _num('Scr', header: true),
+          if (staff) ...[
+            _num('Sp', header: true),
+            _num('S', header: true),
+            _num('U', header: true),
+            _num('N', header: true),
+            _num('Pkt', header: true),
+          ] else ...[
+            _num('Sp', header: true),
+            _num('⚽', header: true),
+            _num('🅰', header: true),
+            _num('Scr', header: true),
+          ],
         ],
       ),
     );
   }
 
   Widget _row(PlayerClubStats r) {
+    final staff = _view == _View.staff;
     final t = _t(r);
     final scheme = Theme.of(context).colorScheme;
     return InkWell(
@@ -342,27 +372,45 @@ class _ClubStatsScreenState extends State<ClubStatsScreen> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
-                  if (r.spell?.sinceYear != null)
+                  if (staff)
                     Text(
-                      'beim Verein seit ${r.spell!.sinceYear} · '
-                      '${r.spell!.yearsUntil(DateTime.now().year)} J.',
+                      '${(r.player.staffRole?.isNotEmpty ?? false) ? r.player.staffRole : 'Trainer'} · Trainer-Bilanz (Karriere)',
                       style: TextStyle(
                         fontSize: 10,
                         color: scheme.onSurfaceVariant,
                       ),
-                    ),
-                  if (!r.hasFupa)
-                    Text(
-                      'keine FuPa-Daten',
-                      style: TextStyle(fontSize: 10, color: scheme.error),
-                    ),
+                    )
+                  else ...[
+                    if (r.spell?.sinceYear != null)
+                      Text(
+                        'beim Verein seit ${r.spell!.sinceYear} · '
+                        '${r.spell!.yearsUntil(DateTime.now().year)} J.',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    if (!r.hasFupa)
+                      Text(
+                        'keine FuPa-Daten',
+                        style: TextStyle(fontSize: 10, color: scheme.error),
+                      ),
+                  ],
                 ],
               ),
             ),
-            _num('${t.matches}'),
-            _num('${t.goals}'),
-            _num('${t.assists}'),
-            _num('${t.scorerPoints}', color: scheme.primary),
+            if (staff) ...[
+              _num('${r.coachMatches}'),
+              _num('${r.coachWins}'),
+              _num('${r.coachDraws}'),
+              _num('${r.coachLosses}'),
+              _num('${r.coachPoints}', color: scheme.primary),
+            ] else ...[
+              _num('${t.matches}'),
+              _num('${t.goals}'),
+              _num('${t.assists}'),
+              _num('${t.scorerPoints}', color: scheme.primary),
+            ],
           ],
         ),
       ),

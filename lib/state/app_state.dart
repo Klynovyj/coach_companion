@@ -2956,9 +2956,26 @@ class AppState extends ChangeNotifier {
         // Ohne API-IDs greifen die gespeicherten Fallbacks.
       }
     }
+    // Trainer stehen nicht in der Saison-Statistik – ihre FuPa-Profil-ID (im
+    // Slug) kommt von der Teamseite (Trainerteam). Nur laden, wenn Staff dabei.
+    final coachSlugByKey = <String, String>{};
+    if (teamUrl != null &&
+        teamUrl.isNotEmpty &&
+        players.any((p) => p.isStaff)) {
+      try {
+        for (final c in await _importer.importCoachProfiles(teamUrl)) {
+          final key =
+              '${c.firstName.trim().toLowerCase()}|${c.lastName.trim().toLowerCase()}';
+          if (c.slug.isNotEmpty) coachSlugByKey[key] = c.slug;
+        }
+      } catch (_) {
+        // Ohne Trainer-Slugs zeigen reine Trainer keine Werte.
+      }
+    }
     // Karrieren parallel laden. FuPa-SPIELER-ID: zuerst aus der Saison-Statistik
     // bzw. live-API (das ist die echte Profil-ID) – die player.external_id ist
     // die Kader-/Roster-ID und taugt NICHT für /player/…; daher nur Rückfall.
+    // Für Trainer greift der Coach-Slug von der Teamseite.
     var resolved = 0;
     String? firstErr;
     final careers = await Future.wait(
@@ -2966,6 +2983,7 @@ class AppState extends ChangeNotifier {
         final ext =
             apiExtByKey[p.dedupKey] ??
             extByKey[p.dedupKey] ??
+            coachSlugByKey[p.dedupKey] ??
             (p.externalId?.trim().isNotEmpty ?? false
                 ? p.externalId!.trim()
                 : null);
@@ -3001,11 +3019,19 @@ class AppState extends ChangeNotifier {
           isStaff: p.isStaff,
           isFieldPlayer: !p.isStaffOnly,
           spell: career?.currentClubSpell(),
+          coachMatches: career?.coachMatches ?? 0,
+          coachWins: career?.coachWins ?? 0,
+          coachDraws: career?.coachDraws ?? 0,
+          coachLosses: career?.coachLosses ?? 0,
+          coachPoints: career?.coachPoints ?? 0,
         ),
       );
     }
-    // Reine Trainer (nicht spielend) ohne FuPa-Spielerdaten weglassen.
-    out.removeWhere((r) => r.player.isStaffOnly && !r.hasFupa);
+    // Reine Trainer (nicht spielend) ohne FuPa-Daten (weder Spieler noch
+    // Trainer) weglassen.
+    out.removeWhere(
+      (r) => r.player.isStaffOnly && !r.hasFupa && !r.hasCoachData,
+    );
     final careerOk = careers.where((c) => c != null).length;
     final diag =
         'FuPa-Link: ${(teamUrl != null && teamUrl.isNotEmpty) ? 'ja' : 'nein'} · '
@@ -3894,6 +3920,13 @@ class PlayerClubStats {
   final bool isFieldPlayer; // ist (auch) Feldspieler
   final FupaClubSpell? spell; // ununterbrochener Vereins-Lauf (seit wann)
 
+  // Trainer-Bilanz (Karriere) – für die Trainer-Ansicht.
+  final int coachMatches;
+  final int coachWins;
+  final int coachDraws;
+  final int coachLosses;
+  final int coachPoints;
+
   const PlayerClubStats({
     required this.player,
     required this.all,
@@ -3903,7 +3936,14 @@ class PlayerClubStats {
     this.isStaff = false,
     this.isFieldPlayer = true,
     this.spell,
+    this.coachMatches = 0,
+    this.coachWins = 0,
+    this.coachDraws = 0,
+    this.coachLosses = 0,
+    this.coachPoints = 0,
   });
+
+  bool get hasCoachData => coachMatches > 0;
 }
 
 class PlayerCardSummary {

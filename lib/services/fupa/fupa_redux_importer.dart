@@ -75,6 +75,12 @@ class FupaReduxImporter {
       r'(\d+) Gelb, (\d+) Gelb-Rot, (\d+) Rot, (\d+) Elf',
     ).firstMatch(html);
 
+    // Trainer-Bilanz (falls die Person auch Trainer ist).
+    final coach = RegExp(
+      r'Bilanz:\s*(\d+) Spiele, (\d+) Siege, (\d+) Remis, '
+      r'(\d+) Niederlagen, (\d+) Punkte',
+    ).firstMatch(html);
+
     // Stationen: Team-Slug + Vereinsname + Wettbewerb + Spiele/Tore/Assists.
     // Jede Station verlinkt ihr Team; direkt darauf folgen die drei Werte.
     final stationRe = RegExp(
@@ -108,7 +114,34 @@ class FupaReduxImporter {
       totalYellowRed: bil == null ? 0 : toInt(bil.group(5)),
       totalRed: bil == null ? 0 : toInt(bil.group(6)),
       totalTopEleven: bil == null ? 0 : toInt(bil.group(7)),
+      coachMatches: coach == null ? 0 : toInt(coach.group(1)),
+      coachWins: coach == null ? 0 : toInt(coach.group(2)),
+      coachDraws: coach == null ? 0 : toInt(coach.group(3)),
+      coachLosses: coach == null ? 0 : toInt(coach.group(4)),
+      coachPoints: coach == null ? 0 : toInt(coach.group(5)),
     );
+  }
+
+  /// Lädt die Teamseite und liefert das Trainerteam (Name + FuPa-Slug), damit
+  /// deren FuPa-Profil (inkl. Trainer-Bilanz) abgerufen werden kann. Der Slug
+  /// enthält die Profil-ID (z.B. `jan-niklas-ped-245595`).
+  Future<List<({String firstName, String lastName, String slug})>>
+  importCoachProfiles(String teamUrl) async {
+    final trimmed = teamUrl.trim();
+    if (!isTeamUrl(trimmed)) return const [];
+    final redux = _extractRedux(await _fetchHtml(trimmed));
+    final out = <({String firstName, String lastName, String slug})>[];
+    for (final raw in _extractCoaches(redux)) {
+      if (raw is! Map) continue;
+      if (raw['isDeactivated'] == true) continue;
+      final slug = (raw['slug'] as String?)?.trim();
+      final first = (raw['firstName'] as String?)?.trim() ?? '';
+      final last = (raw['lastName'] as String?)?.trim() ?? '';
+      if (slug == null || slug.isEmpty) continue;
+      if (first.isEmpty && last.isEmpty) continue;
+      out.add((firstName: first, lastName: last, slug: slug));
+    }
+    return out;
   }
 
   /// Vereins-Slug (z.B. `garather-sv`) aus einer FuPa-Team-URL – also der

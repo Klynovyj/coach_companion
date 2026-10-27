@@ -173,6 +173,13 @@ class FupaCareer {
   final int totalRed;
   final int totalTopEleven;
 
+  // Trainer-Bilanz (Karriere) – nur gesetzt, wenn die Person auch Trainer ist.
+  final int coachMatches;
+  final int coachWins;
+  final int coachDraws;
+  final int coachLosses;
+  final int coachPoints;
+
   const FupaCareer({
     this.stations = const [],
     this.totalMatches = 0,
@@ -182,7 +189,14 @@ class FupaCareer {
     this.totalYellowRed = 0,
     this.totalRed = 0,
     this.totalTopEleven = 0,
+    this.coachMatches = 0,
+    this.coachWins = 0,
+    this.coachDraws = 0,
+    this.coachLosses = 0,
+    this.coachPoints = 0,
   });
+
+  bool get hasCoachData => coachMatches > 0;
 
   static String _clubBase(String teamSlug) {
     final m = RegExp(r'^(.*?)-m\d+').firstMatch(teamSlug);
