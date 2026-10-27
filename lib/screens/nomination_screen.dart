@@ -215,6 +215,12 @@ class _NominationScreenState extends State<NominationScreen> {
             const SizedBox(width: 8),
             _suspendedBadge(context, p.suspendedGames),
           ],
+          // Verletzt/krank/Urlaub bleiben wählbar, werden aber markiert.
+          if (p.status != PlayerStatus.fit &&
+              p.status != PlayerStatus.inaktiv) ...[
+            const SizedBox(width: 6),
+            _statusBadge(context, p.status),
+          ],
         ],
       ),
       subtitle: pos == null ? null : Text(pos),
@@ -269,6 +275,25 @@ class _NominationScreenState extends State<NominationScreen> {
       child: Text(
         label,
         style: TextStyle(color: c, fontWeight: FontWeight.w600, fontSize: 12),
+      ),
+    );
+  }
+
+  /// Kleines Status-Badge (Verletzt/Krank/Urlaub) – Spieler bleibt wählbar.
+  Widget _statusBadge(BuildContext context, PlayerStatus st) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE0B2),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Text(
+        '${st.symbol} ${st.label}',
+        style: const TextStyle(
+          color: Color(0xFF8A4B00),
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
