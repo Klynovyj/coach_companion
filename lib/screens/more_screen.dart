@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
@@ -119,8 +120,29 @@ class MoreScreen extends StatelessWidget {
             screen: const SettingsScreen(),
           ),
           const SizedBox(height: 16),
+          _versionFooter(context),
+          const SizedBox(height: 16),
         ],
       ),
+    );
+  }
+
+  /// Versionsanzeige unten im Menü (aus dem App-Paket).
+  Widget _versionFooter(BuildContext context) {
+    return FutureBuilder<PackageInfo>(
+      future: PackageInfo.fromPlatform(),
+      builder: (context, snap) {
+        final info = snap.data;
+        final text = info == null
+            ? ''
+            : 'myCoach · Version ${info.version} (${info.buildNumber})';
+        return Center(
+          child: Text(
+            text,
+            style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
+          ),
+        );
+      },
     );
   }
 
