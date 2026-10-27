@@ -59,8 +59,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     final state = context.read<AppState>();
     // Inaktive Spieler und das Trainerteam fliegen raus.
     final players = (await state.playersOf(widget.teamId))
-        .where((p) =>
-            p.active && p.status != PlayerStatus.inaktiv && !p.isStaff)
+        .where(
+          (p) => p.active && p.status != PlayerStatus.inaktiv && !p.isStaff,
+        )
         .toList();
     final config = await state.materialDutyConfig(widget.teamId);
     final vac = await state.materialDutyVacations(widget.teamId);
@@ -78,26 +79,28 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
   List<List<Player>> get _groups =>
       buildGroups(_sorted, overrides: _config!.overrides);
   List<ScheduleEntry> get _schedule => buildSchedule(
-        weeks: listWeeks(_config!.printFrom, _config!.printTo),
-        groups: _groups,
-        rotationStart: _config!.rotationStart,
-        vacations: _vacations,
-        startGroup: _config!.startGroupIndex,
-      );
+    weeks: listWeeks(_config!.printFrom, _config!.printTo),
+    groups: _groups,
+    rotationStart: _config!.rotationStart,
+    vacations: _vacations,
+    startGroup: _config!.startGroupIndex,
+  );
 
   int get _currentGroupIdx {
     final groups = _groups;
     if (groups.isEmpty) return 0;
     return groupIndexForWeek(
-        startOfIsoWeek(DateTime.now()), _config!.rotationStart, groups.length,
-        startGroup: _config!.startGroupIndex);
+      startOfIsoWeek(DateTime.now()),
+      _config!.rotationStart,
+      groups.length,
+      startGroup: _config!.startGroupIndex,
+    );
   }
 
-  Player? _byId(String id) =>
-      _players.where((p) => p.id == id).cast<Player?>().firstWhere(
-            (p) => p != null,
-            orElse: () => null,
-          );
+  Player? _byId(String id) => _players
+      .where((p) => p.id == id)
+      .cast<Player?>()
+      .firstWhere((p) => p != null, orElse: () => null);
 
   Future<void> _saveConfig(MaterialDutyConfig c) async {
     setState(() => _config = c);
@@ -105,8 +108,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
   }
 
   void _setOverride(String playerId, int? groupIndex) {
-    final others =
-        _config!.overrides.where((o) => o.playerId != playerId).toList();
+    final others = _config!.overrides
+        .where((o) => o.playerId != playerId)
+        .toList();
     if (groupIndex != null) others.add(DutyOverride(playerId, groupIndex));
     _saveConfig(_config!.copyWith(overrides: others));
   }
@@ -127,8 +131,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     final key = _weekKey(monday);
     final selected = {...(_config!.extras[key] ?? const <String>[])};
     final all = [..._players]
-      ..sort((a, b) =>
-          a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()));
+      ..sort(
+        (a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+      );
     final result = await showModalBottomSheet<Set<String>>(
       context: context,
       isScrollControlled: true,
@@ -146,9 +151,12 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
                     child: Text(
-                        'Zusätzlich (Strafe) · KW ${isoWeek(monday).week}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 16)),
+                      'Zusätzlich (Strafe) · KW ${isoWeek(monday).week}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
                   ),
                   const Divider(height: 1),
                   Flexible(
@@ -236,8 +244,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
           ],
           bottom: TabBar(
             labelColor: Theme.of(context).colorScheme.onPrimary,
-            unselectedLabelColor:
-                Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.7),
+            unselectedLabelColor: Theme.of(
+              context,
+            ).colorScheme.onPrimary.withValues(alpha: 0.7),
             indicatorColor: Theme.of(context).colorScheme.onPrimary,
             indicatorWeight: 3,
             tabs: const [
@@ -248,11 +257,7 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
           ),
         ),
         body: TabBarView(
-          children: [
-            _groupsTab(),
-            _scheduleTab(),
-            _settingsTab(),
-          ],
+          children: [_groupsTab(), _scheduleTab(), _settingsTab()],
         ),
       ),
     );
@@ -279,8 +284,10 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
                   child: Text(
                     '$missingBirth Spieler ohne Geburtsdatum stehen hinten – '
                     'Datum im Spielerprofil nachtragen.',
-                    style:
-                        TextStyle(fontSize: 12.5, color: Colors.orange.shade800),
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      color: Colors.orange.shade800,
+                    ),
                   ),
                 ),
               for (var g = 0; g < groups.length; g++)
@@ -329,23 +336,32 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
               children: [
                 Icon(Icons.today, color: scheme.primary, size: 20),
                 const SizedBox(width: 6),
-                Text('Diese Woche · KW ${entry.week}',
-                    style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.primary,
-                        fontSize: 15)),
+                Text(
+                  'Diese Woche · KW ${entry.week}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: scheme.primary,
+                    fontSize: 15,
+                  ),
+                ),
                 const Spacer(),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
-                      color: scheme.primary,
-                      borderRadius: BorderRadius.circular(8)),
-                  child: Text('Gruppe ${idx + 1}',
-                      style: TextStyle(
-                          color: scheme.onPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12)),
+                    color: scheme.primary,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    'Gruppe ${idx + 1}',
+                    style: TextStyle(
+                      color: scheme.onPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -355,29 +371,36 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
               runSpacing: 2,
               children: [
                 for (final p in members)
-                  Text(p.fullName,
-                      style: TextStyle(
-                        decoration: vac.contains(p.id)
-                            ? TextDecoration.lineThrough
-                            : null,
-                        color: vac.contains(p.id) ? Colors.red : null,
-                      )),
+                  Text(
+                    p.fullName,
+                    style: TextStyle(
+                      decoration: vac.contains(p.id)
+                          ? TextDecoration.lineThrough
+                          : null,
+                      color: vac.contains(p.id) ? Colors.red : null,
+                    ),
+                  ),
               ],
             ),
             if (extras.isNotEmpty) ...[
               const SizedBox(height: 8),
-              Text('Zusätzlich (Strafe):',
-                  style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.red.shade700)),
+              Text(
+                'Zusätzlich (Strafe):',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red.shade700,
+                ),
+              ),
               Wrap(
                 spacing: 10,
                 runSpacing: 2,
                 children: [
                   for (final p in extras)
-                    Text(p.fullName,
-                        style: TextStyle(color: Colors.red.shade700)),
+                    Text(
+                      p.fullName,
+                      style: TextStyle(color: Colors.red.shade700),
+                    ),
                 ],
               ),
             ],
@@ -387,9 +410,11 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
               child: OutlinedButton.icon(
                 onPressed: () => _editExtras(mon),
                 icon: const Icon(Icons.person_add_alt, size: 18),
-                label: Text(extras.isEmpty
-                    ? 'Zusätzlich einteilen'
-                    : 'Zusätzlich einteilen (${extras.length})'),
+                label: Text(
+                  extras.isEmpty
+                      ? 'Zusätzlich einteilen'
+                      : 'Zusätzlich einteilen (${extras.length})',
+                ),
               ),
             ),
             const SizedBox(height: 8),
@@ -410,16 +435,17 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
   /// Baut die WhatsApp-Meldung für eine Woche (Format wie vom Nutzer gewünscht:
   /// Anrede, Einleitung, GRUPPE N, dann „Nachname, Vorname" je Zeile).
   String _weekMessage(ScheduleEntry e, List<Player> members) {
-    final isCurrent =
-        e.monday.isAtSameMomentAs(startOfIsoWeek(DateTime.now()));
+    final isCurrent = e.monday.isAtSameMomentAs(startOfIsoWeek(DateTime.now()));
     final when = isCurrent
         ? 'diese Woche'
         : 'KW ${e.week} (${_dShort.format(e.monday)}–${_dShort.format(e.sunday)})';
     final b = StringBuffer();
     b.writeln('Guten Morgen zusammen,');
     b.writeln('');
-    b.writeln('für $when sind die folgenden Spieler für den Ball- und '
-        'Materialdienst eingeteilt:');
+    b.writeln(
+      'für $when sind die folgenden Spieler für den Ball- und '
+      'Materialdienst eingeteilt:',
+    );
     b.writeln('_');
     b.writeln('GRUPPE ${e.groupIdx + 1}');
     for (final p in members) {
@@ -445,8 +471,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
   Future<void> _sendWeek(ScheduleEntry e, List<Player> members) async {
     final ok = await shareViaWhatsApp(_weekMessage(e, members));
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Teilen nicht möglich.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Teilen nicht möglich.')));
     }
   }
 
@@ -457,7 +484,8 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
       shape: onDuty
           ? RoundedRectangleBorder(
               side: BorderSide(color: scheme.primary, width: 2),
-              borderRadius: BorderRadius.circular(12))
+              borderRadius: BorderRadius.circular(12),
+            )
           : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -466,26 +494,37 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 12, 4),
             child: Row(
               children: [
-                Text('Gruppe ${index + 1}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 16)),
+                Text(
+                  'Gruppe ${index + 1}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
                 const SizedBox(width: 8),
-                Text('(${members.length})',
-                    style: TextStyle(color: Colors.grey.shade600)),
+                Text(
+                  '(${members.length})',
+                  style: TextStyle(color: Colors.grey.shade600),
+                ),
                 if (onDuty) ...[
                   const Spacer(),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
                     decoration: BoxDecoration(
                       color: scheme.primary,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text('Diese Woche',
-                        style: TextStyle(
-                            color: scheme.onPrimary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold)),
+                    child: Text(
+                      'Diese Woche',
+                      style: TextStyle(
+                        color: scheme.onPrimary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                   ),
                 ],
               ],
@@ -513,16 +552,20 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
       subtitle: Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: PopupMenuButton<int>(
         tooltip: 'In Gruppe verschieben',
-        icon: Icon(isFixed ? Icons.push_pin : Icons.more_vert,
-            size: 18, color: isFixed ? Theme.of(context).colorScheme.primary : null),
+        icon: Icon(
+          isFixed ? Icons.push_pin : Icons.more_vert,
+          size: 18,
+          color: isFixed ? Theme.of(context).colorScheme.primary : null,
+        ),
         onSelected: (v) => _setOverride(p.id, v < 0 ? null : v),
         itemBuilder: (context) => [
           const PopupMenuItem(value: -1, child: Text('Automatisch zuteilen')),
           for (var g = 0; g < _groups.length; g++)
             PopupMenuItem(
-                value: g,
-                enabled: g != groupIndex || !isFixed,
-                child: Text('Fest in Gruppe ${g + 1}')),
+              value: g,
+              enabled: g != groupIndex || !isFixed,
+              child: Text('Fest in Gruppe ${g + 1}'),
+            ),
         ],
       ),
     );
@@ -536,8 +579,10 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text('Kein Zeitraum gewählt.\nUnter „Einstellungen" einstellen.',
-              textAlign: TextAlign.center),
+          child: Text(
+            'Kein Zeitraum gewählt.\nUnter „Einstellungen" einstellen.',
+            textAlign: TextAlign.center,
+          ),
         ),
       );
     }
@@ -549,8 +594,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
       itemBuilder: (context, i) {
         final e = schedule[i];
         final isCurrent = e.monday.isAtSameMomentAs(thisMonday);
-        final members =
-            e.groupIdx < groups.length ? groups[e.groupIdx] : <Player>[];
+        final members = e.groupIdx < groups.length
+            ? groups[e.groupIdx]
+            : <Player>[];
         return _weekCard(e, members, isCurrent);
       },
     );
@@ -564,7 +610,8 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
       shape: isCurrent
           ? RoundedRectangleBorder(
               side: BorderSide(color: scheme.primary, width: 2),
-              borderRadius: BorderRadius.circular(12))
+              borderRadius: BorderRadius.circular(12),
+            )
           : null,
       child: Padding(
         padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
@@ -573,25 +620,36 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
           children: [
             Row(
               children: [
-                Text('KW ${e.week}',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 15)),
+                Text(
+                  'KW ${e.week}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15,
+                  ),
+                ),
                 const SizedBox(width: 8),
-                Text('${_dShort.format(e.monday)}–${_dShort.format(e.sunday)}',
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                Text(
+                  '${_dShort.format(e.monday)}–${_dShort.format(e.sunday)}',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+                ),
                 const Spacer(),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: scheme.primary.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text('Gruppe ${e.groupIdx + 1}',
-                      style: TextStyle(
-                          color: scheme.primary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12)),
+                  child: Text(
+                    'Gruppe ${e.groupIdx + 1}',
+                    style: TextStyle(
+                      color: scheme.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.person_add_alt, size: 18),
@@ -640,9 +698,10 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
                   'Zusätzlich (Strafe): '
                   '${_extrasFor(e.monday).map((p) => p.fullName).join(', ')}',
                   style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.red.shade700),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.red.shade700,
+                  ),
                 ),
               ),
           ],
@@ -657,9 +716,14 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
       children: [
-        _dateRow('Rotations-Start', c.rotationStart, (d) {
-          _saveConfig(c.copyWith(rotationStart: d));
-        }, help: 'Bezugswoche, ab der gezählt wird.'),
+        _dateRow(
+          'Rotations-Start',
+          c.rotationStart,
+          (d) {
+            _saveConfig(c.copyWith(rotationStart: d));
+          },
+          help: 'Bezugswoche, ab der gezählt wird.',
+        ),
         const SizedBox(height: 16),
         _startGroupRow(),
         const SizedBox(height: 16),
@@ -680,7 +744,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
           OutlinedButton.icon(
             onPressed: () => _saveConfig(c.copyWith(overrides: const [])),
             icon: const Icon(Icons.restart_alt),
-            label: Text('Feste Zuteilungen zurücksetzen (${c.overrides.length})'),
+            label: Text(
+              'Feste Zuteilungen zurücksetzen (${c.overrides.length})',
+            ),
           ),
       ],
     );
@@ -726,8 +792,12 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     );
   }
 
-  Widget _dateRow(String label, DateTime value, ValueChanged<DateTime> onPick,
-      {String? help}) {
+  Widget _dateRow(
+    String label,
+    DateTime value,
+    ValueChanged<DateTime> onPick, {
+    String? help,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -755,8 +825,10 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
         if (help != null)
           Padding(
             padding: const EdgeInsets.only(top: 4, left: 4),
-            child: Text(help,
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+            child: Text(
+              help,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
           ),
       ],
     );
@@ -789,8 +861,9 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
             ListTile(
               leading: const Icon(Icons.list_alt),
               title: const Text('Kompletter Plan'),
-              subtitle:
-                  const Text('Diese Woche + Gruppen + nächste Wochen + Regeln'),
+              subtitle: const Text(
+                'Diese Woche + Gruppen + nächste Wochen + Regeln',
+              ),
               onTap: () => Navigator.pop(context, 'full'),
             ),
           ],
@@ -801,24 +874,26 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     final text = choice == 'groups' ? _groupsMessage() : _fullMessage();
     final ok = await shareViaWhatsApp(text);
     if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Teilen nicht möglich.')));
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Teilen nicht möglich.')));
     }
   }
 
   /// Nur die Gruppen-Einteilung als Info (ohne Wochenplan).
+  /// WhatsApp-Formatierung: *fett* für Titel und Gruppen-Label.
   String _groupsMessage() {
     final groups = _groups;
     final b = StringBuffer();
-    b.writeln('Ball-/Materialdienst – ${widget.teamName}');
-    b.writeln('Gruppen:');
+    b.writeln('⚽ *Ball-/Materialdienst – ${widget.teamName}*');
     for (var g = 0; g < groups.length; g++) {
-      b.writeln('Gruppe ${g + 1}: '
-          '${groups[g].map((p) => p.fullName).join(', ')}');
+      b.writeln('');
+      b.writeln('*Gruppe ${g + 1}:*');
+      b.writeln(groups[g].map((p) => p.fullName).join(', '));
     }
     if (_config!.rules.trim().isNotEmpty) {
       b.writeln('');
-      b.writeln('Regeln: ${_config!.rules.trim()}');
+      b.writeln('*Regeln:* ${_config!.rules.trim()}');
     }
     return b.toString().trim();
   }
@@ -828,28 +903,32 @@ class _MaterialDutyScreenState extends State<MaterialDutyScreen> {
     final groups = _groups;
     final schedule = _schedule;
     final b = StringBuffer();
-    b.writeln('Ball-/Materialdienst – ${widget.teamName}');
-    b.writeln('Diese Woche: Gruppe ${_currentGroupIdx + 1}');
-    b.writeln('');
+    b.writeln('⚽ *Ball-/Materialdienst – ${widget.teamName}*');
+    b.writeln('Diese Woche: *Gruppe ${_currentGroupIdx + 1}*');
     for (var g = 0; g < groups.length; g++) {
-      b.writeln('Gruppe ${g + 1}: '
-          '${groups[g].map((p) => p.fullName).join(', ')}');
+      b.writeln('');
+      b.writeln('*Gruppe ${g + 1}:*');
+      b.writeln(groups[g].map((p) => p.fullName).join(', '));
     }
     // Nächste Wochen ab heute (max. 8).
     final thisMonday = startOfIsoWeek(DateTime.now());
-    final upcoming =
-        schedule.where((e) => !e.monday.isBefore(thisMonday)).take(8).toList();
+    final upcoming = schedule
+        .where((e) => !e.monday.isBefore(thisMonday))
+        .take(8)
+        .toList();
     if (upcoming.isNotEmpty) {
       b.writeln('');
-      b.writeln('Nächste Wochen:');
+      b.writeln('*Nächste Wochen:*');
       for (final e in upcoming) {
-        b.writeln('KW ${e.week} (${_dShort.format(e.monday)}'
-            '–${_dShort.format(e.sunday)}): Gruppe ${e.groupIdx + 1}');
+        b.writeln(
+          'KW ${e.week} (${_dShort.format(e.monday)}'
+          '–${_dShort.format(e.sunday)}): Gruppe ${e.groupIdx + 1}',
+        );
       }
     }
     if (_config!.rules.trim().isNotEmpty) {
       b.writeln('');
-      b.writeln('Regeln: ${_config!.rules.trim()}');
+      b.writeln('*Regeln:* ${_config!.rules.trim()}');
     }
     return b.toString().trim();
   }
