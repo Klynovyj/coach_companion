@@ -129,6 +129,140 @@ class PlayerStatData {
   });
 }
 
+/// Eine Station der FuPa-Laufbahn (eine Saison bei einem Team/Verein).
+/// FuPa liefert je Station nur Spiele/Tore/Assists (keine Karten/Minuten).
+class FupaCareerStation {
+  /// Team-Slug der Station (z.B. `garather-sv-m1-2025-26`).
+  final String teamSlug;
+  final String clubName;
+  final String competition;
+  final int matches;
+  final int goals;
+  final int assists;
+
+  const FupaCareerStation({
+    required this.teamSlug,
+    required this.clubName,
+    required this.competition,
+    this.matches = 0,
+    this.goals = 0,
+    this.assists = 0,
+  });
+
+  int get scorerPoints => goals + assists;
+
+  /// Pflichtspiel-Wettbewerb? Liga und Pokal zählen als Pflicht;
+  /// Freundschafts-/Testspiele (und Vorbereitung) nicht.
+  bool get isCompetitive {
+    final c = competition.toLowerCase();
+    return !(c.contains('freund') ||
+        c.contains('test') ||
+        c.contains('vorbereit'));
+  }
+}
+
+/// Die komplette FuPa-Laufbahn eines Spielers: Gesamt-Bilanz (über alle
+/// Vereine) + einzelne Stationen je Saison.
+class FupaCareer {
+  final List<FupaCareerStation> stations;
+  final int totalMatches;
+  final int totalGoals;
+  final int totalAssists;
+  final int totalYellow;
+  final int totalYellowRed;
+  final int totalRed;
+  final int totalTopEleven;
+
+  const FupaCareer({
+    this.stations = const [],
+    this.totalMatches = 0,
+    this.totalGoals = 0,
+    this.totalAssists = 0,
+    this.totalYellow = 0,
+    this.totalYellowRed = 0,
+    this.totalRed = 0,
+    this.totalTopEleven = 0,
+  });
+
+  /// Summiert die Stationen **eines Vereins** (alle Saisons dort) zu
+  /// Spiele/Tore/Vorlagen. Ein Verein wird am [clubSlug] (Vereins-Slug ohne
+  /// Team-/Saison-Suffix) erkannt; [clubName] dient als Rückfall.
+  FupaClubTotal clubTotal({
+    String? clubSlug,
+    String? clubName,
+    bool pflichtOnly = false,
+  }) {
+    final slug = clubSlug?.trim().toLowerCase();
+    final nameL = clubName?.trim().toLowerCase();
+    var matches = 0, goals = 0, assists = 0, seasons = 0;
+    String? name = clubName;
+    for (final s in stations) {
+      if (pflichtOnly && !s.isCompetitive) continue;
+      final bySlug =
+          slug != null &&
+          slug.isNotEmpty &&
+          (s.teamSlug == slug || s.teamSlug.startsWith('$slug-'));
+      final byName =
+          nameL != null &&
+          nameL.isNotEmpty &&
+          s.clubName.trim().toLowerCase() == nameL;
+      if (bySlug || byName) {
+        matches += s.matches;
+        goals += s.goals;
+        assists += s.assists;
+        seasons++;
+        name ??= s.clubName;
+      }
+    }
+    return FupaClubTotal(
+      clubName: name ?? clubName ?? '',
+      seasons: seasons,
+      matches: matches,
+      goals: goals,
+      assists: assists,
+    );
+  }
+}
+
+/// Vereins-Gesamtwerte eines Spielers aus der FuPa-Laufbahn (alle Saisons bei
+/// genau diesem Verein).
+class FupaClubTotal {
+  final String clubName;
+  final int seasons;
+  final int matches;
+  final int goals;
+  final int assists;
+
+  const FupaClubTotal({
+    this.clubName = '',
+    this.seasons = 0,
+    this.matches = 0,
+    this.goals = 0,
+    this.assists = 0,
+  });
+
+  int get scorerPoints => goals + assists;
+  bool get hasAny => matches > 0 || goals > 0 || assists > 0;
+}
+
+/// Bündelt die FuPa-Laufbahn eines Spielers mit dem aufgelösten Verein, damit
+/// die UI die Vereins-Gesamtwerte live umschalten kann (alle Spiele vs. nur
+/// Pflichtspiele), ohne erneut zu laden.
+class FupaClubCareer {
+  final FupaCareer career;
+  final String? clubSlug;
+  final String? clubName;
+
+  const FupaClubCareer({required this.career, this.clubSlug, this.clubName});
+
+  /// Vereins-Gesamtwerte; [pflichtOnly] schließt Freundschafts-/Testspiele aus.
+  FupaClubTotal total({bool pflichtOnly = false}) => career.clubTotal(
+    clubSlug: clubSlug,
+    clubName: clubName,
+    pflichtOnly: pflichtOnly,
+  );
+}
+
 /// Ergebnis eines Gegner-Sync-Vorgangs (für Statusmeldungen in der UI).
 class ImportResult {
   final ImportStatus status;

@@ -13,6 +13,7 @@ import '../models/graphic_settings.dart';
 import '../models/player.dart';
 import '../models/player_stat.dart';
 import '../models/sponsor.dart';
+import '../services/fupa/fupa_dtos.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
@@ -101,6 +102,7 @@ class _PlayerOfMonthGraphicScreenState
   PlayerMonthStats _month = const PlayerMonthStats();
   PlayerMonthStats _total = const PlayerMonthStats();
   PlayerStat? _fupa;
+  FupaClubCareer? _fupaCareer; // FuPa-Laufbahn + aufgelöster Verein
   GraphicSettings _settings = const GraphicSettings(id: 'local');
 
   // Anlass (Eyebrow) + Untertitel – editierbar.
@@ -116,6 +118,16 @@ class _PlayerOfMonthGraphicScreenState
   late bool _showMonth = _hasMonth; // meine Monatsdaten (live getrackt)
   late bool _showTotal = !_hasMonth; // Gesamt (alle getrackten Spiele)
   bool _showFupa = true; // FuPa-Saison
+  late bool _showFupaClub = !_hasMonth; // FuPa gesamt (Verein)
+  bool _fupaClubPflicht = true; // nur Pflichtspiele (Pokal zählt)
+
+  /// Vereins-Gesamtwerte entsprechend dem Pflichtspiel-Schalter; null ohne Daten.
+  FupaClubTotal? get _fupaClub {
+    final c = _fupaCareer;
+    if (c == null) return null;
+    final t = c.total(pflichtOnly: _fupaClubPflicht);
+    return t.hasAny ? t : null;
+  }
 
   // Spieler (lokal veränderbar – z.B. neues Foto) und editierbarer Text.
   late Player _player = widget.player;
@@ -156,6 +168,10 @@ class _PlayerOfMonthGraphicScreenState
       widget.player.teamId,
       widget.player.dedupKey,
     );
+    final fupaCareer = await state.playerFupaClub(
+      widget.player.teamId,
+      widget.player,
+    );
     if (!mounted) return;
     setState(() {
       _sponsors = sponsors;
@@ -163,6 +179,7 @@ class _PlayerOfMonthGraphicScreenState
       _month = month;
       _total = total;
       _fupa = fupa;
+      _fupaCareer = fupaCareer;
       _loading = false;
     });
   }
@@ -497,6 +514,47 @@ class _PlayerOfMonthGraphicScreenState
                       setSheet(() {});
                     },
                   ),
+                  if (_fupaCareer != null) ...[
+                    Builder(
+                      builder: (_) {
+                        final club = _fupaCareer!.total(
+                          pflichtOnly: _fupaClubPflicht,
+                        );
+                        return SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(
+                            'FuPa gesamt (${club.clubName.isEmpty ? 'Verein' : club.clubName})',
+                          ),
+                          subtitle: Text(
+                            '${_fupaClubPflicht ? 'Nur Pflichtspiele' : 'Alle Spiele'}: '
+                            '${club.matches} Spiele, ${club.goals} Tore, '
+                            '${club.assists} Vorlagen',
+                          ),
+                          value: _showFupaClub,
+                          onChanged: (v) {
+                            setState(() => _showFupaClub = v);
+                            setSheet(() {});
+                          },
+                        );
+                      },
+                    ),
+                    if (_showFupaClub)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Nur Pflichtspiele'),
+                          subtitle: const Text(
+                            'Freundschafts-/Testspiele ausschließen (Pokal zählt)',
+                          ),
+                          value: _fupaClubPflicht,
+                          onChanged: (v) {
+                            setState(() => _fupaClubPflicht = v);
+                            setSheet(() {});
+                          },
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -729,11 +787,13 @@ class _PlayerOfMonthGraphicScreenState
             month: _month,
             total: _total,
             fupa: _fupa,
+            fupaClub: _fupaClub,
             barSponsors: _barSponsors,
             showRating: _showRating,
             showMonth: _showMonth,
             showTotal: _showTotal,
             showFupa: _showFupa,
+            showFupaClub: _showFupaClub,
           )
         : _SocialGraphic(
             player: _player,
@@ -746,6 +806,7 @@ class _PlayerOfMonthGraphicScreenState
             month: _month,
             total: _total,
             fupa: _fupa,
+            fupaClub: _fupaClub,
             barSponsors: _barSponsors,
             gradTop: _hex(_settings.gradTop),
             gradBottom: _hex(_settings.gradBottom),
@@ -755,6 +816,7 @@ class _PlayerOfMonthGraphicScreenState
             showMonth: _showMonth,
             showTotal: _showTotal,
             showFupa: _showFupa,
+            showFupaClub: _showFupaClub,
             compact: _fmt == _Fmt.post,
           );
     return Scaffold(
@@ -965,6 +1027,7 @@ class _SocialGraphic extends StatelessWidget {
     required this.month,
     required this.total,
     required this.fupa,
+    required this.fupaClub,
     required this.barSponsors,
     required this.gradTop,
     required this.gradBottom,
@@ -974,6 +1037,7 @@ class _SocialGraphic extends StatelessWidget {
     required this.showMonth,
     required this.showTotal,
     required this.showFupa,
+    required this.showFupaClub,
     required this.compact,
   });
 
@@ -987,6 +1051,7 @@ class _SocialGraphic extends StatelessWidget {
   final PlayerMonthStats month;
   final PlayerMonthStats total;
   final PlayerStat? fupa;
+  final FupaClubTotal? fupaClub;
   final List<Sponsor> barSponsors;
   final Color gradTop;
   final Color gradBottom;
@@ -996,6 +1061,7 @@ class _SocialGraphic extends StatelessWidget {
   final bool showMonth;
   final bool showTotal;
   final bool showFupa;
+  final bool showFupaClub;
   final bool compact;
 
   @override
@@ -1213,11 +1279,21 @@ class _SocialGraphic extends StatelessWidget {
       add('${f.minutes}', 'Min. S.');
       if (f.topEleven > 0) add('${f.topEleven}', '⭐ Top11');
     }
+    final fc = fupaClub;
+    final clubShown = showFupaClub && fc != null && fc.hasAny;
+    if (clubShown) {
+      add('${fc.matches}', 'Spiele V.');
+      add('${fc.goals}', 'Tore V.');
+      add('${fc.assists}', 'Vorl. V.');
+      add('${fc.scorerPoints}', 'Scorer V.');
+    }
     if (tiles.isEmpty) return const SizedBox.shrink();
     final legend = [
       if (monthShown) 'M. = Monat',
       if (totalShown) 'G. = Gesamt',
       if (fupaShown) 'S. = Saison (FuPa)',
+      if (clubShown)
+        'V. = ${fc.clubName.isEmpty ? 'Verein' : fc.clubName} gesamt (FuPa)',
     ].join(' · ');
     return Column(
       children: [
@@ -1280,11 +1356,13 @@ class _UrkundeGraphic extends StatelessWidget {
     required this.month,
     required this.total,
     required this.fupa,
+    required this.fupaClub,
     required this.barSponsors,
     required this.showRating,
     required this.showMonth,
     required this.showTotal,
     required this.showFupa,
+    required this.showFupaClub,
   });
 
   final Player player;
@@ -1298,13 +1376,17 @@ class _UrkundeGraphic extends StatelessWidget {
   final PlayerMonthStats month;
   final PlayerMonthStats total;
   final PlayerStat? fupa;
+  final FupaClubTotal? fupaClub;
   final List<Sponsor> barSponsors;
   final bool showRating;
   final bool showMonth;
   final bool showTotal;
   final bool showFupa;
+  final bool showFupaClub;
 
   static const _line = Color(0xFFE7E3D8);
+
+  bool get _clubShown => showFupaClub && fupaClub != null && fupaClub!.hasAny;
 
   @override
   Widget build(BuildContext context) {
@@ -1422,7 +1504,7 @@ class _UrkundeGraphic extends StatelessWidget {
           const SizedBox(height: 14),
           Center(child: _notePill()),
         ],
-        if (showMonth || showTotal || showFupa) ...[
+        if (showMonth || showTotal || showFupa || _clubShown) ...[
           const SizedBox(height: 16),
           _statsBlock(),
         ],
@@ -1538,11 +1620,24 @@ class _UrkundeGraphic extends StatelessWidget {
       if ((f?.topEleven ?? 0) > 0) ('⭐ Top11', '${f!.topEleven}'),
     ];
 
-    // Nur die aktivierten Quellen – eine bis drei Spalten nebeneinander.
+    final fc = fupaClub;
+    final clubRows = <(String, String)>[
+      ('Spiele', '${fc?.matches ?? 0}'),
+      ('Tore', '${fc?.goals ?? 0}'),
+      ('Vorlagen', '${fc?.assists ?? 0}'),
+      ('Scorerpunkte', '${fc?.scorerPoints ?? 0}'),
+    ];
+
+    // Nur die aktivierten Quellen – Spalten nebeneinander.
     final cols = <Widget>[
       if (showMonth) col('Dieser Monat', monthRows),
       if (showTotal) col('Gesamt', totalRows),
       if (showFupa) col('Saison (FuPa)', seasonRows),
+      if (_clubShown)
+        col(
+          '${fc!.clubName.isEmpty ? 'Verein' : fc.clubName} gesamt',
+          clubRows,
+        ),
     ];
 
     return Container(

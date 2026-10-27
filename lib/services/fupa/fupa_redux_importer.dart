@@ -50,6 +50,76 @@ class FupaReduxImporter {
     return parsePlayerHtml(await _fetchHtml(trimmed));
   }
 
+  /// Lädt die FuPa-Laufbahn eines Spielers (Bilanz + Stationen je Saison).
+  /// [slugOrId] ist der FuPa-Slug, die numerische ID (leitet auf die Slug-Seite
+  /// um) oder eine volle `…/player/…`-URL.
+  Future<FupaCareer> importPlayerCareer(String slugOrId) async {
+    final s = slugOrId.trim();
+    final url = s.startsWith('http') ? s : 'https://www.fupa.net/player/$s';
+    return parsePlayerCareerHtml(await _fetchHtml(url));
+  }
+
+  /// Netzwerkfrei testbar: Laufbahn aus dem Spielerseiten-HTML.
+  ///
+  /// FuPa rendert die Laufbahn („Spielerstationen") server-seitig als Markup und
+  /// NICHT in `REDUX_DATA`. Daher wird hier ausnahmsweise das HTML geparst –
+  /// verankert an den stabilen Label-Wörtern (Spiele/Tore/Assists) und dem
+  /// Team-Link, nicht an den (wechselnden) CSS-Klassen.
+  static FupaCareer parsePlayerCareerHtml(String rawHtml) {
+    final html = rawHtml.replaceAll('<!-- -->', '');
+    int toInt(String? v) => int.tryParse(v ?? '') ?? 0;
+
+    // Gesamt-Bilanz (über alle Vereine).
+    final bil = RegExp(
+      r'Bilanz:\s*(\d+) Spiele, (\d+) Tore, (\d+) Assists, '
+      r'(\d+) Gelb, (\d+) Gelb-Rot, (\d+) Rot, (\d+) Elf',
+    ).firstMatch(html);
+
+    // Stationen: Team-Slug + Vereinsname + Wettbewerb + Spiele/Tore/Assists.
+    // Jede Station verlinkt ihr Team; direkt darauf folgen die drei Werte.
+    final stationRe = RegExp(
+      r'href="/team/([^"/]+)"'
+      r'[\s\S]*?jmEKAz">([^<]+)</span>'
+      r'[\s\S]*?hudpXq[^>]*>([^<]*)</span>'
+      r'[\s\S]*?>(\d+)</span><span[^>]*>Spiele</span>'
+      r'[\s\S]*?>(\d+)</span><span[^>]*>Tore</span>'
+      r'[\s\S]*?>(\d+)</span><span[^>]*>Assists</span>',
+    );
+    final stations = <FupaCareerStation>[];
+    for (final m in stationRe.allMatches(html)) {
+      stations.add(
+        FupaCareerStation(
+          teamSlug: (m.group(1) ?? '').toLowerCase(),
+          clubName: (m.group(2) ?? '').trim(),
+          competition: (m.group(3) ?? '').trim(),
+          matches: toInt(m.group(4)),
+          goals: toInt(m.group(5)),
+          assists: toInt(m.group(6)),
+        ),
+      );
+    }
+
+    return FupaCareer(
+      stations: stations,
+      totalMatches: bil == null ? 0 : toInt(bil.group(1)),
+      totalGoals: bil == null ? 0 : toInt(bil.group(2)),
+      totalAssists: bil == null ? 0 : toInt(bil.group(3)),
+      totalYellow: bil == null ? 0 : toInt(bil.group(4)),
+      totalYellowRed: bil == null ? 0 : toInt(bil.group(5)),
+      totalRed: bil == null ? 0 : toInt(bil.group(6)),
+      totalTopEleven: bil == null ? 0 : toInt(bil.group(7)),
+    );
+  }
+
+  /// Vereins-Slug (z.B. `garather-sv`) aus einer FuPa-Team-URL – also der
+  /// Team-Slug ohne das Team-/Saison-Suffix (`-m1-2026-27`).
+  static String? clubSlugFromTeamUrl(String? teamUrl) {
+    final ts = teamSlugFromUrl(teamUrl);
+    if (ts == null || ts.isEmpty) return null;
+    final m = RegExp(r'^(.*?)-m\d+').firstMatch(ts);
+    return m?.group(1) ?? ts;
+  }
+
   /// Lädt die FuPa-Teamseite und liefert den gesamten (aktiven) Kader.
   Future<List<ParsedPlayer>> importTeamPlayers(String url) async {
     final trimmed = url.trim();

@@ -2775,6 +2775,26 @@ class AppState extends ChangeNotifier {
   Future<PlayerMonthStats> playerTotalStats(String teamId, String playerId) =>
       _aggregatePlayerStats(teamId, playerId);
 
+  /// FuPa-Laufbahn eines Spielers samt aufgelöstem Verein (für die Vereins-
+  /// Gesamtstatistik in der Grafik, live umschaltbar alle/nur Pflichtspiele).
+  /// Lädt die FuPa-Spielerseite (Netzwerk); bei Fehlern/ohne FuPa-Bezug `null`.
+  Future<FupaClubCareer?> playerFupaClub(String teamId, Player player) async {
+    final ext = player.externalId?.trim();
+    if (ext == null || ext.isEmpty) return null;
+    try {
+      final team = await _repo.getTeam(teamId);
+      final holder = FupaClubCareer(
+        career: await _importer.importPlayerCareer(ext),
+        clubSlug: FupaReduxImporter.clubSlugFromTeamUrl(team?.fupaUrl),
+        clubName: team?.name ?? team?.shortName,
+      );
+      // Nur zurückgeben, wenn es überhaupt Vereins-Daten gibt.
+      return holder.total().hasAny ? holder : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Aggregiert Tracking-Werte eines Spielers über die getrackten eigenen Spiele;
   /// mit [yearMonth] (YYYY-MM) nur diesen Monat, sonst alle.
   Future<PlayerMonthStats> _aggregatePlayerStats(
