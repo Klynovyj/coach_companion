@@ -73,7 +73,7 @@ class StartScreen extends StatelessWidget {
           const SizedBox(height: 8),
           _shortcuts(context, state),
           const SizedBox(height: 8),
-          _activityFeed(context, state),
+          const _ActivityFeed(),
         ],
       ),
     );
@@ -97,91 +97,6 @@ class StartScreen extends StatelessWidget {
         return Badge.count(count: n, child: icon);
       },
     );
-  }
-
-  /// Aktivitäten-Feed: die letzten Team-Aktionen (Trainer-übergreifend, cloud-
-  /// synchron) – Bewertungen, Tore/Karten, Zu-/Absagen, Status, u.a.
-  Widget _activityFeed(BuildContext context, AppState state) {
-    return FutureBuilder<List<Activity>>(
-      future: state.recentActivities(limit: 8),
-      builder: (context, snap) {
-        final items = snap.data ?? const <Activity>[];
-        return Card(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.bolt,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'Aktivitäten',
-                      style: TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
-              ),
-              if (items.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Text(
-                    'Noch keine Aktivitäten. Sie erscheinen hier, sobald im '
-                    'Team etwas erfasst wird (Bewertungen, Tore, Zu-/Absagen …).',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                )
-              else
-                for (final a in items) _activityTile(context, a),
-              const SizedBox(height: 6),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _activityTile(BuildContext context, Activity a) {
-    final scheme = Theme.of(context).colorScheme;
-    final main = a.subtitle == null ? a.title : '${a.title} · ${a.subtitle}';
-    return ListTile(
-      dense: true,
-      visualDensity: VisualDensity.compact,
-      leading: Icon(_activityIcon(a.type), color: scheme.primary, size: 20),
-      title: Text(main, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: Text(
-        '${a.actorName} · ${_relativeTime(a.createdAt)}',
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
-
-  IconData _activityIcon(ActivityType t) => switch (t) {
-    ActivityType.rating => Icons.star_rounded,
-    ActivityType.goal => Icons.sports_soccer,
-    ActivityType.card => Icons.style,
-    ActivityType.nomination => Icons.how_to_reg,
-    ActivityType.status => Icons.medical_services_outlined,
-    ActivityType.lineup => Icons.grid_view,
-    ActivityType.result => Icons.scoreboard_outlined,
-    ActivityType.todo => Icons.check_circle_outline,
-    ActivityType.playerOfMonth => Icons.emoji_events_outlined,
-    ActivityType.other => Icons.bolt,
-  };
-
-  String _relativeTime(DateTime dt) {
-    final d = DateTime.now().difference(dt);
-    if (d.inMinutes < 1) return 'gerade eben';
-    if (d.inMinutes < 60) return 'vor ${d.inMinutes} Min';
-    if (d.inHours < 24) return 'vor ${d.inHours} Std';
-    if (d.inDays < 7) return 'vor ${d.inDays} Tg';
-    return DateFormat('dd.MM.', 'de_DE').format(dt);
   }
 
   Widget _liveCard(BuildContext context, GameMatch m) {
@@ -426,4 +341,118 @@ class StartScreen extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Aktivitäten-Feed: die letzten Team-Aktionen (cloud-synchron). Zeigt 3
+/// Einträge; der Rest (bis 10) ist einklappbar.
+class _ActivityFeed extends StatefulWidget {
+  const _ActivityFeed();
+
+  @override
+  State<_ActivityFeed> createState() => _ActivityFeedState();
+}
+
+class _ActivityFeedState extends State<_ActivityFeed> {
+  static const _collapsed = 3;
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final scheme = Theme.of(context).colorScheme;
+    return FutureBuilder<List<Activity>>(
+      future: state.recentActivities(limit: 10),
+      builder: (context, snap) {
+        final items = snap.data ?? const <Activity>[];
+        final visible = _expanded ? items : items.take(_collapsed).toList();
+        final hidden = items.length - _collapsed;
+        return Card(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
+                child: Row(
+                  children: [
+                    Icon(Icons.bolt, size: 18, color: scheme.primary),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Aktivitäten',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ],
+                ),
+              ),
+              if (items.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  child: Text(
+                    'Noch keine Aktivitäten. Sie erscheinen hier, sobald im '
+                    'Team etwas erfasst wird (Bewertungen, Tore, Zu-/Absagen …).',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                )
+              else ...[
+                for (final a in visible) _activityTile(context, a),
+                if (hidden > 0)
+                  Center(
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => _expanded = !_expanded),
+                      icon: Icon(
+                        _expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 18,
+                      ),
+                      label: Text(
+                        _expanded
+                            ? 'Weniger anzeigen'
+                            : 'Mehr anzeigen ($hidden)',
+                      ),
+                    ),
+                  ),
+              ],
+              const SizedBox(height: 6),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+Widget _activityTile(BuildContext context, Activity a) {
+  final scheme = Theme.of(context).colorScheme;
+  final main = a.subtitle == null ? a.title : '${a.title} · ${a.subtitle}';
+  return ListTile(
+    dense: true,
+    visualDensity: VisualDensity.compact,
+    leading: Icon(_activityIcon(a.type), color: scheme.primary, size: 20),
+    title: Text(main, maxLines: 1, overflow: TextOverflow.ellipsis),
+    subtitle: Text(
+      '${a.actorName} · ${_relativeTime(a.createdAt)}',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    ),
+  );
+}
+
+IconData _activityIcon(ActivityType t) => switch (t) {
+  ActivityType.rating => Icons.star_rounded,
+  ActivityType.goal => Icons.sports_soccer,
+  ActivityType.card => Icons.style,
+  ActivityType.nomination => Icons.how_to_reg,
+  ActivityType.status => Icons.event_busy,
+  ActivityType.lineup => Icons.grid_view,
+  ActivityType.result => Icons.scoreboard_outlined,
+  ActivityType.todo => Icons.check_circle_outline,
+  ActivityType.playerOfMonth => Icons.emoji_events_outlined,
+  ActivityType.other => Icons.bolt,
+};
+
+String _relativeTime(DateTime dt) {
+  final d = DateTime.now().difference(dt);
+  if (d.inMinutes < 1) return 'gerade eben';
+  if (d.inMinutes < 60) return 'vor ${d.inMinutes} Min';
+  if (d.inHours < 24) return 'vor ${d.inHours} Std';
+  if (d.inDays < 7) return 'vor ${d.inDays} Tg';
+  return DateFormat('dd.MM.', 'de_DE').format(dt);
 }

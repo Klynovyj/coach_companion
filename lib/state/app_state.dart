@@ -4093,9 +4093,12 @@ class AppState extends ChangeNotifier {
           ? todo.copyWith(done: true, completedAt: DateTime.now())
           : todo.copyWith(done: false, clearCompletedAt: true),
     );
-    if (done) {
-      await logActivity(ActivityType.todo, 'Aufgabe erledigt: ${todo.text}');
-    }
+    await logActivity(
+      ActivityType.todo,
+      done
+          ? 'Aufgabe erledigt: ${todo.text}'
+          : 'Aufgabe wieder offen: ${todo.text}',
+    );
     notifyListeners();
   }
 

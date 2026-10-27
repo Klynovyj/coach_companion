@@ -27,18 +27,14 @@ drop policy if exists "read own inbox" on public.inbox;
 create policy "read own inbox" on public.inbox
   for select using (recipient_id = auth.uid());
 
--- Einfuegen: Ausloeser ist Mitglied des Teams UND der Empfaenger ebenfalls
--- (ein Trainer darf einen Teamkollegen benachrichtigen).
+-- Einfuegen: Ausloeser ist Mitglied des Teams. (Der Empfaenger ist in der Praxis
+-- immer ein Teamkollege; Lesen bleibt ohnehin auf den Empfaenger beschraenkt.)
 drop policy if exists "insert inbox for team member" on public.inbox;
 create policy "insert inbox for team member" on public.inbox
   for insert with check (
     exists (
       select 1 from public.team_members m
       where m.team_id = inbox.team_id and m.user_id = auth.uid()
-    )
-    and exists (
-      select 1 from public.team_members m
-      where m.team_id = inbox.team_id and m.user_id = inbox.recipient_id
     )
   );
 
