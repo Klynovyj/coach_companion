@@ -1,6 +1,6 @@
 {
-  "versionCode": 50,
-  "versionName": "1.3.45",
+  "versionCode": 51,
+  "versionName": "1.3.46",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Ehrungen: neue Vereins-Bilanz (FuPa) aller Spieler + Trainer, Spieler-Detail mit Laufbahn Saison fuer Saison und beim Verein seit\n- Statistik + Gesamtstatistik: Umschalter 1. / 2. Halbzeit\n- Auswertung: Bericht mit allen Noten & Kommentaren auf einen Blick\n- Aktivitaeten-Feed auf dem Start-Screen\n- Live: Nachspielzeit (45+X / 90+X) eingebbar\n- Nominierung: Status am Foto; Gruppen-Post + Karten & Sperren verbessert\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27-stage31 ausfuehren."
+  "notes": "Neuerungen:\n- Vereins-Bilanz: Spieler-Detail (Laufbahn) als Bild teilbar\n- Trainer-Detail mit Trainer-Bilanz (Spiele/Siege/Unent./Niederl./Punkte)\n- Spieler-Detail zeigt Vereins-Summe gross + Karriere-Gesamt darunter\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27-stage31 ausfuehren."
 }
