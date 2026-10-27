@@ -164,7 +164,7 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Spieler des Monats')),
+      appBar: AppBar(title: const Text('Ehrungen')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _teamId == null
@@ -172,6 +172,8 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
           : ListView(
               padding: const EdgeInsets.only(bottom: 24),
               children: [
+                _createHonorCard(),
+                _sectionHeader('Spieler des Monats'),
                 _monthSelector(),
                 _honorCard(),
                 const Divider(height: 1),
@@ -208,6 +210,113 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
                 ],
               ],
             ),
+    );
+  }
+
+  Widget _sectionHeader(String title) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 2),
+    child: Text(
+      title,
+      style: const TextStyle(
+        fontWeight: FontWeight.bold,
+        fontSize: 15,
+        color: _gold,
+      ),
+    ),
+  );
+
+  /// Oben: beliebige Ehrung für einen frei gewählten Spieler erstellen.
+  Widget _createHonorCard() {
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Row(
+          children: [
+            const Icon(Icons.workspace_premium, size: 30, color: _gold),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Ehrung erstellen',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Spieler wählen und eine Urkunde/Grafik für einen '
+                    'beliebigen Anlass erzeugen (z.B. Jubiläum, 100. Spiel).',
+                    style: TextStyle(fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            FilledButton.icon(
+              onPressed: _createHonor,
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Erstellen'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Spieler auswählen und die Grafik/Urkunde im Anlass-Modus öffnen.
+  Future<void> _createHonor() async {
+    final players = _byId.values.where((p) => !p.isStaffOnly).toList()
+      ..sort(
+        (a, b) => a.fullName.toLowerCase().compareTo(b.fullName.toLowerCase()),
+      );
+    final picked = await showModalBottomSheet<Player>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.7,
+          maxChildSize: 0.95,
+          minChildSize: 0.4,
+          builder: (ctx, scroll) => ListView(
+            controller: scroll,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: Text(
+                  'Spieler für die Ehrung wählen',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+              const Divider(height: 1),
+              for (final p in players)
+                ListTile(
+                  leading: PlayerAvatar(player: p, radius: 16),
+                  title: Text(p.fullName),
+                  subtitle: (p.position ?? '').isEmpty
+                      ? null
+                      : Text(p.position!),
+                  onTap: () => Navigator.pop(ctx, p),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked == null || !mounted) return;
+    final team = _app.ownTeam;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerOfMonthGraphicScreen(
+          player: picked,
+          teamName: team?.name ?? team?.shortName ?? 'Mannschaft',
+          teamLogo: team?.logoPath,
+          defaultOccasion: 'Ehrung',
+        ),
+      ),
     );
   }
 

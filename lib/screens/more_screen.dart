@@ -72,7 +72,7 @@ class MoreScreen extends StatelessWidget {
           _tile(
             context,
             icon: Icons.emoji_events,
-            label: 'Spieler des Monats',
+            label: 'Ehrungen',
             screen: const PlayerOfMonthScreen(),
           ),
           _tile(
