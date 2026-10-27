@@ -1,6 +1,6 @@
 {
-  "versionCode": 48,
-  "versionName": "1.3.43",
+  "versionCode": 49,
+  "versionName": "1.3.44",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Spielerfoto in der Teilen-Ansicht hochladbar (Galerie oder Kamera) in hoher Aufloesung\n- Urkunden-Text frei eingebbar (mit Standard-Reset)\n- Statistik kompakter, hoehere Export-Aufloesung (schaerfere Bilder)\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
+  "notes": "Neuerungen:\n- Teilen-Grafik fuer jeden Anlass (Vorlagen + Freitext, z.B. 100. Spiel fuer den Verein) mit editierbarem Untertitel\n- Neue Datenquelle Gesamt (alle getrackten Spiele) zusaetzlich zu Monat und FuPa-Saison, einzeln umschaltbar\n- Einstieg fuer jeden Spieler ueber Spielerprofil -> Menue -> Ehrung / Grafik erstellen\n\nWichtig (Cloud): im Supabase-SQL-Editor stage27, stage28, stage29 und stage30 ausfuehren."
 }
