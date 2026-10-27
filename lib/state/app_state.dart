@@ -2858,21 +2858,20 @@ class AppState extends ChangeNotifier {
     try {
       final team = await _repo.getTeam(teamId);
       final key = player.dedupKey;
-      var ext = player.externalId?.trim();
-      if (ext == null || ext.isEmpty) {
-        // Fallback 1: FuPa-ID aus der lokalen Saison-Statistik (per Name).
-        for (final s in await _repo.getStats(teamId)) {
-          final k =
-              '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}';
-          if (k == key) {
-            ext = s.externalId?.trim();
-            break;
-          }
+      // Primär: echte FuPa-Spieler-ID aus der lokalen Saison-Statistik (per
+      // Name). player.external_id ist die Kader-/Roster-ID und taugt NICHT.
+      String? ext;
+      for (final s in await _repo.getStats(teamId)) {
+        final k =
+            '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}';
+        if (k == key) {
+          ext = s.externalId?.trim();
+          break;
         }
       }
+      // Sonst live aus der FuPa-Saison-API (per Name).
       if ((ext == null || ext.isEmpty) &&
           (team?.fupaUrl?.isNotEmpty ?? false)) {
-        // Fallback 2: live aus der FuPa-Saison-API (per Name).
         for (final s in await _importer.importStats(team!.fupaUrl!)) {
           final k =
               '${s.firstName.trim().toLowerCase()}|${s.lastName.trim().toLowerCase()}';
@@ -2884,6 +2883,11 @@ class AppState extends ChangeNotifier {
             }
           }
         }
+      }
+      // Letzter Rückfall: player.external_id (nur falls es doch eine Profil-ID ist).
+      if (ext == null || ext.isEmpty) {
+        final pe = player.externalId?.trim();
+        if (pe != null && pe.isNotEmpty) ext = pe;
       }
       if (ext == null || ext.isEmpty) return null;
       final holder = FupaClubCareer(
@@ -2937,15 +2941,19 @@ class AppState extends ChangeNotifier {
         // Ohne API-IDs greifen die gespeicherten Fallbacks.
       }
     }
-    // Karrieren parallel laden. FuPa-ID: vom Spieler, sonst live-API, sonst
-    // aus der lokalen Saison-Statistik (jeweils per Name).
+    // Karrieren parallel laden. FuPa-SPIELER-ID: zuerst aus der Saison-Statistik
+    // bzw. live-API (das ist die echte Profil-ID) – die player.external_id ist
+    // die Kader-/Roster-ID und taugt NICHT für /player/…; daher nur Rückfall.
     var resolved = 0;
     String? firstErr;
     final careers = await Future.wait(
       players.map((p) async {
-        final ext = (p.externalId?.trim().isNotEmpty ?? false)
-            ? p.externalId!.trim()
-            : (apiExtByKey[p.dedupKey] ?? extByKey[p.dedupKey]);
+        final ext =
+            apiExtByKey[p.dedupKey] ??
+            extByKey[p.dedupKey] ??
+            (p.externalId?.trim().isNotEmpty ?? false
+                ? p.externalId!.trim()
+                : null);
         if (ext == null || ext.isEmpty) return null;
         resolved++;
         try {
