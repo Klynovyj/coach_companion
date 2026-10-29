@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -47,31 +48,7 @@ class DrillDiagramPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Rasen mit Mäh-Streifen (wie Coach Studio).
     final geo = pitchGeometryFor(diagram.field);
-    const stripeLight = Color(0xFF2D6B3E);
-    const stripeDark = Color(0xFF1F4F2C);
-    final n = math.max(8, geo.stripes * 2);
-    for (var i = 0; i < n; i++) {
-      canvas.drawRect(
-        Rect.fromLTWH(
-          0,
-          size.height * i / n,
-          size.width,
-          size.height / n + 0.5,
-        ),
-        Paint()..color = i.isEven ? stripeLight : stripeDark,
-      );
-    }
-
-    // Linien wie bei Coach Studio: solide weiß, relative Strichstärke.
-    final line = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1.2, size.shortestSide * 0.008)
-      ..strokeJoin = StrokeJoin.miter;
-
-    // Feldmarkierungen aus der (aus Coach Studio portierten) Pitch-Geometrie.
     final inset = size.shortestSide * 0.03;
     final field = Rect.fromLTRB(
       inset,
@@ -79,6 +56,46 @@ class DrillDiagramPainter extends CustomPainter {
       size.width - inset,
       size.height - inset,
     );
+
+    // Rasen: Runout-Rand + Mäh-Streifen im Feld (Coach-Studio-Theme).
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()..color = const Color(0xFF4D6E47),
+    );
+    const stripeLight = Color(0xFF80B270);
+    const stripeDark = Color(0xFF6CA15B);
+    final n = math.max(8, geo.stripes * 2);
+    canvas.save();
+    canvas.clipRect(field);
+    for (var i = 0; i < n; i++) {
+      canvas.drawRect(
+        Rect.fromLTWH(
+          field.left,
+          field.top + field.height * i / n,
+          field.width,
+          field.height / n + 0.5,
+        ),
+        Paint()..color = i.isEven ? stripeLight : stripeDark,
+      );
+    }
+    canvas.restore();
+
+    // Linien: weiß, relative Strichstärke, mit dezentem Schatten.
+    final sw = math.max(1.2, size.shortestSide * 0.008);
+    final line = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = sw
+      ..strokeJoin = StrokeJoin.miter;
+    final lineShadow = Paint()
+      ..color = Colors.black.withValues(alpha: 0.4)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = sw
+      ..strokeJoin = StrokeJoin.miter;
+    canvas.save();
+    canvas.translate(0, math.max(0.6, size.shortestSide * 0.004));
+    _drawMarkings(canvas, field, lineShadow, diagram.field);
+    canvas.restore();
     _drawMarkings(canvas, field, line, diagram.field);
 
     Offset p(double x, double y) =>
@@ -98,6 +115,14 @@ class DrillDiagramPainter extends CustomPainter {
       final e = diagram.elements[idx];
       final pos = p(e.x, e.y);
       final er = r * (e.size ?? 1.0);
+      final op = e.opacity;
+      final fade = op != null && op < 1.0;
+      if (fade) {
+        canvas.saveLayer(
+          null,
+          Paint()..color = Colors.white.withValues(alpha: op.clamp(0.0, 1.0)),
+        );
+      }
       switch (e.type) {
         case 'cone':
           _cone(canvas, pos, er, _parseColor(e.color, const Color(0xFFEF6C00)));
@@ -125,17 +150,18 @@ class DrillDiagramPainter extends CustomPainter {
             size,
           );
       }
+      if (fade) canvas.restore();
     }
   }
 
-  // Dezenter Schlagschatten für den 3D-Look (wie im Coach-Studio-Editor).
+  // Weicher Schlagschatten für den 3D-Look (wie im Coach-Studio-Editor).
   void _chipShadow(Canvas c, Offset o, double r) {
     c.drawCircle(
-      o.translate(r * 0.06, r * 0.14),
-      r,
+      o.translate(r * 0.08, r * 0.22),
+      r * 1.02,
       Paint()
-        ..color = Colors.black.withValues(alpha: 0.35)
-        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.3),
+        ..color = Colors.black.withValues(alpha: 0.45)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.45),
     );
   }
 
@@ -148,14 +174,25 @@ class DrillDiagramPainter extends CustomPainter {
     Size size,
   ) {
     _chipShadow(c, o, r);
-    c.drawCircle(o, r, Paint()..color = color);
+    // Radial-Verlauf (oben-links aufgehellt) wie Coach-Studio-Chips.
+    final hi = Color.lerp(color, Colors.white, 0.35)!;
     c.drawCircle(
       o,
       r,
       Paint()
-        ..color = Colors.white
+        ..shader = ui.Gradient.radial(o.translate(-r * 0.35, -r * 0.35), r * 1.3, [
+          hi,
+          color,
+        ]),
+    );
+    // Dunkler „Tinten"-Ring statt weiß.
+    c.drawCircle(
+      o,
+      r,
+      Paint()
+        ..color = const Color(0xFF0B0F17)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = math.max(1.2, r * 0.13),
+        ..strokeWidth = math.max(1.2, r * 0.12),
     );
     if (label != null && label.isNotEmpty) {
       _label(c, o, label, size, Colors.white, r);
@@ -385,6 +422,13 @@ class DrillDiagramPainter extends CustomPainter {
           color: color,
           fontSize: r * 0.95,
           fontWeight: FontWeight.bold,
+          shadows: [
+            Shadow(
+              color: Colors.black.withValues(alpha: 0.55),
+              blurRadius: r * 0.22,
+              offset: Offset(0, r * 0.06),
+            ),
+          ],
         ),
       ),
       textDirection: TextDirection.ltr,

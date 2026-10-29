@@ -29,6 +29,7 @@ dependencies:
   # Utilities
   uuid: ^4.4.2
   intl: ^0.20.2
+  shared_preferences: ^2.3.2
 
   # FuPa-Link im Browser öffnen
   url_launcher: ^6.3.0

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/drill_diagram.dart';
 import '../../widgets/drill_diagram_view.dart';
@@ -33,6 +34,43 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   // Aktiver Zug: Art ('move' | 'start' | 'end' | 'draw') + betroffenes Element.
   String? _dragKind;
   int? _dragIndex;
+
+  // Favoriten-Farben (persistent über shared_preferences).
+  static const _favKey = 'skizze_color_favorites';
+  List<String> _favColors = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFavs();
+  }
+
+  Future<void> _loadFavs() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _favColors = p.getStringList(_favKey) ?? const []);
+  }
+
+  Future<void> _addFav(String hex) async {
+    final h = hex.toUpperCase();
+    if (_favColors.any((e) => e.toUpperCase() == h)) return;
+    setState(() {
+      _favColors = [h, ..._favColors];
+      if (_favColors.length > 10) _favColors = _favColors.sublist(0, 10);
+    });
+    final p = await SharedPreferences.getInstance();
+    await p.setStringList(_favKey, _favColors);
+  }
+
+  Future<void> _removeFav(String hex) async {
+    setState(
+      () => _favColors = _favColors
+          .where((e) => e.toUpperCase() != hex.toUpperCase())
+          .toList(),
+    );
+    final p = await SharedPreferences.getInstance();
+    await p.setStringList(_favKey, _favColors);
+  }
 
   // Standardfarben für Spieler (blau) und Gegner (rot).
   static const _playerColor = '#1565C0';
@@ -538,17 +576,50 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.palette_outlined, size: 18),
+                const Padding(
+                  padding: EdgeInsets.only(top: 4),
+                  child: Icon(Icons.palette_outlined, size: 18),
+                ),
                 const SizedBox(width: 6),
-                for (final c in _palette)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: _swatch(
-                      c,
-                      (sel.color ?? '').toUpperCase() == c.toUpperCase(),
-                    ),
+                Expanded(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final c in _palette)
+                        _swatch(
+                          c,
+                          (sel.color ?? '').toUpperCase() == c.toUpperCase(),
+                        ),
+                      for (final c in _favColors)
+                        if (!_palette.any(
+                          (e) => e.toUpperCase() == c.toUpperCase(),
+                        ))
+                          _swatch(
+                            c,
+                            (sel.color ?? '').toUpperCase() == c.toUpperCase(),
+                            onLongPress: () => _removeFav(c),
+                          ),
+                      // Aktuelle Farbe als Favorit speichern.
+                      GestureDetector(
+                        onTap: () {
+                          if (sel.color != null) _addFav(sel.color!);
+                        },
+                        child: Container(
+                          width: 26,
+                          height: 26,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.black26),
+                          ),
+                          child: const Icon(Icons.add, size: 16),
+                        ),
+                      ),
+                    ],
                   ),
+                ),
               ],
             ),
           ),
@@ -626,9 +697,10 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     );
   }
 
-  Widget _swatch(String hex, bool selected) {
+  Widget _swatch(String hex, bool selected, {VoidCallback? onLongPress}) {
     return GestureDetector(
       onTap: () => _setColor(hex),
+      onLongPress: onLongPress,
       child: Container(
         width: 26,
         height: 26,
