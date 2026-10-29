@@ -7,6 +7,7 @@ import '../../models/exercise.dart';
 import '../../services/cloud_service.dart';
 import '../../state/app_state.dart';
 import '../../widgets/drill_diagram_view.dart';
+import 'exercise_detail_screen.dart';
 import 'exercise_editor_screen.dart';
 
 /// Übungs-Bibliothek: suchen/filtern, anlegen, bearbeiten, duplizieren, löschen.
@@ -332,9 +333,10 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
             Navigator.pop(context, e);
             return;
           }
+          // Erst in die Lese-Ansicht (Karten); dort per Umschalter bearbeiten.
           await Navigator.push(
             context,
-            MaterialPageRoute(builder: (_) => ExerciseEditorScreen(initial: e)),
+            MaterialPageRoute(builder: (_) => ExerciseDetailScreen(exercise: e)),
           );
           _loadCategories();
           setState(() {});
