@@ -845,20 +845,39 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
 
   @override
   Widget build(BuildContext context) {
-    final toolbar = Wrap(
-      spacing: 4,
-      runSpacing: 4,
-      children: [
-        for (final (id, label, icon) in _tools)
-          ChoiceChip(
-            avatar: Icon(icon, size: 16),
-            label: Text(label),
-            selected: _tool == id,
-            onSelected: (_) => setState(() => _tool = id),
-            visualDensity: VisualDensity.compact,
-          ),
-      ],
-    );
+    final toolbar = widget.fullscreen
+        ? SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Row(
+              children: [
+                for (final (id, label, icon) in _tools)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ChoiceChip(
+                      avatar: Icon(icon, size: 18),
+                      label: Text(label),
+                      selected: _tool == id,
+                      onSelected: (_) => setState(() => _tool = id),
+                    ),
+                  ),
+              ],
+            ),
+          )
+        : Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              for (final (id, label, icon) in _tools)
+                ChoiceChip(
+                  avatar: Icon(icon, size: 16),
+                  label: Text(label),
+                  selected: _tool == id,
+                  onSelected: (_) => setState(() => _tool = id),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          );
 
     final controls = SingleChildScrollView(
       scrollDirection: Axis.horizontal,
@@ -962,28 +981,71 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     }
 
     if (widget.fullscreen) {
+      final hasSel = _selection.isNotEmpty;
       return Focus(
         focusNode: _editorFocus,
         onKeyEvent: _onKey,
-        child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(padding: const EdgeInsets.all(8), child: toolbar),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, c) =>
-                  Center(child: _buildCanvas(c.maxWidth, c.maxHeight)),
+        child: Stack(
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+                  child: toolbar,
+                ),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+                  child: controls,
+                ),
+                Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(8, 0, 8, hasSel ? 92 : 8),
+                    child: LayoutBuilder(
+                      builder: (context, c) =>
+                          Center(child: _buildCanvas(c.maxWidth, c.maxHeight)),
+                    ),
+                  ),
+                ),
+              ],
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: panel,
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            child: controls,
-          ),
-        ],
+            // Eigenschaften als ausziehbares Bodenblatt (Feld bleibt groß).
+            if (hasSel)
+              DraggableScrollableSheet(
+                initialChildSize: 0.32,
+                minChildSize: 0.14,
+                maxChildSize: 0.8,
+                snap: true,
+                snapSizes: const [0.14, 0.32, 0.8],
+                builder: (ctx, scroll) => Material(
+                  elevation: 12,
+                  color: Theme.of(context).canvasColor,
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.vertical(
+                      top: Radius.circular(16),
+                    ),
+                  ),
+                  child: ListView(
+                    controller: scroll,
+                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 42,
+                          height: 4,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      panel,
+                    ],
+                  ),
+                ),
+              ),
+          ],
         ),
       );
     }
