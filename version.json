@@ -1,6 +1,6 @@
 {
-  "versionCode": 60,
-  "versionName": "1.3.55",
+  "versionCode": 61,
+  "versionName": "1.3.56",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Uebung antippen: bequemer Lese-Modus als Wisch-Karten (Uebersicht, Aufbau, Ablauf, Coaching, Varianten, Material, Videos, Original-Skizze)\n- NEU: KI-Animation der Skizze - Spieler/Ball bewegen sich entlang der Laufwege; im Editor ueber das KI-Menue erstellen, im Lese-Modus abspielen (Play/Pause/Schleife)\n- Skizze wird immer im Vollbild-Editor bearbeitet (alle Werkzeuge); Lese-Modus ist reines Lesen\n- Skizzen-Editor rundum ausgebaut: echtes Spielfeld, Hand-Werkzeug, Auto-Nummern, Torwart, Eigenschaften (Farbe/Nummer/Groesse/Drehen/Deckkraft/Sperren), Pfeile (gebogen/gestrichelt/wellig/doppelt), Zonen + Zonen-Raster, Mehrfach-/Rahmen-Auswahl, Undo/Redo, Ausrichten/Gruppieren, KI-Skizze aufraeumen/erstellen\n\nWichtig (Cloud): im Supabase-SQL-Editor stage35_training.sql und stage36_training_flags.sql ausfuehren."
+  "notes": "Neuerungen:\n- Uebung antippen oeffnet jetzt zuerst die bequeme Lese-Ansicht (Wisch-Karten); bearbeitet wird pro Karte ueber den Stift - kein Umschalter oben mehr\n- Vorschlaege & Bibliothek: es werden ALLE Uebungen gezeigt, jede mit Markierung passt (gruen) / passt nicht (orange) + Grund; nicht passende per KI An Kader anpassen\n- Fix: Uebungen verschwanden nach dem Sync - sie bleiben jetzt erhalten\n- Animation: Schritt fuer Schritt mit Erklaerungen und Timeline, haelt an jedem Ablauf-Punkt an; zusaetzlich Alles abspielen\n- Skizzen-Editor: Zahleneingabe (Prozent/Grad) neben den Reglern, Plus-Knopf fuegt eigene Farbe hinzu, kleinere und fein justierbare Anfasspunkte, Eigenschaften-Panel unten (hochwischen) - Feld bleibt sichtbar, kleinerer Ball\n\nWichtig (Cloud, fuer Geraete-Sync): im Supabase-SQL-Editor stage35_training.sql und stage36_training_flags.sql ausfuehren."
 }
