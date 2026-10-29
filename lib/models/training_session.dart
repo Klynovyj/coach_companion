@@ -11,6 +11,9 @@ class TrainingSession {
   final String note;
   final DateTime createdAt;
 
+  /// Archiviert (standardmäßig in der Übersicht ausgeblendet).
+  final bool archived;
+
   const TrainingSession({
     required this.id,
     required this.date,
@@ -19,6 +22,7 @@ class TrainingSession {
     this.categories = const [],
     this.note = '',
     required this.createdAt,
+    this.archived = false,
   });
 
   TrainingSession copyWith({
@@ -27,6 +31,7 @@ class TrainingSession {
     int? goalkeepers,
     List<String>? categories,
     String? note,
+    bool? archived,
   }) => TrainingSession(
     id: id,
     date: date ?? this.date,
@@ -35,6 +40,7 @@ class TrainingSession {
     categories: categories ?? this.categories,
     note: note ?? this.note,
     createdAt: createdAt,
+    archived: archived ?? this.archived,
   );
 
   int get totalPlayers => fieldPlayers + goalkeepers;
@@ -47,6 +53,7 @@ class TrainingSession {
     'categories': categories.isEmpty ? null : jsonEncode(categories),
     'note': note,
     'created_at': createdAt.toIso8601String(),
+    'archived': archived ? 1 : 0,
   };
 
   factory TrainingSession.fromMap(Map<String, Object?> m) => TrainingSession(
@@ -58,6 +65,7 @@ class TrainingSession {
     note: (m['note'] as String?) ?? '',
     createdAt:
         DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
+    archived: m['archived'] == 1 || m['archived'] == true,
   );
 
   static List<String> _decodeList(Object? v) {

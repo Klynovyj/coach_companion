@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 48;
+  static const _dbVersion = 49;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -385,6 +385,18 @@ class AppDatabase {
         'CREATE INDEX idx_session_items_session ON session_items (session_id)',
       );
     }
+    // v48 -> v49: Favoriten/Archiv an Übungen; Archiv an Einheiten.
+    if (oldV < 49 && oldV >= 48) {
+      await db.execute(
+        'ALTER TABLE exercises ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute(
+        'ALTER TABLE exercises ADD COLUMN archived INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute(
+        'ALTER TABLE training_sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -453,7 +465,9 @@ class AppDatabase {
         source TEXT,
         created_by TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        favorite INTEGER NOT NULL DEFAULT 0,
+        archived INTEGER NOT NULL DEFAULT 0
       )
     ''';
 
@@ -465,7 +479,8 @@ class AppDatabase {
         goalkeepers INTEGER NOT NULL DEFAULT 0,
         categories TEXT,
         note TEXT,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0
       )
     ''';
 

@@ -28,6 +28,8 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   String _query = '';
   String? _category;
   List<String> _categories = [];
+  bool _onlyFav = false;
+  bool _showArchived = false;
 
   @override
   void initState() {
@@ -87,6 +89,29 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
               ),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: [
+                FilterChip(
+                  avatar: Icon(
+                    _onlyFav ? Icons.star : Icons.star_border,
+                    size: 18,
+                  ),
+                  label: const Text('Favoriten'),
+                  selected: _onlyFav,
+                  onSelected: (v) => setState(() => _onlyFav = v),
+                ),
+                const SizedBox(width: 8),
+                FilterChip(
+                  avatar: const Icon(Icons.archive_outlined, size: 18),
+                  label: const Text('Archiv'),
+                  selected: _showArchived,
+                  onSelected: (v) => setState(() => _showArchived = v),
+                ),
+              ],
+            ),
+          ),
           if (_categories.isNotEmpty)
             SizedBox(
               height: 42,
@@ -122,6 +147,8 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 query: _query,
                 categories: _category == null ? const [] : [_category!],
                 forPlayers: widget.forPlayers,
+                onlyFavorites: _onlyFav,
+                includeArchived: _showArchived,
               ),
               builder: (context, snap) {
                 if (!snap.hasData) {
@@ -224,7 +251,19 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                   ],
                 ),
               ),
-              if (!widget.pickMode)
+              if (!widget.pickMode) ...[
+                IconButton(
+                  tooltip: e.favorite ? 'Favorit entfernen' : 'Als Favorit',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    e.favorite ? Icons.star : Icons.star_border,
+                    color: e.favorite ? Colors.amber : null,
+                  ),
+                  onPressed: () async {
+                    await state.toggleExerciseFavorite(e);
+                    if (mounted) setState(() {});
+                  },
+                ),
                 PopupMenuButton<String>(
                   onSelected: (v) async {
                     if (v == 'edit') {
@@ -244,6 +283,8 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                               .toString(),
                         }),
                       );
+                    } else if (v == 'archive') {
+                      await state.setExerciseArchived(e, !e.archived);
                     } else if (v == 'del') {
                       final ok = await _confirmDelete(context, e.title);
                       if (ok) await state.deleteExercise(e.id);
@@ -251,12 +292,25 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                     _loadCategories();
                     if (mounted) setState(() {});
                   },
-                  itemBuilder: (_) => const [
-                    PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
-                    PopupMenuItem(value: 'dup', child: Text('Duplizieren')),
-                    PopupMenuItem(value: 'del', child: Text('Löschen')),
+                  itemBuilder: (_) => [
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: Text('Bearbeiten'),
+                    ),
+                    const PopupMenuItem(
+                      value: 'dup',
+                      child: Text('Duplizieren'),
+                    ),
+                    PopupMenuItem(
+                      value: 'archive',
+                      child: Text(
+                        e.archived ? 'Wiederherstellen' : 'Archivieren',
+                      ),
+                    ),
+                    const PopupMenuItem(value: 'del', child: Text('Löschen')),
                   ],
                 ),
+              ],
             ],
           ),
         ),

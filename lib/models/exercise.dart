@@ -36,6 +36,10 @@ class Exercise {
   final DateTime createdAt;
   final DateTime updatedAt;
 
+  /// Favorit (oben in der Bibliothek) bzw. archiviert (standardmäßig versteckt).
+  final bool favorite;
+  final bool archived;
+
   const Exercise({
     required this.id,
     required this.title,
@@ -55,6 +59,8 @@ class Exercise {
     this.createdBy,
     required this.createdAt,
     required this.updatedAt,
+    this.favorite = false,
+    this.archived = false,
   });
 
   Exercise copyWith({
@@ -77,6 +83,8 @@ class Exercise {
     bool clearSketchPhoto = false,
     String? source,
     DateTime? updatedAt,
+    bool? favorite,
+    bool? archived,
   }) => Exercise(
     id: id,
     title: title ?? this.title,
@@ -98,6 +106,8 @@ class Exercise {
     createdBy: createdBy,
     createdAt: createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
+    favorite: favorite ?? this.favorite,
+    archived: archived ?? this.archived,
   );
 
   Map<String, Object?> toMap() => {
@@ -119,6 +129,8 @@ class Exercise {
     'created_by': createdBy,
     'created_at': createdAt.toIso8601String(),
     'updated_at': updatedAt.toIso8601String(),
+    'favorite': favorite ? 1 : 0,
+    'archived': archived ? 1 : 0,
   };
 
   factory Exercise.fromMap(Map<String, Object?> m) => Exercise(
@@ -143,6 +155,8 @@ class Exercise {
         DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
     updatedAt:
         DateTime.tryParse(m['updated_at'] as String? ?? '') ?? DateTime.now(),
+    favorite: m['favorite'] == 1 || m['favorite'] == true,
+    archived: m['archived'] == 1 || m['archived'] == true,
   );
 
   static List<String> _decodeList(Object? v) {

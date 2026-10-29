@@ -2989,8 +2989,16 @@ class AppState extends ChangeNotifier {
     List<String> categories = const [],
     int? forPlayers,
     String query = '',
+    bool includeArchived = false,
+    bool onlyFavorites = false,
   }) async {
     var list = await _repo.getExercises();
+    if (!includeArchived) {
+      list = list.where((e) => !e.archived).toList();
+    }
+    if (onlyFavorites) {
+      list = list.where((e) => e.favorite).toList();
+    }
     if (categories.isNotEmpty) {
       list = list.where((e) => e.categories.any(categories.contains)).toList();
     }
@@ -3009,7 +3017,28 @@ class AppState extends ChangeNotifier {
           )
           .toList();
     }
+    // Favoriten zuerst, dann nach letzter Änderung.
+    list.sort((a, b) {
+      if (a.favorite != b.favorite) return a.favorite ? -1 : 1;
+      return b.updatedAt.compareTo(a.updatedAt);
+    });
     return list;
+  }
+
+  /// Favoriten-Markierung einer Übung umschalten.
+  Future<void> toggleExerciseFavorite(Exercise e) async {
+    await _repo.upsertExercise(
+      e.copyWith(favorite: !e.favorite, updatedAt: DateTime.now()),
+    );
+    notifyListeners();
+  }
+
+  /// Übung archivieren bzw. wiederherstellen.
+  Future<void> setExerciseArchived(Exercise e, bool archived) async {
+    await _repo.upsertExercise(
+      e.copyWith(archived: archived, updatedAt: DateTime.now()),
+    );
+    notifyListeners();
   }
 
   Future<Exercise?> exerciseById(String id) => _repo.getExercise(id);
@@ -3034,8 +3063,19 @@ class AppState extends ChangeNotifier {
     return list;
   }
 
-  Future<List<TrainingSession>> trainingSessions() =>
-      _repo.getTrainingSessions();
+  Future<List<TrainingSession>> trainingSessions({
+    bool includeArchived = false,
+  }) async {
+    final list = await _repo.getTrainingSessions();
+    if (includeArchived) return list;
+    return list.where((s) => !s.archived).toList();
+  }
+
+  /// Einheit archivieren bzw. wiederherstellen.
+  Future<void> setSessionArchived(TrainingSession s, bool archived) async {
+    await _repo.upsertTrainingSession(s.copyWith(archived: archived));
+    notifyListeners();
+  }
 
   Future<void> upsertTrainingSession(TrainingSession s) async {
     await _repo.upsertTrainingSession(s);

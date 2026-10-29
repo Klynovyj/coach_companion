@@ -17,6 +17,7 @@ class TrainingHomeScreen extends StatefulWidget {
 
 class _TrainingHomeScreenState extends State<TrainingHomeScreen> {
   final _df = DateFormat('EEE, dd.MM.yyyy', 'de_DE');
+  bool _showArchived = false;
 
   @override
   Widget build(BuildContext context) {
@@ -54,15 +55,30 @@ class _TrainingHomeScreenState extends State<TrainingHomeScreen> {
             ),
           ),
           const SizedBox(height: 12),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(4, 4, 4, 6),
-            child: Text(
-              'Geplante Einheiten',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 4, 4, 6),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Geplante Einheiten',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () =>
+                      setState(() => _showArchived = !_showArchived),
+                  icon: Icon(
+                    _showArchived ? Icons.unarchive : Icons.archive_outlined,
+                    size: 18,
+                  ),
+                  label: Text(_showArchived ? 'Archiv aus' : 'Archiv'),
+                ),
+              ],
             ),
           ),
           FutureBuilder<List<TrainingSession>>(
-            future: state.trainingSessions(),
+            future: state.trainingSessions(includeArchived: _showArchived),
             builder: (context, snap) {
               final list = snap.data ?? const <TrainingSession>[];
               if (list.isEmpty) {
@@ -92,10 +108,30 @@ class _TrainingHomeScreenState extends State<TrainingHomeScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: const Icon(Icons.fitness_center),
+        leading: Icon(
+          s.archived ? Icons.inventory_2_outlined : Icons.fitness_center,
+        ),
         title: Text(_df.format(s.date)),
         subtitle: Text(parts.join(' · ')),
-        trailing: const Icon(Icons.chevron_right),
+        trailing: PopupMenuButton<String>(
+          onSelected: (v) async {
+            final state = context.read<AppState>();
+            if (v == 'archive') {
+              await state.setSessionArchived(s, !s.archived);
+            } else if (v == 'del') {
+              final ok = await _confirmDeleteSession(context);
+              if (ok) await state.deleteTrainingSession(s.id);
+            }
+            if (mounted) setState(() {});
+          },
+          itemBuilder: (_) => [
+            PopupMenuItem(
+              value: 'archive',
+              child: Text(s.archived ? 'Wiederherstellen' : 'Archivieren'),
+            ),
+            const PopupMenuItem(value: 'del', child: Text('Löschen')),
+          ],
+        ),
         onTap: () async {
           await Navigator.push(
             context,
@@ -105,5 +141,26 @@ class _TrainingHomeScreenState extends State<TrainingHomeScreen> {
         },
       ),
     );
+  }
+
+  Future<bool> _confirmDeleteSession(BuildContext context) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Einheit löschen?'),
+        content: const Text('Die Einheit wird gelöscht.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Löschen'),
+          ),
+        ],
+      ),
+    );
+    return ok ?? false;
   }
 }
