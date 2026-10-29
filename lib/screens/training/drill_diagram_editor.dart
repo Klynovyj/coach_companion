@@ -396,10 +396,9 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
         children: [
           Padding(padding: const EdgeInsets.all(8), child: toolbar),
           Expanded(
-            child: Center(
-              child: LayoutBuilder(
-                builder: (context, c) => _buildCanvas(c.maxWidth, c.maxHeight),
-              ),
+            child: LayoutBuilder(
+              builder: (context, c) =>
+                  Center(child: _buildCanvas(c.maxWidth, c.maxHeight)),
             ),
           ),
           Padding(

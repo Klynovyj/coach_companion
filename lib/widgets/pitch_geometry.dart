@@ -75,24 +75,8 @@ const PitchGeometry _baseFull = PitchGeometry(
   ),
 );
 
-const PitchGeometry _baseBox = PitchGeometry(
-  67.5 / 63,
-  12,
-  PitchMarkings(
-    rects: [
-      PitchRect(0, 0, 1, 1),
-      PitchRect(0.2, 0, 0.6, 3 / 12), // Strafraum
-      PitchRect(0.35, 0, 0.3, 1 / 12), // Torraum
-    ],
-    lines: [PitchLine(0, 10 / 12, 1, 10 / 12)], // Mittellinie
-    circles: [
-      PitchCircle(0.5, 2 / 12, 0.005), // Elfmeterpunkt
-      PitchCircle(0.5, 10 / 12, 9.15 / 63), // Mittelkreis
-      PitchCircle(0.5, 10 / 12, 0.005), // Mittelpunkt
-    ],
-    arcs: [PitchArc(0.5, 2 / 12, 2 / 12, 30, 150)], // Strafraumbogen
-  ),
-);
+// "Zone/Kasten": neutrale Rasenfläche OHNE Spielfeldlinien (freier Aufbau).
+const PitchGeometry _baseBox = PitchGeometry(1.4, 12, PitchMarkings());
 
 /// Halbfeld (Hochformat, oben), nach unten um 7 Streifen erweitert, damit der
 /// Mittelkreis komplett sichtbar ist (17 Streifen, aspect 68/89.25).
