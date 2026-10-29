@@ -9,6 +9,7 @@ import 'nachholen_screen.dart';
 import 'player_of_month_screen.dart';
 import 'absence_overview_screen.dart';
 import 'inbox_screen.dart';
+import 'training/training_home_screen.dart';
 import 'rating_overview_screen.dart';
 import 'settings_screen.dart';
 import 'statistics_hub_screen.dart';
@@ -47,6 +48,12 @@ class MoreScreen extends StatelessWidget {
             screen: const StatisticsHubScreen(),
           ),
           _group(context, 'Team'),
+          _tile(
+            context,
+            icon: Icons.fitness_center,
+            label: 'Training',
+            screen: const TrainingHomeScreen(),
+          ),
           _tile(
             context,
             icon: Icons.event_busy,
