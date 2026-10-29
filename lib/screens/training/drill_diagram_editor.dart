@@ -1,4 +1,8 @@
+import 'dart:async';
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/drill_diagram.dart';
@@ -31,11 +35,23 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   late String _field = widget.initial.field;
   late String? _overlay = widget.initial.overlay;
   String _tool = 'select';
-  int? _selected;
+  final Set<int> _selection = {};
+  int? get _sel => _selection.length == 1 ? _selection.first : null;
 
-  // Aktiver Zug: Art ('move' | 'start' | 'end' | 'draw') + betroffenes Element.
+  // Aktiver Zug: Art ('move'|'start'|'end'|'draw'|'marquee') + Element.
   String? _dragKind;
   int? _dragIndex;
+  Rect? _marquee; // Rahmen-Auswahl (normierte Koordinaten)
+  Offset? _marqueeStart;
+
+  // Undo/Redo: Verlauf von Zuständen (debounced, max 50).
+  final List<DrillDiagram> _history = [];
+  int _histIndex = 0;
+  Timer? _histTimer;
+  bool _restoring = false;
+
+  final FocusNode _editorFocus = FocusNode();
+  final FocusNode _labelFocus = FocusNode();
 
   // Favoriten-Farben (persistent über shared_preferences).
   static const _favKey = 'skizze_color_favorites';
@@ -44,8 +60,20 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   @override
   void initState() {
     super.initState();
+    _history.add(_snapshot());
     _loadFavs();
   }
+
+  @override
+  void dispose() {
+    _histTimer?.cancel();
+    _editorFocus.dispose();
+    _labelFocus.dispose();
+    super.dispose();
+  }
+
+  DrillDiagram _snapshot() =>
+      DrillDiagram(field: _field, elements: List.of(_els), overlay: _overlay);
 
   Future<void> _loadFavs() async {
     final p = await SharedPreferences.getInstance();
@@ -116,9 +144,59 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     y2: e.y2 == null ? null : _snapV(e.y2!),
   );
 
-  void _emit() => widget.onChanged(
-    DrillDiagram(field: _field, elements: List.of(_els), overlay: _overlay),
-  );
+  void _emit() {
+    widget.onChanged(_snapshot());
+    if (!_restoring) {
+      _histTimer?.cancel();
+      _histTimer = Timer(const Duration(milliseconds: 350), _pushHistory);
+    }
+  }
+
+  void _pushHistory() {
+    final cur = _snapshot();
+    if (jsonEncode(cur.toJson()) ==
+        jsonEncode(_history[_histIndex].toJson())) {
+      return;
+    }
+    if (_histIndex < _history.length - 1) {
+      _history.removeRange(_histIndex + 1, _history.length);
+    }
+    _history.add(cur);
+    if (_history.length > 50) _history.removeAt(0);
+    _histIndex = _history.length - 1;
+    if (mounted) setState(() {});
+  }
+
+  bool get _canUndo => _histIndex > 0;
+  bool get _canRedo => _histIndex < _history.length - 1;
+
+  void _undo() {
+    _histTimer?.cancel();
+    _pushHistory(); // offene Änderung sichern
+    if (_histIndex <= 0) return;
+    setState(() {
+      _histIndex--;
+      _applyState(_history[_histIndex]);
+    });
+  }
+
+  void _redo() {
+    if (_histIndex >= _history.length - 1) return;
+    setState(() {
+      _histIndex++;
+      _applyState(_history[_histIndex]);
+    });
+  }
+
+  void _applyState(DrillDiagram d) {
+    _field = d.field;
+    _overlay = d.overlay;
+    _els = List.of(d.elements);
+    _selection.clear();
+    _restoring = true;
+    widget.onChanged(_snapshot());
+    _restoring = false;
+  }
 
   int? _hit(Offset norm) {
     int? best;
@@ -187,7 +265,9 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
       _els.add(
         _snapEl(DrillElement(type: 'text', x: norm.dx, y: norm.dy, label: text)),
       );
-      _selected = _els.length - 1;
+      _selection
+        ..clear()
+        ..add(_els.length - 1);
     });
     _emit();
   }
@@ -279,7 +359,9 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     }
     setState(() {
       _els.add(_snapEl(e));
-      _selected = _els.length - 1;
+      _selection
+        ..clear()
+        ..add(_els.length - 1);
     });
     _emit();
   }
@@ -294,46 +376,77 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     );
   }
 
+  bool get _shiftHeld =>
+      HardwareKeyboard.instance.isShiftPressed ||
+      HardwareKeyboard.instance.isControlPressed;
+
   void _onPanStart(Offset norm) {
-    // 1) Endpunkt des gewählten Pfeils/Zone ziehen?
-    if (_selected != null && _selected! < _els.length) {
-      final which = _endpointHit(norm, _selected!);
+    _editorFocus.requestFocus();
+    // 1) Endpunkt des (einzeln) gewählten Pfeils/Zone ziehen?
+    final sel = _sel;
+    if (sel != null && sel < _els.length) {
+      final which = _endpointHit(norm, sel);
       if (which != null) {
         _dragKind = which;
-        _dragIndex = _selected;
+        _dragIndex = sel;
         return;
       }
     }
-    // 2) Vorhandenes Element verschieben?
+    // 2) Vorhandenes Element verschieben (ganze Auswahl mit)?
     final hit = _hit(norm);
     if (hit != null) {
-      setState(() => _selected = hit);
+      setState(() {
+        if (_shiftHeld) {
+          _selection.contains(hit)
+              ? _selection.remove(hit)
+              : _selection.add(hit);
+        } else if (!_selection.contains(hit)) {
+          _selection
+            ..clear()
+            ..add(hit);
+        }
+      });
       _dragKind = 'move';
       _dragIndex = hit;
       return;
     }
-    // 3) Auf leerer Fläche: Pfeil/Zone aufziehen.
+    // 3a) Pfeil/Zone aufziehen (Zeichen-Werkzeug).
     if (_tool == 'arrow' || _tool == 'zone') {
       final e = _snapEl(_newElement(_tool, norm, end: norm));
       setState(() {
         _els.add(e);
-        _selected = _els.length - 1;
+        _selection
+          ..clear()
+          ..add(_els.length - 1);
       });
       _dragKind = 'draw';
-      _dragIndex = _selected;
+      _dragIndex = _els.length - 1;
+      return;
+    }
+    // 3b) Hand-Werkzeug auf leerer Fläche: Rahmen-Auswahl.
+    if (_tool == 'select') {
+      _dragKind = 'marquee';
+      _marqueeStart = norm;
+      setState(() => _marquee = Rect.fromPoints(norm, norm));
     }
   }
 
   void _onPanUpdate(Offset norm, Offset delta, Size size) {
+    if (_dragKind == 'marquee') {
+      setState(() => _marquee = Rect.fromPoints(_marqueeStart ?? norm, norm));
+      return;
+    }
     final i = _dragIndex;
     if (i == null || i >= _els.length) return;
-    // Start/Ende/Ziehen rasten aufs Gitter; Verschieben läuft übers Delta und
-    // rastet erst beim Loslassen (_onPanEnd).
     final snapped = _snap(norm);
     setState(() {
       switch (_dragKind) {
         case 'move':
-          _moveBy(i, Offset(delta.dx / size.width, delta.dy / size.height));
+          final d = Offset(delta.dx / size.width, delta.dy / size.height);
+          final targets = _selection.contains(i) ? _selection : {i};
+          for (final j in targets) {
+            if (j < _els.length) _moveBy(j, d);
+          }
         case 'start':
           _els[i] = _els[i].copyWith(x: snapped.dx, y: snapped.dy);
         case 'end':
@@ -344,17 +457,38 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   }
 
   void _onPanEnd() {
+    if (_dragKind == 'marquee') {
+      final rect = _marquee;
+      setState(() {
+        if (rect != null) {
+          if (!_shiftHeld) _selection.clear();
+          for (var j = 0; j < _els.length; j++) {
+            final e = _els[j];
+            if (rect.contains(Offset(e.x, e.y))) _selection.add(j);
+          }
+        }
+        _marquee = null;
+        _marqueeStart = null;
+      });
+      _dragKind = null;
+      _dragIndex = null;
+      return;
+    }
     final i = _dragIndex;
-    if (_dragKind == 'move' && i != null && i < _els.length) {
-      setState(() => _els[i] = _snapEl(_els[i])); // beim Loslassen aufs Raster
+    if (_dragKind == 'move' && i != null) {
+      setState(() {
+        final targets = _selection.contains(i) ? _selection : {i};
+        for (final j in targets) {
+          if (j < _els.length) _els[j] = _snapEl(_els[j]);
+        }
+      });
     } else if (_dragKind == 'draw' && i != null && i < _els.length) {
       final e = _els[i];
       final len = (Offset(e.x, e.y) - Offset(e.x2 ?? e.x, e.y2 ?? e.y)).distance;
       if (len < 0.03) {
-        // Zu kurz gezogen → verwerfen.
         setState(() {
           _els.removeAt(i);
-          _selected = null;
+          _selection.clear();
         });
       }
     }
@@ -364,14 +498,14 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   }
 
   void _setSize(double v) {
-    final i = _selected;
+    final i = _sel;
     if (i == null || i >= _els.length) return;
     setState(() => _els[i] = _els[i].copyWith(size: v));
     _emit();
   }
 
   void _setColor(String hex) {
-    final i = _selected;
+    final i = _sel;
     if (i == null || i >= _els.length) return;
     setState(() => _els[i] = _els[i].copyWith(color: hex));
     _emit();
@@ -379,21 +513,21 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
 
   /// Wendet eine Änderung auf das gewählte Element an.
   void _patch(DrillElement Function(DrillElement e) f) {
-    final i = _selected;
+    final i = _sel;
     if (i == null || i >= _els.length) return;
     setState(() => _els[i] = f(_els[i]));
     _emit();
   }
 
   void _setLabel(String s) {
-    final i = _selected;
+    final i = _sel;
     if (i == null || i >= _els.length) return;
     setState(() => _els[i] = _els[i].copyWith(label: s.trim()));
     _emit();
   }
 
   void _duplicate() {
-    final i = _selected;
+    final i = _sel;
     if (i == null || i >= _els.length) return;
     final e = _els[i];
     final copy = e.copyWith(
@@ -404,33 +538,41 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     );
     setState(() {
       _els.add(copy);
-      _selected = _els.length - 1;
+      _selection
+        ..clear()
+        ..add(_els.length - 1);
     });
     _emit();
   }
 
   void _moveZ(bool toFront) {
-    final i = _selected;
+    final i = _sel;
     if (i == null || i >= _els.length) return;
     setState(() {
       final e = _els.removeAt(i);
       if (toFront) {
         _els.add(e);
-        _selected = _els.length - 1;
+        _selection
+          ..clear()
+          ..add(_els.length - 1);
       } else {
         _els.insert(0, e);
-        _selected = 0;
+        _selection
+          ..clear()
+          ..add(0);
       }
     });
     _emit();
   }
 
   void _deleteSelected() {
-    final i = _selected;
-    if (i == null || i >= _els.length) return;
+    if (_selection.isEmpty) return;
+    final idx = _selection.toList()..sort((a, b) => b.compareTo(a));
     setState(() {
-      _els.removeAt(i);
-      _selected = null;
+      for (final i in idx) {
+        if (i < _els.length) _els.removeAt(i);
+      }
+      _selection.clear();
     });
     _emit();
   }
@@ -458,7 +600,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
       _field = result.field;
       _overlay = result.overlay;
       _els = List.of(result.elements);
-      _selected = null;
+      _selection.clear();
     });
     _emit();
   }
@@ -480,75 +622,93 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
       ],
     );
 
-    final controls = Row(
-      children: [
-        DropdownButton<String>(
-          value: _field,
-          items: const [
-            DropdownMenuItem(value: 'full', child: Text('Ganzes Feld (quer)')),
-            DropdownMenuItem(
-              value: 'full_v',
-              child: Text('Ganzes Feld (längs)'),
-            ),
-            DropdownMenuItem(value: 'half', child: Text('Halbfeld')),
-            DropdownMenuItem(value: 'box', child: Text('Zone/Kasten')),
-          ],
-          onChanged: (v) {
-            if (v == null) return;
-            setState(() => _field = v);
-            _emit();
-          },
-        ),
-        PopupMenuButton<String?>(
-          tooltip: 'Zonen-Raster',
-          icon: Icon(
-            Icons.grid_on,
-            color: _overlay != null
-                ? Theme.of(context).colorScheme.primary
-                : null,
-          ),
-          onSelected: (v) {
-            setState(() => _overlay = v == '__none__' ? null : v);
-            _emit();
-          },
-          itemBuilder: (_) => [
-            for (final (k, l) in overlayOptions)
-              PopupMenuItem<String?>(value: k ?? '__none__', child: Text(l)),
-          ],
-        ),
-        const Spacer(),
-        if (!widget.fullscreen)
+    final controls = SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
           IconButton(
-            tooltip: 'Vollbild bearbeiten',
-            icon: const Icon(Icons.fullscreen),
-            onPressed: _openFullscreen,
+            tooltip: 'Rückgängig',
+            icon: const Icon(Icons.undo),
+            onPressed: _canUndo ? _undo : null,
           ),
-        TextButton.icon(
-          onPressed: _els.isEmpty
-              ? null
-              : () {
-                  setState(() {
-                    _els = [];
-                    _selected = null;
-                  });
-                  _emit();
-                },
-          icon: const Icon(Icons.clear_all, size: 18),
-          label: const Text('Leeren'),
-        ),
-      ],
+          IconButton(
+            tooltip: 'Wiederholen',
+            icon: const Icon(Icons.redo),
+            onPressed: _canRedo ? _redo : null,
+          ),
+          DropdownButton<String>(
+            value: _field,
+            items: const [
+              DropdownMenuItem(value: 'full', child: Text('Ganzes Feld (quer)')),
+              DropdownMenuItem(
+                value: 'full_v',
+                child: Text('Ganzes Feld (längs)'),
+              ),
+              DropdownMenuItem(value: 'half', child: Text('Halbfeld')),
+              DropdownMenuItem(value: 'box', child: Text('Zone/Kasten')),
+            ],
+            onChanged: (v) {
+              if (v == null) return;
+              setState(() => _field = v);
+              _emit();
+            },
+          ),
+          PopupMenuButton<String?>(
+            tooltip: 'Zonen-Raster',
+            icon: Icon(
+              Icons.grid_on,
+              color: _overlay != null
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
+            ),
+            onSelected: (v) {
+              setState(() => _overlay = v == '__none__' ? null : v);
+              _emit();
+            },
+            itemBuilder: (_) => [
+              for (final (k, l) in overlayOptions)
+                PopupMenuItem<String?>(value: k ?? '__none__', child: Text(l)),
+            ],
+          ),
+          if (!widget.fullscreen)
+            IconButton(
+              tooltip: 'Vollbild bearbeiten',
+              icon: const Icon(Icons.fullscreen),
+              onPressed: _openFullscreen,
+            ),
+          TextButton.icon(
+            onPressed: _els.isEmpty
+                ? null
+                : () {
+                    setState(() {
+                      _els = [];
+                      _selection.clear();
+                    });
+                    _emit();
+                  },
+            icon: const Icon(Icons.clear_all, size: 18),
+            label: const Text('Leeren'),
+          ),
+        ],
+      ),
     );
 
-    // Eigenschaften-Panel für das gewählte Objekt.
-    final selEl = (_selected != null && _selected! < _els.length)
-        ? _els[_selected!]
-        : null;
-    final panel = selEl == null
-        ? const SizedBox.shrink()
-        : _propertiesPanel(selEl);
+    // Eigenschaften-Panel: Einzel- oder Mehrfachauswahl.
+    final Widget panel;
+    if (_selection.length > 1) {
+      panel = _multiPanel();
+    } else {
+      final selEl = (_sel != null && _sel! < _els.length) ? _els[_sel!] : null;
+      panel = selEl == null
+          ? const SizedBox.shrink()
+          : _propertiesPanel(selEl);
+    }
 
     if (widget.fullscreen) {
-      return Column(
+      return Focus(
+        focusNode: _editorFocus,
+        onKeyEvent: _onKey,
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(padding: const EdgeInsets.all(8), child: toolbar),
@@ -567,21 +727,74 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             child: controls,
           ),
         ],
+        ),
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        toolbar,
-        const SizedBox(height: 6),
-        LayoutBuilder(
-          builder: (context, c) => _buildCanvas(c.maxWidth, null),
-        ),
-        panel,
-        const SizedBox(height: 2),
-        controls,
-      ],
+    return Focus(
+      focusNode: _editorFocus,
+      onKeyEvent: _onKey,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          toolbar,
+          const SizedBox(height: 6),
+          LayoutBuilder(
+            builder: (context, c) => _buildCanvas(c.maxWidth, null),
+          ),
+          panel,
+          const SizedBox(height: 2),
+          controls,
+        ],
+      ),
+    );
+  }
+
+  KeyEventResult _onKey(FocusNode node, KeyEvent e) {
+    if (e is! KeyDownEvent) return KeyEventResult.ignored;
+    if (_labelFocus.hasFocus) return KeyEventResult.ignored;
+    final ctrl =
+        HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed;
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    final k = e.logicalKey;
+    if (ctrl && k == LogicalKeyboardKey.keyZ) {
+      shift ? _redo() : _undo();
+      return KeyEventResult.handled;
+    }
+    if (ctrl && k == LogicalKeyboardKey.keyY) {
+      _redo();
+      return KeyEventResult.handled;
+    }
+    if (k == LogicalKeyboardKey.delete || k == LogicalKeyboardKey.backspace) {
+      if (_selection.isNotEmpty) {
+        _deleteSelected();
+        return KeyEventResult.handled;
+      }
+    }
+    if (k == LogicalKeyboardKey.escape) {
+      if (_selection.isNotEmpty) {
+        setState(() => _selection.clear());
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
+  }
+
+  Widget _multiPanel() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          Text('${_selection.length} ausgewählt'),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Löschen',
+            icon: const Icon(Icons.delete_outline),
+            onPressed: _deleteSelected,
+          ),
+        ],
+      ),
     );
   }
 
@@ -656,7 +869,8 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: TextFormField(
-                    key: ValueKey('lbl$_selected'),
+                    key: ValueKey('lbl$_sel'),
+                    focusNode: _labelFocus,
                     initialValue: sel.label ?? '',
                     decoration: const InputDecoration(
                       isDense: true,
@@ -869,12 +1083,23 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     final size = Size(w, h);
     return GestureDetector(
       onTapUp: (d) {
+        _editorFocus.requestFocus();
         final n = _norm(d.localPosition, size);
         final hit = _hit(n);
         if (hit != null) {
-          setState(() => _selected = hit);
+          setState(() {
+            if (_shiftHeld) {
+              _selection.contains(hit)
+                  ? _selection.remove(hit)
+                  : _selection.add(hit);
+            } else {
+              _selection
+                ..clear()
+                ..add(hit);
+            }
+          });
         } else if (_tool == 'select') {
-          setState(() => _selected = null);
+          setState(() => _selection.clear());
         } else {
           _addByTap(n);
         }
@@ -891,7 +1116,8 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
           child: CustomPaint(
             painter: _EditorPainter(
               DrillDiagram(field: _field, elements: _els, overlay: _overlay),
-              _selected,
+              _selection,
+              _marquee,
             ),
             size: size,
           ),
@@ -952,34 +1178,59 @@ class _FullscreenDiagramEditorPageState
 /// Painter wie [DrillDiagramPainter], zusätzlich Auswahl-Markierung: Ring um ein
 /// Punkt-Objekt bzw. Griffe an den Endpunkten eines Pfeils/einer Zone.
 class _EditorPainter extends DrillDiagramPainter {
-  _EditorPainter(super.diagram, this.selected);
-  final int? selected;
+  _EditorPainter(super.diagram, this.selected, this.marquee);
+  final Set<int> selected;
+  final Rect? marquee;
 
   @override
   void paint(Canvas canvas, Size size) {
     super.paint(canvas, size);
-    if (selected == null || selected! >= diagram.elements.length) return;
-    final e = diagram.elements[selected!];
     final inset = size.shortestSide * 0.03;
     Offset at(double x, double y) => Offset(
       inset + x * (size.width - 2 * inset),
       inset + y * (size.height - 2 * inset),
     );
-
     final amber = Paint()
       ..color = Colors.amber
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5;
 
+    for (final idx in selected) {
+      if (idx < 0 || idx >= diagram.elements.length) continue;
+      _highlight(canvas, size, at, diagram.elements[idx], amber);
+    }
+
+    final m = marquee;
+    if (m != null) {
+      final rect = Rect.fromPoints(at(m.left, m.top), at(m.right, m.bottom));
+      canvas.drawRect(
+        rect,
+        Paint()..color = Colors.amber.withValues(alpha: 0.12),
+      );
+      canvas.drawRect(
+        rect,
+        Paint()
+          ..color = Colors.amber
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5,
+      );
+    }
+  }
+
+  void _highlight(
+    Canvas canvas,
+    Size size,
+    Offset Function(double, double) at,
+    DrillElement e,
+    Paint amber,
+  ) {
     if ((e.type == 'arrow' || e.type == 'zone') &&
         e.x2 != null &&
         e.y2 != null) {
       final hr = size.shortestSide * 0.028;
-      // Start (cyan) und Ende (gelb) als ziehbare Griffe.
       _handle(canvas, at(e.x, e.y), hr, Colors.cyanAccent);
       _handle(canvas, at(e.x2!, e.y2!), hr, Colors.amber);
     } else {
-      // Markierung umschließt das Objekt passend (zentriert auf seiner Position).
       final o = at(e.x, e.y);
       final er = size.shortestSide * 0.045 * (e.size ?? 1.0);
       if (e.type == 'goal' || e.type == 'minigoal') {
@@ -1013,5 +1264,8 @@ class _EditorPainter extends DrillDiagramPainter {
 
   @override
   bool shouldRepaint(covariant _EditorPainter old) =>
-      old.diagram != diagram || old.selected != selected;
+      old.diagram != diagram ||
+      old.selected.length != selected.length ||
+      !old.selected.containsAll(selected) ||
+      old.marquee != marquee;
 }
