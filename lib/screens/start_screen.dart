@@ -7,7 +7,7 @@ import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
-import 'cards_suspensions_screen.dart';
+import 'training/training_home_screen.dart';
 import 'home_screen.dart';
 import 'inbox_screen.dart';
 import 'live_match_screen.dart';
@@ -333,9 +333,9 @@ class StartScreen extends StatelessWidget {
               ),
             ),
           tile(
-            Icons.style_outlined,
-            'Karten &\nSperren',
-            () => push(const CardsSuspensionsScreen()),
+            Icons.fitness_center,
+            'Training',
+            () => push(const TrainingHomeScreen()),
           ),
         ],
       ),
