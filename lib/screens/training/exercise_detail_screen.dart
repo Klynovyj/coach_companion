@@ -25,7 +25,10 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final e = _ex;
     final meta = <String>[
       if (e.minPlayers != null) 'ab ${e.minPlayers} Spielern',
-      if (e.needsGoalkeeper) 'Torwart nötig',
+      if ((e.goalkeepers ?? 0) > 0)
+        '${e.goalkeepers} Torhüter'
+      else if (e.needsGoalkeeper)
+        'Torwart nötig',
       if (e.durationMin != null) '${e.durationMin} Min',
     ];
     return Scaffold(

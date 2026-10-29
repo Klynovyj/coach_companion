@@ -32,8 +32,9 @@ diesem Schema (keine weiteren Felder, keine Erklaerung, kein Markdown):
  "ablauf": string,              // Ablauf der Uebung Schritt fuer Schritt
  "coachingPoints": string,      // worauf der Trainer achtet
  "varianten": string,           // Steigerungen / Varianten
- "minPlayers": number|null,     // benoetigte Spieler
+ "minPlayers": number|null,     // benoetigte Feldspieler
  "needsGoalkeeper": boolean,
+ "goalkeepers": number|null,    // Anzahl Torhueter
  "durationMin": number|null,
  "material": string,            // Huetchen, Baelle, Leibchen ...
  "diagram": {                   // Skizze; Koordinaten x,y zwischen 0 und 1

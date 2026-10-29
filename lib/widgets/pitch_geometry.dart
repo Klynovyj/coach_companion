@@ -41,14 +41,18 @@ class PitchMarkings {
 class PitchGeometry {
   /// Breite / Höhe des inneren Feld-Rechtecks.
   final double aspect;
+
+  /// Anzahl Mäh-Streifen (Rasen-Rhythmus).
+  final int stripes;
   final PitchMarkings markings;
-  const PitchGeometry(this.aspect, this.markings);
+  const PitchGeometry(this.aspect, this.stripes, this.markings);
 }
 
 // ─── Basis-Geometrien (Hochformat, Tor oben) ─────────────────────────────────
 
 const PitchGeometry _baseFull = PitchGeometry(
   68 / 105,
+  20,
   PitchMarkings(
     rects: [
       PitchRect(0, 0, 1, 1), // Außenlinie
@@ -73,6 +77,7 @@ const PitchGeometry _baseFull = PitchGeometry(
 
 const PitchGeometry _baseBox = PitchGeometry(
   67.5 / 63,
+  12,
   PitchMarkings(
     rects: [
       PitchRect(0, 0, 1, 1),
@@ -95,6 +100,7 @@ PitchGeometry _extendedHalfTop() {
   const scale = 10 / 17;
   return const PitchGeometry(
     68 / 89.25,
+    17,
     PitchMarkings(
       rects: [
         PitchRect(0, 0, 1, 1),
@@ -154,6 +160,7 @@ PitchGeometry _rotateCW(PitchGeometry g) {
   }).toList();
   return PitchGeometry(
     1 / a,
+    g.stripes,
     PitchMarkings(rects: rects, lines: lines, circles: circles, arcs: arcs),
   );
 }

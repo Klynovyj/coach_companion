@@ -4,7 +4,8 @@
 
 alter table public.exercises
   add column if not exists favorite integer default 0,
-  add column if not exists archived integer default 0;
+  add column if not exists archived integer default 0,
+  add column if not exists goalkeepers integer;
 
 alter table public.training_sessions
   add column if not exists archived integer default 0;

@@ -17,9 +17,11 @@ class Exercise {
   final String coachingPoints;
   final String varianten;
 
-  /// Minimale Spielerzahl (null = egal) und ob ein Torwart gebraucht wird.
+  /// Minimale Feldspielerzahl (null = egal), ob ein Torwart gebraucht wird und
+  /// wie viele Torhüter dafür vorgesehen sind.
   final int? minPlayers;
   final bool needsGoalkeeper;
+  final int? goalkeepers;
 
   final int? durationMin;
   final String material;
@@ -50,6 +52,7 @@ class Exercise {
     this.varianten = '',
     this.minPlayers,
     this.needsGoalkeeper = false,
+    this.goalkeepers,
     this.durationMin,
     this.material = '',
     this.diagram,
@@ -73,6 +76,8 @@ class Exercise {
     int? minPlayers,
     bool clearMinPlayers = false,
     bool? needsGoalkeeper,
+    int? goalkeepers,
+    bool clearGoalkeepers = false,
     int? durationMin,
     bool clearDuration = false,
     String? material,
@@ -95,6 +100,7 @@ class Exercise {
     varianten: varianten ?? this.varianten,
     minPlayers: clearMinPlayers ? null : (minPlayers ?? this.minPlayers),
     needsGoalkeeper: needsGoalkeeper ?? this.needsGoalkeeper,
+    goalkeepers: clearGoalkeepers ? null : (goalkeepers ?? this.goalkeepers),
     durationMin: clearDuration ? null : (durationMin ?? this.durationMin),
     material: material ?? this.material,
     diagram: clearDiagram ? null : (diagram ?? this.diagram),
@@ -120,6 +126,7 @@ class Exercise {
     'varianten': varianten,
     'min_players': minPlayers,
     'needs_goalkeeper': needsGoalkeeper ? 1 : 0,
+    'goalkeepers': goalkeepers,
     'duration_min': durationMin,
     'material': material,
     'diagram': diagram?.encode(),
@@ -144,6 +151,7 @@ class Exercise {
     minPlayers: (m['min_players'] as num?)?.toInt(),
     needsGoalkeeper:
         m['needs_goalkeeper'] == 1 || m['needs_goalkeeper'] == true,
+    goalkeepers: (m['goalkeepers'] as num?)?.toInt(),
     durationMin: (m['duration_min'] as num?)?.toInt(),
     material: (m['material'] as String?) ?? '',
     diagram: DrillDiagram.decode(m['diagram'] as String?),

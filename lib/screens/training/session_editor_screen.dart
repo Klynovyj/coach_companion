@@ -274,7 +274,9 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
       coachingPoints: str(d['coachingPoints']),
       varianten: str(d['varianten']),
       minPlayers: (d['minPlayers'] as num?)?.toInt(),
-      needsGoalkeeper: d['needsGoalkeeper'] == true,
+      needsGoalkeeper:
+          d['needsGoalkeeper'] == true || (d['goalkeepers'] as num?) != null,
+      goalkeepers: (d['goalkeepers'] as num?)?.toInt(),
       durationMin: (d['durationMin'] as num?)?.toInt(),
       material: str(d['material']),
       diagram: dia,

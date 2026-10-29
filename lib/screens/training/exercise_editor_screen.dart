@@ -45,6 +45,9 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
   late final _minPlayers = TextEditingController(
     text: widget.initial?.minPlayers?.toString() ?? '',
   );
+  late final _goalkeepers = TextEditingController(
+    text: widget.initial?.goalkeepers?.toString() ?? '',
+  );
   late final _duration = TextEditingController(
     text: widget.initial?.durationMin?.toString() ?? '',
   );
@@ -52,7 +55,6 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
   late final List<String> _categories = List.of(
     widget.initial?.categories ?? const [],
   );
-  late bool _needsGk = widget.initial?.needsGoalkeeper ?? false;
   late DrillDiagram _diagram = widget.initial?.diagram ?? const DrillDiagram();
   late final List<String> _videoLinks = List.of(
     widget.initial?.videoLinks ?? const [],
@@ -175,8 +177,13 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
       if (mp is num) _minPlayers.text = mp.toInt().toString();
       final du = d['durationMin'];
       if (du is num) _duration.text = du.toInt().toString();
-      final gk = d['needsGoalkeeper'];
-      if (gk is bool) _needsGk = gk;
+      final gkn = d['goalkeepers'];
+      if (gkn is num) {
+        _goalkeepers.text = gkn.toInt().toString();
+      } else if (d['needsGoalkeeper'] == true &&
+          _goalkeepers.text.trim().isEmpty) {
+        _goalkeepers.text = '1';
+      }
       final dia = d['diagram'];
       if (dia is Map) {
         final parsed = DrillDiagram.fromJson(Map<String, dynamic>.from(dia));
@@ -219,6 +226,7 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
 
   Map<String, dynamic> get _ctx => {
     'players': _minPlayers.text.trim(),
+    'goalkeepers': _goalkeepers.text.trim(),
     'categories': _categories,
   };
 
@@ -359,7 +367,6 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
     await _runAi({
       ..._ctx,
       'mode': 'adapt',
-      'goalkeepers': _needsGk ? '1' : '0',
       'title': _title.text.trim(),
       'aufbau': _aufbau.text.trim(),
       'ablauf': _ablauf.text.trim(),
@@ -396,7 +403,9 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
       varianten: _varianten.text.trim(),
       minPlayers: int.tryParse(_minPlayers.text.trim()),
       clearMinPlayers: _minPlayers.text.trim().isEmpty,
-      needsGoalkeeper: _needsGk,
+      goalkeepers: int.tryParse(_goalkeepers.text.trim()),
+      clearGoalkeepers: _goalkeepers.text.trim().isEmpty,
+      needsGoalkeeper: (int.tryParse(_goalkeepers.text.trim()) ?? 0) > 0,
       durationMin: int.tryParse(_duration.text.trim()),
       clearDuration: _duration.text.trim().isEmpty,
       material: _material.text.trim(),
@@ -468,7 +477,19 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
                   controller: _minPlayers,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
-                    labelText: 'min. Spieler',
+                    labelText: 'min. Feldspieler',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: TextField(
+                  controller: _goalkeepers,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(
+                    labelText: 'Torhüter',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -495,12 +516,6 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
               icon: const Icon(Icons.autorenew, size: 18),
               label: const Text('An Spieleranzahl anpassen (KI)'),
             ),
-          ),
-          SwitchListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Torwart nötig'),
-            value: _needsGk,
-            onChanged: (v) => setState(() => _needsGk = v),
           ),
           const SizedBox(height: 4),
           _field(_aufbau, 'Aufbau'),

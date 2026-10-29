@@ -47,13 +47,29 @@ class DrillDiagramPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final pitch = Paint()..color = const Color(0xFF2E7D32);
+    // Rasen mit Mäh-Streifen (wie Coach Studio).
+    final geo = pitchGeometryFor(diagram.field);
+    const stripeLight = Color(0xFF2D6B3E);
+    const stripeDark = Color(0xFF1F4F2C);
+    final n = math.max(8, geo.stripes * 2);
+    for (var i = 0; i < n; i++) {
+      canvas.drawRect(
+        Rect.fromLTWH(
+          0,
+          size.height * i / n,
+          size.width,
+          size.height / n + 0.5,
+        ),
+        Paint()..color = i.isEven ? stripeLight : stripeDark,
+      );
+    }
+
+    // Linien wie bei Coach Studio: solide weiß, relative Strichstärke.
     final line = Paint()
-      ..color = Colors.white.withValues(alpha: 0.85)
+      ..color = Colors.white
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-    final rect = Offset.zero & size;
-    canvas.drawRect(rect, pitch);
+      ..strokeWidth = math.max(1.2, size.shortestSide * 0.008)
+      ..strokeJoin = StrokeJoin.miter;
 
     // Feldmarkierungen aus der (aus Coach Studio portierten) Pitch-Geometrie.
     final inset = size.shortestSide * 0.03;

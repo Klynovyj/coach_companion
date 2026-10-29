@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 49;
+  static const _dbVersion = 50;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -397,6 +397,10 @@ class AppDatabase {
         'ALTER TABLE training_sessions ADD COLUMN archived INTEGER NOT NULL DEFAULT 0',
       );
     }
+    // v49 -> v50: Torhüter-Anzahl an der Übung.
+    if (oldV < 50 && oldV >= 48) {
+      await db.execute('ALTER TABLE exercises ADD COLUMN goalkeepers INTEGER');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -457,6 +461,7 @@ class AppDatabase {
         varianten TEXT,
         min_players INTEGER,
         needs_goalkeeper INTEGER NOT NULL DEFAULT 0,
+        goalkeepers INTEGER,
         duration_min INTEGER,
         material TEXT,
         diagram TEXT,

@@ -185,7 +185,10 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   Widget _card(BuildContext context, AppState state, Exercise e) {
     final meta = <String>[
       if (e.minPlayers != null) 'ab ${e.minPlayers} Sp.',
-      if (e.needsGoalkeeper) 'mit TW',
+      if ((e.goalkeepers ?? 0) > 0)
+        '${e.goalkeepers} TW'
+      else if (e.needsGoalkeeper)
+        'mit TW',
       if (e.durationMin != null) '${e.durationMin} Min',
     ];
     return Card(

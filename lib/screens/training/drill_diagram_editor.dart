@@ -535,6 +535,11 @@ class _EditorPainter extends DrillDiagramPainter {
       inset + y * (size.height - 2 * inset),
     );
 
+    final amber = Paint()
+      ..color = Colors.amber
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5;
+
     if ((e.type == 'arrow' || e.type == 'zone') &&
         e.x2 != null &&
         e.y2 != null) {
@@ -543,14 +548,23 @@ class _EditorPainter extends DrillDiagramPainter {
       _handle(canvas, at(e.x, e.y), hr, Colors.cyanAccent);
       _handle(canvas, at(e.x2!, e.y2!), hr, Colors.amber);
     } else {
-      canvas.drawCircle(
-        at(e.x, e.y),
-        size.shortestSide * 0.07,
-        Paint()
-          ..color = Colors.amber
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.5,
-      );
+      // Markierung umschließt das Objekt passend (zentriert auf seiner Position).
+      final o = at(e.x, e.y);
+      final er = size.shortestSide * 0.045 * (e.size ?? 1.0);
+      if (e.type == 'goal' || e.type == 'minigoal') {
+        final big = e.type == 'goal';
+        final w = (big ? er * 2.8 : er * 1.6) + er * 0.6;
+        final h = (big ? er * 1.1 : er * 0.75) + er * 0.6;
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(center: o, width: w, height: h),
+            const Radius.circular(4),
+          ),
+          amber,
+        );
+      } else {
+        canvas.drawCircle(o, er * 1.4, amber);
+      }
     }
   }
 
