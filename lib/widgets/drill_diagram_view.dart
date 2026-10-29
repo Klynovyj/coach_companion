@@ -4,22 +4,23 @@ import 'package:flutter/material.dart';
 
 import '../models/drill_diagram.dart';
 
+/// Seitenverhältnis (Breite/Höhe) passend zum Feldtyp: Längsfeld hochkant.
+double aspectForField(String field) => field == 'full_v' ? 0.66 : 1.5;
+
 /// Zeichnet eine Übungs-Skizze (Spielfeld + Elemente). Rein darstellend; der
 /// Editor legt eine Interaktionsschicht darüber.
 class DrillDiagramView extends StatelessWidget {
-  const DrillDiagramView({
-    super.key,
-    required this.diagram,
-    this.aspectRatio = 1.5,
-  });
+  const DrillDiagramView({super.key, required this.diagram, this.aspectRatio});
 
   final DrillDiagram diagram;
-  final double aspectRatio;
+
+  /// Überschreibt das vom Feldtyp abgeleitete Seitenverhältnis (optional).
+  final double? aspectRatio;
 
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
-      aspectRatio: aspectRatio,
+      aspectRatio: aspectRatio ?? aspectForField(diagram.field),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: CustomPaint(
@@ -62,26 +63,48 @@ class DrillDiagramPainter extends CustomPainter {
       size.height - inset,
     );
     canvas.drawRect(field, line);
+    void centerCircle() =>
+        canvas.drawCircle(field.center, size.shortestSide * 0.12, line);
+
     if (diagram.field == 'full') {
+      // Ganzes Feld quer: Mittellinie senkrecht, Tore links/rechts.
       canvas.drawLine(
         Offset(field.center.dx, field.top),
         Offset(field.center.dx, field.bottom),
         line,
       );
-      canvas.drawCircle(field.center, size.shortestSide * 0.12, line);
-    } else if (diagram.field == 'half') {
-      // Strafraum unten.
-      final boxW = field.width * 0.55;
-      final boxH = field.height * 0.28;
-      canvas.drawRect(
-        Rect.fromLTWH(
-          field.center.dx - boxW / 2,
-          field.bottom - boxH,
-          boxW,
-          boxH,
-        ),
+      centerCircle();
+      _goalEnd(canvas, line, Offset(field.left, field.center.dy),
+          const Offset(1, 0), const Offset(0, 1), field.height, field.width);
+      _goalEnd(canvas, line, Offset(field.right, field.center.dy),
+          const Offset(-1, 0), const Offset(0, 1), field.height, field.width);
+    } else if (diagram.field == 'full_v') {
+      // Ganzes Feld längs: Mittellinie waagerecht, Tore oben/unten.
+      canvas.drawLine(
+        Offset(field.left, field.center.dy),
+        Offset(field.right, field.center.dy),
         line,
       );
+      centerCircle();
+      _goalEnd(canvas, line, Offset(field.center.dx, field.top),
+          const Offset(0, 1), const Offset(1, 0), field.width, field.height);
+      _goalEnd(canvas, line, Offset(field.center.dx, field.bottom),
+          const Offset(0, -1), const Offset(1, 0), field.width, field.height);
+    } else if (diagram.field == 'half') {
+      // Halbfeld: Mittellinie oben (Anstoßkreis-Bogen), Tor unten.
+      canvas.drawArc(
+        Rect.fromCircle(
+          center: Offset(field.center.dx, field.top),
+          radius: size.shortestSide * 0.12,
+        ),
+        0,
+        math.pi,
+        false,
+        line,
+      );
+      _goalEnd(canvas, line, Offset(field.center.dx, field.bottom),
+          const Offset(0, -1), const Offset(1, 0), field.width, field.height,
+          scale: 1.9);
     }
 
     Offset p(double x, double y) =>
@@ -94,26 +117,29 @@ class DrillDiagramPainter extends CustomPainter {
       ..sort((a, b) => _layer(a.type).compareTo(_layer(b.type)));
     for (final e in sorted) {
       final pos = p(e.x, e.y);
+      final er = r * (e.size ?? 1.0);
       switch (e.type) {
         case 'cone':
-          _cone(canvas, pos, r, _parseColor(e.color, const Color(0xFFEF6C00)));
+          _cone(canvas, pos, er, _parseColor(e.color, const Color(0xFFEF6C00)));
         case 'goal':
-          _goal(canvas, pos, r);
+          _goal(canvas, pos, er, big: true);
+        case 'minigoal':
+          _goal(canvas, pos, er, big: false);
         case 'ball':
-          _ball(canvas, pos, r * 0.7);
+          _ball(canvas, pos, er * 0.85);
         case 'arrow':
           final to = p(e.x2 ?? e.x, e.y2 ?? e.y);
-          _arrow(canvas, pos, to);
+          _arrow(canvas, pos, to, e.size ?? 1.0);
         case 'zone':
           final to = p(e.x2 ?? e.x, e.y2 ?? e.y);
           _zone(canvas, Rect.fromPoints(pos, to));
         case 'text':
-          _text(canvas, pos, e.label ?? '', size);
+          _text(canvas, pos, e.label ?? '', size, e.size ?? 1.0);
         default: // player
           _player(
             canvas,
             pos,
-            r,
+            er,
             _parseColor(e.color, const Color(0xFF1565C0)),
             e.label,
             size,
@@ -153,36 +179,54 @@ class DrillDiagramPainter extends CustomPainter {
     c.drawPath(path, Paint()..color = color);
   }
 
-  void _goal(Canvas c, Offset o, double r) {
+  // Großtor (big) deutlich größer als ein Minitor.
+  void _goal(Canvas c, Offset o, double r, {required bool big}) {
+    final w = big ? r * 2.8 : r * 1.5;
+    final h = big ? r * 1.05 : r * 0.7;
     c.drawRect(
-      Rect.fromCenter(center: o, width: r * 2.2, height: r * 0.9),
+      Rect.fromCenter(center: o, width: w, height: h),
       Paint()
         ..color = Colors.white
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
+        ..strokeWidth = big ? 3.0 : 2.0,
     );
   }
 
+  // Weißer Ball mit schwarzem Fünfeck und Nähten – erkennbare Fußball-Optik.
   void _ball(Canvas c, Offset o, double r) {
     c.drawCircle(o, r, Paint()..color = Colors.white);
-    c.drawCircle(
-      o,
-      r,
-      Paint()
-        ..color = Colors.black
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1,
-    );
+    final seam = math.max(1.0, r * 0.14);
+    final stroke = Paint()
+      ..color = Colors.black
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = seam;
+    c.drawCircle(o, r, stroke);
+    c.drawPath(_pentagon(o, r * 0.42, -math.pi / 2), Paint()..color = Colors.black);
+    for (var i = 0; i < 5; i++) {
+      final a = -math.pi / 2 + i * 2 * math.pi / 5;
+      final dir = Offset(math.cos(a), math.sin(a));
+      c.drawLine(o + dir * (r * 0.42), o + dir * r, stroke);
+    }
   }
 
-  void _arrow(Canvas c, Offset a, Offset b) {
+  Path _pentagon(Offset center, double r, double start) {
+    final path = Path();
+    for (var i = 0; i < 5; i++) {
+      final a = start + i * 2 * math.pi / 5;
+      final pt = center + Offset(math.cos(a), math.sin(a)) * r;
+      i == 0 ? path.moveTo(pt.dx, pt.dy) : path.lineTo(pt.dx, pt.dy);
+    }
+    return path..close();
+  }
+
+  void _arrow(Canvas c, Offset a, Offset b, [double scale = 1.0]) {
     final paint = Paint()
       ..color = Colors.yellowAccent
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5;
+      ..strokeWidth = 2.5 * scale;
     c.drawLine(a, b, paint);
     final angle = math.atan2(b.dy - a.dy, b.dx - a.dx);
-    const head = 10.0;
+    final head = 10.0 * scale;
     final p1 = Offset(
       b.dx - head * math.cos(angle - 0.5),
       b.dy - head * math.sin(angle - 0.5),
@@ -193,6 +237,62 @@ class DrillDiagramPainter extends CustomPainter {
     );
     c.drawLine(b, p1, paint);
     c.drawLine(b, p2, paint);
+  }
+
+  // Ein Tor-Ende: 16er-Raum, 5er-Raum, Elfmeterpunkt und Strafraumbogen.
+  // [glc] = Mitte der Torlinie, [inward] zeigt ins Feld, [along] entlang der
+  // Torlinie. [crossLen]/[longLen] sind die Feldmaße quer/längs zur Spielrichtung.
+  void _goalEnd(
+    Canvas c,
+    Paint line,
+    Offset glc,
+    Offset inward,
+    Offset along,
+    double crossLen,
+    double longLen, {
+    double scale = 1.0,
+  }) {
+    _boxAt(c, line, glc, inward, along, longLen * 0.16 * scale, crossLen * 0.30);
+    _boxAt(c, line, glc, inward, along, longLen * 0.055 * scale, crossLen * 0.15);
+    final spot = glc + inward * (longLen * 0.11 * scale);
+    c.drawCircle(
+      spot,
+      math.max(1.5, line.strokeWidth * 1.3),
+      Paint()..color = line.color,
+    );
+    final rr = longLen * 0.11 * scale;
+    final ang = math.atan2(inward.dy, inward.dx);
+    const half = 1.15;
+    c.drawArc(
+      Rect.fromCircle(center: spot, radius: rr),
+      ang - half,
+      half * 2,
+      false,
+      line,
+    );
+  }
+
+  void _boxAt(
+    Canvas c,
+    Paint line,
+    Offset glc,
+    Offset inward,
+    Offset along,
+    double depth,
+    double halfW,
+  ) {
+    final p1 = glc + along * halfW;
+    final p2 = glc - along * halfW;
+    final i1 = p1 + inward * depth;
+    final i2 = p2 + inward * depth;
+    c.drawPath(
+      Path()
+        ..moveTo(p1.dx, p1.dy)
+        ..lineTo(i1.dx, i1.dy)
+        ..lineTo(i2.dx, i2.dy)
+        ..lineTo(p2.dx, p2.dy),
+      line,
+    );
   }
 
   void _zone(Canvas c, Rect rect) {
@@ -214,6 +314,7 @@ class DrillDiagramPainter extends CustomPainter {
         return 1;
       case 'cone':
       case 'goal':
+      case 'minigoal':
         return 2;
       case 'ball':
         return 4;
@@ -225,9 +326,9 @@ class DrillDiagramPainter extends CustomPainter {
   }
 
   // Kurzes Text-Label als lesbarer Kasten, innerhalb des Feldes gehalten.
-  void _text(Canvas c, Offset o, String label, Size size) {
+  void _text(Canvas c, Offset o, String label, Size size, [double scale = 1.0]) {
     if (label.trim().isEmpty) return;
-    final fontSize = size.shortestSide * 0.042;
+    final fontSize = size.shortestSide * 0.042 * scale;
     final tp = TextPainter(
       text: TextSpan(
         text: label,

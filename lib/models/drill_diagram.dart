@@ -15,6 +15,9 @@ class DrillElement {
   final String? color;
   final String? label;
 
+  /// Größenfaktor (1.0 = Standard); null → Standard.
+  final double? size;
+
   const DrillElement({
     required this.type,
     required this.x,
@@ -23,6 +26,7 @@ class DrillElement {
     this.y2,
     this.color,
     this.label,
+    this.size,
   });
 
   DrillElement copyWith({
@@ -32,6 +36,7 @@ class DrillElement {
     double? y2,
     String? color,
     String? label,
+    double? size,
   }) => DrillElement(
     type: type,
     x: x ?? this.x,
@@ -40,6 +45,7 @@ class DrillElement {
     y2: y2 ?? this.y2,
     color: color ?? this.color,
     label: label ?? this.label,
+    size: size ?? this.size,
   );
 
   Map<String, dynamic> toJson() => {
@@ -50,6 +56,7 @@ class DrillElement {
     if (y2 != null) 'y2': y2,
     if (color != null) 'color': color,
     if (label != null) 'label': label,
+    if (size != null) 'size': size,
   };
 
   factory DrillElement.fromJson(Map<String, dynamic> m) => DrillElement(
@@ -60,6 +67,7 @@ class DrillElement {
     y2: (m['y2'] as num?)?.toDouble(),
     color: m['color'] as String?,
     label: m['label'] as String?,
+    size: (m['size'] as num?)?.toDouble(),
   );
 }
 

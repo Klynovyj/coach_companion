@@ -37,13 +37,14 @@ diesem Schema (keine weiteren Felder, keine Erklaerung, kein Markdown):
  "durationMin": number|null,
  "material": string,            // Huetchen, Baelle, Leibchen ...
  "diagram": {                   // Skizze; Koordinaten x,y zwischen 0 und 1
-   "field": "full"|"half"|"box",
+   "field": "full"|"full_v"|"half"|"box", // full=ganzes Feld quer, full_v=laengs
    "elements": [
-     { "type": "player"|"cone"|"goal"|"ball"|"arrow"|"zone"|"text",
+     { "type": "player"|"cone"|"goal"|"minigoal"|"ball"|"arrow"|"zone"|"text",
        "x": number, "y": number,
        "x2": number, "y2": number,   // nur bei arrow (Ende) / zone (2. Ecke)
        "color": string,              // optional, Hex z.B. "#C62828" fuer Gegner
-       "label": string }             // optional, SEHR kurz (Rueckennummer)
+       "label": string,              // optional, SEHR kurz (Rueckennummer)
+       "size": number }              // optional, 1.0=Standard (groesser/kleiner)
    ]
  }
 }
@@ -60,8 +61,11 @@ FORMATIERUNG DER TEXTFELDER (wichtig fuer die Lesbarkeit):
 
 SKIZZE (diagram) uebersichtlich halten:
 - Verteile die Elemente gut ueber das Feld. KEINE zwei Elemente auf derselben
-  Position (Mindestabstand ~0.08), Spieler nicht uebereinander stapeln.
+  Position (Mindestabstand ~0.1), Spieler NIE uebereinander stapeln.
 - "label" nur sehr kurz (Rueckennummer/Kuerzel), NIE ganze Saetze.
+- "goal" = grosses Tor, "minigoal" = kleines Minitor. Nutze den passenden Typ.
+- Waehle das Feld passend: ganzes Feld quer ("full") oder laengs ("full_v"),
+  Haelfte ("half") oder Kasten/Zone ("box").
 - Verwende KEINE langen "text"-Banner im Feld. Die Beschreibung gehoert in die
   Textfelder, nicht in die Skizze. "text" hoechstens fuer ein einzelnes kurzes
   Wort am Rand.
