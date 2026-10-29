@@ -197,15 +197,25 @@ class _DrillAnimationViewState extends State<DrillAnimationView>
               ],
             ),
           ),
-        if (label != null && label.trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-            child: Text(
-              'Schritt ${cur + 1}: ${label.trim()}',
-              textAlign: TextAlign.center,
-              style: const TextStyle(height: 1.3),
+        // Feste Höhe für 2 Zeilen, damit die Steuerleiste nicht springt, wenn
+        // die Erklärung mal 1 und mal 2 Zeilen lang ist.
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+          child: SizedBox(
+            height: 40,
+            child: Center(
+              child: Text(
+                (label != null && label.trim().isNotEmpty)
+                    ? 'Schritt ${cur + 1}: ${label.trim()}'
+                    : 'Schritt ${cur + 1}',
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, height: 1.3),
+              ),
             ),
           ),
+        ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
