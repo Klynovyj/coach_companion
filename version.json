@@ -1,6 +1,6 @@
 {
-  "versionCode": 58,
-  "versionName": "1.3.53",
+  "versionCode": 59,
+  "versionName": "1.3.54",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Aktivitaeten auf Start: nur 3 sichtbar, Rest (bis 10) einklappbar\n- Aufgaben: Trainer-/Staff-Foto wird auch ueber den Namen gefunden (kein generisches Icon mehr)\n- Aufgabe wieder geoeffnet erscheint jetzt im Aktivitaeten-Feed\n- Status-Aktivitaet: neutrales Icon statt medizinischem Kreuz\n- Versionsanzeige unten im Mehr-Menue; Abwesenheits-Zaehlleiste; Fix falsches Spielerfoto\n- Status: Fit/Krank/Verletzt/Inaktiv (mit Zeitraum); Grund Abwesend; Nominierung mit Foto-Status\n- Posteingang, Onboarding, Menuepunkt Abwesenheit, Spielbericht & Voting\n\nWichtig (Cloud): im Supabase-SQL-Editor stage11, stage32, stage33, stage34 ausfuehren; fuer Handy-Push notify-inbox deployen."
+  "notes": "Neuerungen:\n- NEU: Trainings-Planer - Uebungs-Bibliothek + Einheiten planen (Feldspieler/Torhueter, Trainingsart, Uebungen zusammenstellen)\n- KI-Co-Trainer: Uebungen vorschlagen / aus Stichpunkten / aus Skizzen-Foto / Video-Infos; an Spieleranzahl anpassen\n- Uebungen: Favoriten, Archivieren, Loeschen; Einheiten loeschen/archivieren\n- Skizzen-Editor stark erweitert: echtes Spielfeld (Streifen/Linien), Hand-Werkzeug, Auto-Nummern, Torwart, Eigenschaften (Farbe/Nummer/Groesse/Drehen/Deckkraft/Sperren), Pfeile (gebogen/gestrichelt/wellig/doppelt), Zonen + Zonen-Raster, Mehrfach-/Rahmen-Auswahl, Undo/Redo, Ausrichten/Gruppieren, Vollbild, KI-Skizze aufraeumen/erstellen\n\nWichtig (Cloud): im Supabase-SQL-Editor stage35_training.sql und stage36_training_flags.sql ausfuehren; fuer die KI die Edge-Function ai-coach deployen und ANTHROPIC_API_KEY (+ ANTHROPIC_WORKSPACE_ID) setzen."
 }
