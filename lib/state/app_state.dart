@@ -204,7 +204,13 @@ class AppState extends ChangeNotifier {
         // Löschungen anderer Geräte übernehmen: lokale Zeilen entfernen, die in
         // der Cloud nicht mehr existieren (id-Tabellen; Cache = genau dies Team).
         // Nach einem Wipe (replace) nicht nötig.
-        if (!replace && !_noIdTables.contains(table)) {
+        //
+        // WICHTIG: Nur abgleichen, wenn die Cloud tatsächlich Zeilen lieferte.
+        // Liefert sie NICHTS (leere/neue Cloud-Tabelle, oder der Push scheitert
+        // z.B. an fehlenden Spalten), würde ein Abgleich die komplette lokale
+        // Tabelle leeren und frisch angelegte Daten vernichten. Echte Einzel-
+        // Löschungen anderer Geräte kommen ohnehin als Realtime-DELETE an.
+        if (!replace && !_noIdTables.contains(table) && ids.isNotEmpty) {
           await _repo.deleteRowsNotIn(table, ids);
         }
       } catch (_) {
