@@ -162,6 +162,42 @@ class DrillElement {
   );
 }
 
+/// Eine Bewegung in einem Animations-Schritt: Element [index] wandert zur
+/// Zielposition (x,y) (0..1).
+class DrillAnimMove {
+  final int index;
+  final double x, y;
+  const DrillAnimMove(this.index, this.x, this.y);
+
+  Map<String, dynamic> toJson() => {'index': index, 'x': x, 'y': y};
+
+  factory DrillAnimMove.fromJson(Map<String, dynamic> m) => DrillAnimMove(
+    (m['index'] as num?)?.toInt() ?? 0,
+    (m['x'] as num?)?.toDouble() ?? 0.5,
+    (m['y'] as num?)?.toDouble() ?? 0.5,
+  );
+}
+
+/// Ein Animations-Schritt: mehrere Bewegungen gleichzeitig innerhalb von [ms].
+class DrillAnimStep {
+  final int ms;
+  final List<DrillAnimMove> moves;
+  const DrillAnimStep(this.ms, this.moves);
+
+  Map<String, dynamic> toJson() => {
+    'ms': ms,
+    'moves': [for (final m in moves) m.toJson()],
+  };
+
+  factory DrillAnimStep.fromJson(Map<String, dynamic> m) => DrillAnimStep(
+    (m['ms'] as num?)?.toInt() ?? 1000,
+    [
+      for (final x in (m['moves'] as List? ?? const []))
+        DrillAnimMove.fromJson(Map<String, dynamic>.from(x as Map)),
+    ],
+  );
+}
+
 /// Eine Übungs-Skizze: Feldtyp + Elemente. Wird als JSON in der Übung
 /// gespeichert und von einem CustomPainter gezeichnet.
 class DrillDiagram {
@@ -173,10 +209,14 @@ class DrillDiagram {
   /// attack_thirds); null = keins.
   final String? overlay;
 
+  /// Optionale KI-Animation (Abfolge von Bewegungs-Schritten).
+  final List<DrillAnimStep>? animation;
+
   const DrillDiagram({
     this.field = 'full',
     this.elements = const [],
     this.overlay,
+    this.animation,
   });
 
   bool get isEmpty => elements.isEmpty && overlay == null;
@@ -185,10 +225,12 @@ class DrillDiagram {
     String? field,
     List<DrillElement>? elements,
     String? overlay,
+    List<DrillAnimStep>? animation,
   }) => DrillDiagram(
     field: field ?? this.field,
     elements: elements ?? this.elements,
     overlay: overlay ?? this.overlay,
+    animation: animation ?? this.animation,
   );
 
   /// Setzt Punkt-Objekte auf ein sauberes Raster und löst Kollisionen auf,
@@ -247,6 +289,7 @@ class DrillDiagram {
     return DrillDiagram(
       field: field,
       overlay: overlay,
+      animation: animation,
       elements: [
         for (var i = 0; i < els.length; i++)
           px.containsKey(i) ? els[i].copyWith(x: px[i], y: py[i]) : els[i],
@@ -258,6 +301,7 @@ class DrillDiagram {
     'field': field,
     'elements': [for (final e in elements) e.toJson()],
     if (overlay != null) 'overlay': overlay,
+    if (animation != null) 'animation': [for (final s in animation!) s.toJson()],
   };
 
   factory DrillDiagram.fromJson(Map<String, dynamic> m) => DrillDiagram(
@@ -267,6 +311,9 @@ class DrillDiagram {
         DrillElement.fromJson(Map<String, dynamic>.from(e as Map)),
     ],
     overlay: m['overlay'] as String?,
+    animation: (m['animation'] as List?)
+        ?.map((x) => DrillAnimStep.fromJson(Map<String, dynamic>.from(x as Map)))
+        .toList(),
   );
 
   /// Für die DB: als JSON-String (null/leer → null).

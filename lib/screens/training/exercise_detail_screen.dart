@@ -3,10 +3,10 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/drill_diagram.dart';
 import '../../models/exercise.dart';
+import '../../widgets/drill_animation_view.dart';
 import '../../widgets/drill_diagram_view.dart';
 import '../../widgets/photo_viewer.dart';
 import '../../widgets/team_logo.dart';
-import 'exercise_editor_screen.dart';
 
 /// Übung im bequemen Lese-Modus: eine Karte pro Sektion, horizontal
 /// durchwischen (wie die Gegner-Analyse). Bearbeiten-Stift in der AppBar.
@@ -28,7 +28,7 @@ class _ReadPage {
 }
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
-  late Exercise _ex = widget.exercise;
+  late final Exercise _ex = widget.exercise;
   final _pc = PageController();
   int _page = 0;
 
@@ -47,6 +47,16 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         _overview(e),
       ),
     ];
+    if (e.diagram?.animation != null && e.diagram!.animation!.isNotEmpty) {
+      pages.add(
+        _ReadPage(
+          Icons.play_circle_outline,
+          const Color(0xFF00695C),
+          'Animation',
+          _animationBody(e),
+        ),
+      );
+    }
     void textPage(IconData i, Color c, String t, String s) {
       if (s.trim().isNotEmpty) pages.add(_ReadPage(i, c, t, _textBody(s)));
     }
@@ -137,6 +147,11 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       ],
     );
   }
+
+  Widget _animationBody(Exercise e) => ListView(
+    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+    children: [DrillAnimationView(diagram: e.diagram!)],
+  );
 
   Widget _textBody(String s) => ListView(
     padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -229,23 +244,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final pages = _buildPages(e);
     if (_page >= pages.length) _page = pages.length - 1;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(e.title),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.edit),
-            onPressed: () async {
-              final updated = await Navigator.push<Exercise>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ExerciseEditorScreen(initial: e),
-                ),
-              );
-              if (updated != null && mounted) setState(() => _ex = updated);
-            },
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(e.title)),
       body: Column(
         children: [
           Expanded(

@@ -11,6 +11,7 @@ import '../../models/drill_diagram.dart';
 import '../../models/exercise.dart';
 import '../../services/cloud_service.dart';
 import '../../state/app_state.dart';
+import '../../widgets/drill_diagram_view.dart';
 import '../../widgets/photo_viewer.dart';
 import '../../widgets/team_logo.dart';
 import 'drill_diagram_editor.dart';
@@ -146,6 +147,17 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
     final url = await _pickImageDataUrl();
     if (url == null || !mounted) return;
     setState(() => _sketchPhoto = url);
+  }
+
+  /// Skizze immer im Vollbild-Editor bearbeiten (mit allen Funktionen).
+  Future<void> _editDiagram() async {
+    final res = await editDiagramFullscreen(context, _diagram);
+    if (res != null && mounted) {
+      setState(() {
+        _diagram = res;
+        _diagramKey++;
+      });
+    }
   }
 
   // ---------------------------------------------------------------- KI
@@ -524,11 +536,37 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
           _field(_varianten, 'Varianten'),
           _field(_material, 'Material', lines: 2),
           const SizedBox(height: 12),
-          _label('Skizze'),
-          DrillDiagramEditor(
-            key: ValueKey(_diagramKey),
-            initial: _diagram,
-            onChanged: (d) => _diagram = d,
+          Row(
+            children: [
+              Expanded(child: _label('Skizze')),
+              TextButton.icon(
+                onPressed: _editDiagram,
+                icon: const Icon(Icons.edit, size: 18),
+                label: const Text('Bearbeiten'),
+              ),
+            ],
+          ),
+          GestureDetector(
+            onTap: _editDiagram,
+            child: _diagram.isEmpty
+                ? Container(
+                    height: 150,
+                    decoration: BoxDecoration(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: const Text(
+                      'Tippen zum Zeichnen (Vollbild)',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  )
+                : DrillDiagramView(
+                    key: ValueKey(_diagramKey),
+                    diagram: _diagram,
+                  ),
           ),
           const SizedBox(height: 16),
           Row(

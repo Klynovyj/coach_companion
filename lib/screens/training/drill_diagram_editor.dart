@@ -35,6 +35,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   late List<DrillElement> _els = List.of(widget.initial.elements);
   late String _field = widget.initial.field;
   late String? _overlay = widget.initial.overlay;
+  late List<DrillAnimStep>? _animation = widget.initial.animation;
   String _tool = 'select';
   final Set<int> _selection = {};
   int? get _sel => _selection.length == 1 ? _selection.first : null;
@@ -73,8 +74,12 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     super.dispose();
   }
 
-  DrillDiagram _snapshot() =>
-      DrillDiagram(field: _field, elements: List.of(_els), overlay: _overlay);
+  DrillDiagram _snapshot() => DrillDiagram(
+    field: _field,
+    elements: List.of(_els),
+    overlay: _overlay,
+    animation: _animation,
+  );
 
   Future<void> _loadFavs() async {
     final p = await SharedPreferences.getInstance();
@@ -192,6 +197,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   void _applyState(DrillDiagram d) {
     _field = d.field;
     _overlay = d.overlay;
+    _animation = d.animation;
     _els = List.of(d.elements);
     _selection.clear();
     _restoring = true;
@@ -677,6 +683,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             field: _field,
             elements: List.of(_els),
             overlay: _overlay,
+            animation: _animation,
           ),
         ),
       ),
@@ -685,6 +692,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     setState(() {
       _field = result.field;
       _overlay = result.overlay;
+      _animation = result.animation;
       _els = List.of(result.elements);
       _selection.clear();
     });
@@ -781,6 +789,60 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     }
   }
 
+  /// KI erzeugt eine Animation (Bewegungs-Schritte) aus der aktuellen Skizze.
+  Future<void> _aiAnimate() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+    if (_els.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Erst Objekte zeichnen.')),
+      );
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('KI erstellt die Animation …')),
+          ],
+        ),
+      ),
+    );
+    try {
+      final res = await CloudService.aiCoach({
+        'mode': 'animate',
+        'diagram': _snapshot().toJson(),
+      });
+      nav.pop();
+      final anim = res?['animation'];
+      if (anim is! List) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Keine Animation von der KI.')),
+        );
+        return;
+      }
+      final steps = [
+        for (final s in anim)
+          DrillAnimStep.fromJson(Map<String, dynamic>.from(s as Map)),
+      ];
+      if (!mounted) return;
+      setState(() => _animation = steps);
+      _emit();
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Animation erstellt – im Lese-Modus abspielbar.'),
+        ),
+      );
+    } catch (e) {
+      nav.pop();
+      messenger.showSnackBar(SnackBar(content: Text('KI-Fehler: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final toolbar = Wrap(
@@ -818,10 +880,17 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
               Icons.auto_awesome,
               color: Theme.of(context).colorScheme.primary,
             ),
-            onSelected: (v) => _aiDiagram(create: v == 'create'),
+            onSelected: (v) {
+              if (v == 'animate') {
+                _aiAnimate();
+              } else {
+                _aiDiagram(create: v == 'create');
+              }
+            },
             itemBuilder: (_) => const [
               PopupMenuItem(value: 'improve', child: Text('Skizze aufräumen')),
               PopupMenuItem(value: 'create', child: Text('Neue Skizze (KI)')),
+              PopupMenuItem(value: 'animate', child: Text('Animation (KI)')),
             ],
           ),
           DropdownButton<String>(
@@ -1419,6 +1488,19 @@ class _FullscreenDiagramEditorPageState
       ),
     );
   }
+}
+
+/// Öffnet den Skizzen-Editor als Vollbild (mit allen Funktionen) und liefert die
+/// bearbeitete Skizze zurück (null = Zurück ohne Übernahme).
+Future<DrillDiagram?> editDiagramFullscreen(
+  BuildContext context,
+  DrillDiagram initial,
+) {
+  return Navigator.of(context).push<DrillDiagram>(
+    MaterialPageRoute(
+      builder: (_) => _FullscreenDiagramEditorPage(initial: initial),
+    ),
+  );
 }
 
 /// Painter wie [DrillDiagramPainter], zusätzlich Auswahl-Markierung: Ring um ein

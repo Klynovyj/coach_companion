@@ -146,6 +146,24 @@ function buildMessages(body: Record<string, unknown>) {
       },
     ];
   }
+  if (mode === "animate") {
+    return [
+      {
+        role: "user",
+        content: textContent(
+          `Erzeuge eine ANIMATION fuer diese Fussball-Skizze: Spieler und Ball ` +
+            `bewegen sich in sinnvollen Schritten (Pass = Ball bewegt sich zum ` +
+            `Ziel, Lauf = Spieler laeuft; folge vorhandenen Pfeilen/Laufwegen). ` +
+            `3-8 Schritte. Jeder "move" nennt den 0-basierten "index" des Elements ` +
+            `in elements[] und seine Zielposition x,y (0..1). "ms" = Dauer des ` +
+            `Schritts in Millisekunden.\n` +
+            `Gib NUR dieses JSON zurueck: { "animation": [ { "ms": 1200, "moves": ` +
+            `[ {"index":0,"x":0.5,"y":0.3} ] } ] }\n` +
+            `Skizze:\n${JSON.stringify(body.diagram ?? {})}`,
+        ),
+      },
+    ];
+  }
   if (mode === "diagram") {
     return [
       {
