@@ -19,6 +19,8 @@ import '../models/match_rating.dart';
 import '../models/player_of_month.dart';
 import '../models/activity.dart';
 import '../models/inbox_message.dart';
+import '../models/exercise.dart';
+import '../models/training_session.dart';
 import '../models/player_talk.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -114,6 +116,13 @@ class CoachRepository {
       await db.insert(table, map);
     }
     _syncUpsert(table, map);
+  }
+
+  /// Löscht eine Zeile per id (lokal) UND spiegelt die Löschung in die Cloud.
+  Future<void> _deleteById(String table, String id) async {
+    final db = await _db;
+    await db.delete(table, where: 'id = ?', whereArgs: [id]);
+    _syncDelete(table, {'id': id});
   }
 
   // ---------------------------------------------------------------- Settings
@@ -862,6 +871,56 @@ class CoachRepository {
       [keep],
     );
   }
+
+  // -------------------------------------------------------- Trainings-Planer
+  Future<List<Exercise>> getExercises() async {
+    final db = await _db;
+    final rows = await db.query('exercises', orderBy: 'updated_at DESC');
+    return rows.map(Exercise.fromMap).toList();
+  }
+
+  Future<Exercise?> getExercise(String id) async {
+    final db = await _db;
+    final rows = await db.query('exercises', where: 'id = ?', whereArgs: [id]);
+    return rows.isEmpty ? null : Exercise.fromMap(rows.first);
+  }
+
+  Future<void> upsertExercise(Exercise e) =>
+      _upsertById('exercises', e.toMap());
+
+  Future<void> deleteExercise(String id) => _deleteById('exercises', id);
+
+  Future<List<TrainingSession>> getTrainingSessions() async {
+    final db = await _db;
+    final rows = await db.query('training_sessions', orderBy: 'date DESC');
+    return rows.map(TrainingSession.fromMap).toList();
+  }
+
+  Future<void> upsertTrainingSession(TrainingSession s) =>
+      _upsertById('training_sessions', s.toMap());
+
+  Future<void> deleteTrainingSession(String id) async {
+    for (final it in await getSessionItems(id)) {
+      await _deleteById('session_items', it.id);
+    }
+    await _deleteById('training_sessions', id);
+  }
+
+  Future<List<SessionItem>> getSessionItems(String sessionId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'session_items',
+      where: 'session_id = ?',
+      whereArgs: [sessionId],
+      orderBy: 'order_index ASC',
+    );
+    return rows.map(SessionItem.fromMap).toList();
+  }
+
+  Future<void> upsertSessionItem(SessionItem i) =>
+      _upsertById('session_items', i.toMap());
+
+  Future<void> deleteSessionItem(String id) => _deleteById('session_items', id);
 
   // ----------------------------------------------------------------- Inbox
   /// Meine Posteingang-Einträge (lokal nur die eigenen), neueste zuerst.

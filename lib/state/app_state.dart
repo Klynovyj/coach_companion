@@ -8,6 +8,8 @@ import 'package:uuid/uuid.dart';
 import '../data/coach_repository.dart';
 import '../models/activity.dart';
 import '../models/inbox_message.dart';
+import '../models/exercise.dart';
+import '../models/training_session.dart';
 import '../models/card_entry.dart';
 import '../models/enums.dart';
 import '../models/lineup.dart';
@@ -122,6 +124,10 @@ class AppState extends ChangeNotifier {
     'match_ratings',
     'player_of_month',
     'activities',
+    // Trainings-Planer: team-weit geteilt (Übungen + Einheiten + Positionen).
+    'exercises',
+    'training_sessions',
+    'session_items',
     // Persönlicher Posteingang: Pull liefert dank RLS nur die eigenen Zeilen.
     'inbox',
     // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
@@ -2974,6 +2980,83 @@ class AppState extends ChangeNotifier {
 
   Future<void> markAllInboxRead() async {
     await _repo.markAllInboxRead();
+    notifyListeners();
+  }
+
+  // ------------------------------------------------------- Trainings-Planer
+  /// Übungs-Bibliothek (team-weit synchron). Optional gefiltert.
+  Future<List<Exercise>> exercises({
+    List<String> categories = const [],
+    int? forPlayers,
+    String query = '',
+  }) async {
+    var list = await _repo.getExercises();
+    if (categories.isNotEmpty) {
+      list = list.where((e) => e.categories.any(categories.contains)).toList();
+    }
+    if (forPlayers != null) {
+      list = list
+          .where((e) => e.minPlayers == null || e.minPlayers! <= forPlayers)
+          .toList();
+    }
+    final q = query.trim().toLowerCase();
+    if (q.isNotEmpty) {
+      list = list
+          .where(
+            (e) =>
+                e.title.toLowerCase().contains(q) ||
+                e.categories.any((c) => c.toLowerCase().contains(q)),
+          )
+          .toList();
+    }
+    return list;
+  }
+
+  Future<Exercise?> exerciseById(String id) => _repo.getExercise(id);
+
+  Future<void> upsertExercise(Exercise e) async {
+    await _repo.upsertExercise(e);
+    notifyListeners();
+  }
+
+  Future<void> deleteExercise(String id) async {
+    await _repo.deleteExercise(id);
+    notifyListeners();
+  }
+
+  /// Alle in der Bibliothek verwendeten Trainingsarten (für Filter/Auswahl).
+  Future<List<String>> exerciseCategories() async {
+    final set = <String>{};
+    for (final e in await _repo.getExercises()) {
+      set.addAll(e.categories);
+    }
+    final list = set.toList()..sort();
+    return list;
+  }
+
+  Future<List<TrainingSession>> trainingSessions() =>
+      _repo.getTrainingSessions();
+
+  Future<void> upsertTrainingSession(TrainingSession s) async {
+    await _repo.upsertTrainingSession(s);
+    notifyListeners();
+  }
+
+  Future<void> deleteTrainingSession(String id) async {
+    await _repo.deleteTrainingSession(id);
+    notifyListeners();
+  }
+
+  Future<List<SessionItem>> sessionItems(String sessionId) =>
+      _repo.getSessionItems(sessionId);
+
+  Future<void> upsertSessionItem(SessionItem i) async {
+    await _repo.upsertSessionItem(i);
+    notifyListeners();
+  }
+
+  Future<void> deleteSessionItem(String id) async {
+    await _repo.deleteSessionItem(id);
     notifyListeners();
   }
 

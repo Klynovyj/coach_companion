@@ -582,6 +582,9 @@ class CloudService {
     'player_of_month',
     'player_stats',
     'activities',
+    'exercises',
+    'training_sessions',
+    'session_items',
     'opponent_teams',
     'opponent_players',
   ];

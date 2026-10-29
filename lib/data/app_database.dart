@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 47;
+  static const _dbVersion = 48;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -376,6 +376,15 @@ class AppDatabase {
         "UPDATE players SET base_status = 'inaktiv' WHERE status = 'inaktiv'",
       );
     }
+    // v47 -> v48: Trainings-Planer (Übungs-Bibliothek + Einheiten).
+    if (oldV < 48) {
+      await db.execute(_exercisesTableSql);
+      await db.execute(_trainingSessionsTableSql);
+      await db.execute(_sessionItemsTableSql);
+      await db.execute(
+        'CREATE INDEX idx_session_items_session ON session_items (session_id)',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -420,6 +429,54 @@ class AppDatabase {
         link_id TEXT,
         created_at TEXT NOT NULL,
         read_at TEXT
+      )
+    ''';
+
+  // Trainings-Planer: Übungs-Bibliothek + geplante Einheiten (lokal ohne
+  // team_id; die Cloud-Zeile bekommt beim Push team_id).
+  static const _exercisesTableSql = '''
+      CREATE TABLE exercises (
+        id TEXT PRIMARY KEY,
+        title TEXT,
+        categories TEXT,
+        aufbau TEXT,
+        ablauf TEXT,
+        coaching_points TEXT,
+        varianten TEXT,
+        min_players INTEGER,
+        needs_goalkeeper INTEGER NOT NULL DEFAULT 0,
+        duration_min INTEGER,
+        material TEXT,
+        diagram TEXT,
+        video_links TEXT,
+        sketch_photo TEXT,
+        source TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''';
+
+  static const _trainingSessionsTableSql = '''
+      CREATE TABLE training_sessions (
+        id TEXT PRIMARY KEY,
+        date TEXT NOT NULL,
+        field_players INTEGER NOT NULL DEFAULT 0,
+        goalkeepers INTEGER NOT NULL DEFAULT 0,
+        categories TEXT,
+        note TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''';
+
+  static const _sessionItemsTableSql = '''
+      CREATE TABLE session_items (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL,
+        exercise_id TEXT NOT NULL,
+        order_index INTEGER NOT NULL DEFAULT 0,
+        duration_min INTEGER,
+        note TEXT
       )
     ''';
 
@@ -838,6 +895,12 @@ class AppDatabase {
     );
     await db.execute(_inboxTableSql);
     await db.execute('CREATE INDEX idx_inbox_created ON inbox (created_at)');
+    await db.execute(_exercisesTableSql);
+    await db.execute(_trainingSessionsTableSql);
+    await db.execute(_sessionItemsTableSql);
+    await db.execute(
+      'CREATE INDEX idx_session_items_session ON session_items (session_id)',
+    );
 
     await db.execute('''
       CREATE TABLE settings (
