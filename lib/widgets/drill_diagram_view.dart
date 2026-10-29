@@ -85,11 +85,17 @@ class DrillDiagramPainter extends CustomPainter {
         Offset(field.left + x * field.width, field.top + y * field.height);
     final r = size.shortestSide * 0.045;
 
-    // In Ebenen zeichnen: Zonen/Pfeile nach hinten, Spieler/Ball/Text nach
-    // vorne, damit nichts Wichtiges verdeckt wird.
-    final sorted = [...diagram.elements]
-      ..sort((a, b) => _layer(a.type).compareTo(_layer(b.type)));
-    for (final e in sorted) {
+    // In Ebenen zeichnen (Zonen/Pfeile hinten, Spieler/Ball/Text vorne), bei
+    // Gleichstand stabil nach ursprünglichem Index – so wirkt die Z-Order.
+    final order = List.generate(diagram.elements.length, (i) => i)
+      ..sort((a, b) {
+        final c = _layer(
+          diagram.elements[a].type,
+        ).compareTo(_layer(diagram.elements[b].type));
+        return c != 0 ? c : a.compareTo(b);
+      });
+    for (final idx in order) {
+      final e = diagram.elements[idx];
       final pos = p(e.x, e.y);
       final er = r * (e.size ?? 1.0);
       switch (e.type) {
@@ -103,7 +109,7 @@ class DrillDiagramPainter extends CustomPainter {
           _ball(canvas, pos, er * 0.75);
         case 'arrow':
           final to = p(e.x2 ?? e.x, e.y2 ?? e.y);
-          _arrow(canvas, pos, to, e.size ?? 1.0);
+          _arrow(canvas, pos, to, e.size ?? 1.0, e.dashed ?? false);
         case 'zone':
           final to = p(e.x2 ?? e.x, e.y2 ?? e.y);
           _zone(canvas, Rect.fromPoints(pos, to));
@@ -220,12 +226,22 @@ class DrillDiagramPainter extends CustomPainter {
     return path..close();
   }
 
-  void _arrow(Canvas c, Offset a, Offset b, [double scale = 1.0]) {
+  void _arrow(
+    Canvas c,
+    Offset a,
+    Offset b, [
+    double scale = 1.0,
+    bool dashed = false,
+  ]) {
     final paint = Paint()
       ..color = Colors.yellowAccent
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.5 * scale;
-    c.drawLine(a, b, paint);
+    if (dashed) {
+      _dashedLine(c, a, b, paint);
+    } else {
+      c.drawLine(a, b, paint);
+    }
     final angle = math.atan2(b.dy - a.dy, b.dx - a.dx);
     final head = 10.0 * scale;
     final p1 = Offset(
@@ -238,6 +254,20 @@ class DrillDiagramPainter extends CustomPainter {
     );
     c.drawLine(b, p1, paint);
     c.drawLine(b, p2, paint);
+  }
+
+  void _dashedLine(Canvas c, Offset a, Offset b, Paint p) {
+    final total = (b - a).distance;
+    if (total <= 0) return;
+    final dir = (b - a) / total;
+    const dash = 7.0, gap = 5.0;
+    var d = 0.0;
+    while (d < total) {
+      final s = a + dir * d;
+      final e = a + dir * math.min(d + dash, total);
+      c.drawLine(s, e, p);
+      d += dash + gap;
+    }
   }
 
   // Zeichnet die Feldmarkierungen aus der Pitch-Geometrie. Kreis-/Bogenradien

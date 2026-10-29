@@ -27,16 +27,23 @@ class DrillDiagramEditor extends StatefulWidget {
 class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   late List<DrillElement> _els = List.of(widget.initial.elements);
   late String _field = widget.initial.field;
-  String _tool = 'player';
+  String _tool = 'select';
   int? _selected;
 
   // Aktiver Zug: Art ('move' | 'start' | 'end' | 'draw') + betroffenes Element.
   String? _dragKind;
   int? _dragIndex;
 
+  // Standardfarben für Spieler (blau) und Gegner (rot).
+  static const _playerColor = '#1565C0';
+  static const _oppColor = '#C62828';
+  static const _gkColor = '#F59E0B';
+
   static const _tools = <(String, String, IconData)>[
+    ('select', 'Hand', Icons.back_hand),
     ('player', 'Spieler', Icons.person),
     ('opp', 'Gegner', Icons.person_outline),
+    ('gk', 'Torwart', Icons.sports_handball),
     ('cone', 'Hütchen', Icons.change_history),
     ('goal', 'Großtor', Icons.sports_soccer),
     ('minigoal', 'Minitor', Icons.sports_soccer_outlined),
@@ -44,6 +51,16 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     ('arrow', 'Pfeil', Icons.north_east),
     ('zone', 'Zone', Icons.crop_square),
     ('text', 'Text', Icons.title),
+  ];
+
+  // Farb-Palette fürs Eigenschaften-Panel (schwarz, rot, blau, grün, orange, weiß).
+  static const _palette = <String>[
+    '#000000',
+    _oppColor,
+    _playerColor,
+    '#2E7D32',
+    _gkColor,
+    '#FFFFFF',
   ];
 
   bool _isTwoPoint(String type) => type == 'arrow' || type == 'zone';
@@ -134,15 +151,48 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     _emit();
   }
 
+  /// Kleinste freie Rückennummer unter den Spielern gleicher Farbe (Team).
+  String _nextNumber(String colorHex) {
+    final used = <int>{};
+    for (final e in _els) {
+      if (e.type == 'player' && (e.color ?? _playerColor) == colorHex) {
+        final n = int.tryParse(e.label ?? '');
+        if (n != null) used.add(n);
+      }
+    }
+    var n = 1;
+    while (used.contains(n)) {
+      n++;
+    }
+    return n.toString();
+  }
+
   DrillElement _newElement(String tool, Offset norm, {Offset? end}) {
     final e2 = end ?? norm;
     switch (tool) {
+      case 'player':
+        return DrillElement(
+          type: 'player',
+          x: norm.dx,
+          y: norm.dy,
+          color: _playerColor,
+          label: _nextNumber(_playerColor),
+        );
       case 'opp':
         return DrillElement(
           type: 'player',
           x: norm.dx,
           y: norm.dy,
-          color: '#C62828',
+          color: _oppColor,
+          label: _nextNumber(_oppColor),
+        );
+      case 'gk':
+        return DrillElement(
+          type: 'player',
+          x: norm.dx,
+          y: norm.dy,
+          color: _gkColor,
+          label: 'TW',
         );
       case 'arrow':
         return DrillElement(
@@ -279,6 +329,78 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     _emit();
   }
 
+  void _setColor(String hex) {
+    final i = _selected;
+    if (i == null || i >= _els.length) return;
+    setState(() => _els[i] = _els[i].copyWith(color: hex));
+    _emit();
+  }
+
+  void _setLabel(String s) {
+    final i = _selected;
+    if (i == null || i >= _els.length) return;
+    setState(() => _els[i] = _els[i].copyWith(label: s.trim()));
+    _emit();
+  }
+
+  void _toggleDashed() {
+    final i = _selected;
+    if (i == null || i >= _els.length) return;
+    setState(
+      () => _els[i] = _els[i].copyWith(dashed: !(_els[i].dashed ?? false)),
+    );
+    _emit();
+  }
+
+  void _duplicate() {
+    final i = _selected;
+    if (i == null || i >= _els.length) return;
+    final e = _els[i];
+    final copy = e.copyWith(
+      x: (e.x + 0.05).clamp(0.0, 1.0),
+      y: (e.y + 0.05).clamp(0.0, 1.0),
+      x2: e.x2 == null ? null : (e.x2! + 0.05).clamp(0.0, 1.0),
+      y2: e.y2 == null ? null : (e.y2! + 0.05).clamp(0.0, 1.0),
+    );
+    setState(() {
+      _els.add(copy);
+      _selected = _els.length - 1;
+    });
+    _emit();
+  }
+
+  void _moveZ(bool toFront) {
+    final i = _selected;
+    if (i == null || i >= _els.length) return;
+    setState(() {
+      final e = _els.removeAt(i);
+      if (toFront) {
+        _els.add(e);
+        _selected = _els.length - 1;
+      } else {
+        _els.insert(0, e);
+        _selected = 0;
+      }
+    });
+    _emit();
+  }
+
+  void _deleteSelected() {
+    final i = _selected;
+    if (i == null || i >= _els.length) return;
+    setState(() {
+      _els.removeAt(i);
+      _selected = null;
+    });
+    _emit();
+  }
+
+  Color _hexColor(String hex) {
+    var h = hex.replaceAll('#', '');
+    if (h.length == 6) h = 'FF$h';
+    return Color(int.tryParse(h, radix: 16) ?? 0xFF888888);
+  }
+
   Future<void> _openFullscreen() async {
     final result = await Navigator.of(context).push<DrillDiagram>(
       MaterialPageRoute(
@@ -339,19 +461,6 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             icon: const Icon(Icons.fullscreen),
             onPressed: _openFullscreen,
           ),
-        IconButton(
-          tooltip: 'Auswahl löschen',
-          icon: const Icon(Icons.delete_outline),
-          onPressed: _selected == null
-              ? null
-              : () {
-                  setState(() {
-                    _els.removeAt(_selected!);
-                    _selected = null;
-                  });
-                  _emit();
-                },
-        ),
         TextButton.icon(
           onPressed: _els.isEmpty
               ? null
@@ -368,27 +477,13 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
       ],
     );
 
-    // Größe-Regler für das gewählte Objekt.
+    // Eigenschaften-Panel für das gewählte Objekt.
     final selEl = (_selected != null && _selected! < _els.length)
         ? _els[_selected!]
         : null;
-    final sizeRow = selEl == null
+    final panel = selEl == null
         ? const SizedBox.shrink()
-        : Row(
-            children: [
-              const Icon(Icons.photo_size_select_large, size: 18),
-              const SizedBox(width: 4),
-              const Text('Größe'),
-              Expanded(
-                child: Slider(
-                  value: (selEl.size ?? 1.0).clamp(0.4, 2.5),
-                  min: 0.4,
-                  max: 2.5,
-                  onChanged: _setSize,
-                ),
-              ),
-            ],
-          );
+        : _propertiesPanel(selEl);
 
     if (widget.fullscreen) {
       return Column(
@@ -403,7 +498,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: sizeRow,
+            child: panel,
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
@@ -421,10 +516,131 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
         LayoutBuilder(
           builder: (context, c) => _buildCanvas(c.maxWidth, null),
         ),
-        sizeRow,
+        panel,
         const SizedBox(height: 2),
         controls,
       ],
+    );
+  }
+
+  Widget _propertiesPanel(DrillElement sel) {
+    final usesColor =
+        sel.type == 'player' ||
+        sel.type == 'cone' ||
+        sel.type == 'arrow' ||
+        sel.type == 'zone' ||
+        sel.type == 'text';
+    final usesLabel = sel.type == 'player' || sel.type == 'text';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (usesColor)
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: [
+                const Icon(Icons.palette_outlined, size: 18),
+                const SizedBox(width: 6),
+                for (final c in _palette)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: _swatch(
+                      c,
+                      (sel.color ?? '').toUpperCase() == c.toUpperCase(),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (usesLabel)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(
+              children: [
+                Icon(sel.type == 'text' ? Icons.title : Icons.tag, size: 18),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: TextFormField(
+                    key: ValueKey('lbl$_selected'),
+                    initialValue: sel.label ?? '',
+                    decoration: const InputDecoration(
+                      isDense: true,
+                      border: OutlineInputBorder(),
+                      hintText: 'Nummer / Text',
+                    ),
+                    onChanged: _setLabel,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Row(
+          children: [
+            const Icon(Icons.photo_size_select_large, size: 18),
+            const SizedBox(width: 4),
+            const Text('Größe'),
+            Expanded(
+              child: Slider(
+                value: (sel.size ?? 1.0).clamp(0.4, 2.5),
+                min: 0.4,
+                max: 2.5,
+                onChanged: _setSize,
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            if (sel.type == 'arrow')
+              FilterChip(
+                avatar: const Icon(Icons.more_horiz, size: 16),
+                label: const Text('Gestrichelt'),
+                selected: sel.dashed ?? false,
+                onSelected: (_) => _toggleDashed(),
+                visualDensity: VisualDensity.compact,
+              ),
+            const Spacer(),
+            IconButton(
+              tooltip: 'Nach hinten',
+              icon: const Icon(Icons.flip_to_back),
+              onPressed: () => _moveZ(false),
+            ),
+            IconButton(
+              tooltip: 'Nach vorne',
+              icon: const Icon(Icons.flip_to_front),
+              onPressed: () => _moveZ(true),
+            ),
+            IconButton(
+              tooltip: 'Duplizieren',
+              icon: const Icon(Icons.copy),
+              onPressed: _duplicate,
+            ),
+            IconButton(
+              tooltip: 'Löschen',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: _deleteSelected,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _swatch(String hex, bool selected) {
+    return GestureDetector(
+      onTap: () => _setColor(hex),
+      child: Container(
+        width: 26,
+        height: 26,
+        decoration: BoxDecoration(
+          color: _hexColor(hex),
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: selected ? Colors.amber : Colors.black26,
+            width: selected ? 3 : 1,
+          ),
+        ),
+      ),
     );
   }
 
@@ -443,6 +659,8 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
         final hit = _hit(n);
         if (hit != null) {
           setState(() => _selected = hit);
+        } else if (_tool == 'select') {
+          setState(() => _selected = null);
         } else {
           _addByTap(n);
         }

@@ -18,6 +18,9 @@ class DrillElement {
   /// Größenfaktor (1.0 = Standard); null → Standard.
   final double? size;
 
+  /// Nur für Pfeile: gestrichelt zeichnen.
+  final bool? dashed;
+
   const DrillElement({
     required this.type,
     required this.x,
@@ -27,6 +30,7 @@ class DrillElement {
     this.color,
     this.label,
     this.size,
+    this.dashed,
   });
 
   DrillElement copyWith({
@@ -37,6 +41,7 @@ class DrillElement {
     String? color,
     String? label,
     double? size,
+    bool? dashed,
   }) => DrillElement(
     type: type,
     x: x ?? this.x,
@@ -46,6 +51,7 @@ class DrillElement {
     color: color ?? this.color,
     label: label ?? this.label,
     size: size ?? this.size,
+    dashed: dashed ?? this.dashed,
   );
 
   Map<String, dynamic> toJson() => {
@@ -57,6 +63,7 @@ class DrillElement {
     if (color != null) 'color': color,
     if (label != null) 'label': label,
     if (size != null) 'size': size,
+    if (dashed != null) 'dashed': dashed,
   };
 
   factory DrillElement.fromJson(Map<String, dynamic> m) => DrillElement(
@@ -68,6 +75,7 @@ class DrillElement {
     color: m['color'] as String?,
     label: m['label'] as String?,
     size: (m['size'] as num?)?.toDouble(),
+    dashed: m['dashed'] == true,
   );
 }
 
