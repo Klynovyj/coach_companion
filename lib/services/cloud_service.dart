@@ -143,6 +143,20 @@ class CloudService {
     } catch (_) {}
   }
 
+  /// KI-Co-Trainer: ruft die Edge-Function „ai-coach" (Claude) auf und liefert
+  /// den Übungs-Entwurf als Map. Wirft bei Fehlern (kein Key/Netz) – der
+  /// Aufrufer zeigt eine Meldung.
+  static Future<Map<String, dynamic>?> aiCoach(
+    Map<String, dynamic> body,
+  ) async {
+    final res = await _c.functions.invoke('ai-coach', body: body);
+    final data = res.data;
+    if (data is Map && data['exercise'] is Map) {
+      return Map<String, dynamic>.from(data['exercise'] as Map);
+    }
+    return null;
+  }
+
   /// Push an bestimmte Empfänger (Posteingang-Eintrag), via Edge-Function
   /// „notify-inbox". Fehler werden geschluckt (In-App-Posteingang reicht auch
   /// ohne Push). Die Function muss deployt sein, sonst passiert nichts.

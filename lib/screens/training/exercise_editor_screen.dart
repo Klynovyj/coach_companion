@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 
 import '../../models/drill_diagram.dart';
 import '../../models/exercise.dart';
+import '../../services/cloud_service.dart';
 import '../../state/app_state.dart';
 import '../../widgets/team_logo.dart';
 import 'drill_diagram_editor.dart';
@@ -56,6 +57,7 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
     widget.initial?.videoLinks ?? const [],
   );
   late String? _sketchPhoto = widget.initial?.sketchPhotoUrl;
+  int _diagramKey = 0;
   bool _saving = false;
 
   Future<void> _addCategory() async {
@@ -119,24 +121,232 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
     setState(() => _videoLinks.add(v));
   }
 
-  Future<void> _pickPhoto() async {
+  /// Wählt ein Bild aus der Galerie und liefert es als (verkleinerte) Data-URL.
+  Future<String?> _pickImageDataUrl() async {
     final picker = ImagePicker();
     final file = await picker.pickImage(
       source: ImageSource.gallery,
       imageQuality: 90,
     );
-    if (file == null) return;
+    if (file == null) return null;
     final bytes = await file.readAsBytes();
     final decoded = img.decodeImage(bytes);
-    if (decoded == null) return;
+    if (decoded == null) return null;
     final resized = decoded.width > 1400
         ? img.copyResize(decoded, width: 1400)
         : decoded;
     final jpg = img.encodeJpg(resized, quality: 82);
-    if (!mounted) return;
-    setState(
-      () => _sketchPhoto = 'data:image/jpeg;base64,${base64Encode(jpg)}',
+    return 'data:image/jpeg;base64,${base64Encode(jpg)}';
+  }
+
+  Future<void> _pickPhoto() async {
+    final url = await _pickImageDataUrl();
+    if (url == null || !mounted) return;
+    setState(() => _sketchPhoto = url);
+  }
+
+  // ---------------------------------------------------------------- KI
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  /// Übernimmt einen KI-Entwurf in die Felder (zum Prüfen/Bearbeiten).
+  void _applyDraft(Map<String, dynamic> d) {
+    void setIf(TextEditingController c, Object? v) {
+      final s = (v as String?)?.trim();
+      if (s != null && s.isNotEmpty) c.text = s;
+    }
+
+    setState(() {
+      setIf(_title, d['title']);
+      final cats = d['categories'];
+      if (cats is List) {
+        for (final c in cats) {
+          final s = c.toString().trim();
+          if (s.isNotEmpty && !_categories.contains(s)) _categories.add(s);
+        }
+      }
+      setIf(_aufbau, d['aufbau']);
+      setIf(_ablauf, d['ablauf']);
+      setIf(_coaching, d['coachingPoints']);
+      setIf(_varianten, d['varianten']);
+      setIf(_material, d['material']);
+      final mp = d['minPlayers'];
+      if (mp is num) _minPlayers.text = mp.toInt().toString();
+      final du = d['durationMin'];
+      if (du is num) _duration.text = du.toInt().toString();
+      final gk = d['needsGoalkeeper'];
+      if (gk is bool) _needsGk = gk;
+      final dia = d['diagram'];
+      if (dia is Map) {
+        final parsed = DrillDiagram.fromJson(Map<String, dynamic>.from(dia));
+        if (!parsed.isEmpty) {
+          _diagram = parsed;
+          _diagramKey++; // Editor mit neuem Diagramm neu aufbauen
+        }
+      }
+    });
+  }
+
+  Future<void> _runAi(Map<String, dynamic> body) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('KI denkt nach …')),
+          ],
+        ),
+      ),
     );
+    try {
+      final draft = await CloudService.aiCoach(body);
+      if (mounted) Navigator.pop(context); // Spinner
+      if (draft == null) {
+        _snack('Keine Antwort von der KI.');
+        return;
+      }
+      _applyDraft(draft);
+      _snack('KI-Entwurf eingefügt – prüfen und speichern.');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _snack('KI-Fehler: $e');
+    }
+  }
+
+  Map<String, dynamic> get _ctx => {
+    'players': _minPlayers.text.trim(),
+    'categories': _categories,
+  };
+
+  void _kiSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'KI-Co-Trainer',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('Übung vorschlagen'),
+              subtitle: const Text('Die KI erfindet eine passende Übung'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _kiGenerate();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit_note),
+              title: const Text('Aus Stichpunkten'),
+              subtitle: const Text('Deine Notizen ausformulieren'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _kiBullets();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Aus Skizzen-Foto'),
+              subtitle: const Text('Foto einer Zeichnung analysieren'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _kiPhoto();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.ondemand_video),
+              title: const Text('Aus Video-Infos'),
+              subtitle: const Text('Titel/Beschreibung eines Videos'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _kiVideo();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<String?> _prompt(String title, String hint, {int lines = 1}) async {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: lines,
+          maxLines: lines + 4,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Los'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _kiGenerate() async {
+    final focus = await _prompt(
+      'Übung vorschlagen',
+      'Fokus/Wunsch (optional), z.B. Pressing, Abschluss …',
+    );
+    if (focus == null) return;
+    await _runAi({
+      ..._ctx,
+      'mode': 'generate',
+      'focus': focus,
+      'duration': _duration.text.trim(),
+    });
+  }
+
+  Future<void> _kiBullets() async {
+    final bullets = await _prompt(
+      'Aus Stichpunkten',
+      'Deine Stichpunkte zur Übung …',
+      lines: 4,
+    );
+    if (bullets == null || bullets.isEmpty) return;
+    await _runAi({..._ctx, 'mode': 'bullets', 'bullets': bullets});
+  }
+
+  Future<void> _kiPhoto() async {
+    final url = await _pickImageDataUrl();
+    if (url == null) return;
+    setState(() => _sketchPhoto = url);
+    await _runAi({..._ctx, 'mode': 'photo', 'image': url});
+  }
+
+  Future<void> _kiVideo() async {
+    final info = await _prompt(
+      'Aus Video-Infos',
+      'Titel/Beschreibung/Transkript des Videos einfügen …',
+      lines: 4,
+    );
+    if (info == null || info.isEmpty) return;
+    await _runAi({..._ctx, 'mode': 'video', 'description': info});
   }
 
   Future<void> _save() async {
@@ -187,6 +397,11 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
       appBar: AppBar(
         title: Text(widget.initial == null ? 'Neue Übung' : 'Übung bearbeiten'),
         actions: [
+          IconButton(
+            tooltip: 'KI-Co-Trainer',
+            icon: const Icon(Icons.auto_awesome),
+            onPressed: _kiSheet,
+          ),
           TextButton(
             onPressed: _saving ? null : _save,
             child: const Text(
@@ -267,7 +482,11 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
           _field(_material, 'Material', lines: 2),
           const SizedBox(height: 12),
           _label('Skizze'),
-          DrillDiagramEditor(initial: _diagram, onChanged: (d) => _diagram = d),
+          DrillDiagramEditor(
+            key: ValueKey(_diagramKey),
+            initial: _diagram,
+            onChanged: (d) => _diagram = d,
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
