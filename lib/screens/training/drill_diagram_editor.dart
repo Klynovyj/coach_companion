@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/drill_diagram.dart';
 import '../../widgets/drill_diagram_view.dart';
+import '../../widgets/zone_overlays.dart';
 
 /// Bearbeitbare Übungs-Skizze: Werkzeug wählen, auf das Feld tippen zum
 /// Hinzufügen, Elemente ziehen zum Verschieben. Pfeile/Zonen zieht man zum
@@ -28,6 +29,7 @@ class DrillDiagramEditor extends StatefulWidget {
 class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   late List<DrillElement> _els = List.of(widget.initial.elements);
   late String _field = widget.initial.field;
+  late String? _overlay = widget.initial.overlay;
   String _tool = 'select';
   int? _selected;
 
@@ -114,8 +116,9 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     y2: e.y2 == null ? null : _snapV(e.y2!),
   );
 
-  void _emit() =>
-      widget.onChanged(DrillDiagram(field: _field, elements: List.of(_els)));
+  void _emit() => widget.onChanged(
+    DrillDiagram(field: _field, elements: List.of(_els), overlay: _overlay),
+  );
 
   int? _hit(Offset norm) {
     int? best;
@@ -442,13 +445,18 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     final result = await Navigator.of(context).push<DrillDiagram>(
       MaterialPageRoute(
         builder: (_) => _FullscreenDiagramEditorPage(
-          initial: DrillDiagram(field: _field, elements: List.of(_els)),
+          initial: DrillDiagram(
+            field: _field,
+            elements: List.of(_els),
+            overlay: _overlay,
+          ),
         ),
       ),
     );
     if (result == null) return;
     setState(() {
       _field = result.field;
+      _overlay = result.overlay;
       _els = List.of(result.elements);
       _selected = null;
     });
@@ -490,6 +498,23 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             setState(() => _field = v);
             _emit();
           },
+        ),
+        PopupMenuButton<String?>(
+          tooltip: 'Zonen-Raster',
+          icon: Icon(
+            Icons.grid_on,
+            color: _overlay != null
+                ? Theme.of(context).colorScheme.primary
+                : null,
+          ),
+          onSelected: (v) {
+            setState(() => _overlay = v == '__none__' ? null : v);
+            _emit();
+          },
+          itemBuilder: (_) => [
+            for (final (k, l) in overlayOptions)
+              PopupMenuItem<String?>(value: k ?? '__none__', child: Text(l)),
+          ],
         ),
         const Spacer(),
         if (!widget.fullscreen)
@@ -865,7 +890,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
           borderRadius: BorderRadius.circular(10),
           child: CustomPaint(
             painter: _EditorPainter(
-              DrillDiagram(field: _field, elements: _els),
+              DrillDiagram(field: _field, elements: _els, overlay: _overlay),
               _selected,
             ),
             size: size,

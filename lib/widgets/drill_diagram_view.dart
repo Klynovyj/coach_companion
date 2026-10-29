@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../models/drill_diagram.dart';
 import 'pitch_geometry.dart';
+import 'zone_overlays.dart';
 
 /// Seitenverhältnis (Breite/Höhe) passend zum Feldtyp (aus der Pitch-Geometrie).
 double aspectForField(String field) => pitchGeometryFor(field).aspect;
@@ -97,6 +98,11 @@ class DrillDiagramPainter extends CustomPainter {
     _drawMarkings(canvas, field, lineShadow, diagram.field);
     canvas.restore();
     _drawMarkings(canvas, field, line, diagram.field);
+
+    // Zonen-Raster (Overlay) hinter den Objekten.
+    if (diagram.overlay != null) {
+      _drawOverlay(canvas, field, diagram.overlay!, diagram.field == 'full');
+    }
 
     Offset p(double x, double y) =>
         Offset(field.left + x * field.width, field.top + y * field.height);
@@ -464,6 +470,37 @@ class DrillDiagramPainter extends CustomPainter {
         false,
         line,
       );
+    }
+  }
+
+  // Zonen-Raster-Overlay (farbige Flächen + optionale Labels).
+  void _drawOverlay(Canvas c, Rect f, String key, bool landscape) {
+    for (final z in overlayZones(key, landscape)) {
+      final rect = Rect.fromLTWH(
+        f.left + z.x * f.width,
+        f.top + z.y * f.height,
+        z.width * f.width,
+        z.height * f.height,
+      );
+      c.drawRect(rect, Paint()..color = z.color);
+      if (z.label.isNotEmpty) {
+        final fs = math
+            .min(rect.height * 0.35, rect.width / (z.label.length * 0.62))
+            .clamp(8.0, rect.height);
+        final tp = TextPainter(
+          text: TextSpan(
+            text: z.label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.45),
+              fontWeight: FontWeight.w900,
+              fontSize: fs,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        )..layout(maxWidth: rect.width);
+        tp.paint(c, rect.center - Offset(tp.width / 2, tp.height / 2));
+      }
     }
   }
 

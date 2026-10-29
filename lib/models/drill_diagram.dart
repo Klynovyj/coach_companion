@@ -144,19 +144,31 @@ class DrillElement {
 /// Eine Übungs-Skizze: Feldtyp + Elemente. Wird als JSON in der Übung
 /// gespeichert und von einem CustomPainter gezeichnet.
 class DrillDiagram {
-  /// full | half | box
+  /// full | half | box | full_v
   final String field;
   final List<DrillElement> elements;
 
-  const DrillDiagram({this.field = 'full', this.elements = const []});
+  /// Optionales Zonen-Raster-Overlay (thirds/strips/grid_15/grid_9/pressing/
+  /// attack_thirds); null = keins.
+  final String? overlay;
 
-  bool get isEmpty => elements.isEmpty;
+  const DrillDiagram({
+    this.field = 'full',
+    this.elements = const [],
+    this.overlay,
+  });
 
-  DrillDiagram copyWith({String? field, List<DrillElement>? elements}) =>
-      DrillDiagram(
-        field: field ?? this.field,
-        elements: elements ?? this.elements,
-      );
+  bool get isEmpty => elements.isEmpty && overlay == null;
+
+  DrillDiagram copyWith({
+    String? field,
+    List<DrillElement>? elements,
+    String? overlay,
+  }) => DrillDiagram(
+    field: field ?? this.field,
+    elements: elements ?? this.elements,
+    overlay: overlay ?? this.overlay,
+  );
 
   /// Setzt Punkt-Objekte auf ein sauberes Raster und löst Kollisionen auf,
   /// damit KI-Skizzen nicht „durcheinander" wirken. Pfeile/Zonen bleiben.
@@ -213,6 +225,7 @@ class DrillDiagram {
     }
     return DrillDiagram(
       field: field,
+      overlay: overlay,
       elements: [
         for (var i = 0; i < els.length; i++)
           px.containsKey(i) ? els[i].copyWith(x: px[i], y: py[i]) : els[i],
@@ -223,6 +236,7 @@ class DrillDiagram {
   Map<String, dynamic> toJson() => {
     'field': field,
     'elements': [for (final e in elements) e.toJson()],
+    if (overlay != null) 'overlay': overlay,
   };
 
   factory DrillDiagram.fromJson(Map<String, dynamic> m) => DrillDiagram(
@@ -231,6 +245,7 @@ class DrillDiagram {
       for (final e in (m['elements'] as List? ?? const []))
         DrillElement.fromJson(Map<String, dynamic>.from(e as Map)),
     ],
+    overlay: m['overlay'] as String?,
   );
 
   /// Für die DB: als JSON-String (null/leer → null).
