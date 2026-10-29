@@ -33,16 +33,8 @@ class _DrillAnimationViewState extends State<DrillAnimationView>
   void initState() {
     super.initState();
     _ctrl =
-        AnimationController(
-            vsync: this,
-            duration: Duration(milliseconds: _totalMs),
-          )
-          ..addListener(() => setState(() {}))
-          ..addStatusListener((s) {
-            if (s == AnimationStatus.completed && _loop) {
-              _ctrl.forward(from: 0);
-            }
-          });
+        AnimationController(vsync: this, duration: Duration(milliseconds: _totalMs))
+          ..addListener(() => setState(() {}));
   }
 
   @override
@@ -111,15 +103,55 @@ class _DrillAnimationViewState extends State<DrillAnimationView>
     setState(() => _ctrl.value = (startMs / _totalMs).clamp(0.0, 1.0));
   }
 
-  void _togglePlay() {
+  /// Haupt-Knopf: Schritt-Wiedergabe. Spielt animiert bis zur nächsten Schritt-
+  /// Grenze und hält dort an (an jedem Ablauf-Punkt stoppen). Erneut tippen →
+  /// nächster Schritt. Pausiert, wenn gerade etwas läuft.
+  void _onPlayPause() {
     if (_ctrl.isAnimating) {
       _ctrl.stop();
-    } else if (_ctrl.value >= 1.0) {
-      _ctrl.forward(from: 0);
-    } else {
-      _ctrl.forward();
+      setState(() {});
+      return;
     }
+    _playToNextBoundary();
+  }
+
+  void _playToNextBoundary() {
+    final steps = widget.diagram.animation ?? const <DrillAnimStep>[];
+    if (steps.isEmpty) return;
+    if (_ctrl.value >= 0.999) _ctrl.value = 0; // am Ende → von vorn
+    final cum = _cumMs;
+    final nowMs = _ctrl.value * _totalMs;
+    // Erste Schritt-Grenze echt nach der aktuellen Position.
+    var targetMs = _totalMs.toDouble();
+    for (final c in cum) {
+      if (c > nowMs + 0.5) {
+        targetMs = c.toDouble();
+        break;
+      }
+    }
+    final dur = (targetMs - nowMs).round().clamp(1, _totalMs);
     setState(() {});
+    _ctrl.animateTo(
+      (targetMs / _totalMs).clamp(0.0, 1.0),
+      duration: Duration(milliseconds: dur),
+    ).whenComplete(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  /// „Alles abspielen": läuft ohne Zwischenstopps bis zum Ende (ggf. in Schleife).
+  void _playAll() {
+    if (_ctrl.value >= 0.999) _ctrl.value = 0;
+    final remain = ((1.0 - _ctrl.value) * _totalMs).round().clamp(1, _totalMs);
+    setState(() {});
+    _ctrl.animateTo(1.0, duration: Duration(milliseconds: remain)).whenComplete(() {
+      if (!mounted) return;
+      if (_ctrl.value >= 0.999 && _loop) {
+        _playAll(); // nur bei echtem Ende weiterlaufen, nicht nach Pause
+      } else {
+        setState(() {});
+      }
+    });
   }
 
   @override
@@ -183,12 +215,12 @@ class _DrillAnimationViewState extends State<DrillAnimationView>
               onPressed: steps.length > 1 ? () => _seekStep(cur - 1) : null,
             ),
             IconButton(
-              tooltip: _ctrl.isAnimating ? 'Pause' : 'Abspielen',
+              tooltip: _ctrl.isAnimating ? 'Pause' : 'Schritt abspielen',
               icon: Icon(
                 _ctrl.isAnimating ? Icons.pause : Icons.play_arrow,
                 size: 32,
               ),
-              onPressed: _togglePlay,
+              onPressed: _onPlayPause,
             ),
             IconButton(
               tooltip: 'Schritt vor',
@@ -196,9 +228,17 @@ class _DrillAnimationViewState extends State<DrillAnimationView>
               onPressed: steps.length > 1 ? () => _seekStep(cur + 1) : null,
             ),
             IconButton(
+              tooltip: 'Alles abspielen',
+              icon: const Icon(Icons.fast_forward),
+              onPressed: _playAll,
+            ),
+            IconButton(
               tooltip: 'Von vorn',
               icon: const Icon(Icons.replay),
-              onPressed: () => _ctrl.forward(from: 0),
+              onPressed: () {
+                _ctrl.value = 0;
+                setState(() {});
+              },
             ),
             IconButton(
               tooltip: 'Schleife',

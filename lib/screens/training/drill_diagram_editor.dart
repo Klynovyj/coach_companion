@@ -142,7 +142,6 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   // Raster-Einrasten, damit Objekte sauber ausgerichtet sitzen.
   static const _grid = 0.0625;
   double _snapV(double v) => ((v / _grid).round() * _grid).clamp(0.0, 1.0);
-  Offset _snap(Offset n) => Offset(_snapV(n.dx), _snapV(n.dy));
   DrillElement _snapEl(DrillElement e) => e.copyWith(
     x: _snapV(e.x),
     y: _snapV(e.y),
@@ -466,7 +465,8 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     }
     final i = _dragIndex;
     if (i == null || i >= _els.length) return;
-    final snapped = _snap(norm);
+    // Endpunkte/Griffe fein (ohne Raster) ziehen; Objekte rasten erst am Ende.
+    final p = Offset(norm.dx.clamp(0.0, 1.0), norm.dy.clamp(0.0, 1.0));
     setState(() {
       switch (_dragKind) {
         case 'move':
@@ -476,10 +476,10 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             if (j < _els.length) _moveBy(j, d);
           }
         case 'start':
-          _els[i] = _els[i].copyWith(x: snapped.dx, y: snapped.dy);
+          _els[i] = _els[i].copyWith(x: p.dx, y: p.dy);
         case 'end':
         case 'draw':
-          _els[i] = _els[i].copyWith(x2: snapped.dx, y2: snapped.dy);
+          _els[i] = _els[i].copyWith(x2: p.dx, y2: p.dy);
       }
     });
   }
@@ -537,6 +537,92 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     if (i == null || i >= _els.length) return;
     setState(() => _els[i] = _els[i].copyWith(color: hex));
     _emit();
+  }
+
+  /// Öffnet einen Dialog zum Hinzufügen einer eigenen Farbe (Auswahl oder Hex),
+  /// wendet sie auf das gewählte Element an und merkt sie als Favorit.
+  Future<void> _addCustomColor() async {
+    final i = _sel;
+    if (i == null || i >= _els.length) return;
+    const extra = <String>[
+      '#D32F2F', '#C2185B', '#7B1FA2', '#512DA8', '#303F9F', '#1976D2',
+      '#0288D1', '#0097A7', '#00796B', '#388E3C', '#689F38', '#AFB42B',
+      '#FBC02D', '#FFA000', '#F57C00', '#E64A19', '#5D4037', '#616161',
+      '#455A64', '#000000', '#FFFFFF',
+    ];
+    String? normalize(String s) {
+      var h = s.trim().toUpperCase();
+      if (h.isEmpty) return null;
+      if (!h.startsWith('#')) h = '#$h';
+      return RegExp(r'^#([0-9A-F]{6})$').hasMatch(h) ? h : null;
+    }
+
+    final ctrl = TextEditingController(text: _els[i].color ?? '#');
+    final picked = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        String? sel = normalize(ctrl.text);
+        return StatefulBuilder(
+          builder: (ctx, setD) => AlertDialog(
+            title: const Text('Farbe hinzufügen'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final c in extra)
+                      GestureDetector(
+                        onTap: () => setD(() {
+                          sel = c;
+                          ctrl.text = c;
+                        }),
+                        child: Container(
+                          width: 30,
+                          height: 30,
+                          decoration: BoxDecoration(
+                            color: _hexColor(c),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: sel == c ? Colors.amber : Colors.black26,
+                              width: sel == c ? 3 : 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: false,
+                  decoration: const InputDecoration(
+                    labelText: 'Hex, z.B. #FF8800',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (v) => setD(() => sel = normalize(v)),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Abbrechen'),
+              ),
+              FilledButton(
+                onPressed: sel == null ? null : () => Navigator.pop(ctx, sel),
+                child: const Text('Übernehmen'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (picked == null) return;
+    _setColor(picked);
+    await _addFav(picked);
   }
 
   /// Wendet eine Änderung auf das gewählte Element an.
@@ -1000,7 +1086,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
                 ),
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.fromLTRB(8, 0, 8, hasSel ? 92 : 8),
+                    padding: EdgeInsets.fromLTRB(8, 0, 8, hasSel ? 60 : 8),
                     child: LayoutBuilder(
                       builder: (context, c) =>
                           Center(child: _buildCanvas(c.maxWidth, c.maxHeight)),
@@ -1009,14 +1095,15 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
                 ),
               ],
             ),
-            // Eigenschaften als ausziehbares Bodenblatt (Feld bleibt groß).
+            // Eigenschaften als ausziehbares Bodenblatt: bleibt eingeklappt (nur
+            // Griff sichtbar), öffnet sich erst, wenn man es von unten hochzieht.
             if (hasSel)
               DraggableScrollableSheet(
-                initialChildSize: 0.32,
-                minChildSize: 0.14,
+                initialChildSize: 0.09,
+                minChildSize: 0.09,
                 maxChildSize: 0.8,
                 snap: true,
-                snapSizes: const [0.14, 0.32, 0.8],
+                snapSizes: const [0.09, 0.5, 0.8],
                 builder: (ctx, scroll) => Material(
                   elevation: 12,
                   color: Theme.of(context).canvasColor,
@@ -1033,10 +1120,24 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
                         child: Container(
                           width: 42,
                           height: 4,
-                          margin: const EdgeInsets.only(bottom: 8),
+                          margin: const EdgeInsets.only(bottom: 6),
                           decoration: BoxDecoration(
                             color: Colors.grey.withValues(alpha: 0.5),
                             borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            'Eigenschaften hochziehen',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       ),
@@ -1187,11 +1288,9 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
                             (sel.color ?? '').toUpperCase() == c.toUpperCase(),
                             onLongPress: () => _removeFav(c),
                           ),
-                      // Aktuelle Farbe als Favorit speichern.
+                      // Eigene Farbe hinzufügen (Auswahl + Hex) und anwenden.
                       GestureDetector(
-                        onTap: () {
-                          if (sel.color != null) _addFav(sel.color!);
-                        },
+                        onTap: _addCustomColor,
                         child: Container(
                           width: 26,
                           height: 26,
@@ -1649,7 +1748,7 @@ class _NumFieldState extends State<_NumField> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 58,
+      width: 72,
       child: TextField(
         controller: _c,
         focusNode: _focus,
@@ -1660,10 +1759,12 @@ class _NumFieldState extends State<_NumField> {
         ),
         decoration: InputDecoration(
           isDense: true,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           border: const OutlineInputBorder(),
           suffixText: widget.unit.isEmpty ? null : widget.unit,
+          suffixStyle: const TextStyle(fontSize: 13),
         ),
+        style: const TextStyle(fontSize: 14),
         onSubmitted: (_) => _commit(),
       ),
     );
@@ -1722,7 +1823,7 @@ class _EditorPainter extends DrillDiagramPainter {
     if ((e.type == 'arrow' || e.type == 'zone') &&
         e.x2 != null &&
         e.y2 != null) {
-      final hr = size.shortestSide * 0.028;
+      final hr = size.shortestSide * 0.016;
       _handle(canvas, at(e.x, e.y), hr, Colors.cyanAccent);
       _handle(canvas, at(e.x2!, e.y2!), hr, Colors.amber);
     } else {
