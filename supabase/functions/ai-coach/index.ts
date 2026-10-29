@@ -45,7 +45,8 @@ diesem Schema (keine weiteren Felder, keine Erklaerung, kein Markdown):
        "x2": number, "y2": number,   // nur bei arrow (Ende) / zone (2. Ecke)
        "color": string,              // optional, Hex z.B. "#C62828" fuer Gegner
        "label": string,              // optional, SEHR kurz (Rueckennummer)
-       "size": number }              // optional, 1.0=Standard (groesser/kleiner)
+       "size": number,               // optional, 1.0=Standard (groesser/kleiner)
+       "rotation": number }          // optional, Grad (Tore ausrichten)
    ]
  }
 }
@@ -68,7 +69,13 @@ SKIZZE (diagram) uebersichtlich halten:
 - Nummeriere je Mannschaft fortlaufend ab 1 (Gegner in Rot "#C62828").
 - Bei Spiel auf zwei Tore: je ein Tor mit Torwart an den beiden Stirnseiten.
 - "label" nur sehr kurz (Rueckennummer/Kuerzel), NIE ganze Saetze.
-- "goal" = grosses Tor, "minigoal" = kleines Minitor. Nutze den passenden Typ.
+- Spiel auf GROSSE Tore (mit Torwart): field "full"/"half", Tore als "goal"
+  an der Grundlinie.
+- Spiel auf KLEINE Tore/Minitore (ohne Torwart): field "box" (neutrale Flaeche
+  OHNE Spielfeldlinien), Tore als "minigoal". Dann KEINE grossen "goal" und
+  KEINE Torhueter zeichnen.
+- Richte Tore zur Spielrichtung aus ("rotation" in Grad): Tor an der linken
+  oder rechten Seite -> rotation 90; Tor oben/unten -> rotation 0.
 - Waehle das Feld passend: ganzes Feld quer ("full") oder laengs ("full_v"),
   Haelfte ("half") oder Kasten/Zone ("box").
 - Verwende KEINE langen "text"-Banner im Feld. Die Beschreibung gehoert in die

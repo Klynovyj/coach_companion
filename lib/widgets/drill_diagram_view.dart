@@ -129,7 +129,15 @@ class DrillDiagramPainter extends CustomPainter {
           Paint()..color = Colors.white.withValues(alpha: op.clamp(0.0, 1.0)),
         );
       }
-      final rot = (e.rotation ?? 0) * math.pi / 180;
+      // Tore ohne eigene Drehung an der linken/rechten Seite automatisch
+      // hochkant stellen, damit sie zum Feld zeigen.
+      var rotDeg = e.rotation ?? 0.0;
+      if ((e.type == 'goal' || e.type == 'minigoal') &&
+          e.rotation == null &&
+          (e.x < 0.12 || e.x > 0.88)) {
+        rotDeg = 90;
+      }
+      final rot = rotDeg * math.pi / 180;
       final rotate =
           rot != 0 &&
           (e.type == 'cone' ||
