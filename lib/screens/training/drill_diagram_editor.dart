@@ -59,6 +59,10 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   static const _favKey = 'skizze_color_favorites';
   List<String> _favColors = [];
 
+  // Eigenschaften-Bodenpanel: startet eingeklappt (nur Griff), öffnet per
+  // Hochwischen oder Tippen auf den Griff.
+  bool _panelOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -1095,56 +1099,12 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
                 ),
               ],
             ),
-            // Eigenschaften als ausziehbares Bodenblatt: bleibt eingeklappt (nur
-            // Griff sichtbar), öffnet sich erst, wenn man es von unten hochzieht.
+            // Eigenschaften-Bodenpanel: eingeklappt nur der Griff (nichts wird
+            // abgeschnitten); öffnet per Hochwischen oder Tippen auf den Griff.
             if (hasSel)
-              DraggableScrollableSheet(
-                initialChildSize: 0.09,
-                minChildSize: 0.09,
-                maxChildSize: 0.8,
-                snap: true,
-                snapSizes: const [0.09, 0.5, 0.8],
-                builder: (ctx, scroll) => Material(
-                  elevation: 12,
-                  color: Theme.of(context).canvasColor,
-                  shape: const RoundedRectangleBorder(
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(16),
-                    ),
-                  ),
-                  child: ListView(
-                    controller: scroll,
-                    padding: const EdgeInsets.fromLTRB(14, 8, 14, 20),
-                    children: [
-                      Center(
-                        child: Container(
-                          width: 42,
-                          height: 4,
-                          margin: const EdgeInsets.only(bottom: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.withValues(alpha: 0.5),
-                            borderRadius: BorderRadius.circular(2),
-                          ),
-                        ),
-                      ),
-                      Center(
-                        child: Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Text(
-                            'Eigenschaften hochziehen',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ),
-                      ),
-                      panel,
-                    ],
-                  ),
-                ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: _bottomPanel(panel),
               ),
           ],
         ),
@@ -1246,6 +1206,78 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     visualDensity: VisualDensity.compact,
     onPressed: () => _align(axis),
   );
+
+  /// Eingeklapptes Bodenpanel mit Griff; öffnet per Hochwischen oder Tippen.
+  /// Eingeklappt wird nichts vom Inhalt angeschnitten.
+  Widget _bottomPanel(Widget panel) {
+    final grabber = Container(
+      width: 46,
+      height: 5,
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(3),
+      ),
+    );
+    final header = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _panelOpen = !_panelOpen),
+      onVerticalDragUpdate: (d) {
+        final dy = d.primaryDelta ?? 0;
+        if (dy < -3 && !_panelOpen) {
+          setState(() => _panelOpen = true);
+        } else if (dy > 4 && _panelOpen) {
+          setState(() => _panelOpen = false);
+        }
+      },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          grabber,
+          if (!_panelOpen)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Text(
+                'Eigenschaften hochziehen',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+    final expandedH = (MediaQuery.of(context).size.height * 0.55).clamp(
+      220.0,
+      540.0,
+    );
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      height: _panelOpen ? expandedH : 52,
+      child: Material(
+        elevation: 12,
+        color: Theme.of(context).canvasColor,
+        clipBehavior: Clip.antiAlias,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+        ),
+        child: Column(
+          children: [
+            header,
+            if (_panelOpen)
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 20),
+                  child: panel,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _propertiesPanel(DrillElement sel) {
     final usesColor =

@@ -13,7 +13,8 @@ import '../../widgets/team_logo.dart';
 import 'drill_diagram_editor.dart';
 
 /// Übung im bequemen Lese-Modus: eine Karte pro Sektion, horizontal
-/// durchwischen (wie die Gegner-Analyse). Bearbeiten-Stift in der AppBar.
+/// durchwischen (wie die Gegner-Analyse). Bearbeiten direkt pro Karte über den
+/// Stift in der Karten-Kopfzeile – kein globaler Umschalter.
 class ExerciseDetailScreen extends StatefulWidget {
   const ExerciseDetailScreen({super.key, required this.exercise});
 
@@ -34,7 +35,6 @@ class _ReadPage {
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   late Exercise _ex = widget.exercise;
-  bool _editMode = false;
 
   Future<void> _save(Exercise updated) async {
     final state = context.read<AppState>();
@@ -319,24 +319,14 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
               ],
             ),
           ),
-        if (_editMode) ...[
-          const SizedBox(height: 12),
-          Center(
-            child: FilledButton.icon(
-              onPressed: _aiAnimate,
-              icon: const Icon(Icons.auto_awesome),
-              label: Text(hasAnim ? 'Neu generieren (KI)' : 'Mit KI erstellen'),
-            ),
+        const SizedBox(height: 12),
+        Center(
+          child: FilledButton.icon(
+            onPressed: _aiAnimate,
+            icon: const Icon(Icons.auto_awesome),
+            label: Text(hasAnim ? 'Neu generieren (KI)' : 'Mit KI erstellen'),
           ),
-        ] else if (!hasAnim)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text(
-              'Oben auf „Bearbeiten" tippen, um eine Animation mit KI zu erstellen.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.grey),
-            ),
-          ),
+        ),
       ],
     );
   }
@@ -483,16 +473,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final pages = _buildPages(e);
     if (_page >= pages.length) _page = pages.length - 1;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(e.title),
-        actions: [
-          IconButton(
-            tooltip: _editMode ? 'Fertig (Lesen)' : 'Bearbeiten',
-            icon: Icon(_editMode ? Icons.check : Icons.edit_outlined),
-            onPressed: () => setState(() => _editMode = !_editMode),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(e.title)),
       body: Column(
         children: [
           Expanded(
@@ -536,7 +517,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                     ),
                   ),
                 ),
-                if (_editMode && p.onEdit != null)
+                if (p.onEdit != null)
                   IconButton(
                     tooltip: 'Bearbeiten',
                     icon: const Icon(Icons.edit, color: Colors.white, size: 20),
