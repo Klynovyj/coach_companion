@@ -374,19 +374,18 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     _emit();
   }
 
+  /// Wendet eine Änderung auf das gewählte Element an.
+  void _patch(DrillElement Function(DrillElement e) f) {
+    final i = _selected;
+    if (i == null || i >= _els.length) return;
+    setState(() => _els[i] = f(_els[i]));
+    _emit();
+  }
+
   void _setLabel(String s) {
     final i = _selected;
     if (i == null || i >= _els.length) return;
     setState(() => _els[i] = _els[i].copyWith(label: s.trim()));
-    _emit();
-  }
-
-  void _toggleDashed() {
-    final i = _selected;
-    if (i == null || i >= _els.length) return;
-    setState(
-      () => _els[i] = _els[i].copyWith(dashed: !(_els[i].dashed ?? false)),
-    );
     _emit();
   }
 
@@ -660,16 +659,10 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             ),
           ],
         ),
+        if (sel.type == 'arrow') _arrowControls(sel),
+        if (sel.type == 'zone') _zoneControls(sel),
         Row(
           children: [
-            if (sel.type == 'arrow')
-              FilterChip(
-                avatar: const Icon(Icons.more_horiz, size: 16),
-                label: const Text('Gestrichelt'),
-                selected: sel.dashed ?? false,
-                onSelected: (_) => _toggleDashed(),
-                visualDensity: VisualDensity.compact,
-              ),
             const Spacer(),
             IconButton(
               tooltip: 'Nach hinten',
@@ -690,6 +683,130 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
               tooltip: 'Löschen',
               icon: const Icon(Icons.delete_outline),
               onPressed: _deleteSelected,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _arrowControls(DrillElement sel) {
+    final lt = sel.lineType ?? (sel.dashed == true ? 'dashed' : 'solid');
+    const types = [
+      ('solid', 'Linie'),
+      ('dashed', 'Strich'),
+      ('wavy', 'Welle'),
+      ('double', 'Doppelt'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final (id, label) in types)
+                ChoiceChip(
+                  label: Text(label),
+                  selected: lt == id,
+                  onSelected: (_) => _patch((e) => e.copyWith(lineType: id)),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+        ),
+        Wrap(
+          spacing: 6,
+          children: [
+            FilterChip(
+              label: const Text('Spitze Start'),
+              selected: (sel.lineStart ?? 'none') == 'arrow',
+              onSelected: (v) =>
+                  _patch((e) => e.copyWith(lineStart: v ? 'arrow' : 'none')),
+              visualDensity: VisualDensity.compact,
+            ),
+            FilterChip(
+              label: const Text('Spitze Ende'),
+              selected: (sel.lineEnd ?? 'arrow') == 'arrow',
+              onSelected: (v) =>
+                  _patch((e) => e.copyWith(lineEnd: v ? 'arrow' : 'none')),
+              visualDensity: VisualDensity.compact,
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            const Icon(Icons.gesture, size: 18),
+            const SizedBox(width: 4),
+            const Text('Bogen'),
+            Expanded(
+              child: Slider(
+                value: (sel.curve ?? 0.0).clamp(-1.0, 1.0),
+                min: -1,
+                max: 1,
+                onChanged: (v) => _patch((e) => e.copyWith(curve: v)),
+              ),
+            ),
+          ],
+        ),
+        Row(
+          children: [
+            const Icon(Icons.line_weight, size: 18),
+            const SizedBox(width: 4),
+            const Text('Stärke'),
+            Expanded(
+              child: Slider(
+                value: (sel.strokeWidth ?? 2.5).clamp(1.0, 8.0),
+                min: 1,
+                max: 8,
+                onChanged: (v) => _patch((e) => e.copyWith(strokeWidth: v)),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _zoneControls(DrillElement sel) {
+    final ellipse = (sel.shape ?? 'rect') == 'ellipse';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Wrap(
+            spacing: 6,
+            children: [
+              ChoiceChip(
+                label: const Text('Rechteck'),
+                selected: !ellipse,
+                onSelected: (_) => _patch((e) => e.copyWith(shape: 'rect')),
+                visualDensity: VisualDensity.compact,
+              ),
+              ChoiceChip(
+                label: const Text('Ellipse'),
+                selected: ellipse,
+                onSelected: (_) => _patch((e) => e.copyWith(shape: 'ellipse')),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+        ),
+        Row(
+          children: [
+            const Icon(Icons.opacity, size: 18),
+            const SizedBox(width: 4),
+            const Text('Füllung'),
+            Expanded(
+              child: Slider(
+                value: (sel.fillOpacity ?? 0.2).clamp(0.0, 1.0),
+                min: 0,
+                max: 1,
+                onChanged: (v) => _patch((e) => e.copyWith(fillOpacity: v)),
+              ),
             ),
           ],
         ),

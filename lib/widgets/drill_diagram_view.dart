@@ -134,10 +134,10 @@ class DrillDiagramPainter extends CustomPainter {
           _ball(canvas, pos, er * 0.75);
         case 'arrow':
           final to = p(e.x2 ?? e.x, e.y2 ?? e.y);
-          _arrow(canvas, pos, to, e.size ?? 1.0, e.dashed ?? false);
+          _drawArrow(canvas, pos, to, e);
         case 'zone':
           final to = p(e.x2 ?? e.x, e.y2 ?? e.y);
-          _zone(canvas, Rect.fromPoints(pos, to));
+          _zone(canvas, Rect.fromPoints(pos, to), e);
         case 'text':
           _text(canvas, pos, e.label ?? '', size, e.size ?? 1.0);
         default: // player
@@ -263,34 +263,149 @@ class DrillDiagramPainter extends CustomPainter {
     return path..close();
   }
 
-  void _arrow(
-    Canvas c,
-    Offset a,
-    Offset b, [
-    double scale = 1.0,
-    bool dashed = false,
-  ]) {
+  // Pfeil/Linie mit Bogen, Linientyp (solid/dashed/wavy/double), Pfeilspitzen
+  // und Strichstärke.
+  void _drawArrow(Canvas c, Offset a, Offset b, DrillElement e) {
+    final scale = e.size ?? 1.0;
+    final sw = (e.strokeWidth ?? 2.5) * scale;
+    final color = _parseColor(e.color, Colors.yellowAccent);
     final paint = Paint()
-      ..color = Colors.yellowAccent
+      ..color = color
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.5 * scale;
-    if (dashed) {
-      _dashedLine(c, a, b, paint);
-    } else {
-      c.drawLine(a, b, paint);
+      ..strokeWidth = sw
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final curve = e.curve ?? 0.0;
+    final curved = curve.abs() >= 0.005;
+    final ctrl = _ctrlPoint(a, b, curve);
+    final lineType = e.lineType ?? (e.dashed == true ? 'dashed' : 'solid');
+    final n = curved ? 28 : (lineType == 'wavy' ? 40 : 2);
+    final pts = _samplePath(a, b, ctrl, curved, n);
+
+    switch (lineType) {
+      case 'dashed':
+        for (var i = 0; i < pts.length - 1; i++) {
+          _dashedLine(c, pts[i], pts[i + 1], paint);
+        }
+      case 'wavy':
+        c.drawPath(_wavyPath(pts, sw), paint);
+      case 'double':
+        final off = sw * 1.1;
+        c.drawPath(_polyPath(_offsetPolyline(pts, off)), paint);
+        c.drawPath(_polyPath(_offsetPolyline(pts, -off)), paint);
+      default:
+        c.drawPath(_polyPath(pts), paint);
     }
-    final angle = math.atan2(b.dy - a.dy, b.dx - a.dx);
-    final head = 10.0 * scale;
-    final p1 = Offset(
-      b.dx - head * math.cos(angle - 0.5),
-      b.dy - head * math.sin(angle - 0.5),
+
+    final endHead = (e.lineEnd ?? 'arrow') == 'arrow';
+    final startHead = (e.lineStart ?? 'none') == 'arrow';
+    if (endHead && pts.length >= 2) {
+      _arrowHead(c, pts[pts.length - 2], pts.last, color, sw);
+    }
+    if (startHead && pts.length >= 2) {
+      _arrowHead(c, pts[1], pts.first, color, sw);
+    }
+  }
+
+  Offset _ctrlPoint(Offset a, Offset b, double amt) {
+    final dx = b.dx - a.dx, dy = b.dy - a.dy;
+    final len = math.sqrt(dx * dx + dy * dy);
+    if (len < 0.001) return a;
+    final nx = -dy / len, ny = dx / len;
+    return Offset(
+      a.dx + dx * 0.5 + nx * len * amt,
+      a.dy + dy * 0.5 + ny * len * amt,
     );
-    final p2 = Offset(
-      b.dx - head * math.cos(angle + 0.5),
-      b.dy - head * math.sin(angle + 0.5),
-    );
-    c.drawLine(b, p1, paint);
-    c.drawLine(b, p2, paint);
+  }
+
+  List<Offset> _samplePath(Offset a, Offset b, Offset ctrl, bool curved, int n) {
+    final pts = <Offset>[];
+    for (var i = 0; i <= n; i++) {
+      final t = i / n;
+      if (!curved) {
+        pts.add(Offset.lerp(a, b, t)!);
+      } else {
+        final omt = 1 - t;
+        pts.add(
+          Offset(
+            omt * omt * a.dx + 2 * omt * t * ctrl.dx + t * t * b.dx,
+            omt * omt * a.dy + 2 * omt * t * ctrl.dy + t * t * b.dy,
+          ),
+        );
+      }
+    }
+    return pts;
+  }
+
+  Path _polyPath(List<Offset> pts) {
+    final path = Path();
+    if (pts.isEmpty) return path;
+    path.moveTo(pts.first.dx, pts.first.dy);
+    for (var i = 1; i < pts.length; i++) {
+      path.lineTo(pts[i].dx, pts[i].dy);
+    }
+    return path;
+  }
+
+  List<Offset> _offsetPolyline(List<Offset> pts, double dist) {
+    final out = <Offset>[];
+    for (var i = 0; i < pts.length; i++) {
+      var nx = 0.0, ny = 0.0;
+      if (i > 0) {
+        final d = pts[i] - pts[i - 1];
+        final l = d.distance;
+        if (l > 0) {
+          nx += -d.dy / l;
+          ny += d.dx / l;
+        }
+      }
+      if (i < pts.length - 1) {
+        final d = pts[i + 1] - pts[i];
+        final l = d.distance;
+        if (l > 0) {
+          nx += -d.dy / l;
+          ny += d.dx / l;
+        }
+      }
+      final nl = math.sqrt(nx * nx + ny * ny);
+      out.add(nl > 0 ? pts[i] + Offset(nx / nl, ny / nl) * dist : pts[i]);
+    }
+    return out;
+  }
+
+  Path _wavyPath(List<Offset> pts, double sw) {
+    final amp = math.max(2.0, sw * 1.4);
+    final out = <Offset>[];
+    var dist = 0.0;
+    for (var i = 0; i < pts.length; i++) {
+      if (i > 0) dist += (pts[i] - pts[i - 1]).distance;
+      final j0 = i > 0 ? i - 1 : i;
+      final j1 = i < pts.length - 1 ? i + 1 : i;
+      final d = pts[j1] - pts[j0];
+      final l = d.distance;
+      final nx = l > 0 ? -d.dy / l : 0.0;
+      final ny = l > 0 ? d.dx / l : 0.0;
+      final s = math.sin(dist / (amp * 1.6)) * amp;
+      out.add(pts[i] + Offset(nx, ny) * s);
+    }
+    return _polyPath(out);
+  }
+
+  void _arrowHead(Canvas c, Offset from, Offset tip, Color color, double sw) {
+    final d = tip - from;
+    final l = d.distance;
+    if (l < 0.001) return;
+    final u = Offset(d.dx / l, d.dy / l);
+    final head = math.max(7.0, sw * 3.0);
+    final hw = head * 0.6;
+    final base = tip - u * head;
+    final perp = Offset(-u.dy, u.dx);
+    final path = Path()
+      ..moveTo(tip.dx, tip.dy)
+      ..lineTo((base + perp * hw).dx, (base + perp * hw).dy)
+      ..lineTo((base - perp * hw).dx, (base - perp * hw).dy)
+      ..close();
+    c.drawPath(path, Paint()..color = color);
   }
 
   void _dashedLine(Canvas c, Offset a, Offset b, Paint p) {
@@ -352,16 +467,23 @@ class DrillDiagramPainter extends CustomPainter {
     }
   }
 
-  void _zone(Canvas c, Rect rect) {
-    const amber = Color(0xFFFACC15);
-    c.drawRect(rect, Paint()..color = amber.withValues(alpha: 0.2));
-    c.drawRect(
-      rect,
-      Paint()
-        ..color = amber.withValues(alpha: 0.9)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8,
-    );
+  void _zone(Canvas c, Rect rect, DrillElement e) {
+    final strokeColor = _parseColor(e.color, const Color(0xFFFACC15));
+    final fillColor = _parseColor(e.fill ?? e.color, const Color(0xFFFACC15));
+    final fillOp = (e.fillOpacity ?? 0.2).clamp(0.0, 1.0);
+    final ellipse = (e.shape ?? 'rect') == 'ellipse';
+    final fillPaint = Paint()..color = fillColor.withValues(alpha: fillOp);
+    final strokePaint = Paint()
+      ..color = strokeColor.withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = e.strokeWidth ?? 1.8;
+    if (ellipse) {
+      c.drawOval(rect, fillPaint);
+      c.drawOval(rect, strokePaint);
+    } else {
+      c.drawRect(rect, fillPaint);
+      c.drawRect(rect, strokePaint);
+    }
   }
 
   int _layer(String type) {

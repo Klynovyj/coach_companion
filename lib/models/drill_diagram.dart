@@ -24,6 +24,20 @@ class DrillElement {
   /// Deckkraft 0..1 (null = voll deckend).
   final double? opacity;
 
+  /// Pfeil/Linie: Linientyp (solid|dashed|wavy|double), Pfeilspitzen
+  /// (none|arrow) an Start/Ende, Bogenstärke (senkrecht, 0 = gerade) und
+  /// Strichstärke.
+  final String? lineType;
+  final String? lineStart;
+  final String? lineEnd;
+  final double? curve;
+  final double? strokeWidth;
+
+  /// Zone: Form (rect|ellipse), Füllfarbe (Hex) und Füll-Deckkraft.
+  final String? shape;
+  final String? fill;
+  final double? fillOpacity;
+
   const DrillElement({
     required this.type,
     required this.x,
@@ -35,6 +49,14 @@ class DrillElement {
     this.size,
     this.dashed,
     this.opacity,
+    this.lineType,
+    this.lineStart,
+    this.lineEnd,
+    this.curve,
+    this.strokeWidth,
+    this.shape,
+    this.fill,
+    this.fillOpacity,
   });
 
   DrillElement copyWith({
@@ -47,6 +69,14 @@ class DrillElement {
     double? size,
     bool? dashed,
     double? opacity,
+    String? lineType,
+    String? lineStart,
+    String? lineEnd,
+    double? curve,
+    double? strokeWidth,
+    String? shape,
+    String? fill,
+    double? fillOpacity,
   }) => DrillElement(
     type: type,
     x: x ?? this.x,
@@ -58,6 +88,14 @@ class DrillElement {
     size: size ?? this.size,
     dashed: dashed ?? this.dashed,
     opacity: opacity ?? this.opacity,
+    lineType: lineType ?? this.lineType,
+    lineStart: lineStart ?? this.lineStart,
+    lineEnd: lineEnd ?? this.lineEnd,
+    curve: curve ?? this.curve,
+    strokeWidth: strokeWidth ?? this.strokeWidth,
+    shape: shape ?? this.shape,
+    fill: fill ?? this.fill,
+    fillOpacity: fillOpacity ?? this.fillOpacity,
   );
 
   Map<String, dynamic> toJson() => {
@@ -71,6 +109,14 @@ class DrillElement {
     if (size != null) 'size': size,
     if (dashed != null) 'dashed': dashed,
     if (opacity != null) 'opacity': opacity,
+    if (lineType != null) 'lineType': lineType,
+    if (lineStart != null) 'lineStart': lineStart,
+    if (lineEnd != null) 'lineEnd': lineEnd,
+    if (curve != null) 'curve': curve,
+    if (strokeWidth != null) 'strokeWidth': strokeWidth,
+    if (shape != null) 'shape': shape,
+    if (fill != null) 'fill': fill,
+    if (fillOpacity != null) 'fillOpacity': fillOpacity,
   };
 
   factory DrillElement.fromJson(Map<String, dynamic> m) => DrillElement(
@@ -84,6 +130,14 @@ class DrillElement {
     size: (m['size'] as num?)?.toDouble(),
     dashed: m['dashed'] == true,
     opacity: (m['opacity'] as num?)?.toDouble(),
+    lineType: m['lineType'] as String?,
+    lineStart: m['lineStart'] as String?,
+    lineEnd: m['lineEnd'] as String?,
+    curve: (m['curve'] as num?)?.toDouble(),
+    strokeWidth: (m['strokeWidth'] as num?)?.toDouble(),
+    shape: m['shape'] as String?,
+    fill: m['fill'] as String?,
+    fillOpacity: (m['fillOpacity'] as num?)?.toDouble(),
   );
 }
 
