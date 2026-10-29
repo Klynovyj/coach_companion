@@ -16,6 +16,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const MODEL = Deno.env.get("AI_MODEL") ?? "claude-opus-5-5";
+// Nur noetig, wenn der API-Key nicht an einen Workspace gebunden ist
+// (sk-ant-usr-... Benutzer-Keys). Dann verlangt Anthropic diesen Header.
+const WORKSPACE_ID = Deno.env.get("ANTHROPIC_WORKSPACE_ID") ?? "";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 
@@ -153,13 +156,16 @@ Deno.serve(async (req) => {
     const body = (await req.json()) as Record<string, unknown>;
     const messages = buildMessages(body);
 
+    const headers: Record<string, string> = {
+      "x-api-key": ANTHROPIC_API_KEY,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    };
+    if (WORKSPACE_ID) headers["anthropic-workspace-id"] = WORKSPACE_ID;
+
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: {
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
+      headers,
       body: JSON.stringify({
         model: MODEL,
         max_tokens: 4000,
