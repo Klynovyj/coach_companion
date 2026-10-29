@@ -253,7 +253,7 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
     final dm = d['diagram'];
     if (dm is Map) {
       final parsed = DrillDiagram.fromJson(Map<String, dynamic>.from(dm));
-      if (!parsed.isEmpty) dia = parsed;
+      if (!parsed.isEmpty) dia = parsed.tidy();
     }
     final cats = <String>[];
     final c = d['categories'];

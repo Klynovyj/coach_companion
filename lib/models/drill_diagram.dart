@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 /// Ein Element auf der Übungs-Skizze. Koordinaten sind relativ (0..1), damit die
 /// Skizze auf jeder Größe passt. [x2]/[y2] nur für Pfeil (Ende) bzw. Zone (zweite
@@ -87,6 +88,60 @@ class DrillDiagram {
         field: field ?? this.field,
         elements: elements ?? this.elements,
       );
+
+  /// Schiebt überlappende Punkt-Objekte leicht auseinander, damit KI-Skizzen
+  /// nicht „durcheinander" wirken. Pfeile/Zonen bleiben unverändert.
+  DrillDiagram tidy() {
+    const pointTypes = {
+      'player',
+      'cone',
+      'goal',
+      'minigoal',
+      'ball',
+      'text',
+    };
+    final els = List.of(elements);
+    final idx = [
+      for (var i = 0; i < els.length; i++)
+        if (pointTypes.contains(els[i].type)) i,
+    ];
+    if (idx.length < 2) return this;
+    final px = {for (final i in idx) i: els[i].x};
+    final py = {for (final i in idx) i: els[i].y};
+    const minD = 0.1;
+    for (var iter = 0; iter < 60; iter++) {
+      var moved = false;
+      for (var a = 0; a < idx.length; a++) {
+        for (var b = a + 1; b < idx.length; b++) {
+          final ia = idx[a], ib = idx[b];
+          var dx = px[ia]! - px[ib]!;
+          var dy = py[ia]! - py[ib]!;
+          var d = sqrt(dx * dx + dy * dy);
+          if (d >= minD) continue;
+          if (d < 1e-4) {
+            dx = 0.01 * (a - b) + 0.005;
+            dy = 0.01;
+            d = sqrt(dx * dx + dy * dy);
+          }
+          final push = (minD - d) / 2;
+          final ux = dx / d, uy = dy / d;
+          px[ia] = (px[ia]! + ux * push).clamp(0.05, 0.95);
+          py[ia] = (py[ia]! + uy * push).clamp(0.05, 0.95);
+          px[ib] = (px[ib]! - ux * push).clamp(0.05, 0.95);
+          py[ib] = (py[ib]! - uy * push).clamp(0.05, 0.95);
+          moved = true;
+        }
+      }
+      if (!moved) break;
+    }
+    return DrillDiagram(
+      field: field,
+      elements: [
+        for (var i = 0; i < els.length; i++)
+          px.containsKey(i) ? els[i].copyWith(x: px[i], y: py[i]) : els[i],
+      ],
+    );
+  }
 
   Map<String, dynamic> toJson() => {
     'field': field,

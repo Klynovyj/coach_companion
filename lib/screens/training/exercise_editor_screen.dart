@@ -181,7 +181,7 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
       if (dia is Map) {
         final parsed = DrillDiagram.fromJson(Map<String, dynamic>.from(dia));
         if (!parsed.isEmpty) {
-          _diagram = parsed;
+          _diagram = parsed.tidy(); // Überlappungen auseinanderziehen
           _diagramKey++; // Editor mit neuem Diagramm neu aufbauen
         }
       }

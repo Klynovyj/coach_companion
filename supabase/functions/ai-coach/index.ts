@@ -60,8 +60,12 @@ FORMATIERUNG DER TEXTFELDER (wichtig fuer die Lesbarkeit):
 - Formuliere knapp und konkret, keine Fuellsaetze.
 
 SKIZZE (diagram) uebersichtlich halten:
+- Ordne die Spieler KLAR und nachvollziehbar an, passend zur Uebung: eigene
+  Mannschaft und Gegner als erkennbare Gruppen/Linien, NICHT zufaellig verstreut.
 - Verteile die Elemente gut ueber das Feld. KEINE zwei Elemente auf derselben
-  Position (Mindestabstand ~0.1), Spieler NIE uebereinander stapeln.
+  Position (Mindestabstand ~0.12), Spieler NIE uebereinander stapeln.
+- Nummeriere je Mannschaft fortlaufend ab 1 (Gegner in Rot "#C62828").
+- Bei Spiel auf zwei Tore: je ein Tor mit Torwart an den beiden Stirnseiten.
 - "label" nur sehr kurz (Rueckennummer/Kuerzel), NIE ganze Saetze.
 - "goal" = grosses Tor, "minigoal" = kleines Minitor. Nutze den passenden Typ.
 - Waehle das Feld passend: ganzes Feld quer ("full") oder laengs ("full_v"),
