@@ -69,15 +69,10 @@ SKIZZE (diagram) uebersichtlich halten:
 - Nummeriere je Mannschaft fortlaufend ab 1 (Gegner in Rot "#C62828").
 - Bei Spiel auf zwei Tore: je ein Tor mit Torwart an den beiden Stirnseiten.
 - "label" nur sehr kurz (Rueckennummer/Kuerzel), NIE ganze Saetze.
-- Spiel auf GROSSE Tore (mit Torwart): field "full"/"half", Tore als "goal"
-  an der Grundlinie.
-- Spiel auf KLEINE Tore/Minitore (ohne Torwart): field "box" (neutrale Flaeche
-  OHNE Spielfeldlinien), Tore als "minigoal". Dann KEINE grossen "goal" und
-  KEINE Torhueter zeichnen.
+- Nutze fuer die Skizze IMMER field "box" (neutrale Flaeche OHNE Spielfeldlinien).
+- Tore immer als "minigoal" (kleine Tore). Verwende KEINE grossen "goal".
 - Richte Tore zur Spielrichtung aus ("rotation" in Grad): Tor an der linken
   oder rechten Seite -> rotation 90; Tor oben/unten -> rotation 0.
-- Waehle das Feld passend: ganzes Feld quer ("full") oder laengs ("full_v"),
-  Haelfte ("half") oder Kasten/Zone ("box").
 - Verwende KEINE langen "text"-Banner im Feld. Die Beschreibung gehoert in die
   Textfelder, nicht in die Skizze. "text" hoechstens fuer ein einzelnes kurzes
   Wort am Rand.
@@ -239,6 +234,23 @@ Deno.serve(async (req) => {
       .map((p) => p.text ?? "")
       .join("\n");
     const draft = extractJson(text);
+    // KI-Skizzen immer auf neutrales "box"-Feld; grosse Tore -> Minitore.
+    if (draft && typeof draft === "object") {
+      const d = (draft as Record<string, unknown>).diagram;
+      if (d && typeof d === "object") {
+        const diag = d as Record<string, unknown>;
+        diag.field = "box";
+        const els = diag.elements;
+        if (Array.isArray(els)) {
+          for (const el of els) {
+            if (el && typeof el === "object" &&
+                (el as Record<string, unknown>).type === "goal") {
+              (el as Record<string, unknown>).type = "minigoal";
+            }
+          }
+        }
+      }
+    }
     return Response.json({ exercise: draft });
   } catch (e) {
     return new Response("error: " + ((e as Error)?.message ?? e), {
