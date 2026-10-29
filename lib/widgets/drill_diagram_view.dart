@@ -158,7 +158,7 @@ class DrillDiagramPainter extends CustomPainter {
         case 'minigoal':
           _goal(canvas, pos, er, big: false);
         case 'ball':
-          _ball(canvas, pos, er * 0.75);
+          _ball(canvas, pos, er * 0.5);
         case 'arrow':
           final to = p(e.x2 ?? e.x, e.y2 ?? e.y);
           _drawArrow(canvas, pos, to, e);

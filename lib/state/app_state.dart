@@ -2988,6 +2988,7 @@ class AppState extends ChangeNotifier {
   Future<List<Exercise>> exercises({
     List<String> categories = const [],
     int? forPlayers,
+    int? forGoalkeepers,
     String query = '',
     bool includeArchived = false,
     bool onlyFavorites = false,
@@ -3002,11 +3003,6 @@ class AppState extends ChangeNotifier {
     if (categories.isNotEmpty) {
       list = list.where((e) => e.categories.any(categories.contains)).toList();
     }
-    if (forPlayers != null) {
-      list = list
-          .where((e) => e.minPlayers == null || e.minPlayers! <= forPlayers)
-          .toList();
-    }
     final q = query.trim().toLowerCase();
     if (q.isNotEmpty) {
       list = list
@@ -3017,8 +3013,17 @@ class AppState extends ChangeNotifier {
           )
           .toList();
     }
-    // Favoriten zuerst, dann nach letzter Änderung.
+    // Passende Übungen (zur Kadergröße) zuerst, dann Favoriten, dann zuletzt
+    // geänderte. Nicht passende werden NICHT mehr ausgeblendet, nur nach hinten
+    // sortiert – die UI markiert sie als „passt nicht".
+    final field = forPlayers;
+    bool fits(Exercise e) =>
+        field == null || e.fitsSquad(field, forGoalkeepers ?? 0);
     list.sort((a, b) {
+      if (field != null) {
+        final fa = fits(a), fb = fits(b);
+        if (fa != fb) return fa ? -1 : 1;
+      }
       if (a.favorite != b.favorite) return a.favorite ? -1 : 1;
       return b.updatedAt.compareTo(a.updatedAt);
     });

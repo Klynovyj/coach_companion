@@ -125,6 +125,7 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
         builder: (_) => ExerciseLibraryScreen(
           pickMode: true,
           forPlayers: int.tryParse(_field.text.trim()),
+          forGoalkeepers: int.tryParse(_gk.text.trim()),
         ),
       ),
     );
@@ -139,9 +140,11 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
   Future<void> _suggest() async {
     final state = context.read<AppState>();
     final forPlayers = int.tryParse(_field.text.trim());
+    final forGk = int.tryParse(_gk.text.trim());
     final matches = await state.exercises(
       categories: _categories,
       forPlayers: forPlayers,
+      forGoalkeepers: forGk,
     );
     if (!mounted) return;
     await showModalBottomSheet<void>(
@@ -166,27 +169,55 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
               const Padding(
                 padding: EdgeInsets.all(16),
                 child: Text(
-                  'Keine passende Übung in der Bibliothek. Lass die KI eine erstellen.',
+                  'Noch keine Übungen in der Bibliothek. Lass die KI eine erstellen.',
                   style: TextStyle(color: Colors.grey),
                 ),
               ),
-            for (final ex in matches.take(25))
-              ListTile(
-                leading: Icon(
-                  ex.favorite ? Icons.star : Icons.fitness_center,
-                  color: ex.favorite ? Colors.amber : null,
-                ),
-                title: Text(ex.title),
-                subtitle: Text(
-                  [
-                    if (ex.categories.isNotEmpty) ex.categories.join(', '),
-                    if (ex.durationMin != null) '${ex.durationMin} Min',
-                  ].join(' · '),
-                ),
-                trailing: const Icon(Icons.add),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _addToItems(ex);
+            for (final ex in matches.take(30))
+              Builder(
+                builder: (_) {
+                  final reason = forPlayers == null
+                      ? null
+                      : ex.squadMismatchReason(forPlayers, forGk ?? 0);
+                  final fits = reason == null;
+                  return ListTile(
+                    leading: Icon(
+                      ex.favorite ? Icons.star : Icons.fitness_center,
+                      color: ex.favorite ? Colors.amber : null,
+                    ),
+                    title: Text(ex.title),
+                    isThreeLine: forPlayers != null,
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          [
+                            if (ex.categories.isNotEmpty)
+                              ex.categories.join(', '),
+                            if (ex.durationMin != null) '${ex.durationMin} Min',
+                          ].join(' · '),
+                        ),
+                        if (forPlayers != null) ...[
+                          const SizedBox(height: 2),
+                          _fitBadge(fits, reason),
+                        ],
+                      ],
+                    ),
+                    trailing: fits
+                        ? const Icon(Icons.add)
+                        : TextButton.icon(
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              _adaptAndAdd(ex);
+                            },
+                            icon: const Icon(Icons.auto_fix_high, size: 18),
+                            label: const Text('Anpassen'),
+                          ),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _addToItems(ex);
+                    },
+                  );
                 },
               ),
             const Divider(),
@@ -241,6 +272,80 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
       if (!mounted) return;
       _addToItems(ex); // … und direkt der Einheit hinzufügen.
       _snack('KI-Übung erstellt und hinzugefügt.');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _snack('KI-Fehler: $e');
+    }
+  }
+
+  /// „passt" (grün) / „passt nicht · Grund" (orange) für einen Vorschlag.
+  Widget _fitBadge(bool fits, String? reason) {
+    final color = fits ? Colors.green.shade700 : Colors.orange.shade800;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          fits ? Icons.check_circle : Icons.error_outline,
+          size: 14,
+          color: color,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            fits ? 'passt' : 'passt nicht · ${reason ?? ''}',
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Lässt die KI eine nicht passende Übung an die aktuelle Spieler-/Torwartzahl
+  /// anpassen (neue Variante) und fügt sie der Einheit hinzu.
+  Future<void> _adaptAndAdd(Exercise base) async {
+    final state = context.read<AppState>();
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('KI passt die Übung an …')),
+          ],
+        ),
+      ),
+    );
+    try {
+      final draft = await CloudService.aiCoach({
+        'mode': 'adapt',
+        'players': _field.text.trim(),
+        'goalkeepers': _gk.text.trim(),
+        'categories': base.categories,
+        'title': base.title,
+        'aufbau': base.aufbau,
+        'ablauf': base.ablauf,
+        'coachingPoints': base.coachingPoints,
+        'varianten': base.varianten,
+        'material': base.material,
+      });
+      if (!mounted) return;
+      Navigator.pop(context); // Spinner
+      if (draft == null) {
+        _snack('Keine Antwort von der KI.');
+        return;
+      }
+      final ex = _exerciseFromDraft(draft);
+      await state.upsertExercise(ex);
+      if (!mounted) return;
+      _addToItems(ex);
+      _snack('Übung angepasst und hinzugefügt.');
     } catch (e) {
       if (mounted) Navigator.pop(context);
       _snack('KI-Fehler: $e');

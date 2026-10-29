@@ -1231,54 +1231,38 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
               ],
             ),
           ),
-        Row(
-          children: [
-            const Icon(Icons.photo_size_select_large, size: 18),
-            const SizedBox(width: 4),
-            const Text('Größe'),
-            Expanded(
-              child: Slider(
-                value: (sel.size ?? 1.0).clamp(0.4, 2.5),
-                min: 0.4,
-                max: 2.5,
-                onChanged: _setSize,
-              ),
-            ),
-          ],
+        _sliderRow(
+          Icons.photo_size_select_large,
+          'Größe',
+          (sel.size ?? 1.0).clamp(0.4, 2.5),
+          0.4,
+          2.5,
+          _setSize,
+          percent: true,
+          unit: '%',
         ),
         if (sel.type == 'cone' ||
             sel.type == 'goal' ||
             sel.type == 'minigoal' ||
             sel.type == 'text')
-          Row(
-            children: [
-              const Icon(Icons.rotate_right, size: 18),
-              const SizedBox(width: 4),
-              const Text('Drehen'),
-              Expanded(
-                child: Slider(
-                  value: (sel.rotation ?? 0).clamp(-180.0, 180.0),
-                  min: -180,
-                  max: 180,
-                  onChanged: (v) => _patch((e) => e.copyWith(rotation: v)),
-                ),
-              ),
-            ],
+          _sliderRow(
+            Icons.rotate_right,
+            'Drehen',
+            (sel.rotation ?? 0).clamp(-180.0, 180.0),
+            -180,
+            180,
+            (v) => _patch((e) => e.copyWith(rotation: v)),
+            unit: '°',
           ),
-        Row(
-          children: [
-            const Icon(Icons.opacity, size: 18),
-            const SizedBox(width: 4),
-            const Text('Deckkraft'),
-            Expanded(
-              child: Slider(
-                value: (sel.opacity ?? 1.0).clamp(0.1, 1.0),
-                min: 0.1,
-                max: 1.0,
-                onChanged: (v) => _patch((e) => e.copyWith(opacity: v)),
-              ),
-            ),
-          ],
+        _sliderRow(
+          Icons.opacity,
+          'Deckkraft',
+          (sel.opacity ?? 1.0).clamp(0.1, 1.0),
+          0.1,
+          1.0,
+          (v) => _patch((e) => e.copyWith(opacity: v)),
+          percent: true,
+          unit: '%',
         ),
         if (sel.type == 'arrow') _arrowControls(sel),
         if (sel.type == 'zone') _zoneControls(sel),
@@ -1362,35 +1346,24 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             ),
           ],
         ),
-        Row(
-          children: [
-            const Icon(Icons.gesture, size: 18),
-            const SizedBox(width: 4),
-            const Text('Bogen'),
-            Expanded(
-              child: Slider(
-                value: (sel.curve ?? 0.0).clamp(-1.0, 1.0),
-                min: -1,
-                max: 1,
-                onChanged: (v) => _patch((e) => e.copyWith(curve: v)),
-              ),
-            ),
-          ],
+        _sliderRow(
+          Icons.gesture,
+          'Bogen',
+          (sel.curve ?? 0.0).clamp(-1.0, 1.0),
+          -1,
+          1,
+          (v) => _patch((e) => e.copyWith(curve: v)),
+          percent: true,
+          unit: '%',
         ),
-        Row(
-          children: [
-            const Icon(Icons.line_weight, size: 18),
-            const SizedBox(width: 4),
-            const Text('Stärke'),
-            Expanded(
-              child: Slider(
-                value: (sel.strokeWidth ?? 2.5).clamp(1.0, 8.0),
-                min: 1,
-                max: 8,
-                onChanged: (v) => _patch((e) => e.copyWith(strokeWidth: v)),
-              ),
-            ),
-          ],
+        _sliderRow(
+          Icons.line_weight,
+          'Stärke',
+          (sel.strokeWidth ?? 2.5).clamp(1.0, 8.0),
+          1,
+          8,
+          (v) => _patch((e) => e.copyWith(strokeWidth: v)),
+          decimals: 1,
         ),
       ],
     );
@@ -1421,20 +1394,54 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             ],
           ),
         ),
-        Row(
-          children: [
-            const Icon(Icons.opacity, size: 18),
-            const SizedBox(width: 4),
-            const Text('Füllung'),
-            Expanded(
-              child: Slider(
-                value: (sel.fillOpacity ?? 0.2).clamp(0.0, 1.0),
-                min: 0,
-                max: 1,
-                onChanged: (v) => _patch((e) => e.copyWith(fillOpacity: v)),
-              ),
-            ),
-          ],
+        _sliderRow(
+          Icons.opacity,
+          'Füllung',
+          (sel.fillOpacity ?? 0.2).clamp(0.0, 1.0),
+          0,
+          1,
+          (v) => _patch((e) => e.copyWith(fillOpacity: v)),
+          percent: true,
+          unit: '%',
+        ),
+      ],
+    );
+  }
+
+  /// Regler mit Beschriftung und synchronisiertem Zahlenfeld (Prozent/Winkel).
+  Widget _sliderRow(
+    IconData icon,
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged, {
+    bool percent = false,
+    String unit = '',
+    int decimals = 0,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18),
+        const SizedBox(width: 4),
+        SizedBox(width: 66, child: Text(label, overflow: TextOverflow.ellipsis)),
+        Expanded(
+          child: Slider(
+            value: value.clamp(min, max),
+            min: min,
+            max: max,
+            onChanged: onChanged,
+          ),
+        ),
+        const SizedBox(width: 6),
+        _NumField(
+          value: value,
+          min: min,
+          max: max,
+          onChanged: onChanged,
+          percent: percent,
+          unit: unit,
+          decimals: decimals,
         ),
       ],
     );
@@ -1563,6 +1570,104 @@ Future<DrillDiagram?> editDiagramFullscreen(
       builder: (_) => _FullscreenDiagramEditorPage(initial: initial),
     ),
   );
+}
+
+/// Kleines Zahlenfeld neben einem Regler. Zeigt den Wert (als Prozent oder mit
+/// Einheit) und übernimmt eine Eingabe beim Verlassen/Enter. Bleibt mit dem
+/// Regler synchron, solange das Feld nicht gerade bearbeitet wird.
+class _NumField extends StatefulWidget {
+  const _NumField({
+    required this.value,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+    this.percent = false,
+    this.unit = '',
+    this.decimals = 0,
+  });
+
+  final double value;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+  final bool percent;
+  final String unit;
+  final int decimals;
+
+  @override
+  State<_NumField> createState() => _NumFieldState();
+}
+
+class _NumFieldState extends State<_NumField> {
+  late final TextEditingController _c = TextEditingController(text: _fmt());
+  final FocusNode _focus = FocusNode();
+
+  double get _shown => widget.percent ? widget.value * 100 : widget.value;
+
+  String _fmt() => widget.decimals == 0
+      ? _shown.round().toString()
+      : _shown.toStringAsFixed(widget.decimals);
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(() {
+      if (!_focus.hasFocus) _commit();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _NumField old) {
+    super.didUpdateWidget(old);
+    // Regler bewegt → Feld nachziehen (nur wenn der Nutzer nicht gerade tippt).
+    if (!_focus.hasFocus && widget.value != old.value) {
+      _c.text = _fmt();
+    }
+  }
+
+  void _commit() {
+    final raw = double.tryParse(_c.text.trim().replaceAll(',', '.'));
+    if (raw == null) {
+      _c.text = _fmt();
+      return;
+    }
+    var v = widget.percent ? raw / 100 : raw;
+    v = v.clamp(widget.min, widget.max);
+    widget.onChanged(v);
+    _c.text = widget.decimals == 0
+        ? (widget.percent ? (v * 100).round() : v.round()).toString()
+        : (widget.percent ? v * 100 : v).toStringAsFixed(widget.decimals);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 58,
+      child: TextField(
+        controller: _c,
+        focusNode: _focus,
+        textAlign: TextAlign.end,
+        keyboardType: const TextInputType.numberWithOptions(
+          decimal: true,
+          signed: true,
+        ),
+        decoration: InputDecoration(
+          isDense: true,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          border: const OutlineInputBorder(),
+          suffixText: widget.unit.isEmpty ? null : widget.unit,
+        ),
+        onSubmitted: (_) => _commit(),
+      ),
+    );
+  }
 }
 
 /// Painter wie [DrillDiagramPainter], zusätzlich Auswahl-Markierung: Ring um ein

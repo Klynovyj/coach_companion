@@ -66,6 +66,22 @@ class Exercise {
     this.archived = false,
   });
 
+  /// Passt die Übung zur Kadergröße? [field] = Feldspieler, [gk] = Torhüter.
+  /// Passt, wenn genug Feldspieler da sind und der Torwart-Bedarf gedeckt ist.
+  bool fitsSquad(int field, int gk) => squadMismatchReason(field, gk) == null;
+
+  /// Grund, warum es NICHT passt (kurzer Text), oder null wenn es passt.
+  String? squadMismatchReason(int field, int gk) {
+    if (minPlayers != null && field < minPlayers!) {
+      return 'braucht $minPlayers Feldspieler';
+    }
+    if ((goalkeepers ?? 0) > 0 && gk < goalkeepers!) {
+      return 'braucht $goalkeepers Torhüter';
+    }
+    if (needsGoalkeeper && gk < 1) return 'braucht einen Torwart';
+    return null;
+  }
+
   Exercise copyWith({
     String? title,
     List<String>? categories,

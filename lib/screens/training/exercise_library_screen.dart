@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
+import '../../models/drill_diagram.dart';
 import '../../models/exercise.dart';
+import '../../services/cloud_service.dart';
 import '../../state/app_state.dart';
 import '../../widgets/drill_diagram_view.dart';
 import 'exercise_editor_screen.dart';
@@ -14,10 +17,12 @@ class ExerciseLibraryScreen extends StatefulWidget {
     super.key,
     this.pickMode = false,
     this.forPlayers,
+    this.forGoalkeepers,
   });
 
   final bool pickMode;
   final int? forPlayers;
+  final int? forGoalkeepers;
 
   @override
   State<ExerciseLibraryScreen> createState() => _ExerciseLibraryScreenState();
@@ -147,6 +152,7 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                 query: _query,
                 categories: _category == null ? const [] : [_category!],
                 forPlayers: widget.forPlayers,
+                forGoalkeepers: widget.forGoalkeepers,
                 onlyFavorites: _onlyFav,
                 includeArchived: _showArchived,
               ),
@@ -182,6 +188,129 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
     );
   }
 
+  /// „passt" (grün) / „passt nicht · Grund" (orange) zur aktuellen Kadergröße.
+  Widget _fitBadge(bool fits, String? reason) {
+    final color = fits ? Colors.green.shade700 : Colors.orange.shade800;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          fits ? Icons.check_circle : Icons.error_outline,
+          size: 14,
+          color: color,
+        ),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(
+            fits ? 'passt' : 'passt nicht · ${reason ?? ''}',
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Lässt die KI die Übung an die Kadergröße anpassen, speichert die neue
+  /// Variante und gibt sie (im Auswahlmodus) an die Einheit zurück.
+  Future<void> _adaptAndReturn(Exercise base) async {
+    final state = context.read<AppState>();
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('KI passt die Übung an …')),
+          ],
+        ),
+      ),
+    );
+    try {
+      final draft = await CloudService.aiCoach({
+        'mode': 'adapt',
+        'players': widget.forPlayers?.toString() ?? '',
+        'goalkeepers': widget.forGoalkeepers?.toString() ?? '',
+        'categories': base.categories,
+        'title': base.title,
+        'aufbau': base.aufbau,
+        'ablauf': base.ablauf,
+        'coachingPoints': base.coachingPoints,
+        'varianten': base.varianten,
+        'material': base.material,
+      });
+      if (!mounted) return;
+      nav.pop(); // Spinner schließen
+      if (draft == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Keine Antwort von der KI.')),
+        );
+        return;
+      }
+      final ex = _draftToExercise(draft, base);
+      await state.upsertExercise(ex);
+      if (!mounted) return;
+      if (widget.pickMode) {
+        nav.pop(ex); // Bibliothek schließen, angepasste Übung zurückgeben
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Angepasste Übung gespeichert.')),
+        );
+        setState(() {});
+      }
+    } catch (e) {
+      if (mounted) nav.pop();
+      messenger.showSnackBar(SnackBar(content: Text('KI-Fehler: $e')));
+    }
+  }
+
+  Exercise _draftToExercise(Map<String, dynamic> d, Exercise base) {
+    final now = DateTime.now();
+    DrillDiagram? dia;
+    final dm = d['diagram'];
+    if (dm is Map) {
+      final parsed = DrillDiagram.fromJson(Map<String, dynamic>.from(dm));
+      if (!parsed.isEmpty) dia = parsed.tidy();
+    }
+    String str(Object? v) => (v as String?)?.trim() ?? '';
+    final cats = <String>[];
+    final c = d['categories'];
+    if (c is List) {
+      for (final x in c) {
+        final s = x.toString().trim();
+        if (s.isNotEmpty) cats.add(s);
+      }
+    }
+    final title = str(d['title']);
+    return Exercise(
+      id: const Uuid().v4(),
+      title: title.isEmpty ? base.title : title,
+      categories: cats.isEmpty ? base.categories : cats,
+      aufbau: str(d['aufbau']),
+      ablauf: str(d['ablauf']),
+      coachingPoints: str(d['coachingPoints']),
+      varianten: str(d['varianten']),
+      minPlayers: (d['minPlayers'] as num?)?.toInt(),
+      needsGoalkeeper:
+          d['needsGoalkeeper'] == true || (d['goalkeepers'] as num?) != null,
+      goalkeepers: (d['goalkeepers'] as num?)?.toInt(),
+      durationMin: (d['durationMin'] as num?)?.toInt() ?? base.durationMin,
+      material: str(d['material']),
+      diagram: dia ?? base.diagram,
+      source: 'ai',
+      createdAt: now,
+      updatedAt: now,
+    );
+  }
+
   Widget _card(BuildContext context, AppState state, Exercise e) {
     final meta = <String>[
       if (e.minPlayers != null) 'ab ${e.minPlayers} Sp.',
@@ -191,6 +320,10 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
         'mit TW',
       if (e.durationMin != null) '${e.durationMin} Min',
     ];
+    final reason = widget.forPlayers == null
+        ? null
+        : e.squadMismatchReason(widget.forPlayers!, widget.forGoalkeepers ?? 0);
+    final fits = reason == null;
     return Card(
       margin: EdgeInsets.zero,
       child: InkWell(
@@ -249,6 +382,24 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                         child: Text(
                           meta.join('  ·  '),
                           style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    if (widget.forPlayers != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: _fitBadge(fits, reason),
+                      ),
+                    if (widget.pickMode && widget.forPlayers != null && !fits)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => _adaptAndReturn(e),
+                          icon: const Icon(Icons.auto_fix_high, size: 18),
+                          label: const Text('An Kader anpassen'),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            visualDensity: VisualDensity.compact,
+                          ),
                         ),
                       ),
                   ],
