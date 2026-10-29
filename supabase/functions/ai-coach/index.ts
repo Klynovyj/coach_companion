@@ -146,6 +146,28 @@ function buildMessages(body: Record<string, unknown>) {
       },
     ];
   }
+  if (mode === "diagram") {
+    return [
+      {
+        role: "user",
+        content: textContent(
+          `Du bearbeitest NUR die Skizze (Spielfeld-Diagramm), keine Textfelder.\n` +
+            `- Ist die aktuelle Skizze NICHT leer: verbessere ihre ANORDNUNG ` +
+            `(realistische, klare Positionen, kein Durcheinander, Mannschaften ` +
+            `erkennbar gruppiert, Tore richtig ausgerichtet). Behalte Objekte, ` +
+            `Anzahl, Typen, Farben und Beschriftungen bei – ordne sie nur neu an.\n` +
+            `- Ist die aktuelle Skizze LEER: erstelle eine neue, sinnvolle Skizze ` +
+            `(passend zum Fokus/Kontext).\n` +
+            `Tore immer als "minigoal"; Tor an der Seite -> rotation 90.\n` +
+            `Gib NUR dieses JSON zurueck: ` +
+            `{ "diagram": { "field": "box", "elements": [ ... ] } } mit demselben ` +
+            `element-Schema wie oben.\n` +
+            `${ctx}\nFokus/Wunsch: ${String(body.focus ?? "")}\n` +
+            `Aktuelle Skizze:\n${JSON.stringify(body.diagram ?? {})}`,
+        ),
+      },
+    ];
+  }
   if (mode === "adapt") {
     return [
       {

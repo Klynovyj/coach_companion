@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/drill_diagram.dart';
+import '../../services/cloud_service.dart';
 import '../../widgets/drill_diagram_view.dart';
 import '../../widgets/zone_overlays.dart';
 
@@ -690,6 +691,96 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     _emit();
   }
 
+  Future<String?> _promptText(String title, String hint) {
+    final ctrl = TextEditingController();
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          minLines: 1,
+          maxLines: 4,
+          decoration: InputDecoration(hintText: hint),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Los'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// KI bearbeitet die Skizze: [create]=true erstellt eine neue, sonst wird die
+  /// aktuelle aufgeräumt/verbessert.
+  Future<void> _aiDiagram({required bool create}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final nav = Navigator.of(context);
+    var focus = '';
+    if (create) {
+      final f = await _promptText(
+        'Neue Skizze (KI)',
+        'Was soll geübt werden? (optional)',
+      );
+      if (f == null) return; // abgebrochen
+      focus = f;
+    }
+    if (!mounted) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('KI arbeitet an der Skizze …')),
+          ],
+        ),
+      ),
+    );
+    try {
+      final res = await CloudService.aiCoach({
+        'mode': 'diagram',
+        'focus': focus,
+        'diagram': create ? <String, dynamic>{} : _snapshot().toJson(),
+      });
+      nav.pop();
+      final dia = res?['diagram'];
+      if (dia is! Map) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Keine Antwort von der KI.')),
+        );
+        return;
+      }
+      final parsed = DrillDiagram.fromJson(
+        Map<String, dynamic>.from(dia),
+      ).tidy();
+      if (!mounted) return;
+      setState(() {
+        _field = parsed.field;
+        _els = List.of(parsed.elements);
+        _selection.clear();
+      });
+      _emit();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(create ? 'Skizze erstellt.' : 'Skizze verbessert.'),
+        ),
+      );
+    } catch (e) {
+      nav.pop();
+      messenger.showSnackBar(SnackBar(content: Text('KI-Fehler: $e')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final toolbar = Wrap(
@@ -720,6 +811,18 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             tooltip: 'Wiederholen',
             icon: const Icon(Icons.redo),
             onPressed: _canRedo ? _redo : null,
+          ),
+          PopupMenuButton<String>(
+            tooltip: 'KI-Skizze',
+            icon: Icon(
+              Icons.auto_awesome,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            onSelected: (v) => _aiDiagram(create: v == 'create'),
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'improve', child: Text('Skizze aufräumen')),
+              PopupMenuItem(value: 'create', child: Text('Neue Skizze (KI)')),
+            ],
           ),
           DropdownButton<String>(
             value: _field,
