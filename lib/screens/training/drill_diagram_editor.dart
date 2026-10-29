@@ -231,6 +231,34 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     return dEnd < dStart ? 'end' : 'start';
   }
 
+  /// Indizes, die zur selben Gruppe gehören wie [i] (oder nur {i}).
+  Set<int> _groupMembers(int i) {
+    final g = _els[i].groupId;
+    if (g == null) return {i};
+    return {
+      for (var j = 0; j < _els.length; j++)
+        if (_els[j].groupId == g) j,
+    };
+  }
+
+  /// Wählt das getroffene Objekt (bzw. seine Gruppe); mit Shift additiv.
+  void _selectHit(int hit, bool shift) {
+    final members = _groupMembers(hit);
+    setState(() {
+      if (shift) {
+        if (_selection.containsAll(members)) {
+          _selection.removeAll(members);
+        } else {
+          _selection.addAll(members);
+        }
+      } else {
+        _selection
+          ..clear()
+          ..addAll(members);
+      }
+    });
+  }
+
   Offset _norm(Offset local, Size size) {
     final inset = size.shortestSide * 0.03;
     final w = size.width - 2 * inset;
@@ -392,20 +420,13 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
         return;
       }
     }
-    // 2) Vorhandenes Element verschieben (ganze Auswahl mit)?
+    // 2) Vorhandenes Element verschieben (ganze Auswahl/Gruppe mit)?
     final hit = _hit(norm);
     if (hit != null) {
-      setState(() {
-        if (_shiftHeld) {
-          _selection.contains(hit)
-              ? _selection.remove(hit)
-              : _selection.add(hit);
-        } else if (!_selection.contains(hit)) {
-          _selection
-            ..clear()
-            ..add(hit);
-        }
-      });
+      if (_shiftHeld || !_selection.contains(hit)) {
+        _selectHit(hit, _shiftHeld);
+      }
+      if (_els[hit].locked == true) return; // gesperrt: nicht ziehen
       _dragKind = 'move';
       _dragIndex = hit;
       return;
@@ -573,6 +594,70 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
         if (i < _els.length) _els.removeAt(i);
       }
       _selection.clear();
+    });
+    _emit();
+  }
+
+  void _toggleLock() {
+    final i = _sel;
+    if (i == null || i >= _els.length) return;
+    setState(
+      () => _els[i] = _els[i].copyWith(locked: !(_els[i].locked ?? false)),
+    );
+    _emit();
+  }
+
+  double _minOf(Iterable<double> xs) => xs.reduce((a, b) => a < b ? a : b);
+  double _maxOf(Iterable<double> xs) => xs.reduce((a, b) => a > b ? a : b);
+
+  /// Richtet die Auswahl an einer Achse aus (left/centerX/right/top/centerY/
+  /// bottom). Pfeil-/Zonen-Endpunkte wandern mit.
+  void _align(String axis) {
+    if (_selection.length < 2) return;
+    final horiz = axis == 'left' || axis == 'centerX' || axis == 'right';
+    final vals = [for (final i in _selection) horiz ? _els[i].x : _els[i].y];
+    final double target = axis == 'left' || axis == 'top'
+        ? _minOf(vals)
+        : axis == 'right' || axis == 'bottom'
+        ? _maxOf(vals)
+        : vals.reduce((a, b) => a + b) / vals.length;
+    setState(() {
+      for (final i in _selection) {
+        final e = _els[i];
+        if (horiz) {
+          final dx = target - e.x;
+          _els[i] = e.copyWith(
+            x: target,
+            x2: e.x2 == null ? null : (e.x2! + dx).clamp(0.0, 1.0),
+          );
+        } else {
+          final dy = target - e.y;
+          _els[i] = e.copyWith(
+            y: target,
+            y2: e.y2 == null ? null : (e.y2! + dy).clamp(0.0, 1.0),
+          );
+        }
+      }
+    });
+    _emit();
+  }
+
+  void _group() {
+    if (_selection.length < 2) return;
+    final gid = 'g${DateTime.now().microsecondsSinceEpoch}';
+    setState(() {
+      for (final i in _selection) {
+        _els[i] = _els[i].copyWith(groupId: gid);
+      }
+    });
+    _emit();
+  }
+
+  void _ungroup() {
+    setState(() {
+      for (final i in _selection) {
+        _els[i] = _els[i].copyWith(clearGroupId: true);
+      }
     });
     _emit();
   }
@@ -782,21 +867,50 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   }
 
   Widget _multiPanel() {
+    final anyGrouped = _selection.any((i) => _els[i].groupId != null);
     return Padding(
       padding: const EdgeInsets.only(top: 6),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('${_selection.length} ausgewählt'),
-          const Spacer(),
-          IconButton(
-            tooltip: 'Löschen',
-            icon: const Icon(Icons.delete_outline),
-            onPressed: _deleteSelected,
+          Row(
+            children: [
+              Text('${_selection.length} ausgewählt'),
+              const Spacer(),
+              IconButton(
+                tooltip: anyGrouped ? 'Gruppierung lösen' : 'Gruppieren',
+                icon: Icon(anyGrouped ? Icons.layers_clear : Icons.layers),
+                onPressed: anyGrouped ? _ungroup : _group,
+              ),
+              IconButton(
+                tooltip: 'Löschen',
+                icon: const Icon(Icons.delete_outline),
+                onPressed: _deleteSelected,
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 2,
+            children: [
+              _alignBtn('left', Icons.align_horizontal_left),
+              _alignBtn('centerX', Icons.align_horizontal_center),
+              _alignBtn('right', Icons.align_horizontal_right),
+              _alignBtn('top', Icons.align_vertical_top),
+              _alignBtn('centerY', Icons.align_vertical_center),
+              _alignBtn('bottom', Icons.align_vertical_bottom),
+            ],
           ),
         ],
       ),
     );
   }
+
+  Widget _alignBtn(String axis, IconData icon) => IconButton(
+    tooltip: 'Ausrichten',
+    icon: Icon(icon),
+    visualDensity: VisualDensity.compact,
+    onPressed: () => _align(axis),
+  );
 
   Widget _propertiesPanel(DrillElement sel) {
     final usesColor =
@@ -898,10 +1012,49 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             ),
           ],
         ),
+        if (sel.type == 'cone' ||
+            sel.type == 'goal' ||
+            sel.type == 'minigoal' ||
+            sel.type == 'text')
+          Row(
+            children: [
+              const Icon(Icons.rotate_right, size: 18),
+              const SizedBox(width: 4),
+              const Text('Drehen'),
+              Expanded(
+                child: Slider(
+                  value: (sel.rotation ?? 0).clamp(-180.0, 180.0),
+                  min: -180,
+                  max: 180,
+                  onChanged: (v) => _patch((e) => e.copyWith(rotation: v)),
+                ),
+              ),
+            ],
+          ),
+        Row(
+          children: [
+            const Icon(Icons.opacity, size: 18),
+            const SizedBox(width: 4),
+            const Text('Deckkraft'),
+            Expanded(
+              child: Slider(
+                value: (sel.opacity ?? 1.0).clamp(0.1, 1.0),
+                min: 0.1,
+                max: 1.0,
+                onChanged: (v) => _patch((e) => e.copyWith(opacity: v)),
+              ),
+            ),
+          ],
+        ),
         if (sel.type == 'arrow') _arrowControls(sel),
         if (sel.type == 'zone') _zoneControls(sel),
         Row(
           children: [
+            IconButton(
+              tooltip: (sel.locked ?? false) ? 'Entsperren' : 'Sperren',
+              icon: Icon((sel.locked ?? false) ? Icons.lock : Icons.lock_open),
+              onPressed: _toggleLock,
+            ),
             const Spacer(),
             IconButton(
               tooltip: 'Nach hinten',
@@ -1087,17 +1240,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
         final n = _norm(d.localPosition, size);
         final hit = _hit(n);
         if (hit != null) {
-          setState(() {
-            if (_shiftHeld) {
-              _selection.contains(hit)
-                  ? _selection.remove(hit)
-                  : _selection.add(hit);
-            } else {
-              _selection
-                ..clear()
-                ..add(hit);
-            }
-          });
+          _selectHit(hit, _shiftHeld);
         } else if (_tool == 'select') {
           setState(() => _selection.clear());
         } else {

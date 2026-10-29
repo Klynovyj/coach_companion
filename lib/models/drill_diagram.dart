@@ -38,6 +38,11 @@ class DrillElement {
   final String? fill;
   final double? fillOpacity;
 
+  /// Drehung in Grad, Sperre (nicht verschiebbar) und Gruppen-Id.
+  final double? rotation;
+  final bool? locked;
+  final String? groupId;
+
   const DrillElement({
     required this.type,
     required this.x,
@@ -57,6 +62,9 @@ class DrillElement {
     this.shape,
     this.fill,
     this.fillOpacity,
+    this.rotation,
+    this.locked,
+    this.groupId,
   });
 
   DrillElement copyWith({
@@ -77,6 +85,10 @@ class DrillElement {
     String? shape,
     String? fill,
     double? fillOpacity,
+    double? rotation,
+    bool? locked,
+    String? groupId,
+    bool clearGroupId = false,
   }) => DrillElement(
     type: type,
     x: x ?? this.x,
@@ -96,6 +108,9 @@ class DrillElement {
     shape: shape ?? this.shape,
     fill: fill ?? this.fill,
     fillOpacity: fillOpacity ?? this.fillOpacity,
+    rotation: rotation ?? this.rotation,
+    locked: locked ?? this.locked,
+    groupId: clearGroupId ? null : (groupId ?? this.groupId),
   );
 
   Map<String, dynamic> toJson() => {
@@ -117,6 +132,9 @@ class DrillElement {
     if (shape != null) 'shape': shape,
     if (fill != null) 'fill': fill,
     if (fillOpacity != null) 'fillOpacity': fillOpacity,
+    if (rotation != null) 'rotation': rotation,
+    if (locked != null) 'locked': locked,
+    if (groupId != null) 'groupId': groupId,
   };
 
   factory DrillElement.fromJson(Map<String, dynamic> m) => DrillElement(
@@ -138,6 +156,9 @@ class DrillElement {
     shape: m['shape'] as String?,
     fill: m['fill'] as String?,
     fillOpacity: (m['fillOpacity'] as num?)?.toDouble(),
+    rotation: (m['rotation'] as num?)?.toDouble(),
+    locked: m['locked'] == true,
+    groupId: m['groupId'] as String?,
   );
 }
 

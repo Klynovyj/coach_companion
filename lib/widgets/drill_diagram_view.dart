@@ -129,6 +129,19 @@ class DrillDiagramPainter extends CustomPainter {
           Paint()..color = Colors.white.withValues(alpha: op.clamp(0.0, 1.0)),
         );
       }
+      final rot = (e.rotation ?? 0) * math.pi / 180;
+      final rotate =
+          rot != 0 &&
+          (e.type == 'cone' ||
+              e.type == 'goal' ||
+              e.type == 'minigoal' ||
+              e.type == 'text');
+      if (rotate) {
+        canvas.save();
+        canvas.translate(pos.dx, pos.dy);
+        canvas.rotate(rot);
+        canvas.translate(-pos.dx, -pos.dy);
+      }
       switch (e.type) {
         case 'cone':
           _cone(canvas, pos, er, _parseColor(e.color, const Color(0xFFEF6C00)));
@@ -156,6 +169,7 @@ class DrillDiagramPainter extends CustomPainter {
             size,
           );
       }
+      if (rotate) canvas.restore();
       if (fade) canvas.restore();
     }
   }
