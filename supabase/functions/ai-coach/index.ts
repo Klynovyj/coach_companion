@@ -139,6 +139,25 @@ function buildMessages(body: Record<string, unknown>) {
       },
     ];
   }
+  if (mode === "adapt") {
+    return [
+      {
+        role: "user",
+        content: textContent(
+          `Passe die folgende Uebung an die neue Spieler-/Torwartzahl an. ` +
+            `Behalte Idee, Ziel und Trainingsart bei; passe Spielerzahl, Aufbau, ` +
+            `Ablauf, Organisation und die Skizze an die neue Zahl an.\n${ctx}\n` +
+            `Bisherige Uebung:\n` +
+            `Titel: ${String(body.title ?? "")}\n` +
+            `Aufbau: ${String(body.aufbau ?? "")}\n` +
+            `Ablauf: ${String(body.ablauf ?? "")}\n` +
+            `Coaching: ${String(body.coachingPoints ?? "")}\n` +
+            `Varianten: ${String(body.varianten ?? "")}\n` +
+            `Material: ${String(body.material ?? "")}`,
+        ),
+      },
+    ];
+  }
   // generate
   return [
     {

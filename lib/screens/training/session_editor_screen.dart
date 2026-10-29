@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:uuid/uuid.dart';
 
+import '../../models/drill_diagram.dart';
 import '../../models/enums.dart';
 import '../../models/exercise.dart';
 import '../../models/training_session.dart';
+import '../../services/cloud_service.dart';
 import '../../state/app_state.dart';
 import 'exercise_detail_screen.dart';
 import 'exercise_library_screen.dart';
@@ -101,17 +103,7 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
     (s, i) => s + (i.durationMin ?? _exMap[i.exerciseId]?.durationMin ?? 0),
   );
 
-  Future<void> _pickExercise() async {
-    final ex = await Navigator.push<Exercise>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => ExerciseLibraryScreen(
-          pickMode: true,
-          forPlayers: int.tryParse(_field.text.trim()),
-        ),
-      ),
-    );
-    if (ex == null) return;
+  void _addToItems(Exercise ex) {
     setState(() {
       _exMap[ex.id] = ex;
       _items.add(
@@ -124,6 +116,172 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
         ),
       );
     });
+  }
+
+  Future<void> _pickExercise() async {
+    final ex = await Navigator.push<Exercise>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ExerciseLibraryScreen(
+          pickMode: true,
+          forPlayers: int.tryParse(_field.text.trim()),
+        ),
+      ),
+    );
+    if (ex != null) _addToItems(ex);
+  }
+
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  /// Vorschläge: erst passende Übungen aus der Bibliothek, dann Option, eine
+  /// neue per KI zu generieren.
+  Future<void> _suggest() async {
+    final state = context.read<AppState>();
+    final forPlayers = int.tryParse(_field.text.trim());
+    final matches = await state.exercises(
+      categories: _categories,
+      forPlayers: forPlayers,
+    );
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.6,
+        maxChildSize: 0.9,
+        builder: (ctx, scroll) => ListView(
+          controller: scroll,
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
+              child: Text(
+                'Vorschläge aus der Bibliothek',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            if (matches.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Keine passende Übung in der Bibliothek. Lass die KI eine erstellen.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ),
+            for (final ex in matches.take(25))
+              ListTile(
+                leading: Icon(
+                  ex.favorite ? Icons.star : Icons.fitness_center,
+                  color: ex.favorite ? Colors.amber : null,
+                ),
+                title: Text(ex.title),
+                subtitle: Text(
+                  [
+                    if (ex.categories.isNotEmpty) ex.categories.join(', '),
+                    if (ex.durationMin != null) '${ex.durationMin} Min',
+                  ].join(' · '),
+                ),
+                trailing: const Icon(Icons.add),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _addToItems(ex);
+                },
+              ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.auto_awesome),
+              title: const Text('Neue Übung mit KI generieren'),
+              subtitle: const Text('Passend zu Spieleranzahl und Trainingsart'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _generateAndAdd();
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _generateAndAdd() async {
+    final state = context.read<AppState>();
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('KI erstellt eine Übung …')),
+          ],
+        ),
+      ),
+    );
+    try {
+      final draft = await CloudService.aiCoach({
+        'mode': 'generate',
+        'players': _field.text.trim(),
+        'goalkeepers': _gk.text.trim(),
+        'categories': _categories,
+        'focus': '',
+        'duration': '',
+      });
+      if (!mounted) return;
+      Navigator.pop(context); // Spinner
+      if (draft == null) {
+        _snack('Keine Antwort von der KI.');
+        return;
+      }
+      final ex = _exerciseFromDraft(draft);
+      // In der Bibliothek speichern (wiederverwendbar + team-synchron) …
+      await state.upsertExercise(ex);
+      if (!mounted) return;
+      _addToItems(ex); // … und direkt der Einheit hinzufügen.
+      _snack('KI-Übung erstellt und hinzugefügt.');
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      _snack('KI-Fehler: $e');
+    }
+  }
+
+  Exercise _exerciseFromDraft(Map<String, dynamic> d) {
+    final now = DateTime.now();
+    DrillDiagram? dia;
+    final dm = d['diagram'];
+    if (dm is Map) {
+      final parsed = DrillDiagram.fromJson(Map<String, dynamic>.from(dm));
+      if (!parsed.isEmpty) dia = parsed;
+    }
+    final cats = <String>[];
+    final c = d['categories'];
+    if (c is List) {
+      for (final x in c) {
+        final s = x.toString().trim();
+        if (s.isNotEmpty) cats.add(s);
+      }
+    }
+    String str(Object? v) => (v as String?)?.trim() ?? '';
+    final title = str(d['title']);
+    return Exercise(
+      id: const Uuid().v4(),
+      title: title.isEmpty ? 'KI-Übung' : title,
+      categories: cats.isEmpty ? List.of(_categories) : cats,
+      aufbau: str(d['aufbau']),
+      ablauf: str(d['ablauf']),
+      coachingPoints: str(d['coachingPoints']),
+      varianten: str(d['varianten']),
+      minPlayers: (d['minPlayers'] as num?)?.toInt(),
+      needsGoalkeeper: d['needsGoalkeeper'] == true,
+      durationMin: (d['durationMin'] as num?)?.toInt(),
+      material: str(d['material']),
+      diagram: dia,
+      source: 'ai',
+      createdAt: now,
+      updatedAt: now,
+    );
   }
 
   Future<void> _editDuration(int index) async {
@@ -313,9 +471,14 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
                 ),
               ),
               TextButton.icon(
+                onPressed: _suggest,
+                icon: const Icon(Icons.auto_awesome, size: 18),
+                label: const Text('Vorschlagen'),
+              ),
+              IconButton(
+                tooltip: 'Aus Bibliothek',
                 onPressed: _pickExercise,
-                icon: const Icon(Icons.add, size: 18),
-                label: const Text('Übung'),
+                icon: const Icon(Icons.add),
               ),
             ],
           ),

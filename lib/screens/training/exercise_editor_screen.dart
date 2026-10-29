@@ -350,6 +350,25 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
     await _runAi({..._ctx, 'mode': 'video', 'description': info});
   }
 
+  /// Passt die bestehende Übung per KI an die aktuelle Spieler-/Torwartzahl an.
+  Future<void> _kiAdapt() async {
+    if (_minPlayers.text.trim().isEmpty) {
+      _snack('Bitte zuerst die Spielerzahl (min. Spieler) eintragen.');
+      return;
+    }
+    await _runAi({
+      ..._ctx,
+      'mode': 'adapt',
+      'goalkeepers': _needsGk ? '1' : '0',
+      'title': _title.text.trim(),
+      'aufbau': _aufbau.text.trim(),
+      'ablauf': _ablauf.text.trim(),
+      'coachingPoints': _coaching.text.trim(),
+      'varianten': _varianten.text.trim(),
+      'material': _material.text.trim(),
+    });
+  }
+
   Future<void> _save() async {
     final title = _title.text.trim();
     if (title.isEmpty) {
@@ -468,6 +487,14 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
                 ),
               ),
             ],
+          ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _kiAdapt,
+              icon: const Icon(Icons.autorenew, size: 18),
+              label: const Text('An Spieleranzahl anpassen (KI)'),
+            ),
           ),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
