@@ -1075,37 +1075,31 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
       return Focus(
         focusNode: _editorFocus,
         onKeyEvent: _onKey,
-        child: Stack(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
-                  child: toolbar,
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
-                  child: controls,
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(8, 0, 8, hasSel ? 60 : 8),
-                    child: LayoutBuilder(
-                      builder: (context, c) =>
-                          Center(child: _buildCanvas(c.maxWidth, c.maxHeight)),
-                    ),
-                  ),
-                ),
-              ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(0, 8, 0, 4),
+              child: toolbar,
             ),
-            // Eigenschaften-Bodenpanel: eingeklappt nur der Griff (nichts wird
-            // abgeschnitten); öffnet per Hochwischen oder Tippen auf den Griff.
-            if (hasSel)
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: _bottomPanel(panel),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 4),
+              child: controls,
+            ),
+            // Feld nimmt den Platz über dem Panel ein und schrumpft, wenn das
+            // Panel geöffnet wird – das bearbeitete Objekt bleibt sichtbar.
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: LayoutBuilder(
+                  builder: (context, c) =>
+                      Center(child: _buildCanvas(c.maxWidth, c.maxHeight)),
+                ),
               ),
+            ),
+            // Eigenschaften-Bodenpanel: eingeklappt nur der Griff; öffnet per
+            // Hochwischen oder Tippen auf den Griff.
+            if (hasSel) _bottomPanel(panel),
           ],
         ),
       );
@@ -1248,9 +1242,10 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
         ],
       ),
     );
-    final expandedH = (MediaQuery.of(context).size.height * 0.55).clamp(
-      220.0,
-      540.0,
+    // Nicht zu hoch, damit das Feld darüber groß genug bleibt; Inhalt scrollt.
+    final expandedH = (MediaQuery.of(context).size.height * 0.42).clamp(
+      200.0,
+      420.0,
     );
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
