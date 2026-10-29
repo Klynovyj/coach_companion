@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:math';
 
 /// Ein Element auf der Übungs-Skizze. Koordinaten sind relativ (0..1), damit die
 /// Skizze auf jeder Größe passt. [x2]/[y2] nur für Pfeil (Ende) bzw. Zone (zweite
@@ -89,8 +88,8 @@ class DrillDiagram {
         elements: elements ?? this.elements,
       );
 
-  /// Schiebt überlappende Punkt-Objekte leicht auseinander, damit KI-Skizzen
-  /// nicht „durcheinander" wirken. Pfeile/Zonen bleiben unverändert.
+  /// Setzt Punkt-Objekte auf ein sauberes Raster und löst Kollisionen auf,
+  /// damit KI-Skizzen nicht „durcheinander" wirken. Pfeile/Zonen bleiben.
   DrillDiagram tidy() {
     const pointTypes = {
       'player',
@@ -105,34 +104,42 @@ class DrillDiagram {
       for (var i = 0; i < els.length; i++)
         if (pointTypes.contains(els[i].type)) i,
     ];
-    if (idx.length < 2) return this;
-    final px = {for (final i in idx) i: els[i].x};
-    final py = {for (final i in idx) i: els[i].y};
-    const minD = 0.1;
-    for (var iter = 0; iter < 60; iter++) {
-      var moved = false;
-      for (var a = 0; a < idx.length; a++) {
-        for (var b = a + 1; b < idx.length; b++) {
-          final ia = idx[a], ib = idx[b];
-          var dx = px[ia]! - px[ib]!;
-          var dy = py[ia]! - py[ib]!;
-          var d = sqrt(dx * dx + dy * dy);
-          if (d >= minD) continue;
-          if (d < 1e-4) {
-            dx = 0.01 * (a - b) + 0.005;
-            dy = 0.01;
-            d = sqrt(dx * dx + dy * dy);
+    if (idx.isEmpty) return this;
+
+    const step = 0.11; // Rasterabstand (größer als ein Spieler → kein Überlapp)
+    const lo = 0.08;
+    final cells = ((1 - 2 * lo) / step).floor();
+    int clampCell(int c) => c < 0 ? 0 : (c > cells ? cells : c);
+    int keyOf(int c, int r) => r * 1000 + c;
+
+    final occupied = <int>{};
+    final px = <int, double>{};
+    final py = <int, double>{};
+    for (final i in idx) {
+      final e = els[i];
+      final c0 = clampCell(((e.x - lo) / step).round());
+      final r0 = clampCell(((e.y - lo) / step).round());
+      var bc = c0, br = r0;
+      if (occupied.contains(keyOf(c0, r0))) {
+        // Nächste freie Zelle in wachsenden Ringen suchen.
+        var found = false;
+        for (var rad = 1; rad <= cells && !found; rad++) {
+          for (var dc = -rad; dc <= rad && !found; dc++) {
+            for (var dr = -rad; dr <= rad && !found; dr++) {
+              if (dc.abs() != rad && dr.abs() != rad) continue;
+              final c = clampCell(c0 + dc), r = clampCell(r0 + dr);
+              if (!occupied.contains(keyOf(c, r))) {
+                bc = c;
+                br = r;
+                found = true;
+              }
+            }
           }
-          final push = (minD - d) / 2;
-          final ux = dx / d, uy = dy / d;
-          px[ia] = (px[ia]! + ux * push).clamp(0.05, 0.95);
-          py[ia] = (py[ia]! + uy * push).clamp(0.05, 0.95);
-          px[ib] = (px[ib]! - ux * push).clamp(0.05, 0.95);
-          py[ib] = (py[ib]! - uy * push).clamp(0.05, 0.95);
-          moved = true;
         }
       }
-      if (!moved) break;
+      occupied.add(keyOf(bc, br));
+      px[i] = lo + bc * step;
+      py[i] = lo + br * step;
     }
     return DrillDiagram(
       field: field,

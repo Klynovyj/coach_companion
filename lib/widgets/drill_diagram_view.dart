@@ -3,9 +3,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import '../models/drill_diagram.dart';
+import 'pitch_geometry.dart';
 
-/// Seitenverhältnis (Breite/Höhe) passend zum Feldtyp: Längsfeld hochkant.
-double aspectForField(String field) => field == 'full_v' ? 0.66 : 1.5;
+/// Seitenverhältnis (Breite/Höhe) passend zum Feldtyp (aus der Pitch-Geometrie).
+double aspectForField(String field) => pitchGeometryFor(field).aspect;
 
 /// Zeichnet eine Übungs-Skizze (Spielfeld + Elemente). Rein darstellend; der
 /// Editor legt eine Interaktionsschicht darüber.
@@ -54,58 +55,15 @@ class DrillDiagramPainter extends CustomPainter {
     final rect = Offset.zero & size;
     canvas.drawRect(rect, pitch);
 
-    // Feldmarkierungen je nach Typ.
-    final inset = size.shortestSide * 0.04;
+    // Feldmarkierungen aus der (aus Coach Studio portierten) Pitch-Geometrie.
+    final inset = size.shortestSide * 0.03;
     final field = Rect.fromLTRB(
       inset,
       inset,
       size.width - inset,
       size.height - inset,
     );
-    canvas.drawRect(field, line);
-    void centerCircle() =>
-        canvas.drawCircle(field.center, size.shortestSide * 0.12, line);
-
-    if (diagram.field == 'full') {
-      // Ganzes Feld quer: Mittellinie senkrecht, Tore links/rechts.
-      canvas.drawLine(
-        Offset(field.center.dx, field.top),
-        Offset(field.center.dx, field.bottom),
-        line,
-      );
-      centerCircle();
-      _goalEnd(canvas, line, Offset(field.left, field.center.dy),
-          const Offset(1, 0), const Offset(0, 1), field.height, field.width);
-      _goalEnd(canvas, line, Offset(field.right, field.center.dy),
-          const Offset(-1, 0), const Offset(0, 1), field.height, field.width);
-    } else if (diagram.field == 'full_v') {
-      // Ganzes Feld längs: Mittellinie waagerecht, Tore oben/unten.
-      canvas.drawLine(
-        Offset(field.left, field.center.dy),
-        Offset(field.right, field.center.dy),
-        line,
-      );
-      centerCircle();
-      _goalEnd(canvas, line, Offset(field.center.dx, field.top),
-          const Offset(0, 1), const Offset(1, 0), field.width, field.height);
-      _goalEnd(canvas, line, Offset(field.center.dx, field.bottom),
-          const Offset(0, -1), const Offset(1, 0), field.width, field.height);
-    } else if (diagram.field == 'half') {
-      // Halbfeld: Mittellinie oben (Anstoßkreis-Bogen), Tor unten.
-      canvas.drawArc(
-        Rect.fromCircle(
-          center: Offset(field.center.dx, field.top),
-          radius: size.shortestSide * 0.12,
-        ),
-        0,
-        math.pi,
-        false,
-        line,
-      );
-      _goalEnd(canvas, line, Offset(field.center.dx, field.bottom),
-          const Offset(0, -1), const Offset(1, 0), field.width, field.height,
-          scale: 1.9);
-    }
+    _drawMarkings(canvas, field, line, diagram.field);
 
     Offset p(double x, double y) =>
         Offset(field.left + x * field.width, field.top + y * field.height);
@@ -148,6 +106,17 @@ class DrillDiagramPainter extends CustomPainter {
     }
   }
 
+  // Dezenter Schlagschatten für den 3D-Look (wie im Coach-Studio-Editor).
+  void _chipShadow(Canvas c, Offset o, double r) {
+    c.drawCircle(
+      o.translate(r * 0.06, r * 0.14),
+      r,
+      Paint()
+        ..color = Colors.black.withValues(alpha: 0.35)
+        ..maskFilter = MaskFilter.blur(BlurStyle.normal, r * 0.3),
+    );
+  }
+
   void _player(
     Canvas c,
     Offset o,
@@ -156,6 +125,7 @@ class DrillDiagramPainter extends CustomPainter {
     String? label,
     Size size,
   ) {
+    _chipShadow(c, o, r);
     c.drawCircle(o, r, Paint()..color = color);
     c.drawCircle(
       o,
@@ -163,7 +133,7 @@ class DrillDiagramPainter extends CustomPainter {
       Paint()
         ..color = Colors.white
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
+        ..strokeWidth = math.max(1.2, r * 0.13),
     );
     if (label != null && label.isNotEmpty) {
       _label(c, o, label, size, Colors.white, r);
@@ -179,21 +149,36 @@ class DrillDiagramPainter extends CustomPainter {
     c.drawPath(path, Paint()..color = color);
   }
 
-  // Großtor (big) deutlich größer als ein Minitor.
+  // Großtor (big) deutlich größer als ein Minitor; mit angedeutetem Netz.
   void _goal(Canvas c, Offset o, double r, {required bool big}) {
-    final w = big ? r * 2.8 : r * 1.5;
-    final h = big ? r * 1.05 : r * 0.7;
+    final w = big ? r * 2.8 : r * 1.6;
+    final h = big ? r * 1.1 : r * 0.75;
+    final rect = Rect.fromCenter(center: o, width: w, height: h);
+    c.drawRect(rect, Paint()..color = Colors.white.withValues(alpha: 0.12));
+    final net = Paint()
+      ..color = Colors.white.withValues(alpha: 0.3)
+      ..strokeWidth = 0.6;
+    for (var i = 1; i < 4; i++) {
+      final x = rect.left + rect.width * i / 4;
+      c.drawLine(Offset(x, rect.top), Offset(x, rect.bottom), net);
+    }
+    c.drawLine(
+      Offset(rect.left, rect.center.dy),
+      Offset(rect.right, rect.center.dy),
+      net,
+    );
     c.drawRect(
-      Rect.fromCenter(center: o, width: w, height: h),
+      rect,
       Paint()
         ..color = Colors.white
         ..style = PaintingStyle.stroke
-        ..strokeWidth = big ? 3.0 : 2.0,
+        ..strokeWidth = big ? 3.0 : 2.2,
     );
   }
 
   // Weißer Ball mit schwarzem Fünfeck und Nähten – erkennbare Fußball-Optik.
   void _ball(Canvas c, Offset o, double r) {
+    _chipShadow(c, o, r);
     c.drawCircle(o, r, Paint()..color = Colors.white);
     final seam = math.max(1.0, r * 0.14);
     final stroke = Paint()
@@ -239,71 +224,61 @@ class DrillDiagramPainter extends CustomPainter {
     c.drawLine(b, p2, paint);
   }
 
-  // Ein Tor-Ende: 16er-Raum, 5er-Raum, Elfmeterpunkt und Strafraumbogen.
-  // [glc] = Mitte der Torlinie, [inward] zeigt ins Feld, [along] entlang der
-  // Torlinie. [crossLen]/[longLen] sind die Feldmaße quer/längs zur Spielrichtung.
-  void _goalEnd(
-    Canvas c,
-    Paint line,
-    Offset glc,
-    Offset inward,
-    Offset along,
-    double crossLen,
-    double longLen, {
-    double scale = 1.0,
-  }) {
-    _boxAt(c, line, glc, inward, along, longLen * 0.16 * scale, crossLen * 0.30);
-    _boxAt(c, line, glc, inward, along, longLen * 0.055 * scale, crossLen * 0.15);
-    final spot = glc + inward * (longLen * 0.11 * scale);
-    c.drawCircle(
-      spot,
-      math.max(1.5, line.strokeWidth * 1.3),
-      Paint()..color = line.color,
-    );
-    final rr = longLen * 0.11 * scale;
-    final ang = math.atan2(inward.dy, inward.dx);
-    const half = 1.15;
-    c.drawArc(
-      Rect.fromCircle(center: spot, radius: rr),
-      ang - half,
-      half * 2,
-      false,
-      line,
-    );
-  }
-
-  void _boxAt(
-    Canvas c,
-    Paint line,
-    Offset glc,
-    Offset inward,
-    Offset along,
-    double depth,
-    double halfW,
-  ) {
-    final p1 = glc + along * halfW;
-    final p2 = glc - along * halfW;
-    final i1 = p1 + inward * depth;
-    final i2 = p2 + inward * depth;
-    c.drawPath(
-      Path()
-        ..moveTo(p1.dx, p1.dy)
-        ..lineTo(i1.dx, i1.dy)
-        ..lineTo(i2.dx, i2.dy)
-        ..lineTo(p2.dx, p2.dy),
-      line,
-    );
+  // Zeichnet die Feldmarkierungen aus der Pitch-Geometrie. Kreis-/Bogenradien
+  // werden über die Feldhöhe skaliert, damit sie in jeder Ausrichtung rund sind.
+  void _drawMarkings(Canvas c, Rect f, Paint line, String field) {
+    final g = pitchGeometryFor(field);
+    Offset at(double x, double y) =>
+        Offset(f.left + x * f.width, f.top + y * f.height);
+    for (final r in g.markings.rects) {
+      c.drawRect(
+        Rect.fromLTWH(
+          f.left + r.x * f.width,
+          f.top + r.y * f.height,
+          r.w * f.width,
+          r.h * f.height,
+        ),
+        line,
+      );
+    }
+    for (final l in g.markings.lines) {
+      c.drawLine(at(l.x1, l.y1), at(l.x2, l.y2), line);
+    }
+    for (final ci in g.markings.circles) {
+      final rad = ci.r * f.height;
+      if (rad < 1.5) {
+        // Elfmeter-/Mittelpunkt gefüllt.
+        c.drawCircle(
+          at(ci.cx, ci.cy),
+          math.max(1.5, rad * 1.6),
+          Paint()..color = line.color,
+        );
+      } else {
+        c.drawCircle(at(ci.cx, ci.cy), rad, line);
+      }
+    }
+    for (final a in g.markings.arcs) {
+      final sweep = (((a.end - a.start) % 360) + 360) % 360;
+      c.drawArc(
+        Rect.fromCircle(center: at(a.cx, a.cy), radius: a.r * f.height),
+        a.start * math.pi / 180,
+        sweep * math.pi / 180,
+        false,
+        line,
+      );
+    }
   }
 
   void _zone(Canvas c, Rect rect) {
+    const amber = Color(0xFFFACC15);
+    c.drawRect(rect, Paint()..color = amber.withValues(alpha: 0.2));
     c.drawRect(
       rect,
       Paint()
-        ..color = Colors.white.withValues(alpha: 0.6)
+        ..color = amber.withValues(alpha: 0.9)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.5,
+        ..strokeWidth = 1.8,
     );
-    c.drawRect(rect, Paint()..color = Colors.white.withValues(alpha: 0.08));
   }
 
   int _layer(String type) {

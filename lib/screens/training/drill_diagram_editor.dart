@@ -48,6 +48,17 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
 
   bool _isTwoPoint(String type) => type == 'arrow' || type == 'zone';
 
+  // Raster-Einrasten, damit Objekte sauber ausgerichtet sitzen.
+  static const _grid = 0.0625;
+  double _snapV(double v) => ((v / _grid).round() * _grid).clamp(0.0, 1.0);
+  Offset _snap(Offset n) => Offset(_snapV(n.dx), _snapV(n.dy));
+  DrillElement _snapEl(DrillElement e) => e.copyWith(
+    x: _snapV(e.x),
+    y: _snapV(e.y),
+    x2: e.x2 == null ? null : _snapV(e.x2!),
+    y2: e.y2 == null ? null : _snapV(e.y2!),
+  );
+
   void _emit() =>
       widget.onChanged(DrillDiagram(field: _field, elements: List.of(_els)));
 
@@ -85,7 +96,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   }
 
   Offset _norm(Offset local, Size size) {
-    final inset = size.shortestSide * 0.04;
+    final inset = size.shortestSide * 0.03;
     final w = size.width - 2 * inset;
     final h = size.height - 2 * inset;
     return Offset(
@@ -115,7 +126,9 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     );
     if (text == null || text.isEmpty) return;
     setState(() {
-      _els.add(DrillElement(type: 'text', x: norm.dx, y: norm.dy, label: text));
+      _els.add(
+        _snapEl(DrillElement(type: 'text', x: norm.dx, y: norm.dy, label: text)),
+      );
       _selected = _els.length - 1;
     });
     _emit();
@@ -174,7 +187,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
       e = _newElement(_tool, norm);
     }
     setState(() {
-      _els.add(e);
+      _els.add(_snapEl(e));
       _selected = _els.length - 1;
     });
     _emit();
@@ -210,7 +223,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     }
     // 3) Auf leerer Fläche: Pfeil/Zone aufziehen.
     if (_tool == 'arrow' || _tool == 'zone') {
-      final e = _newElement(_tool, norm, end: norm);
+      final e = _snapEl(_newElement(_tool, norm, end: norm));
       setState(() {
         _els.add(e);
         _selected = _els.length - 1;
@@ -223,22 +236,27 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
   void _onPanUpdate(Offset norm, Offset delta, Size size) {
     final i = _dragIndex;
     if (i == null || i >= _els.length) return;
+    // Start/Ende/Ziehen rasten aufs Gitter; Verschieben läuft übers Delta und
+    // rastet erst beim Loslassen (_onPanEnd).
+    final snapped = _snap(norm);
     setState(() {
       switch (_dragKind) {
         case 'move':
           _moveBy(i, Offset(delta.dx / size.width, delta.dy / size.height));
         case 'start':
-          _els[i] = _els[i].copyWith(x: norm.dx, y: norm.dy);
+          _els[i] = _els[i].copyWith(x: snapped.dx, y: snapped.dy);
         case 'end':
         case 'draw':
-          _els[i] = _els[i].copyWith(x2: norm.dx, y2: norm.dy);
+          _els[i] = _els[i].copyWith(x2: snapped.dx, y2: snapped.dy);
       }
     });
   }
 
   void _onPanEnd() {
     final i = _dragIndex;
-    if (_dragKind == 'draw' && i != null && i < _els.length) {
+    if (_dragKind == 'move' && i != null && i < _els.length) {
+      setState(() => _els[i] = _snapEl(_els[i])); // beim Loslassen aufs Raster
+    } else if (_dragKind == 'draw' && i != null && i < _els.length) {
       final e = _els[i];
       final len = (Offset(e.x, e.y) - Offset(e.x2 ?? e.x, e.y2 ?? e.y)).distance;
       if (len < 0.03) {
@@ -511,7 +529,7 @@ class _EditorPainter extends DrillDiagramPainter {
     super.paint(canvas, size);
     if (selected == null || selected! >= diagram.elements.length) return;
     final e = diagram.elements[selected!];
-    final inset = size.shortestSide * 0.04;
+    final inset = size.shortestSide * 0.03;
     Offset at(double x, double y) => Offset(
       inset + x * (size.width - 2 * inset),
       inset + y * (size.height - 2 * inset),
