@@ -11,6 +11,7 @@ import '../../models/drill_diagram.dart';
 import '../../models/exercise.dart';
 import '../../services/cloud_service.dart';
 import '../../state/app_state.dart';
+import '../../widgets/photo_viewer.dart';
 import '../../widgets/team_logo.dart';
 import 'drill_diagram_editor.dart';
 
@@ -527,13 +528,19 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
           if (_sketchPhoto != null)
             Stack(
               children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.memory(
+                GestureDetector(
+                  onTap: () => showPhotoFullscreen(
+                    context,
                     TeamLogo.decode(_sketchPhoto)!,
-                    height: 160,
-                    width: double.infinity,
-                    fit: BoxFit.cover,
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(
+                      TeamLogo.decode(_sketchPhoto)!,
+                      height: 160,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                    ),
                   ),
                 ),
                 Positioned(

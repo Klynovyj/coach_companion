@@ -88,7 +88,11 @@ class DrillDiagramPainter extends CustomPainter {
         Offset(field.left + x * field.width, field.top + y * field.height);
     final r = size.shortestSide * 0.045;
 
-    for (final e in diagram.elements) {
+    // In Ebenen zeichnen: Zonen/Pfeile nach hinten, Spieler/Ball/Text nach
+    // vorne, damit nichts Wichtiges verdeckt wird.
+    final sorted = [...diagram.elements]
+      ..sort((a, b) => _layer(a.type).compareTo(_layer(b.type)));
+    for (final e in sorted) {
       final pos = p(e.x, e.y);
       switch (e.type) {
         case 'cone':
@@ -202,8 +206,53 @@ class DrillDiagramPainter extends CustomPainter {
     c.drawRect(rect, Paint()..color = Colors.white.withValues(alpha: 0.08));
   }
 
+  int _layer(String type) {
+    switch (type) {
+      case 'zone':
+        return 0;
+      case 'arrow':
+        return 1;
+      case 'cone':
+      case 'goal':
+        return 2;
+      case 'ball':
+        return 4;
+      case 'text':
+        return 5;
+      default: // player
+        return 3;
+    }
+  }
+
+  // Kurzes Text-Label als lesbarer Kasten, innerhalb des Feldes gehalten.
   void _text(Canvas c, Offset o, String label, Size size) {
-    _label(c, o, label, size, Colors.white, size.shortestSide * 0.05);
+    if (label.trim().isEmpty) return;
+    final fontSize = size.shortestSide * 0.042;
+    final tp = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      ellipsis: '…',
+    )..layout(maxWidth: size.width * 0.5);
+    const pad = 4.0;
+    final boxW = tp.width + pad * 2;
+    final boxH = tp.height + pad * 2;
+    final left = (o.dx - boxW / 2).clamp(2.0, size.width - boxW - 2);
+    final top = (o.dy - boxH / 2).clamp(2.0, size.height - boxH - 2);
+    final box = Rect.fromLTWH(left, top, boxW, boxH);
+    c.drawRRect(
+      RRect.fromRectAndRadius(box, const Radius.circular(4)),
+      Paint()..color = Colors.black.withValues(alpha: 0.5),
+    );
+    tp.paint(c, Offset(left + pad, top + pad));
   }
 
   void _label(Canvas c, Offset o, String s, Size size, Color color, double r) {

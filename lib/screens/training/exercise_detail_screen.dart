@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/exercise.dart';
 import '../../widgets/drill_diagram_view.dart';
+import '../../widgets/photo_viewer.dart';
 import '../../widgets/team_logo.dart';
 import 'exercise_editor_screen.dart';
 
@@ -90,11 +91,23 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.memory(
-                TeamLogo.decode(e.sketchPhotoUrl)!,
-                fit: BoxFit.contain,
+            Builder(
+              builder: (context) {
+                final bytes = TeamLogo.decode(e.sketchPhotoUrl)!;
+                return GestureDetector(
+                  onTap: () => showPhotoFullscreen(context, bytes),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.memory(bytes, fit: BoxFit.contain),
+                  ),
+                );
+              },
+            ),
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text(
+                'Zum Vergrößern antippen',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
             ),
           ],

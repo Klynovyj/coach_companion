@@ -26,7 +26,7 @@ const SYSTEM = `Du bist ein erfahrener Fussball-Co-Trainer und Trainingsplaner.
 Erstelle bzw. dokumentiere EINE Trainingsuebung als striktes JSON-Objekt nach
 diesem Schema (keine weiteren Felder, keine Erklaerung, kein Markdown):
 {
- "title": string,
+ "title": string,               // kurz und praegnant
  "categories": string[],        // Trainingsarten, z.B. "Taktik","Standards"
  "aufbau": string,              // Feldaufbau / Organisation
  "ablauf": string,              // Ablauf der Uebung Schritt fuer Schritt
@@ -43,12 +43,32 @@ diesem Schema (keine weiteren Felder, keine Erklaerung, kein Markdown):
        "x": number, "y": number,
        "x2": number, "y2": number,   // nur bei arrow (Ende) / zone (2. Ecke)
        "color": string,              // optional, Hex z.B. "#C62828" fuer Gegner
-       "label": string }             // optional (Rueckennummer / Text)
+       "label": string }             // optional, SEHR kurz (Rueckennummer)
    ]
  }
 }
-Zeichne eine sinnvolle, nachvollziehbare Skizze (Spieler, Huetchen, Tore, Baelle,
-Laufwege als Pfeile, Zonen). Antworte AUSSCHLIESSLICH mit dem JSON-Objekt.`;
+
+FORMATIERUNG DER TEXTFELDER (wichtig fuer die Lesbarkeit):
+- Schreibe KEINE langen Textbloecke. Nutze kurze Zeilen mit echten
+  Zeilenumbruechen (\\n) zwischen den Punkten.
+- "ablauf": nummerierte Schritte, je Schritt eine eigene Zeile:
+  "1. ...\\n2. ...\\n3. ...".
+- "aufbau", "coachingPoints", "varianten": Stichpunkte, je Punkt eine eigene
+  Zeile mit "- " am Anfang: "- ...\\n- ...".
+- "material": kurze Liste, je Posten "- " und eigene Zeile.
+- Formuliere knapp und konkret, keine Fuellsaetze.
+
+SKIZZE (diagram) uebersichtlich halten:
+- Verteile die Elemente gut ueber das Feld. KEINE zwei Elemente auf derselben
+  Position (Mindestabstand ~0.08), Spieler nicht uebereinander stapeln.
+- "label" nur sehr kurz (Rueckennummer/Kuerzel), NIE ganze Saetze.
+- Verwende KEINE langen "text"-Banner im Feld. Die Beschreibung gehoert in die
+  Textfelder, nicht in die Skizze. "text" hoechstens fuer ein einzelnes kurzes
+  Wort am Rand.
+- Lege einen Ball leicht versetzt neben den Spieler, nicht exakt auf ihn.
+- Halte die Skizze einfach (etwa 6-14 Elemente reichen meist).
+
+Antworte AUSSCHLIESSLICH mit dem JSON-Objekt.`;
 
 function textContent(s: string) {
   return [{ type: "text", text: s }];
