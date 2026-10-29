@@ -1255,6 +1255,7 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       curve: Curves.easeOut,
+      width: double.infinity,
       height: _panelOpen ? expandedH : 52,
       child: Material(
         elevation: 12,
