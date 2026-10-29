@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/drill_diagram.dart';
 import '../../models/exercise.dart';
+import '../../services/cloud_service.dart';
+import '../../state/app_state.dart';
 import '../../widgets/drill_animation_view.dart';
 import '../../widgets/drill_diagram_view.dart';
 import '../../widgets/photo_viewer.dart';
 import '../../widgets/team_logo.dart';
+import 'drill_diagram_editor.dart';
 
 /// Übung im bequemen Lese-Modus: eine Karte pro Sektion, horizontal
 /// durchwischen (wie die Gegner-Analyse). Bearbeiten-Stift in der AppBar.
@@ -24,11 +28,115 @@ class _ReadPage {
   final Color color;
   final String title;
   final Widget body;
-  const _ReadPage(this.icon, this.color, this.title, this.body);
+  final VoidCallback? onEdit;
+  const _ReadPage(this.icon, this.color, this.title, this.body, {this.onEdit});
 }
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
-  late final Exercise _ex = widget.exercise;
+  late Exercise _ex = widget.exercise;
+
+  Future<void> _save(Exercise updated) async {
+    final state = context.read<AppState>();
+    setState(() => _ex = updated);
+    await state.upsertExercise(updated);
+  }
+
+  void _snack(String m) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+
+  /// Fokussierter Editor für genau ein Textfeld (eine Karte).
+  Future<void> _editText(
+    String title,
+    String current,
+    Exercise Function(Exercise e, String v) apply,
+  ) async {
+    final ctrl = TextEditingController(text: current);
+    final res = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: TextField(
+            controller: ctrl,
+            autofocus: true,
+            minLines: 6,
+            maxLines: 16,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(border: OutlineInputBorder()),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (res != null) _save(apply(_ex, res.trim()));
+  }
+
+  Future<void> _editDiagram() async {
+    final res = await editDiagramFullscreen(
+      context,
+      _ex.diagram ?? const DrillDiagram(field: 'box'),
+    );
+    if (res == null) return;
+    _save(
+      _ex.copyWith(
+        diagram: res.isEmpty ? null : res,
+        clearDiagram: res.isEmpty,
+      ),
+    );
+  }
+
+  /// KI erzeugt/überarbeitet die Animation der Skizze.
+  Future<void> _aiAnimate() async {
+    final e = _ex;
+    if (e.diagram == null || e.diagram!.elements.isEmpty) {
+      _snack('Erst eine Skizze anlegen (Übersicht → Skizze bearbeiten).');
+      return;
+    }
+    final nav = Navigator.of(context);
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Expanded(child: Text('KI erstellt die Animation …')),
+          ],
+        ),
+      ),
+    );
+    try {
+      final res = await CloudService.aiCoach({
+        'mode': 'animate',
+        'diagram': e.diagram!.toJson(),
+      });
+      nav.pop();
+      final anim = res?['animation'];
+      if (anim is! List) {
+        _snack('Keine Animation von der KI.');
+        return;
+      }
+      final steps = [
+        for (final s in anim)
+          DrillAnimStep.fromJson(Map<String, dynamic>.from(s as Map)),
+      ];
+      _save(e.copyWith(diagram: e.diagram!.copyWith(animation: steps)));
+    } catch (err) {
+      nav.pop();
+      _snack('KI-Fehler: $err');
+    }
+  }
   final _pc = PageController();
   int _page = 0;
 
@@ -45,41 +153,68 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
         const Color(0xFF2E7D4F),
         'Übersicht',
         _overview(e),
+        onEdit: _editDiagram,
+      ),
+      // Animations-Karte immer (Play wenn vorhanden, sonst „Mit KI erstellen").
+      _ReadPage(
+        Icons.play_circle_outline,
+        const Color(0xFF00695C),
+        'Animation',
+        _animationBody(e),
       ),
     ];
-    if (e.diagram?.animation != null && e.diagram!.animation!.isNotEmpty) {
+    void textPage(
+      IconData i,
+      Color c,
+      String t,
+      String current,
+      Exercise Function(Exercise e, String v) setField,
+    ) {
       pages.add(
         _ReadPage(
-          Icons.play_circle_outline,
-          const Color(0xFF00695C),
-          'Animation',
-          _animationBody(e),
+          i,
+          c,
+          t,
+          current.trim().isEmpty ? _emptyBody() : _textBody(current),
+          onEdit: () => _editText(t, current, setField),
         ),
       );
     }
-    void textPage(IconData i, Color c, String t, String s) {
-      if (s.trim().isNotEmpty) pages.add(_ReadPage(i, c, t, _textBody(s)));
-    }
 
-    textPage(Icons.architecture, const Color(0xFF1565C0), 'Aufbau', e.aufbau);
+    textPage(
+      Icons.architecture,
+      const Color(0xFF1565C0),
+      'Aufbau',
+      e.aufbau,
+      (x, v) => x.copyWith(aufbau: v),
+    );
     textPage(
       Icons.format_list_numbered,
       const Color(0xFF3F51B5),
       'Ablauf',
       e.ablauf,
+      (x, v) => x.copyWith(ablauf: v),
     );
     textPage(
       Icons.sports,
       const Color(0xFF00897B),
       'Coaching-Punkte',
       e.coachingPoints,
+      (x, v) => x.copyWith(coachingPoints: v),
     );
-    textPage(Icons.tune, const Color(0xFF7E57C2), 'Varianten', e.varianten);
+    textPage(
+      Icons.tune,
+      const Color(0xFF7E57C2),
+      'Varianten',
+      e.varianten,
+      (x, v) => x.copyWith(varianten: v),
+    );
     textPage(
       Icons.inventory_2_outlined,
       const Color(0xFF8D6E63),
       'Material',
       e.material,
+      (x, v) => x.copyWith(material: v),
     );
     if (e.videoLinks.isNotEmpty) {
       pages.add(
@@ -103,6 +238,17 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     }
     return pages;
   }
+
+  Widget _emptyBody() => const Center(
+    child: Padding(
+      padding: EdgeInsets.all(24),
+      child: Text(
+        'Noch nichts. Tippe oben auf ✎ zum Hinzufügen.',
+        textAlign: TextAlign.center,
+        style: TextStyle(color: Colors.grey),
+      ),
+    ),
+  );
 
   Widget _overview(Exercise e) {
     final meta = <String>[
@@ -148,10 +294,40 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     );
   }
 
-  Widget _animationBody(Exercise e) => ListView(
-    padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-    children: [DrillAnimationView(diagram: e.diagram!)],
-  );
+  Widget _animationBody(Exercise e) {
+    final hasAnim =
+        e.diagram?.animation != null && e.diagram!.animation!.isNotEmpty;
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      children: [
+        if (hasAnim)
+          DrillAnimationView(diagram: e.diagram!)
+        else
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 20),
+            child: Column(
+              children: [
+                Icon(Icons.movie_outlined, size: 48, color: Colors.grey),
+                SizedBox(height: 8),
+                Text(
+                  'Noch keine Animation.\nLass die KI die Übung beleben.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 12),
+        Center(
+          child: FilledButton.icon(
+            onPressed: _aiAnimate,
+            icon: const Icon(Icons.auto_awesome),
+            label: Text(hasAnim ? 'Neu generieren (KI)' : 'Mit KI erstellen'),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _textBody(String s) => ListView(
     padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -287,6 +463,13 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                     ),
                   ),
                 ),
+                if (p.onEdit != null)
+                  IconButton(
+                    tooltip: 'Bearbeiten',
+                    icon: const Icon(Icons.edit, color: Colors.white, size: 20),
+                    onPressed: p.onEdit,
+                    visualDensity: VisualDensity.compact,
+                  ),
                 Text(
                   '${i + 1}/$n',
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.85)),
