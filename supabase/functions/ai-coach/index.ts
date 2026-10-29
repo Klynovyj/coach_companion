@@ -151,14 +151,18 @@ function buildMessages(body: Record<string, unknown>) {
       {
         role: "user",
         content: textContent(
-          `Erzeuge eine ANIMATION fuer diese Fussball-Skizze: Spieler und Ball ` +
-            `bewegen sich in sinnvollen Schritten (Pass = Ball bewegt sich zum ` +
-            `Ziel, Lauf = Spieler laeuft; folge vorhandenen Pfeilen/Laufwegen). ` +
-            `3-8 Schritte. Jeder "move" nennt den 0-basierten "index" des Elements ` +
-            `in elements[] und seine Zielposition x,y (0..1). "ms" = Dauer des ` +
-            `Schritts in Millisekunden.\n` +
-            `Gib NUR dieses JSON zurueck: { "animation": [ { "ms": 1200, "moves": ` +
-            `[ {"index":0,"x":0.5,"y":0.3} ] } ] }\n` +
+          `Erzeuge eine ANIMATION fuer diese Fussball-Skizze, ausgerichtet am ABLAUF.\n` +
+            `- Pro nummeriertem Ablauf-Schritt GENAU EINEN Animations-Schritt ` +
+            `(gibt es keinen Ablauf, teile die Bewegung in 3-6 sinnvolle Schritte).\n` +
+            `- "label" = kurze Erklaerung des Schritts (der jeweilige Ablauf-Text, ` +
+            `gekuerzt auf einen Satz).\n` +
+            `- "moves": wer sich bewegt - "index" (0-basiert in elements[]) + ` +
+            `Zielposition x,y (0..1). Pass = Ball bewegt sich zum Ziel, Lauf = ` +
+            `Spieler laeuft; folge den vorhandenen Pfeilen.\n` +
+            `- "ms" = Dauer des Schritts in Millisekunden (z.B. 1200).\n` +
+            `Gib NUR dieses JSON zurueck: { "animation": [ { "ms":1200, ` +
+            `"label":"...", "moves":[ {"index":0,"x":0.5,"y":0.3} ] } ] }\n` +
+            `ABLAUF:\n${String(body.ablauf ?? "")}\n` +
             `Skizze:\n${JSON.stringify(body.diagram ?? {})}`,
         ),
       },

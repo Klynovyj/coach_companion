@@ -43,7 +43,6 @@ class _DrillAnimationViewState extends State<DrillAnimationView>
               _ctrl.forward(from: 0);
             }
           });
-    WidgetsBinding.instance.addPostFrameCallback((_) => _ctrl.forward(from: 0));
   }
 
   @override
@@ -82,6 +81,36 @@ class _DrillAnimationViewState extends State<DrillAnimationView>
     return DrillDiagram(field: d.field, overlay: d.overlay, elements: els);
   }
 
+  List<int> get _cumMs {
+    final out = <int>[];
+    var t = 0;
+    for (final s in widget.diagram.animation ?? const <DrillAnimStep>[]) {
+      t += s.ms > 0 ? s.ms : 1000;
+      out.add(t);
+    }
+    return out;
+  }
+
+  int get _currentStep {
+    final steps = widget.diagram.animation ?? const <DrillAnimStep>[];
+    if (steps.isEmpty) return 0;
+    final elapsed = _ctrl.value * _totalMs;
+    final cum = _cumMs;
+    for (var i = 0; i < cum.length; i++) {
+      if (elapsed < cum[i] - 0.5) return i;
+    }
+    return steps.length - 1;
+  }
+
+  void _seekStep(int i) {
+    final steps = widget.diagram.animation ?? const <DrillAnimStep>[];
+    if (steps.isEmpty) return;
+    final idx = i.clamp(0, steps.length - 1);
+    final startMs = idx == 0 ? 0 : _cumMs[idx - 1];
+    _ctrl.stop();
+    setState(() => _ctrl.value = (startMs / _totalMs).clamp(0.0, 1.0));
+  }
+
   void _togglePlay() {
     if (_ctrl.isAnimating) {
       _ctrl.stop();
@@ -96,21 +125,75 @@ class _DrillAnimationViewState extends State<DrillAnimationView>
   @override
   Widget build(BuildContext context) {
     final primary = Theme.of(context).colorScheme.primary;
+    final steps = widget.diagram.animation ?? const <DrillAnimStep>[];
+    final cur = _currentStep;
+    final label = cur < steps.length ? steps[cur].label : null;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         DrillDiagramView(diagram: _frame(), aspectRatio: widget.aspectRatio),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
+        // Timeline: Schritt-Chips
+        if (steps.length > 1)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (var i = 0; i < steps.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    child: GestureDetector(
+                      onTap: () => _seekStep(i),
+                      child: Container(
+                        width: 30,
+                        height: 30,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: i == cur ? primary : primary.withValues(alpha: 0.15),
+                        ),
+                        child: Text(
+                          '${i + 1}',
+                          style: TextStyle(
+                            color: i == cur ? Colors.white : primary,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        if (label != null && label.trim().isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: Text(
+              'Schritt ${cur + 1}: ${label.trim()}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(height: 1.3),
+            ),
+          ),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             IconButton(
+              tooltip: 'Schritt zurück',
+              icon: const Icon(Icons.skip_previous),
+              onPressed: steps.length > 1 ? () => _seekStep(cur - 1) : null,
+            ),
+            IconButton(
               tooltip: _ctrl.isAnimating ? 'Pause' : 'Abspielen',
               icon: Icon(
                 _ctrl.isAnimating ? Icons.pause : Icons.play_arrow,
-                size: 30,
+                size: 32,
               ),
               onPressed: _togglePlay,
+            ),
+            IconButton(
+              tooltip: 'Schritt vor',
+              icon: const Icon(Icons.skip_next),
+              onPressed: steps.length > 1 ? () => _seekStep(cur + 1) : null,
             ),
             IconButton(
               tooltip: 'Von vorn',

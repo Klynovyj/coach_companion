@@ -34,6 +34,7 @@ class _ReadPage {
 
 class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
   late Exercise _ex = widget.exercise;
+  bool _editMode = false;
 
   Future<void> _save(Exercise updated) async {
     final state = context.read<AppState>();
@@ -120,6 +121,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
       final res = await CloudService.aiCoach({
         'mode': 'animate',
         'diagram': e.diagram!.toJson(),
+        'ablauf': e.ablauf,
       });
       nav.pop();
       final anim = res?['animation'];
@@ -317,29 +319,90 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
               ],
             ),
           ),
-        const SizedBox(height: 12),
-        Center(
-          child: FilledButton.icon(
-            onPressed: _aiAnimate,
-            icon: const Icon(Icons.auto_awesome),
-            label: Text(hasAnim ? 'Neu generieren (KI)' : 'Mit KI erstellen'),
+        if (_editMode) ...[
+          const SizedBox(height: 12),
+          Center(
+            child: FilledButton.icon(
+              onPressed: _aiAnimate,
+              icon: const Icon(Icons.auto_awesome),
+              label: Text(hasAnim ? 'Neu generieren (KI)' : 'Mit KI erstellen'),
+            ),
           ),
-        ),
+        ] else if (!hasAnim)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text(
+              'Oben auf „Bearbeiten" tippen, um eine Animation mit KI zu erstellen.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.grey),
+            ),
+          ),
       ],
     );
   }
 
   Widget _textBody(String s) => ListView(
     padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-    children: [
-      SelectableText(
-        s.trim(),
-        style: Theme.of(
-          context,
-        ).textTheme.bodyLarge?.copyWith(height: 1.45, fontSize: 16),
-      ),
-    ],
+    children: [for (final line in s.trim().split('\n')) _line(line)],
   );
+
+  Widget _line(String raw) {
+    final t = raw.trimRight();
+    final style = Theme.of(
+      context,
+    ).textTheme.bodyLarge?.copyWith(height: 1.4, fontSize: 16);
+    final primary = Theme.of(context).colorScheme.primary;
+    if (t.trim().isEmpty) return const SizedBox(height: 8);
+    final numbered = RegExp(r'^\s*(\d+)[.)]\s+');
+    final bullet = RegExp(r'^\s*[-•*]\s+');
+    final nm = numbered.firstMatch(t);
+    if (nm != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              width: 26,
+              child: Text(
+                '${nm.group(1)}.',
+                style: style?.copyWith(
+                  fontWeight: FontWeight.bold,
+                  color: primary,
+                ),
+              ),
+            ),
+            Expanded(child: SelectableText(t.substring(nm.end), style: style)),
+          ],
+        ),
+      );
+    }
+    if (bullet.hasMatch(t)) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 7, left: 2, right: 10),
+              child: Container(
+                width: 6,
+                height: 6,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: primary),
+              ),
+            ),
+            Expanded(
+              child: SelectableText(t.replaceFirst(bullet, ''), style: style),
+            ),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: SelectableText(t, style: style),
+    );
+  }
 
   Widget _videos(Exercise e) => ListView(
     padding: const EdgeInsets.fromLTRB(8, 8, 8, 16),
@@ -420,7 +483,16 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     final pages = _buildPages(e);
     if (_page >= pages.length) _page = pages.length - 1;
     return Scaffold(
-      appBar: AppBar(title: Text(e.title)),
+      appBar: AppBar(
+        title: Text(e.title),
+        actions: [
+          IconButton(
+            tooltip: _editMode ? 'Fertig (Lesen)' : 'Bearbeiten',
+            icon: Icon(_editMode ? Icons.check : Icons.edit_outlined),
+            onPressed: () => setState(() => _editMode = !_editMode),
+          ),
+        ],
+      ),
       body: Column(
         children: [
           Expanded(
@@ -441,6 +513,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
     padding: const EdgeInsets.fromLTRB(14, 14, 14, 6),
     child: Card(
       elevation: 3,
+      color: Theme.of(context).colorScheme.surface,
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: Column(
@@ -463,7 +536,7 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
                     ),
                   ),
                 ),
-                if (p.onEdit != null)
+                if (_editMode && p.onEdit != null)
                   IconButton(
                     tooltip: 'Bearbeiten',
                     icon: const Icon(Icons.edit, color: Colors.white, size: 20),

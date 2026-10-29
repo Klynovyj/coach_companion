@@ -179,13 +179,16 @@ class DrillAnimMove {
 }
 
 /// Ein Animations-Schritt: mehrere Bewegungen gleichzeitig innerhalb von [ms].
+/// [label] erklärt den Schritt (Timeline, am Ablauf ausgerichtet).
 class DrillAnimStep {
   final int ms;
+  final String? label;
   final List<DrillAnimMove> moves;
-  const DrillAnimStep(this.ms, this.moves);
+  const DrillAnimStep(this.ms, this.moves, {this.label});
 
   Map<String, dynamic> toJson() => {
     'ms': ms,
+    if (label != null) 'label': label,
     'moves': [for (final m in moves) m.toJson()],
   };
 
@@ -195,6 +198,7 @@ class DrillAnimStep {
       for (final x in (m['moves'] as List? ?? const []))
         DrillAnimMove.fromJson(Map<String, dynamic>.from(x as Map)),
     ],
+    label: m['label'] as String?,
   );
 }
 
