@@ -945,10 +945,19 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
   // ------------------------------------------------------------- Listen-Modus
   Widget _listEditor() {
     // Gruppiert wie bei SpielerPlus: Startelf, Ersatzbank, Verfügbar.
-    final starters = _nominated
-        .where((p) => _starters.containsKey(p.id))
-        .toList();
-    final bench = _nominated.where((p) => _bench.contains(p.id)).toList();
+    // WICHTIG: Start/Bank zeigen ALLE eingeteilten Spieler – auch solche, die
+    // (nicht mehr) nominiert sind. Sonst weicht die Liste von Feld, gespeicherter
+    // Aufstellung und der Startelf-Grafik ab (dort wird nur über _byId gefiltert).
+    final nomIds = {for (final p in _nominated) p.id};
+    List<Player> group(Iterable<String> ids) => [
+      // Nominierte zuerst (stabile Reihenfolge), dann eingeteilte Nicht-Nominierte.
+      for (final p in _nominated)
+        if (ids.contains(p.id)) p,
+      for (final id in ids)
+        if (_byId.containsKey(id) && !nomIds.contains(id)) _byId[id]!,
+    ];
+    final starters = group(_starters.keys);
+    final bench = group(_bench);
     final available = _pool;
     return Column(
       children: [
