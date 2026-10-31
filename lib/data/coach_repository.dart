@@ -22,6 +22,7 @@ import '../models/inbox_message.dart';
 import '../models/exercise.dart';
 import '../models/training_session.dart';
 import '../models/player_talk.dart';
+import '../models/scouting.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
@@ -1327,6 +1328,59 @@ class CoachRepository {
     final db = await _db;
     await db.delete('player_talks', where: 'id = ?', whereArgs: [id]);
     _syncDelete('player_talks', {'id': id});
+  }
+
+  // --------------------------------------------------------------- Scouting
+  Future<List<ScoutPlayer>> getScoutPlayers() async {
+    final db = await _db;
+    final rows = await db.query('scouting', orderBy: 'created_at DESC');
+    return rows.map(ScoutPlayer.fromMap).toList();
+  }
+
+  Future<ScoutPlayer?> getScoutPlayer(String id) async {
+    final db = await _db;
+    final rows = await db.query(
+      'scouting',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : ScoutPlayer.fromMap(rows.first);
+  }
+
+  Future<void> upsertScoutPlayer(ScoutPlayer p) =>
+      _upsertById('scouting', p.toMap());
+
+  Future<void> deleteScoutPlayer(String id) async {
+    final db = await _db;
+    // Verlaufs-/Notiz-Einträge mitnehmen (lokal + Cloud).
+    final entries = await getScoutEntries(id);
+    await db.delete('scouting', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('scouting', {'id': id});
+    for (final e in entries) {
+      await db.delete('scouting_entries', where: 'id = ?', whereArgs: [e.id]);
+      _syncDelete('scouting_entries', {'id': e.id});
+    }
+  }
+
+  Future<List<ScoutEntry>> getScoutEntries(String scoutId) async {
+    final db = await _db;
+    final rows = await db.query(
+      'scouting_entries',
+      where: 'scout_id = ?',
+      whereArgs: [scoutId],
+      orderBy: 'entry_date DESC, created_at DESC',
+    );
+    return rows.map(ScoutEntry.fromMap).toList();
+  }
+
+  Future<void> upsertScoutEntry(ScoutEntry e) =>
+      _upsertById('scouting_entries', e.toMap());
+
+  Future<void> deleteScoutEntry(String id) async {
+    final db = await _db;
+    await db.delete('scouting_entries', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('scouting_entries', {'id': id});
   }
 
   // ------------------------------------------------------------ Absences

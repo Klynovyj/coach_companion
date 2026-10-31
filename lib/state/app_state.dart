@@ -30,6 +30,7 @@ import '../models/graphic_settings.dart';
 import '../models/match_rating.dart';
 import '../models/player_of_month.dart';
 import '../models/player_talk.dart';
+import '../models/scouting.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
@@ -124,6 +125,9 @@ class AppState extends ChangeNotifier {
     'match_ratings',
     'player_of_month',
     'activities',
+    // Scouting: beobachtete Spieler + Verlauf/Notizen (Eltern vor Kind).
+    'scouting',
+    'scouting_entries',
     // Trainings-Planer: team-weit geteilt (Übungen + Einheiten + Positionen).
     'exercises',
     'training_sessions',
@@ -3146,6 +3150,147 @@ class AppState extends ChangeNotifier {
         });
       } catch (_) {}
     }
+  }
+
+  // --------------------------------------------------------------- Scouting
+  Future<List<ScoutPlayer>> scoutPlayers() => _repo.getScoutPlayers();
+  Future<ScoutPlayer?> scoutPlayer(String id) => _repo.getScoutPlayer(id);
+  Future<List<ScoutEntry>> scoutEntries(String scoutId) =>
+      _repo.getScoutEntries(scoutId);
+
+  /// Legt einen manuell erfassten Scouting-Spieler an.
+  Future<ScoutPlayer> addScoutPlayerManual({
+    required String name,
+    String? position,
+    int? number,
+  }) async {
+    final now = DateTime.now();
+    final p = ScoutPlayer(
+      id: _uuid.v4(),
+      name: name.trim(),
+      position: (position == null || position.trim().isEmpty)
+          ? null
+          : position.trim(),
+      number: number,
+      status: ScoutStatus.beobachten,
+      statusDate: now,
+      actorId: CloudService.userId,
+      actorName: CloudService.myName ?? 'Trainer',
+      createdAt: now,
+    );
+    await _repo.upsertScoutPlayer(p);
+    // Erster Verlaufseintrag: Startstatus.
+    await _addStatusEntry(p.id, ScoutStatus.beobachten, now);
+    notifyListeners();
+    return p;
+  }
+
+  /// Legt einen Scouting-Spieler per FuPa-Spieler-Link an (Stammdaten) und holt
+  /// anschließend die Statistik. Wirft bei ungültigem Link / Fehler.
+  Future<ScoutPlayer> addScoutPlayerFromFupa(String url) async {
+    final parsed = await _importer.importPlayer(url);
+    final now = DateTime.now();
+    final name = parsed.fullName.trim().isEmpty ? 'Unbekannt' : parsed.fullName;
+    var p = ScoutPlayer(
+      id: _uuid.v4(),
+      name: name,
+      position: parsed.position,
+      number: parsed.number,
+      fupaUrl: url.trim(),
+      externalId: parsed.externalId,
+      photoUrl: parsed.photoUrl,
+      status: ScoutStatus.beobachten,
+      statusDate: now,
+      actorId: CloudService.userId,
+      actorName: CloudService.myName ?? 'Trainer',
+      createdAt: now,
+    );
+    await _repo.upsertScoutPlayer(p);
+    await _addStatusEntry(p.id, ScoutStatus.beobachten, now);
+    // Statistik best effort nachladen.
+    try {
+      p = await refreshScoutStats(p);
+    } catch (_) {
+      // Statistik optional – Spieler bleibt angelegt.
+    }
+    notifyListeners();
+    return p;
+  }
+
+  /// Holt die FuPa-Statistik (Karriere/Saison) neu und speichert sie am Spieler.
+  Future<ScoutPlayer> refreshScoutStats(ScoutPlayer p) async {
+    final url = p.fupaUrl;
+    if (url == null || url.isEmpty) return p;
+    final career = await _importer.importPlayerCareer(url);
+    final updated = p.copyWith(
+      statsJson: jsonEncode(fupaCareerToMap(career)),
+      statsUpdatedAt: DateTime.now(),
+    );
+    await _repo.upsertScoutPlayer(updated);
+    notifyListeners();
+    return updated;
+  }
+
+  /// Setzt einen neuen Status (mit Datum): legt einen Verlaufseintrag an und
+  /// aktualisiert den aktuellen Status am Spieler.
+  Future<void> setScoutStatus(
+    ScoutPlayer p,
+    ScoutStatus status,
+    DateTime date,
+  ) async {
+    await _repo.upsertScoutPlayer(
+      p.copyWith(status: status, statusDate: date),
+    );
+    await _addStatusEntry(p.id, status, date);
+    notifyListeners();
+  }
+
+  Future<void> _addStatusEntry(
+    String scoutId,
+    ScoutStatus status,
+    DateTime date,
+  ) async {
+    final now = DateTime.now();
+    await _repo.upsertScoutEntry(
+      ScoutEntry(
+        id: _uuid.v4(),
+        scoutId: scoutId,
+        kind: 'status',
+        status: status,
+        entryDate: date,
+        actorId: CloudService.userId,
+        actorName: CloudService.myName ?? 'Trainer',
+        createdAt: now,
+      ),
+    );
+  }
+
+  /// Fügt eine Notiz zum Scouting-Spieler hinzu.
+  Future<void> addScoutNote(String scoutId, String text) async {
+    final now = DateTime.now();
+    await _repo.upsertScoutEntry(
+      ScoutEntry(
+        id: _uuid.v4(),
+        scoutId: scoutId,
+        kind: 'note',
+        text: text.trim(),
+        entryDate: now,
+        actorId: CloudService.userId,
+        actorName: CloudService.myName ?? 'Trainer',
+        createdAt: now,
+      ),
+    );
+    notifyListeners();
+  }
+
+  Future<void> deleteScoutEntry(String id) async {
+    await _repo.deleteScoutEntry(id);
+    notifyListeners();
+  }
+
+  Future<void> deleteScoutPlayer(String id) async {
+    await _repo.deleteScoutPlayer(id);
+    notifyListeners();
   }
 
   // ---------------------------------------------------------------- Ratings

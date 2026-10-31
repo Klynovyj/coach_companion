@@ -598,6 +598,8 @@ class CloudService {
     'player_of_month',
     'player_stats',
     'activities',
+    'scouting',
+    'scouting_entries',
     'exercises',
     'training_sessions',
     'session_items',

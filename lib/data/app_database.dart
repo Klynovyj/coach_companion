@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 53;
+  static const _dbVersion = 54;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -462,6 +462,17 @@ class AppDatabase {
         'ALTER TABLE matches ADD COLUMN live_request_scope TEXT',
       );
     }
+    // v53 -> v54: Scouting (beobachtete Spieler + Verlauf/Notizen), team-weit.
+    if (oldV < 54) {
+      await db.execute(_scoutingTableSql);
+      await db.execute(
+        'CREATE INDEX idx_scouting_created ON scouting (created_at)',
+      );
+      await db.execute(_scoutingEntriesTableSql);
+      await db.execute(
+        'CREATE INDEX idx_scouting_entries_scout ON scouting_entries (scout_id)',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -487,6 +498,42 @@ class AppDatabase {
         type TEXT,
         title TEXT,
         subtitle TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''';
+
+  // Scouting: beobachtete (potenzielle) Spieler, team-weit geteilt. Lokal ohne
+  // team_id (die Cloud-Zeile bekommt es beim Push).
+  static const _scoutingTableSql = '''
+      CREATE TABLE scouting (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        position TEXT,
+        number INTEGER,
+        fupa_url TEXT,
+        external_id TEXT,
+        photo_url TEXT,
+        status TEXT,
+        status_date TEXT,
+        stats_json TEXT,
+        stats_updated_at TEXT,
+        actor_id TEXT,
+        actor_name TEXT,
+        created_at TEXT NOT NULL
+      )
+    ''';
+
+  // Verlauf (Status-Änderungen + Notizen) je Scouting-Spieler.
+  static const _scoutingEntriesTableSql = '''
+      CREATE TABLE scouting_entries (
+        id TEXT PRIMARY KEY,
+        scout_id TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        status TEXT,
+        text TEXT,
+        entry_date TEXT,
+        actor_id TEXT,
+        actor_name TEXT,
         created_at TEXT NOT NULL
       )
     ''';
@@ -986,6 +1033,15 @@ class AppDatabase {
     );
     await db.execute(_inboxTableSql);
     await db.execute('CREATE INDEX idx_inbox_created ON inbox (created_at)');
+
+    await db.execute(_scoutingTableSql);
+    await db.execute(
+      'CREATE INDEX idx_scouting_created ON scouting (created_at)',
+    );
+    await db.execute(_scoutingEntriesTableSql);
+    await db.execute(
+      'CREATE INDEX idx_scouting_entries_scout ON scouting_entries (scout_id)',
+    );
     await db.execute(_exercisesTableSql);
     await db.execute(_trainingSessionsTableSql);
     await db.execute(_sessionItemsTableSql);

@@ -11,6 +11,7 @@ import 'absence_overview_screen.dart';
 import 'inbox_screen.dart';
 import 'training/training_home_screen.dart';
 import 'rating_overview_screen.dart';
+import 'scouting_screen.dart';
 import 'settings_screen.dart';
 import 'statistics_hub_screen.dart';
 import 'spielergespraeche_screen.dart';
@@ -59,6 +60,12 @@ class MoreScreen extends StatelessWidget {
             icon: Icons.event_busy,
             label: 'Abwesenheit',
             screen: const AbsenceOverviewScreen(),
+          ),
+          _tile(
+            context,
+            icon: Icons.saved_search,
+            label: 'Scouting',
+            screen: const ScoutingScreen(),
           ),
           _tile(
             context,
