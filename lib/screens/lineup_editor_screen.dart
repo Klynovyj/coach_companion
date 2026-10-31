@@ -149,6 +149,17 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           _bench.add(e.playerId);
         }
       }
+      // Nominierung ist maßgeblich: steht sie fest (zugesagt/unter Vorbehalt),
+      // dürfen nur nominierte Spieler in Start/Bank stehen. Früher platzierte,
+      // inzwischen nicht mehr nominierte Spieler fliegen hier raus – sonst zeigen
+      // Feld, Liste und Startelf-Grafik „falsche" Spieler, die die Nominierung
+      // längst entfernt hat. (Ohne Zusagen bleibt alles, da dann der ganze Kader
+      // zur Verfügung steht.)
+      if (nominated.isNotEmpty) {
+        final allowed = {for (final p in nominated) p.id};
+        _starters.removeWhere((pid, _) => !allowed.contains(pid));
+        _bench.removeWhere((pid) => !allowed.contains(pid));
+      }
       _loading = false;
     });
   }
