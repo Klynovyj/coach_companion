@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:provider/provider.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import '../models/enums.dart';
 import '../models/match.dart';
@@ -128,6 +129,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
   void initState() {
     super.initState();
     _state = context.read<AppState>();
+    // Während des Live-Tickers das Display anlassen (nicht ausschalten).
+    WakelockPlus.enable().catchError((_) {});
     // Eingehende Live-Daten anderer Trainer (per Realtime) sofort anzeigen.
     _state.addListener(_onAppStateChanged);
     // Eigene Live-Rolle (Mitschreiben vs. Zuschauer) frisch ermitteln.
@@ -141,6 +144,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
 
   @override
   void dispose() {
+    // Display-Sperre wieder freigeben, wenn der Live-Screen verlassen wird.
+    WakelockPlus.disable().catchError((_) {});
     _state.removeListener(_onAppStateChanged);
     _timer?.cancel();
     super.dispose();
