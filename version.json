@@ -1,6 +1,6 @@
 {
-  "versionCode": 66,
-  "versionName": "1.3.61",
+  "versionCode": 67,
+  "versionName": "1.3.62",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neu: Scouting (Menue Mehr)\n- Beobachtete Spieler per FuPa-Link (Stammdaten + Statistik) oder manuell\n- Status-Verlauf mit Datum (Beobachten/Avisiert/Im Gespraech/Zugesagt/Abgelehnt), Notizen, alles teamweit mit Autor\n- Aufgeraeumte FuPa-Statistik (Kacheln + Stationen-Tabelle)\n\nSpieler & Aufstellung:\n- Starker Fuss (links/rechts/beide) im Spielerprofil\n- In der Aufstellung: Tippen auf einen Spieler zeigt Info (Nummer, Position, starker Fuss, Saison-Minuten, Sperre)\n- Plannamen oben wieder lesbar (Teilen/Zuruecksetzen im Mehr-Menue)\n\nLive-Spiel:\n- Wer startet, ist Haupt-Ticker und behaelt IMMER die volle Kontrolle; eine Freigabe gibt einem Helfer eine Seite nur zusaetzlich (Uhr bleibt beim Haupt-Ticker)\n- Fix: Ticker synchronisiert jetzt zuverlaessig zwischen den Geraeten\n- Display bleibt beim Live-Ticker an\n\nWichtig (Cloud, fuer Geraete-Sync): im Supabase-SQL-Editor stage37-stage42 ausfuehren."
+  "notes": "Live-Spiel:\n- Uhr-Buttons (Anpfiff/Halbzeit/Abpfiff ...) muessen jetzt 3 Sekunden gehalten werden - kein versehentliches Tippen mehr (mit Fortschrittsanzeige)\n- Ticker schneller: waehrend eines Live-Spiels wird alle paar Sekunden abgeglichen\n- Abpfiff/Phasen eines anderen Geraets kommen zeitnah an (Uhr stoppt nicht mehr verspaetet)\n\nSpielplan:\n- Lange Mannschaftsnamen brechen um statt abgeschnitten zu werden\n\nWichtig (Cloud, fuer Geraete-Sync): im Supabase-SQL-Editor stage37-stage42 ausfuehren (falls noch nicht geschehen)."
 }
