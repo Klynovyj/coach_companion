@@ -48,7 +48,16 @@ class ResultData {
 class AnnouncementData {
   final String? matchday;
   final String? competition;
-  const AnnouncementData({this.matchday, this.competition});
+  final String? venue; // Spielstätte (z.B. „Sportplatz Tiefenbroich")
+  final String? address; // Adresse (z.B. „Sohlstättenstr., 40880 Ratingen")
+  const AnnouncementData({
+    this.matchday,
+    this.competition,
+    this.venue,
+    this.address,
+  });
+
+  bool get isCup => (competition ?? '').toLowerCase().contains('pokal');
 }
 
 /// Erzeugt die teilbare Startelf-Grafik im Instagram-Format (Story 9:16 oder
@@ -288,6 +297,36 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         ? null
                         : () => apply(_settings.copyWith(clearBgImage: true)),
                     clearLabel: 'Entfernen',
+                  ),
+                  const SizedBox(height: 8),
+                  // Hintergrund-Design (Vorlage) -------------------------
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Design-Vorlage (ohne eigenes Hintergrundbild)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(ctx).hintColor,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      ChoiceChip(
+                        label: const Text('Kein Design'),
+                        selected: _settings.bgPreset == null,
+                        onSelected: (_) =>
+                            apply(_settings.copyWith(clearBgPreset: true)),
+                      ),
+                      ChoiceChip(
+                        label: const Text('Streifen'),
+                        selected: _settings.bgPreset == 'stripes',
+                        onSelected: (_) =>
+                            apply(_settings.copyWith(bgPreset: 'stripes')),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   // Gegner-Logo ------------------------------------------
@@ -581,6 +620,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         announcement: widget.announcement,
                         resultPhoto: _resultPhoto,
                         showPhotos: _settings.showPhotos,
+                        bgPreset: _settings.bgPreset,
                       ),
                     ),
                   ),
@@ -645,6 +685,44 @@ Color _hex(String h) {
   return Color(int.tryParse(s, radix: 16) ?? 0xFF0E3325);
 }
 
+/// Eingebautes Hintergrund-Design „Streifen": diagonale, halbtransparente helle
+/// Streifen im oberen Bereich (Farbe folgt dem gewählten Verlauf).
+class _StripesPainter extends CustomPainter {
+  _StripesPainter(this.base);
+  final Color base;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final band = h * 0.34;
+    canvas.save();
+    canvas.clipRect(Rect.fromLTWH(0, 0, w, band));
+    final light = Color.lerp(base, Colors.white, 0.7) ?? Colors.white;
+    final a = Paint()..color = Colors.white.withValues(alpha: 0.10);
+    final b = Paint()..color = light.withValues(alpha: 0.16);
+    final stripeW = w * 0.05;
+    final skew = band; // ~45°
+    var x = -skew;
+    var i = 0;
+    while (x < w + skew) {
+      final p = (i % 2 == 0) ? a : b;
+      final path = Path()
+        ..moveTo(x, band)
+        ..lineTo(x + stripeW, band)
+        ..lineTo(x + stripeW + skew, 0)
+        ..lineTo(x + skew, 0)
+        ..close();
+      canvas.drawPath(path, p);
+      x += stripeW * 1.6;
+      i++;
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _StripesPainter old) => old.base != base;
+}
+
 /// Die eigentliche Grafik in fester logischer Größe (wird per RepaintBoundary
 /// in ein PNG exportiert).
 class _StartelfGraphic extends StatelessWidget {
@@ -668,6 +746,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.announcement,
     this.resultPhoto,
     this.showPhotos = false,
+    this.bgPreset,
   });
 
   final String title;
@@ -689,41 +768,17 @@ class _StartelfGraphic extends StatelessWidget {
   final AnnouncementData? announcement; // gesetzt → Spielankündigung
   final String? resultPhoto; // Ergebnis-Grafik: Foto oben (Data-URL)
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
+  final String? bgPreset; // eingebautes Hintergrund-Design ('stripes')
 
   @override
   Widget build(BuildContext context) {
+    if (announcement != null) return _announcementLayout();
     if (result != null && resultPhoto != null) return _photoResultLayout();
-    final bgBytes = TeamLogo.decode(bgImage);
     final pad = compact ? 16.0 : 20.0;
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Basis-Verlauf (sichtbar ohne Hintergrundbild).
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [gradTop, gradBottom],
-            ),
-          ),
-        ),
-        if (bgBytes != null) ...[
-          Image.memory(bgBytes, fit: BoxFit.cover, gaplessPlayback: true),
-          // Verlauf als Tönung/Abdunkelung über dem Foto.
-          Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  gradTop.withValues(alpha: overlayOpacity),
-                  gradBottom.withValues(alpha: overlayOpacity),
-                ],
-              ),
-            ),
-          ),
-        ],
+        _bgBase(),
         Padding(
           padding: EdgeInsets.all(pad),
           child: Column(
@@ -743,9 +798,7 @@ class _StartelfGraphic extends StatelessWidget {
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.topCenter,
-                  child: announcement != null
-                      ? _announcementBlock()
-                      : (result != null ? _resultBlock() : _lineupBlock()),
+                  child: result != null ? _resultBlock() : _lineupBlock(),
                 ),
               ),
               if (barSponsors.isNotEmpty) ...[
@@ -755,6 +808,42 @@ class _StartelfGraphic extends StatelessWidget {
             ],
           ),
         ),
+      ],
+    );
+  }
+
+  /// Hintergrund-Basis: Verlauf + (eigenes Bild mit Tönung) ODER eingebautes
+  /// Design (Streifen). Wird von allen Layouts genutzt.
+  Widget _bgBase() {
+    final bgBytes = TeamLogo.decode(bgImage);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [gradTop, gradBottom],
+            ),
+          ),
+        ),
+        if (bgBytes != null) ...[
+          Image.memory(bgBytes, fit: BoxFit.cover, gaplessPlayback: true),
+          Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  gradTop.withValues(alpha: overlayOpacity),
+                  gradBottom.withValues(alpha: overlayOpacity),
+                ],
+              ),
+            ),
+          ),
+        ] else if (bgPreset == 'stripes')
+          CustomPaint(painter: _StripesPainter(gradTop)),
       ],
     );
   }
@@ -1207,102 +1296,164 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Ankündigungs-Block: Matchup (eigenes Team VS Gegner) + Eckdaten.
-  Widget _announcementBlock() {
+  /// Spielankündigungs-Grafik: Titel (POKALSPIEL/SPIELTAG) + große Logos „VS" +
+  /// Datum/Uhrzeit/Spielstätte/Adresse mit Icons.
+  Widget _announcementLayout() {
     final a = announcement!;
     final ownLogo = TeamLogo.decode(logo);
     final oppLogo = TeamLogo.decode(opponentLogo);
+    final pad = compact ? 18.0 : 26.0;
+    final logoH = compact ? 72.0 : 92.0;
 
-    Widget side(Uint8List? bytes, String name) => Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (bytes != null)
-          _logoChip(bytes, height: 64)
-        else
-          const SizedBox(height: 64),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: 130,
-          child: Text(
-            name.toUpperCase(),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              height: 1.1,
+    Widget side(Uint8List? bytes) => bytes != null
+        ? _logoChip(bytes, height: logoH)
+        : SizedBox(height: logoH, width: logoH);
+
+    Widget nameText(String n) => Text(
+      n.toUpperCase(),
+      textAlign: TextAlign.center,
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: Colors.white,
+        fontSize: 16,
+        fontWeight: FontWeight.w800,
+        height: 1.1,
+      ),
+    );
+
+    Widget infoRow(IconData icon, String text) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 22),
+          const SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+              ),
             ),
+          ),
+        ],
+      ),
+    );
+
+    final rows = <Widget>[];
+    if (matchDate != null) {
+      final local = matchDate!.toLocal();
+      rows.add(
+        infoRow(
+          Icons.event,
+          DateFormat('EEEE, dd.MM.yyyy', 'de_DE').format(local),
+        ),
+      );
+      if (local.hour != 0 || local.minute != 0) {
+        rows.add(
+          infoRow(
+            Icons.schedule,
+            '${DateFormat('HH:mm', 'de_DE').format(local)} Uhr',
+          ),
+        );
+      }
+    }
+    if ((a.venue ?? '').trim().isNotEmpty) {
+      rows.add(infoRow(Icons.place, a.venue!.trim()));
+    }
+    if ((a.address ?? '').trim().isNotEmpty) {
+      rows.add(infoRow(Icons.map_outlined, a.address!.trim()));
+    }
+
+    final titleWord = a.isCup ? 'POKALSPIEL' : 'SPIELTAG';
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _bgBase(),
+        Padding(
+          padding: EdgeInsets.all(pad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              const Spacer(flex: 2),
+              if (mainSponsor != null) ...[
+                _presentedBy(mainSponsor!),
+                SizedBox(height: compact ? 10 : 14),
+              ],
+              Text(
+                titleWord,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: compact ? 38 : 48,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                  height: 1.0,
+                ),
+              ),
+              if ((a.matchday ?? '').trim().isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '${a.matchday!.trim()}. SPIELTAG',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.5,
+                    ),
+                  ),
+                ),
+              SizedBox(height: compact ? 20 : 30),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: Center(child: side(ownLogo))),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Text(
+                      'VS',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: compact ? 34 : 44,
+                        fontWeight: FontWeight.w900,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: Center(child: side(oppLogo))),
+                ],
+              ),
+              SizedBox(height: compact ? 8 : 12),
+              Row(
+                children: [
+                  Expanded(child: nameText(title)),
+                  const SizedBox(width: 56),
+                  Expanded(
+                    child: nameText(
+                      opponentName.isEmpty ? 'Gegner' : opponentName,
+                    ),
+                  ),
+                ],
+              ),
+              SizedBox(height: compact ? 20 : 28),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: rows,
+              ),
+              const Spacer(flex: 3),
+              if (barSponsors.isNotEmpty) _sponsorBar(),
+            ],
           ),
         ),
       ],
-    );
-
-    final info = <String>[];
-    if ((a.matchday ?? '').trim().isNotEmpty) {
-      info.add('${a.matchday!.trim()}. SPIELTAG');
-    }
-    if ((a.competition ?? '').trim().isNotEmpty) {
-      info.add(a.competition!.trim().toUpperCase());
-    }
-    info.add(isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL');
-    if (matchDate != null) {
-      final local = matchDate!.toLocal();
-      info.add(
-        DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(local).toUpperCase(),
-      );
-      if (local.hour != 0 || local.minute != 0) {
-        info.add('ANSTOSS ${DateFormat('HH:mm', 'de_DE').format(local)} UHR');
-      }
-    }
-
-    return SizedBox(
-      width: 320,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(child: side(ownLogo, title)),
-              const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  'VS',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 34,
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: side(
-                  oppLogo,
-                  opponentName.isEmpty ? 'Gegner' : opponentName,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          for (final l in info)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Text(
-                l,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  fontSize: 15,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1,
-                ),
-              ),
-            ),
-        ],
-      ),
     );
   }
 

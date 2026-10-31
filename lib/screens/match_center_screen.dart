@@ -535,6 +535,58 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     );
     if (mode == null || !mounted) return;
     if (mode == 'graphic') {
+      final state = context.read<AppState>();
+      final share = await state.matchShareInfo(widget.matchId);
+      if (!mounted) return;
+      final venueCtrl = TextEditingController(text: share['venue'] ?? '');
+      final addrCtrl = TextEditingController(text: share['address'] ?? '');
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Ort für die Grafik'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: venueCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Spielstätte (optional)',
+                  hintText: 'z. B. Sportplatz Tiefenbroich',
+                ),
+              ),
+              TextField(
+                controller: addrCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Adresse (optional)',
+                  hintText: 'Straße, PLZ Ort',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Grafik erstellen'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+      final venue = venueCtrl.text.trim();
+      final address = addrCtrl.text.trim();
+      // Für künftige Male merken (zusammen mit vorhandenem Treffpunkt).
+      await state.saveMatchShareInfo(widget.matchId, {
+        ...share,
+        'venue': venue,
+        'address': address,
+      });
+      if (!mounted) return;
       await Navigator.push(
         context,
         MaterialPageRoute(
@@ -550,6 +602,8 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
             announcement: AnnouncementData(
               matchday: match.matchday?.toString(),
               competition: match.competition,
+              venue: venue.isEmpty ? null : venue,
+              address: address.isEmpty ? null : address,
             ),
           ),
         ),
