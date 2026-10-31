@@ -2746,95 +2746,180 @@ class _Controls extends StatelessWidget {
       ),
     );
 
-    final finishBtn = FilledButton.icon(
-      style: FilledButton.styleFrom(backgroundColor: Colors.red),
-      onPressed: onFinish,
-      icon: const Icon(Icons.stop),
-      label: const Text('Abpfiff'),
+    // Uhr-Aktionen müssen 3 Sekunden gehalten werden (kein versehentliches Tippen).
+    Widget hold(
+      VoidCallback cb,
+      IconData ic,
+      String lbl, {
+      Color? bg,
+      bool outlined = false,
+    }) => _HoldButton(
+      onHold: cb,
+      icon: ic,
+      label: lbl,
+      background: bg,
+      outlined: outlined,
     );
+
+    final finishBtn = hold(onFinish, Icons.stop, 'Abpfiff', bg: Colors.red);
 
     switch (phase) {
       case _Phase.notStarted:
-        return full(
-          FilledButton.icon(
-            onPressed: onKickoff,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Anpfiff'),
-          ),
-        );
+        return full(hold(onKickoff, Icons.play_arrow, 'Anpfiff'));
       case _Phase.firstHalf:
-        return full(
-          FilledButton.icon(
-            onPressed: onHalftime,
-            icon: const Icon(Icons.timer),
-            label: const Text('Halbzeit'),
-          ),
-        );
+        return full(hold(onHalftime, Icons.timer, 'Halbzeit'));
       case _Phase.halftime:
-        return full(
-          FilledButton.icon(
-            onPressed: onSecondHalf,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Anpfiff 2. Halbzeit'),
-          ),
-        );
+        return full(hold(onSecondHalf, Icons.play_arrow, 'Anpfiff 2. Halbzeit'));
       case _Phase.secondHalf:
         return two(
           finishBtn,
-          OutlinedButton.icon(
-            onPressed: onExtra,
-            icon: const Icon(Icons.more_time),
-            label: const Text('Verlängerung'),
-          ),
+          hold(onExtra, Icons.more_time, 'Verlängerung', outlined: true),
         );
       case _Phase.finished:
         return two(
-          OutlinedButton.icon(
-            onPressed: onExtra,
-            icon: const Icon(Icons.more_time),
-            label: const Text('Verlängerung'),
-          ),
-          OutlinedButton.icon(
-            onPressed: onKickoff,
-            icon: const Icon(Icons.replay),
-            label: const Text('Neues Spiel'),
-          ),
+          hold(onExtra, Icons.more_time, 'Verlängerung', outlined: true),
+          hold(onKickoff, Icons.replay, 'Neues Spiel', outlined: true),
         );
       case _Phase.extraFirstHalf:
         return full(
-          FilledButton.icon(
-            onPressed: onExtraHalftime,
-            icon: const Icon(Icons.timer),
-            label: const Text('Halbzeit Verlängerung'),
-          ),
+          hold(onExtraHalftime, Icons.timer, 'Halbzeit Verlängerung'),
         );
       case _Phase.extraHalftime:
         return full(
-          FilledButton.icon(
-            onPressed: onExtraSecond,
-            icon: const Icon(Icons.play_arrow),
-            label: const Text('Anpfiff 2. Verlängerung'),
-          ),
+          hold(onExtraSecond, Icons.play_arrow, 'Anpfiff 2. Verlängerung'),
         );
       case _Phase.extraSecondHalf:
         return two(
           finishBtn,
-          OutlinedButton.icon(
-            onPressed: onShootout,
-            icon: const Icon(Icons.sports_soccer),
-            label: const Text('Elfmeterschießen'),
-          ),
+          hold(onShootout, Icons.sports_soccer, 'Elfmeterschießen',
+              outlined: true),
         );
       case _Phase.shootout:
         return full(
-          FilledButton.icon(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: onFinish,
-            icon: const Icon(Icons.emoji_events),
-            label: const Text('Spiel beenden'),
-          ),
+          hold(onFinish, Icons.emoji_events, 'Spiel beenden', bg: Colors.red),
         );
     }
+  }
+}
+
+/// Button, der erst nach 3 Sekunden Gedrückthalten auslöst (gegen versehentliches
+/// Tippen bei den Uhr-Aktionen). Zeigt beim Halten eine Fortschrittsfüllung.
+class _HoldButton extends StatefulWidget {
+  const _HoldButton({
+    required this.onHold,
+    required this.icon,
+    required this.label,
+    this.background,
+    this.outlined = false,
+  });
+
+  final VoidCallback onHold;
+  final IconData icon;
+  final String label;
+  final Color? background;
+  final bool outlined;
+
+  @override
+  State<_HoldButton> createState() => _HoldButtonState();
+}
+
+class _HoldButtonState extends State<_HoldButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 3),
+  );
+  bool _holding = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.addStatusListener((s) {
+      if (s == AnimationStatus.completed) {
+        _ctrl.reset();
+        if (mounted) setState(() => _holding = false);
+        widget.onHold();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _start() {
+    setState(() => _holding = true);
+    _ctrl.forward(from: 0);
+  }
+
+  void _cancel() {
+    if (!_holding) return;
+    _ctrl.stop();
+    _ctrl.reset();
+    setState(() => _holding = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final filled = !widget.outlined;
+    final bg = widget.background ?? scheme.primary;
+    final fg = filled ? Colors.white : bg;
+    return GestureDetector(
+      onTapDown: (_) => _start(),
+      onTapUp: (_) => _cancel(),
+      onTapCancel: _cancel,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
+          children: [
+            Container(
+              height: 46,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: filled ? bg : Colors.transparent,
+                borderRadius: BorderRadius.circular(10),
+                border: filled
+                    ? null
+                    : Border.all(color: bg.withValues(alpha: 0.6)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(widget.icon, size: 18, color: fg),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      _holding ? 'Halten …' : widget.label,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Fortschrittsfüllung beim Halten (links → rechts).
+            Positioned.fill(
+              child: AnimatedBuilder(
+                animation: _ctrl,
+                builder: (_, _) => _ctrl.value == 0
+                    ? const SizedBox.shrink()
+                    : FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: _ctrl.value,
+                        child: ColoredBox(
+                          color: (filled ? Colors.white : bg)
+                              .withValues(alpha: 0.28),
+                        ),
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 
