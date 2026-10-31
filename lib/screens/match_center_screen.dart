@@ -77,13 +77,15 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
         ? null
         : await state.repository.getTeam(match.opponentTeamId!);
     final noms = await state.nominationsOf(widget.matchId);
-    // Freigegebene Aufstellung vorhanden? (nur die zählt für „Live")
+    // Start-11 vorhanden? Das ist die OBERSTE Aufstellung (sort_index minimal) –
+    // getReleasedLineup liefert genau diese; das alte released-Flag ist dafür
+    // nicht mehr maßgeblich.
     var starters = 0;
     final lineup = await state.repository.getReleasedLineup(
       widget.matchId,
       match.ownTeamId,
     );
-    if (lineup != null && lineup.released) {
+    if (lineup != null) {
       final entries = await state.lineupEntries(lineup.id);
       starters = entries.where((e) => e.role == LineupRole.starter).length;
     }
