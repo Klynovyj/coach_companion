@@ -1172,27 +1172,33 @@ class _StartelfGraphic extends StatelessWidget {
   Widget _photoResultLayout() {
     final photoBytes = TeamLogo.decode(resultPhoto);
     final pad = compact ? 14.0 : 18.0;
+    final r = result!;
+    final hasList = r.ownGoals.isNotEmpty ||
+        r.oppGoals.isNotEmpty ||
+        r.ownCards.isNotEmpty ||
+        r.oppCards.isNotEmpty;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
           flex: 52,
-          child: Container(
+          child: ColoredBox(
             color: gradTop,
-            clipBehavior: Clip.hardEdge,
             // Foto per Finger verschieben UND zoomen (auch kleiner ziehen);
             // der aktuelle Zustand wird so in die exportierte Grafik gerendert.
             child: photoBytes != null
-                ? InteractiveViewer(
-                    transformationController: photoController,
-                    minScale: 0.4,
-                    maxScale: 4,
-                    boundaryMargin: const EdgeInsets.all(double.infinity),
-                    clipBehavior: Clip.hardEdge,
-                    child: Image.memory(
-                      photoBytes,
-                      fit: BoxFit.cover,
-                      gaplessPlayback: true,
+                ? ClipRect(
+                    child: InteractiveViewer(
+                      transformationController: photoController,
+                      minScale: 0.4,
+                      maxScale: 4,
+                      boundaryMargin: const EdgeInsets.all(double.infinity),
+                      clipBehavior: Clip.none,
+                      child: Image.memory(
+                        photoBytes,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
                     ),
                   )
                 : null,
@@ -1211,10 +1217,10 @@ class _StartelfGraphic extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 14, pad, pad),
             child: Column(
               children: [
-                // Gesamter Panel-Inhalt (Sponsor → FULL TIME → Score →
-                // Torschützen) als EINE Einheit skalieren, damit im quadratischen
-                // Post nichts überläuft. Der Score bleibt das größte Element.
+                // Oberes Band: Sponsor + FULL TIME + Spielstand. Eigene FittedBox
+                // → der Score bleibt groß, UNABHÄNGIG von der Torschützenzahl.
                 Expanded(
+                  flex: 5,
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.center,
@@ -1240,13 +1246,22 @@ class _StartelfGraphic extends StatelessWidget {
                           ),
                           const SizedBox(height: 12),
                           _scoreRow(),
-                          const SizedBox(height: 10),
-                          _scorersCardsBlock(),
                         ],
                       ),
                     ),
                   ),
                 ),
+                // Unteres Band: Torschützen/Karten. Skaliert in seinem eigenen
+                // Bereich – drückt den Score nicht klein.
+                if (hasList)
+                  Expanded(
+                    flex: 4,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topCenter,
+                      child: _scorersCardsBlock(),
+                    ),
+                  ),
                 if (barSponsors.isNotEmpty) ...[
                   SizedBox(height: compact ? 6 : 10),
                   _sponsorBar(),
