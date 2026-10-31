@@ -2237,7 +2237,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final ownId = match.ownTeamId;
     bool own(MatchEvent e) => e.teamId == ownId;
 
-    List<({int minute, String name})> goals(bool mine) => [
+    List<({int minute, String name, String? photo})> goals(bool mine) => [
       for (final e in _events)
         if ((e.type == MatchEventType.goal ||
                 e.type == MatchEventType.penalty) &&
@@ -2247,13 +2247,16 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             name: e.playerId != null
                 ? _playerName(e.playerId)
                 : (mine ? 'Tor' : 'Gegner'),
+            photo: _playerById(e.playerId)?.photoPath,
           ),
     ]..sort((a, b) => a.minute.compareTo(b.minute));
 
     String cardKind(MatchEventType t) => t == MatchEventType.redCard
         ? 'rot'
         : (t == MatchEventType.secondYellow ? 'gelbrot' : 'gelb');
-    List<({int minute, String name, String kind})> cards(bool mine) => [
+    List<({int minute, String name, String kind, String? photo})> cards(
+      bool mine,
+    ) => [
       for (final e in _events)
         if ((e.type == MatchEventType.yellowCard ||
                 e.type == MatchEventType.secondYellow ||
@@ -2265,6 +2268,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                 ? _playerName(e.playerId)
                 : (mine ? 'Spieler' : 'Gegner'),
             kind: cardKind(e.type),
+            photo: _playerById(e.playerId)?.photoPath,
           ),
     ]..sort((a, b) => a.minute.compareTo(b.minute));
 

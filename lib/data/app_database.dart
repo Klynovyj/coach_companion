@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 56;
+  static const _dbVersion = 57;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -486,6 +486,12 @@ class AppDatabase {
     if (oldV < 56) {
       await db.execute('ALTER TABLE players ADD COLUMN strong_foot TEXT');
     }
+    // v56 -> v57: Spielerfotos-Schalter in der Grafik (Ergebnis).
+    if (oldV < 57) {
+      await db.execute(
+        'ALTER TABLE graphic_settings ADD COLUMN show_photos INTEGER',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -787,7 +793,8 @@ class AppDatabase {
         grad_top TEXT,
         grad_bottom TEXT,
         overlay_opacity INTEGER,
-        show_opponent_logo INTEGER
+        show_opponent_logo INTEGER,
+        show_photos INTEGER
       )
   ''';
 

@@ -29,10 +29,10 @@ class StartelfPlayer {
 class ResultData {
   final int ownScore;
   final int oppScore;
-  final List<({int minute, String name})> ownGoals;
-  final List<({int minute, String name})> oppGoals;
-  final List<({int minute, String name, String kind})> ownCards;
-  final List<({int minute, String name, String kind})> oppCards;
+  final List<({int minute, String name, String? photo})> ownGoals;
+  final List<({int minute, String name, String? photo})> oppGoals;
+  final List<({int minute, String name, String kind, String? photo})> ownCards;
+  final List<({int minute, String name, String kind, String? photo})> oppCards;
   const ResultData({
     required this.ownScore,
     required this.oppScore,
@@ -240,6 +240,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         ? null
                         : (v) => apply(_settings.copyWith(showOpponentLogo: v)),
                   ),
+                  // Spielerfotos (nur Ergebnis-Grafik) -------------------
+                  if (widget.isResult)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Spielerfotos anzeigen'),
+                      subtitle: const Text('Fotos bei Torschützen & Karten'),
+                      value: _settings.showPhotos,
+                      onChanged: (v) =>
+                          apply(_settings.copyWith(showPhotos: v)),
+                    ),
                   const SizedBox(height: 8),
                   // Abdunkeln / Transparenz -----------------------------
                   Text(
@@ -489,6 +499,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                             : null,
                         compact: !_story,
                         result: widget.result,
+                        showPhotos: _settings.showPhotos,
                       ),
                     ),
                   ),
@@ -573,6 +584,7 @@ class _StartelfGraphic extends StatelessWidget {
     required this.opponentLogo,
     required this.compact,
     this.result,
+    this.showPhotos = false,
   });
 
   final String title;
@@ -591,6 +603,7 @@ class _StartelfGraphic extends StatelessWidget {
   final String? opponentLogo; // null = nicht anzeigen
   final bool compact;
   final ResultData? result; // gesetzt → Ergebnis statt Startelf
+  final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
 
   @override
   Widget build(BuildContext context) {
@@ -882,13 +895,21 @@ class _StartelfGraphic extends StatelessWidget {
     String mark(String k) => k == 'rot'
         ? '🟥'
         : (k == 'gelbrot' ? '🟧' : '🟨');
-    final ownGoals = [for (final g in r.ownGoals) "${g.minute}' ${g.name}"];
-    final oppGoals = [for (final g in r.oppGoals) "${g.minute}' ${g.name}"];
+    final ownGoals = [
+      for (final g in r.ownGoals)
+        (text: "${g.minute}' ${g.name}", photo: g.photo),
+    ];
+    final oppGoals = [
+      for (final g in r.oppGoals)
+        (text: "${g.minute}' ${g.name}", photo: g.photo),
+    ];
     final ownCards = [
-      for (final c in r.ownCards) "${mark(c.kind)} ${c.minute}' ${c.name}",
+      for (final c in r.ownCards)
+        (text: "${mark(c.kind)} ${c.minute}' ${c.name}", photo: c.photo),
     ];
     final oppCards = [
-      for (final c in r.oppCards) "${mark(c.kind)} ${c.minute}' ${c.name}",
+      for (final c in r.oppCards)
+        (text: "${mark(c.kind)} ${c.minute}' ${c.name}", photo: c.photo),
     ];
 
     Widget side(Uint8List? bytes, String name) => Column(
@@ -917,29 +938,64 @@ class _StartelfGraphic extends StatelessWidget {
       ],
     );
 
-    Widget section(String heading, List<String> left, List<String> right) {
-      if (left.isEmpty && right.isEmpty) return const SizedBox.shrink();
-      Widget col(List<String> lines, {required bool end}) => Column(
-        crossAxisAlignment: end
-            ? CrossAxisAlignment.end
-            : CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          for (final l in lines)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Text(
-                l,
-                textAlign: end ? TextAlign.right : TextAlign.left,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-        ],
+    Widget avatar(String? photo) {
+      final bytes = TeamLogo.decode(photo);
+      if (bytes == null) return const SizedBox.shrink();
+      return Container(
+        width: 20,
+        height: 20,
+        decoration: const BoxDecoration(shape: BoxShape.circle),
+        clipBehavior: Clip.antiAlias,
+        child: Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true),
       );
+    }
+
+    Widget section(
+      String heading,
+      List<({String text, String? photo})> left,
+      List<({String text, String? photo})> right,
+    ) {
+      if (left.isEmpty && right.isEmpty) return const SizedBox.shrink();
+      Widget line(({String text, String? photo}) e, {required bool end}) {
+        final txt = Flexible(
+          child: Text(
+            e.text,
+            textAlign: end ? TextAlign.right : TextAlign.left,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        );
+        final children = <Widget>[
+          if (showPhotos && e.photo != null) ...[
+            avatar(e.photo),
+            const SizedBox(width: 6),
+          ],
+          txt,
+        ];
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: end
+                ? MainAxisAlignment.end
+                : MainAxisAlignment.start,
+            children: end ? children.reversed.toList() : children,
+          ),
+        );
+      }
+
+      Widget col(List<({String text, String? photo})> lines,
+              {required bool end}) =>
+          Column(
+            crossAxisAlignment: end
+                ? CrossAxisAlignment.end
+                : CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [for (final e in lines) line(e, end: end)],
+          );
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [

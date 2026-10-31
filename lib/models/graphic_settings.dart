@@ -18,6 +18,9 @@ class GraphicSettings {
   /// Gegner-Logo mit auf die Grafik (optional, Default aus).
   final bool showOpponentLogo;
 
+  /// Spielerfotos in der Ergebnis-Grafik (Torschützen/Karten), Default aus.
+  final bool showPhotos;
+
   static const defaultGradTop = '#0E3325';
   static const defaultGradBottom = '#15603F';
   static const defaultOverlay = 85;
@@ -31,6 +34,7 @@ class GraphicSettings {
     this.gradBottom = defaultGradBottom,
     this.overlayOpacity = defaultOverlay,
     this.showOpponentLogo = false,
+    this.showPhotos = false,
   });
 
   GraphicSettings copyWith({
@@ -45,6 +49,7 @@ class GraphicSettings {
     String? gradBottom,
     int? overlayOpacity,
     bool? showOpponentLogo,
+    bool? showPhotos,
   }) => GraphicSettings(
     id: id ?? this.id,
     title: clearTitle ? null : (title ?? this.title),
@@ -54,6 +59,7 @@ class GraphicSettings {
     gradBottom: gradBottom ?? this.gradBottom,
     overlayOpacity: overlayOpacity ?? this.overlayOpacity,
     showOpponentLogo: showOpponentLogo ?? this.showOpponentLogo,
+    showPhotos: showPhotos ?? this.showPhotos,
   );
 
   Map<String, Object?> toMap() => {
@@ -65,6 +71,7 @@ class GraphicSettings {
     'grad_bottom': gradBottom,
     'overlay_opacity': overlayOpacity,
     'show_opponent_logo': showOpponentLogo ? 1 : 0,
+    'show_photos': showPhotos ? 1 : 0,
   };
 
   factory GraphicSettings.fromMap(Map<String, Object?> m) => GraphicSettings(
@@ -79,5 +86,6 @@ class GraphicSettings {
     overlayOpacity: (m['overlay_opacity'] as num?)?.toInt() ?? defaultOverlay,
     showOpponentLogo:
         m['show_opponent_logo'] == true || m['show_opponent_logo'] == 1,
+    showPhotos: m['show_photos'] == true || m['show_photos'] == 1,
   );
 }
