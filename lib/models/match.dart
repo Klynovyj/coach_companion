@@ -58,6 +58,15 @@ class GameMatch {
   /// Anzeigename des Gegner-Steuerers (denormalisiert).
   final String? liveControllerOppName;
 
+  /// Offene Übernahme-Anfrage: User-ID des Antragstellers (null = keine Anfrage).
+  final String? liveRequestBy;
+
+  /// Anzeigename des Antragstellers (denormalisiert).
+  final String? liveRequestByName;
+
+  /// Umfang der Anfrage: `'own'` (eigene + Uhr), `'opp'` (Gegner) oder `'both'`.
+  final String? liveRequestScope;
+
   final DateTime createdAt;
 
   const GameMatch({
@@ -82,6 +91,9 @@ class GameMatch {
     this.liveControllerName,
     this.liveControllerOpp,
     this.liveControllerOppName,
+    this.liveRequestBy,
+    this.liveRequestByName,
+    this.liveRequestScope,
     required this.createdAt,
   });
 
@@ -107,6 +119,10 @@ class GameMatch {
     String? liveControllerOpp,
     String? liveControllerOppName,
     bool clearControllerOpp = false,
+    String? liveRequestBy,
+    String? liveRequestByName,
+    String? liveRequestScope,
+    bool clearRequest = false,
   }) {
     return GameMatch(
       id: id,
@@ -138,6 +154,13 @@ class GameMatch {
       liveControllerOppName: clearControllerOpp
           ? null
           : (liveControllerOppName ?? this.liveControllerOppName),
+      liveRequestBy: clearRequest ? null : (liveRequestBy ?? this.liveRequestBy),
+      liveRequestByName: clearRequest
+          ? null
+          : (liveRequestByName ?? this.liveRequestByName),
+      liveRequestScope: clearRequest
+          ? null
+          : (liveRequestScope ?? this.liveRequestScope),
       createdAt: createdAt,
     );
   }
@@ -164,6 +187,9 @@ class GameMatch {
     'live_controller_name': liveControllerName,
     'live_controller_opp': liveControllerOpp,
     'live_controller_opp_name': liveControllerOppName,
+    'live_request_by': liveRequestBy,
+    'live_request_by_name': liveRequestByName,
+    'live_request_scope': liveRequestScope,
     'created_at': createdAt.toIso8601String(),
   };
 
@@ -189,6 +215,9 @@ class GameMatch {
     liveControllerName: m['live_controller_name'] as String?,
     liveControllerOpp: m['live_controller_opp'] as String?,
     liveControllerOppName: m['live_controller_opp_name'] as String?,
+    liveRequestBy: m['live_request_by'] as String?,
+    liveRequestByName: m['live_request_by_name'] as String?,
+    liveRequestScope: m['live_request_scope'] as String?,
     createdAt:
         DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
   );

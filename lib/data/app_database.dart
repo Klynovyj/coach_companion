@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 52;
+  static const _dbVersion = 53;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -451,6 +451,17 @@ class AppDatabase {
         'WHERE live_controller IS NOT NULL',
       );
     }
+    // v52 -> v53: offene Übernahme-Anfrage am Spiel (Anfrage/Genehmigung statt
+    // sofortiger Übernahme der Erfassung).
+    if (oldV < 53) {
+      await db.execute('ALTER TABLE matches ADD COLUMN live_request_by TEXT');
+      await db.execute(
+        'ALTER TABLE matches ADD COLUMN live_request_by_name TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE matches ADD COLUMN live_request_scope TEXT',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -836,6 +847,9 @@ class AppDatabase {
         live_controller_name TEXT,
         live_controller_opp TEXT,
         live_controller_opp_name TEXT,
+        live_request_by TEXT,
+        live_request_by_name TEXT,
+        live_request_scope TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (own_team_id) REFERENCES teams (id) ON DELETE CASCADE,
         FOREIGN KEY (opponent_team_id) REFERENCES teams (id) ON DELETE SET NULL

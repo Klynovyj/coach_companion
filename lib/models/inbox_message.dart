@@ -9,6 +9,7 @@ enum InboxType {
   nomination('nomination'),
   result('result'),
   report('report'),
+  liveRequest('live_request'),
   other('other');
 
   const InboxType(this.storageKey);
@@ -28,6 +29,7 @@ enum InboxType {
     InboxType.nomination => Icons.how_to_reg,
     InboxType.result => Icons.scoreboard,
     InboxType.report => Icons.rate_review,
+    InboxType.liveRequest => Icons.pan_tool,
     InboxType.other => Icons.notifications,
   };
 }

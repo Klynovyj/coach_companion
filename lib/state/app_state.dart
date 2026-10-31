@@ -345,14 +345,20 @@ class AppState extends ChangeNotifier {
         final ctrlName = r['live_controller_name'] as String?;
         final ctrlOpp = r['live_controller_opp'] as String?;
         final ctrlOppName = r['live_controller_opp_name'] as String?;
+        final reqBy = r['live_request_by'] as String?;
+        final reqByName = r['live_request_by_name'] as String?;
+        final reqScope = r['live_request_scope'] as String?;
         final ctrlChanged = (local.liveController ?? '') != (ctrl ?? '');
         final ctrlOppChanged =
             (local.liveControllerOpp ?? '') != (ctrlOpp ?? '');
+        final reqChanged = (local.liveRequestBy ?? '') != (reqBy ?? '') ||
+            (local.liveRequestScope ?? '') != (reqScope ?? '');
         if (local.status == st &&
             local.ownScore == own &&
             local.opponentScore == opp &&
             !ctrlChanged &&
-            !ctrlOppChanged) {
+            !ctrlOppChanged &&
+            !reqChanged) {
           continue;
         }
         if (st == MatchStatus.live && local.status != MatchStatus.live) {
@@ -370,6 +376,10 @@ class AppState extends ChangeNotifier {
             liveControllerOpp: ctrlOpp,
             liveControllerOppName: ctrlOppName,
             clearControllerOpp: ctrlOpp == null,
+            liveRequestBy: reqBy,
+            liveRequestByName: reqByName,
+            liveRequestScope: reqScope,
+            clearRequest: reqBy == null,
           ),
         );
         // Reset eines anderen Geräts (→ „angesetzt"): lokalen Verlauf leeren,
@@ -2946,6 +2956,161 @@ class AppState extends ChangeNotifier {
           if (own) 'live_controller_name': CloudService.myName,
           if (opp) 'live_controller_opp': CloudService.userId,
           if (opp) 'live_controller_opp_name': CloudService.myName,
+        });
+      } catch (_) {}
+    }
+  }
+
+  /// Beantragt die Live-Erfassung beim Haupt-Ticker (Steuerer der eigenen
+  /// Mannschaft). [scope] = 'own' (eigene + Uhr), 'opp' (Gegner) oder 'both'.
+  /// Gibt es noch keinen Haupt-Ticker, wird direkt übernommen (nichts zu
+  /// genehmigen).
+  Future<void> requestLiveControl(String matchId, String scope) async {
+    final match = await _repo.getMatch(matchId);
+    if (match == null) return;
+    final mainTicker = match.liveController;
+    final noMainTicker = mainTicker == null || mainTicker.isEmpty;
+    if (noMainTicker) {
+      // Kein Haupt-Ticker → direkt anwenden.
+      await takeOverLiveControl(
+        matchId,
+        own: scope == 'own' || scope == 'both',
+        opp: scope == 'opp' || scope == 'both',
+      );
+      return;
+    }
+    await _repo.upsertMatch(
+      match.copyWith(
+        liveRequestBy: CloudService.userId,
+        liveRequestByName: CloudService.myName,
+        liveRequestScope: scope,
+      ),
+    );
+    await _reload();
+    notifyListeners();
+    if (_activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateMatch(matchId, {
+          'live_request_by': CloudService.userId,
+          'live_request_by_name': CloudService.myName,
+          'live_request_scope': scope,
+        });
+      } catch (_) {}
+    }
+    // Haupt-Ticker benachrichtigen (Posteingang → Push).
+    await _notify(
+      mainTicker,
+      InboxType.liveRequest,
+      '${CloudService.displayName ?? 'Ein Trainer'} möchte die Erfassung übernehmen',
+      subtitle: 'Umfang: ${_scopeLabel(scope)} – im Live-Spiel genehmigen',
+      linkType: 'match',
+      linkId: matchId,
+    );
+  }
+
+  String _scopeLabel(String scope) => switch (scope) {
+    'own' => 'eigene Mannschaft + Uhr',
+    'opp' => 'Gegner',
+    'both' => 'beide Seiten + Uhr',
+    _ => scope,
+  };
+
+  /// Genehmigt die offene Übernahme-Anfrage (nur vom Haupt-Ticker aufgerufen):
+  /// setzt die Controller je Umfang auf den Antragsteller und löscht die Anfrage.
+  Future<void> approveLiveRequest(String matchId) async {
+    final match = await _repo.getMatch(matchId);
+    if (match == null) return;
+    final reqBy = match.liveRequestBy;
+    final reqName = match.liveRequestByName;
+    final scope = match.liveRequestScope;
+    if (reqBy == null || reqBy.isEmpty || scope == null) return;
+    final own = scope == 'own' || scope == 'both';
+    final opp = scope == 'opp' || scope == 'both';
+    await _repo.upsertMatch(
+      match.copyWith(
+        liveController: own ? reqBy : null,
+        liveControllerName: own ? reqName : null,
+        liveControllerOpp: opp ? reqBy : null,
+        liveControllerOppName: opp ? reqName : null,
+        clearRequest: true,
+      ),
+    );
+    await _reload();
+    notifyListeners();
+    if (_activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateMatch(matchId, {
+          if (own) 'live_controller': reqBy,
+          if (own) 'live_controller_name': reqName,
+          if (opp) 'live_controller_opp': reqBy,
+          if (opp) 'live_controller_opp_name': reqName,
+          'live_request_by': null,
+          'live_request_by_name': null,
+          'live_request_scope': null,
+        });
+      } catch (_) {}
+    }
+    await _notify(
+      reqBy,
+      InboxType.liveRequest,
+      'Deine Übernahme wurde genehmigt',
+      subtitle: 'Du erfasst jetzt: ${_scopeLabel(scope)}',
+      linkType: 'match',
+      linkId: matchId,
+    );
+  }
+
+  /// Lehnt die offene Übernahme-Anfrage ab (löscht sie) und informiert den
+  /// Antragsteller.
+  Future<void> declineLiveRequest(String matchId) async {
+    final match = await _repo.getMatch(matchId);
+    if (match == null) return;
+    final reqBy = match.liveRequestBy;
+    if (reqBy == null || reqBy.isEmpty) return;
+    await _repo.upsertMatch(match.copyWith(clearRequest: true));
+    await _reload();
+    notifyListeners();
+    if (_activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateMatch(matchId, {
+          'live_request_by': null,
+          'live_request_by_name': null,
+          'live_request_scope': null,
+        });
+      } catch (_) {}
+    }
+    await _notify(
+      reqBy,
+      InboxType.liveRequest,
+      'Deine Übernahme wurde abgelehnt',
+      subtitle: 'Du kannst weiter Kommentare schreiben',
+      linkType: 'match',
+      linkId: matchId,
+    );
+  }
+
+  /// Zieht die eigene (noch offene) Übernahme-Anfrage zurück.
+  Future<void> cancelMyLiveRequest(String matchId) async {
+    final match = await _repo.getMatch(matchId);
+    if (match == null) return;
+    if (match.liveRequestBy != CloudService.userId) return;
+    await _repo.upsertMatch(match.copyWith(clearRequest: true));
+    await _reload();
+    notifyListeners();
+    if (_activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.updateMatch(matchId, {
+          'live_request_by': null,
+          'live_request_by_name': null,
+          'live_request_scope': null,
         });
       } catch (_) {}
     }
