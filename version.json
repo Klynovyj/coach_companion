@@ -1,6 +1,6 @@
 {
-  "versionCode": 62,
-  "versionName": "1.3.57",
+  "versionCode": 63,
+  "versionName": "1.3.58",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Neuerungen:\n- Startseite: Kachel Training direkt vorne (schneller Zugriff auf den Trainings-Planer); Karten & Sperren liegt jetzt im Menue Mehr\n- Uebung antippen oeffnet die bequeme Lese-Ansicht (Wisch-Karten); bearbeitet wird pro Karte ueber den Stift - kein Umschalter oben\n- Vorschlaege & Bibliothek: ALLE Uebungen sichtbar, jede mit Markierung passt / passt nicht + Grund; nicht passende per KI An Kader anpassen\n- Fix: Uebungen verschwanden nach dem Sync - bleiben jetzt erhalten\n- Animation: Schritt fuer Schritt mit Erklaerungen, haelt an jedem Ablauf-Punkt an, plus Alles abspielen; Erklaerungstext springt nicht mehr\n- Skizzen-Editor: Zahleneingabe (Prozent/Grad) an den Reglern, Plus-Knopf fuer eigene Farbe, feiner justierbare Anfasspunkte, Eigenschaften-Panel unten (hochwischen, volle Breite) - Feld bleibt sichtbar, kleinerer Ball\n\nWichtig (Cloud, fuer Geraete-Sync): im Supabase-SQL-Editor stage35_training.sql und stage36_training_flags.sql ausfuehren."
+  "notes": "Neuerungen rund um die Aufstellung:\n- Mehrere benannte Aufstellungen je Spiel (wie Coach-Studio-Plaene): beliebig viele anlegen, selbst benennen, aus Vorlage kopieren, umbenennen, duplizieren, loeschen, Reihenfolge per Pfeile\n- Die OBERSTE ist die Start-11 (zaehlt fuer Live & Spielbericht) - mit Pfeil nach oben oder Als Start-11 setzen\n- Jeder Trainer darf jede Aufstellung bearbeiten (nicht nur der Ersteller); bei beendetem Spiel bleibt die Start-11 nur ansehbar\n- Fix: nicht mehr nominierte Spieler fliegen automatisch aus Startelf und Ersatzbank (Feld, Liste und Grafik stimmen wieder ueberein)\n- Feld-Ansicht: Ersatzbank jetzt oben, Verfuegbar unten\n\nWichtig (Cloud, fuer Geraete-Sync): im Supabase-SQL-Editor stage37_lineups_named.sql ausfuehren."
 }
