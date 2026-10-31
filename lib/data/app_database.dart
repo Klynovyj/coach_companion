@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 51;
+  static const _dbVersion = 52;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -434,6 +434,23 @@ class AppDatabase {
         );
       }
     }
+    // v51 -> v52: zweiter Live-Controller für die Gegner-Erfassung. Wer die
+    // eigene Mannschaft/Uhr steuert, erfasst nicht mehr automatisch auch den
+    // Gegner – das ist jetzt pro Seite übernehmbar. Laufende Spiele: der
+    // bisherige Controller behält beide Seiten.
+    if (oldV < 52) {
+      await db.execute(
+        'ALTER TABLE matches ADD COLUMN live_controller_opp TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE matches ADD COLUMN live_controller_opp_name TEXT',
+      );
+      await db.execute(
+        'UPDATE matches SET live_controller_opp = live_controller, '
+        'live_controller_opp_name = live_controller_name '
+        'WHERE live_controller IS NOT NULL',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -817,6 +834,8 @@ class AppDatabase {
         locally_managed INTEGER NOT NULL DEFAULT 0,
         live_controller TEXT,
         live_controller_name TEXT,
+        live_controller_opp TEXT,
+        live_controller_opp_name TEXT,
         created_at TEXT NOT NULL,
         FOREIGN KEY (own_team_id) REFERENCES teams (id) ON DELETE CASCADE,
         FOREIGN KEY (opponent_team_id) REFERENCES teams (id) ON DELETE SET NULL

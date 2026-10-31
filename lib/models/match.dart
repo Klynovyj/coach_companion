@@ -51,6 +51,13 @@ class GameMatch {
   /// Anzeigename des steuernden Trainers (denormalisiert).
   final String? liveControllerName;
 
+  /// User-ID des Trainers, der die GEGNER-Erfassung steuert (null = niemand).
+  /// `liveController` steuert die eigene Mannschaft + Uhr/Phasen.
+  final String? liveControllerOpp;
+
+  /// Anzeigename des Gegner-Steuerers (denormalisiert).
+  final String? liveControllerOppName;
+
   final DateTime createdAt;
 
   const GameMatch({
@@ -73,6 +80,8 @@ class GameMatch {
     this.locallyManaged = false,
     this.liveController,
     this.liveControllerName,
+    this.liveControllerOpp,
+    this.liveControllerOppName,
     required this.createdAt,
   });
 
@@ -95,6 +104,9 @@ class GameMatch {
     String? liveController,
     String? liveControllerName,
     bool clearController = false,
+    String? liveControllerOpp,
+    String? liveControllerOppName,
+    bool clearControllerOpp = false,
   }) {
     return GameMatch(
       id: id,
@@ -120,6 +132,12 @@ class GameMatch {
       liveControllerName: clearController
           ? null
           : (liveControllerName ?? this.liveControllerName),
+      liveControllerOpp: clearControllerOpp
+          ? null
+          : (liveControllerOpp ?? this.liveControllerOpp),
+      liveControllerOppName: clearControllerOpp
+          ? null
+          : (liveControllerOppName ?? this.liveControllerOppName),
       createdAt: createdAt,
     );
   }
@@ -144,6 +162,8 @@ class GameMatch {
     'locally_managed': locallyManaged ? 1 : 0,
     'live_controller': liveController,
     'live_controller_name': liveControllerName,
+    'live_controller_opp': liveControllerOpp,
+    'live_controller_opp_name': liveControllerOppName,
     'created_at': createdAt.toIso8601String(),
   };
 
@@ -167,6 +187,8 @@ class GameMatch {
     locallyManaged: (m['locally_managed'] as int? ?? 0) == 1,
     liveController: m['live_controller'] as String?,
     liveControllerName: m['live_controller_name'] as String?,
+    liveControllerOpp: m['live_controller_opp'] as String?,
+    liveControllerOppName: m['live_controller_opp_name'] as String?,
     createdAt:
         DateTime.tryParse(m['created_at'] as String? ?? '') ?? DateTime.now(),
   );

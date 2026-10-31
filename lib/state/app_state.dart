@@ -343,11 +343,16 @@ class AppState extends ChangeNotifier {
             (r['opponent_score'] as num?)?.toInt() ?? local.opponentScore;
         final ctrl = r['live_controller'] as String?;
         final ctrlName = r['live_controller_name'] as String?;
+        final ctrlOpp = r['live_controller_opp'] as String?;
+        final ctrlOppName = r['live_controller_opp_name'] as String?;
         final ctrlChanged = (local.liveController ?? '') != (ctrl ?? '');
+        final ctrlOppChanged =
+            (local.liveControllerOpp ?? '') != (ctrlOpp ?? '');
         if (local.status == st &&
             local.ownScore == own &&
             local.opponentScore == opp &&
-            !ctrlChanged) {
+            !ctrlChanged &&
+            !ctrlOppChanged) {
           continue;
         }
         if (st == MatchStatus.live && local.status != MatchStatus.live) {
@@ -362,6 +367,9 @@ class AppState extends ChangeNotifier {
             liveController: ctrl,
             liveControllerName: ctrlName,
             clearController: ctrl == null,
+            liveControllerOpp: ctrlOpp,
+            liveControllerOppName: ctrlOppName,
+            clearControllerOpp: ctrlOpp == null,
           ),
         );
         // Reset eines anderen Geräts (→ „angesetzt"): lokalen Verlauf leeren,
@@ -2852,9 +2860,14 @@ class AppState extends ChangeNotifier {
     await _repo.upsertMatch(
       match.copyWith(
         status: status,
+        // Starter steuert zunächst BEIDE Seiten (eigene + Gegner); andere sehen
+        // nur Kommentare, bis sie eine Seite übernehmen. Abpfiff gibt beide frei.
         liveController: becomeController ? CloudService.userId : null,
         liveControllerName: becomeController ? CloudService.myName : null,
         clearController: releaseController,
+        liveControllerOpp: becomeController ? CloudService.userId : null,
+        liveControllerOppName: becomeController ? CloudService.myName : null,
+        clearControllerOpp: releaseController,
       ),
     );
     await _reload();
@@ -2869,8 +2882,12 @@ class AppState extends ChangeNotifier {
           'status': status.storageKey,
           if (becomeController) 'live_controller': CloudService.userId,
           if (becomeController) 'live_controller_name': CloudService.myName,
+          if (becomeController) 'live_controller_opp': CloudService.userId,
+          if (becomeController) 'live_controller_opp_name': CloudService.myName,
           if (releaseController) 'live_controller': null,
           if (releaseController) 'live_controller_name': null,
+          if (releaseController) 'live_controller_opp': null,
+          if (releaseController) 'live_controller_opp_name': null,
         });
       } catch (_) {}
       // Geht das Spiel live, Push an alle Team-Mitglieder (auch bei
@@ -2899,15 +2916,23 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Übernimmt die Steuerung des Live-Spiels (anderer Trainer, mit Bestätigung
-  /// in der UI). Setzt den Controller auf den aktuellen Nutzer.
-  Future<void> takeOverLiveControl(String matchId) async {
+  /// Übernimmt die Live-Erfassung pro Seite (mit Bestätigung in der UI). [own] =
+  /// eigene Mannschaft + Uhr/Phasen, [opp] = Gegner-Erfassung. Setzt die
+  /// gewählte(n) Seite(n) auf den aktuellen Nutzer.
+  Future<void> takeOverLiveControl(
+    String matchId, {
+    required bool own,
+    required bool opp,
+  }) async {
+    if (!own && !opp) return;
     final match = await _repo.getMatch(matchId);
     if (match == null) return;
     await _repo.upsertMatch(
       match.copyWith(
-        liveController: CloudService.userId,
-        liveControllerName: CloudService.myName,
+        liveController: own ? CloudService.userId : null,
+        liveControllerName: own ? CloudService.myName : null,
+        liveControllerOpp: opp ? CloudService.userId : null,
+        liveControllerOppName: opp ? CloudService.myName : null,
       ),
     );
     await _reload();
@@ -2917,8 +2942,10 @@ class AppState extends ChangeNotifier {
         CloudService.signedIn) {
       try {
         await CloudService.updateMatch(matchId, {
-          'live_controller': CloudService.userId,
-          'live_controller_name': CloudService.myName,
+          if (own) 'live_controller': CloudService.userId,
+          if (own) 'live_controller_name': CloudService.myName,
+          if (opp) 'live_controller_opp': CloudService.userId,
+          if (opp) 'live_controller_opp_name': CloudService.myName,
         });
       } catch (_) {}
     }

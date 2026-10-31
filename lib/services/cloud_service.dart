@@ -181,7 +181,8 @@ class CloudService {
         .from('matches')
         .select(
           'id, status, own_score, opponent_score, opponent, '
-          'live_controller, live_controller_name',
+          'live_controller, live_controller_name, '
+          'live_controller_opp, live_controller_opp_name',
         )
         .eq('team_id', teamId);
     return List<Map<String, dynamic>>.from(rows);

@@ -662,32 +662,151 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     );
   }
 
-  /// Übernimmt die Live-Steuerung (mit Bestätigung).
+  /// Übernimmt die Live-Erfassung – mit Auswahl, welche Seite(n): eigene
+  /// Mannschaft (inkl. Uhr/Phasen), Gegner oder beide.
   Future<void> _takeOverControl() async {
-    final prev = _match?.liveControllerName ?? 'Der bisherige Trainer';
-    final ok = await showDialog<bool>(
+    final match = _match;
+    if (match == null) return;
+    final me = CloudService.userId;
+    final hasOwn = (match.liveController ?? '').isNotEmpty;
+    final hasOpp = (match.liveControllerOpp ?? '').isNotEmpty;
+    final iOwn = !hasOwn || match.liveController == me;
+    final iOpp = hasOpp && match.liveControllerOpp == me;
+    final ownWho = match.liveControllerName?.trim();
+    final oppWho = match.liveControllerOppName?.trim();
+
+    final choice = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Steuerung übernehmen?'),
-        content: Text(
-          'Du übernimmst die Live-Steuerung. $prev kann das Spiel dann nicht '
-          'mehr bedienen.',
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Erfassung übernehmen',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Wähle, was du erfassen willst. Ohne Übernahme kannst du nur '
+                  'kommentieren.',
+                  style: TextStyle(fontSize: 12.5, color: Colors.grey),
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              enabled: !iOwn,
+              leading: const Icon(Icons.sports),
+              title: const Text('Eigene Mannschaft (inkl. Uhr)'),
+              subtitle: Text(
+                iOwn
+                    ? 'Hast du schon'
+                    : (ownWho != null && ownWho.isNotEmpty
+                          ? 'Aktuell: $ownWho'
+                          : 'Noch niemand'),
+              ),
+              onTap: () => Navigator.pop(ctx, 'own'),
+            ),
+            ListTile(
+              enabled: !iOpp,
+              leading: const Icon(Icons.flag_outlined),
+              title: const Text('Gegner'),
+              subtitle: Text(
+                iOpp
+                    ? 'Hast du schon'
+                    : (oppWho != null && oppWho.isNotEmpty
+                          ? 'Aktuell: $oppWho'
+                          : 'Noch niemand'),
+              ),
+              onTap: () => Navigator.pop(ctx, 'opp'),
+            ),
+            ListTile(
+              enabled: !(iOwn && iOpp),
+              leading: const Icon(Icons.groups),
+              title: const Text('Beide Seiten'),
+              onTap: () => Navigator.pop(ctx, 'both'),
+            ),
+            const SizedBox(height: 8),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Abbrechen'),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await _state.takeOverLiveControl(
+      widget.matchId,
+      own: choice == 'own' || choice == 'both',
+      opp: choice == 'opp' || choice == 'both',
+    );
+    await _refreshEvents();
+  }
+
+  /// Steuerungs-Banner je nachdem, welche Seite(n) ich übernommen habe.
+  Widget _controlBanner(
+    BuildContext context,
+    GameMatch match,
+    bool iControlOwn,
+    bool iControlOpp,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    // Beide Seiten in meiner Hand → grüner Hinweis, kein Button.
+    if (iControlOwn && iControlOpp) {
+      return _banner(
+        context,
+        scheme.primaryContainer,
+        Icons.sports,
+        'Du steuerst das ganze Spiel (beide Seiten + Uhr).',
+      );
+    }
+    final ownWho = match.liveControllerName?.trim();
+    final oppWho = match.liveControllerOppName?.trim();
+    String text;
+    if (iControlOwn) {
+      text =
+          'Du steuerst die eigene Mannschaft + Uhr. Gegner erfasst: '
+          '${(oppWho != null && oppWho.isNotEmpty) ? oppWho : 'niemand'}.';
+    } else if (iControlOpp) {
+      text =
+          'Du erfasst den Gegner. Spiel/Uhr: '
+          '${(ownWho != null && ownWho.isNotEmpty) ? ownWho : 'niemand'}.';
+    } else {
+      final who = [
+        if (ownWho != null && ownWho.isNotEmpty) ownWho,
+        if (oppWho != null && oppWho.isNotEmpty && oppWho != ownWho) oppWho,
+      ].join(' & ');
+      text =
+          '${who.isNotEmpty ? who : 'Ein Trainer'} erfasst – '
+          'du kannst nur kommentieren.';
+    }
+    return Container(
+      width: double.infinity,
+      color: scheme.errorContainer,
+      padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
+      child: Row(
+        children: [
+          const Icon(Icons.lock_outline, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              text,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
           ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
+          TextButton(
+            onPressed: _takeOverControl,
             child: const Text('Übernehmen'),
           ),
         ],
       ),
     );
-    if (ok != true || !mounted) return;
-    await _state.takeOverLiveControl(widget.matchId);
-    await _refreshEvents();
   }
 
   @override
@@ -703,18 +822,24 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     // Darf dieser Nutzer mitschreiben? Zuschauer (und „nur zuschauen"-Modus)
     // sehen nur den Ticker.
     final canEdit = _state.canLiveEdit;
-    // Live-Steuerung: Nur der Controller (Starter bzw. Übernehmer) bedient das
-    // Spiel. Ist noch keiner gesetzt, darf jeder Berechtigte starten.
-    final controller = match.liveController;
-    final hasController = controller != null && controller.isNotEmpty;
-    final iAmController = !hasController || controller == CloudService.userId;
-    final othersControl = hasController && controller != CloudService.userId;
-    // Nur die Phasen-Leiste (Anpfiff/Halbzeit/Abpfiff …) ist dem Controller
-    // vorbehalten.
-    final editing = canEdit && iAmController && !_watchMode;
-    // Erfassen (Tor/Karte/Wechsel/Ereignis/Kommentar + Ticker bearbeiten) darf
-    // jeder berechtigte Trainer – unabhängig davon, wer die Phasen steuert.
+    // Live-Steuerung ist jetzt PRO SEITE: live_controller = eigene Mannschaft +
+    // Uhr/Phasen, live_controller_opp = Gegner-Erfassung. Ohne Übernahme darf man
+    // nur kommentieren.
+    final me = CloudService.userId;
+    final ownCtrl = match.liveController;
+    final oppCtrl = match.liveControllerOpp;
+    final ownSet = ownCtrl != null && ownCtrl.isNotEmpty;
+    final oppSet = oppCtrl != null && oppCtrl.isNotEmpty;
+    // Ist noch niemand gesetzt (vor dem Anpfiff), darf jeder Berechtigte starten.
+    final iControlOwn = !ownSet || ownCtrl == me;
+    final iControlOpp = oppSet && oppCtrl == me;
+    // Phasen-Leiste (Anpfiff/Halbzeit/Abpfiff …) gehört zur eigenen Mannschaft.
+    final editing = canEdit && iControlOwn && !_watchMode;
+    // Erfassen nur für die Seite(n), die man übernommen hat.
     final canRecord = canEdit && !_watchMode;
+    final canRecordOwn = canRecord && iControlOwn;
+    final canRecordOpp = canRecord && iControlOpp;
+    final canRecordAny = canRecordOwn || canRecordOpp;
 
     return Scaffold(
       appBar: AppBar(
@@ -761,36 +886,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               Icons.visibility,
               'Du schaust zu – du siehst nur den Ticker.',
             )
-          else if (othersControl)
-            Container(
-              width: double.infinity,
-              color: Theme.of(context).colorScheme.errorContainer,
-              padding: const EdgeInsets.fromLTRB(16, 6, 8, 6),
-              child: Row(
-                children: [
-                  const Icon(Icons.lock_outline, size: 18),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      '${match.liveControllerName ?? 'Ein Trainer'} steuert Anpfiff/Halbzeit – '
-                      'erfassen kannst du trotzdem',
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: _takeOverControl,
-                    child: const Text('Übernehmen'),
-                  ),
-                ],
-              ),
-            )
-          else if (hasController && iAmController)
-            _banner(
-              context,
-              Theme.of(context).colorScheme.primaryContainer,
-              Icons.sports,
-              'Du steuerst Anpfiff/Halbzeit.',
-            ),
+          else
+            _controlBanner(context, match, iControlOwn, iControlOpp),
           _Scoreboard(
             match: match,
             ownName: _ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim',
@@ -833,7 +930,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               padding: const EdgeInsets.only(bottom: 16),
               children: [
                 if (canEdit && !_watchMode && _phase == _Phase.shootout)
-                  _lock(canRecord, _shootoutPanel(context, match)),
+                  _lock(canRecordOwn, _shootoutPanel(context, match)),
                 if (_phase != _Phase.shootout &&
                     _events.any(
                       (e) =>
@@ -856,15 +953,16 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                     ),
                   ),
                 if (canEdit && !_watchMode && _phase != _Phase.shootout)
-                  _lock(
-                    canRecord,
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Nachtragen-Schalter: bei beendetem/pausiertem Spiel
-                        // Aktionen mit abgefragter Minute erfassen.
-                        if (!_actionsEnabled && _phase != _Phase.notStarted)
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Nachtragen-Schalter: bei beendetem/pausiertem Spiel
+                      // Aktionen mit abgefragter Minute erfassen. Nur wenn man
+                      // mindestens eine Seite übernommen hat.
+                      if (!_actionsEnabled && _phase != _Phase.notStarted)
+                        _lock(
+                          canRecordAny,
                           SwitchListTile(
                             dense: true,
                             secondary: const Icon(Icons.edit_calendar),
@@ -875,6 +973,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                             value: _addLater,
                             onChanged: (v) => setState(() => _addLater = v),
                           ),
+                        ),
+                      // Eigene Mannschaft – nur wenn eigene Seite übernommen.
+                      _lock(
+                        canRecordOwn,
                         _TeamActionBar(
                           label: _ownTeam?.name ?? 'Eigenes Team',
                           color: Theme.of(context).colorScheme.primary,
@@ -888,6 +990,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                           onEvent: () =>
                               _act(() => _addOtherEvent(ownSide: true)),
                         ),
+                      ),
+                      // Gegner – nur wenn Gegner-Seite übernommen.
+                      _lock(
+                        canRecordOpp,
                         _TeamActionBar(
                           label: match.opponentName,
                           color: const Color(0xFFB26A00),
@@ -902,8 +1008,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                           onEvent: () =>
                               _act(() => _addOtherEvent(ownSide: false)),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 const SizedBox(height: 8),
                 _EventLog(
@@ -911,8 +1017,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                   ownTeamId: match.ownTeamId,
                   resolveName: _playerName,
                   resolvePlayer: _playerById,
-                  onDelete: canRecord ? _deleteEvent : null,
-                  onEdit: canRecord ? _editEvent : null,
+                  onDelete: canRecordAny ? _deleteEvent : null,
+                  onEdit: canRecordAny ? _editEvent : null,
                 ),
               ],
             ),
