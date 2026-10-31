@@ -211,13 +211,19 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     });
   }
 
-  /// Aus der Ansehen-Ansicht einen eigenen Vorschlag der fremden Aufstellung
-  /// erstellen/öffnen und bearbeitbar weitermachen.
-  Future<void> _editAsSuggestion() async {
+  /// Aus der Ansehen-Ansicht eine eigene Kopie der (fremden) Aufstellung
+  /// erstellen und bearbeitbar weitermachen.
+  Future<void> _duplicatePlan() async {
     final orig = _lineup;
     if (orig == null) return;
     final navigator = Navigator.of(context);
-    final sugg = await _app.createOrOpenSuggestion(orig);
+    final base = orig.name?.trim();
+    final copy = await _app.createLineup(
+      widget.matchId,
+      widget.teamId,
+      name: 'Kopie von ${(base != null && base.isNotEmpty) ? base : 'Aufstellung'}',
+      copyFrom: orig,
+    );
     if (!mounted) return;
     navigator.pushReplacement(
       MaterialPageRoute(
@@ -225,7 +231,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           matchId: widget.matchId,
           teamId: widget.teamId,
           teamName: widget.teamName,
-          lineupId: sugg.id,
+          lineupId: copy.id,
           readOnly: false,
         ),
       ),
@@ -607,6 +613,53 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     await _load();
   }
 
+  /// Titel = Plannamen oder Default „Aufstellung".
+  String _planTitle() {
+    final n = _lineup?.name?.trim();
+    return (n != null && n.isNotEmpty) ? n : 'Aufstellung';
+  }
+
+  /// Plan direkt im Editor umbenennen (Titel antippen).
+  Future<void> _renamePlan() async {
+    final lineup = _lineup;
+    if (lineup == null) return;
+    final ctrl = TextEditingController(text: lineup.name ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Aufstellung umbenennen'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Name',
+            hintText: 'z. B. Plan A offensiv',
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    await _app.renameLineup(lineup, result);
+    if (!mounted) return;
+    setState(() {
+      _lineup = result.isEmpty
+          ? lineup.copyWith(clearName: true)
+          : lineup.copyWith(name: result);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -615,7 +668,25 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final starters = _starters.length;
     return Scaffold(
       appBar: AppBar(
-        title: Text('Aufstellung · ${widget.teamName}'),
+        title: widget.readOnly
+            ? Text(_planTitle())
+            : InkWell(
+                onTap: _renamePlan,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        _planTitle(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.edit, size: 15, color: Colors.white70),
+                  ],
+                ),
+              ),
         actions: [
           IconButton(
             tooltip: _listMode
@@ -643,22 +714,12 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                 style: TextStyle(color: Colors.white),
               ),
             )
-          else if (_lineup != null && _lineup!.suggestionOf == null)
-            TextButton(
-              onPressed: _editAsSuggestion,
-              child: const Text(
-                'Als Vorschlag',
-                style: TextStyle(color: Colors.white),
-              ),
-            )
           else
-            const Padding(
-              padding: EdgeInsets.only(right: 12),
-              child: Center(
-                child: Text(
-                  'Nur ansehen',
-                  style: TextStyle(color: Colors.white, fontSize: 13),
-                ),
+            TextButton(
+              onPressed: _duplicatePlan,
+              child: const Text(
+                'Duplizieren',
+                style: TextStyle(color: Colors.white),
               ),
             ),
         ],

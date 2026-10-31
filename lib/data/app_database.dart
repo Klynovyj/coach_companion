@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 50;
+  static const _dbVersion = 51;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -400,6 +400,39 @@ class AppDatabase {
     // v49 -> v50: Torhüter-Anzahl an der Übung.
     if (oldV < 50 && oldV >= 48) {
       await db.execute('ALTER TABLE exercises ADD COLUMN goalkeepers INTEGER');
+    }
+    // v50 -> v51: Mehrere benannte Aufstellungen je Spiel. Name + Reihenfolge;
+    // die oberste (sort_index minimal) ist die Start-11. „Eine je Trainer"-
+    // Unique-Index entfällt.
+    if (oldV < 51) {
+      await db.execute('ALTER TABLE lineups ADD COLUMN name TEXT');
+      await db.execute(
+        'ALTER TABLE lineups ADD COLUMN sort_index INTEGER NOT NULL DEFAULT 0',
+      );
+      await db.execute('DROP INDEX IF EXISTS idx_lineup_match_team_user');
+      await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_lineup_match_team ON lineups (match_id, team_id)',
+      );
+      // Bestehende Aufstellungen ordnen: freigegebene bzw. ältere zuerst (oben),
+      // damit die bisher gültige Aufstellung die Start-11 bleibt.
+      final rows = await db.query(
+        'lineups',
+        columns: ['id', 'match_id', 'team_id', 'released', 'created_at'],
+        where: 'suggestion_of IS NULL',
+        orderBy: 'match_id, team_id, released DESC, created_at ASC',
+      );
+      final counter = <String, int>{};
+      for (final r in rows) {
+        final key = '${r['match_id']}|${r['team_id']}';
+        final idx = counter[key] ?? 0;
+        counter[key] = idx + 1;
+        await db.update(
+          'lineups',
+          {'sort_index': idx, 'released': idx == 0 ? 1 : 0},
+          where: 'id = ?',
+          whereArgs: [r['id']],
+        );
+      }
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -797,6 +830,8 @@ class AppDatabase {
         match_id TEXT NOT NULL,
         team_id TEXT NOT NULL,
         formation TEXT NOT NULL,
+        name TEXT,
+        sort_index INTEGER NOT NULL DEFAULT 0,
         created_by TEXT,
         creator_name TEXT,
         released INTEGER NOT NULL DEFAULT 0,
@@ -806,8 +841,11 @@ class AppDatabase {
         FOREIGN KEY (team_id) REFERENCES teams (id) ON DELETE CASCADE
       )
     ''');
+    // Mehrere benannte Aufstellungen je Spiel/Team (auch je Trainer) – daher
+    // KEIN Unique-Index mehr auf (match_id, team_id, created_by), nur ein
+    // normaler Suchindex.
     await db.execute(
-      'CREATE UNIQUE INDEX idx_lineup_match_team_user ON lineups (match_id, team_id, created_by) WHERE suggestion_of IS NULL',
+      'CREATE INDEX idx_lineup_match_team ON lineups (match_id, team_id)',
     );
 
     await db.execute('''

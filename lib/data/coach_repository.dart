@@ -299,14 +299,15 @@ class CoachRepository {
     return rows.isEmpty ? null : Lineup.fromMap(rows.first);
   }
 
-  /// Alle Aufstellungen eines Spiels/Teams (freigegebene zuerst, dann Datum).
+  /// Alle Aufstellungen eines Spiels/Teams in Anzeige-Reihenfolge. Die oberste
+  /// (kleinstes sort_index) ist die Start-11.
   Future<List<Lineup>> getLineupsForMatch(String matchId, String teamId) async {
     final db = await _db;
     final rows = await db.query(
       'lineups',
       where: 'match_id = ? AND team_id = ?',
       whereArgs: [matchId, teamId],
-      orderBy: 'released DESC, created_at ASC',
+      orderBy: 'sort_index ASC, created_at ASC',
     );
     return rows.map(Lineup.fromMap).toList();
   }
@@ -322,17 +323,39 @@ class CoachRepository {
     return rows.isEmpty ? null : Lineup.fromMap(rows.first);
   }
 
-  /// Die freigegebene Aufstellung (für Live); Fallback: beste vorhandene.
+  /// Die gültige Start-11 (für Live & Bericht): die oberste Aufstellung
+  /// (kleinstes sort_index). Vorschläge zählen nicht. Fallback: beste vorhandene.
   Future<Lineup?> getReleasedLineup(String matchId, String teamId) async {
     final db = await _db;
     final rows = await db.query(
       'lineups',
-      where: 'match_id = ? AND team_id = ? AND released = 1',
+      where: 'match_id = ? AND team_id = ? AND suggestion_of IS NULL',
       whereArgs: [matchId, teamId],
+      orderBy: 'sort_index ASC, created_at ASC',
       limit: 1,
     );
     if (rows.isNotEmpty) return Lineup.fromMap(rows.first);
     return getLineup(matchId, teamId);
+  }
+
+  /// Schreibt die Reihenfolge der Aufstellungen neu (0 = oben = Start-11) und
+  /// hält das released-Flag synchron (nur die oberste ist freigegeben), damit
+  /// Live/Bericht ohne weitere Änderung die Start-11 bekommen.
+  Future<void> reorderLineups(
+    String matchId,
+    String teamId,
+    List<String> orderedIds,
+  ) async {
+    final all = await getLineupsForMatch(matchId, teamId);
+    final byId = {for (final l in all) l.id: l};
+    for (var i = 0; i < orderedIds.length; i++) {
+      final l = byId[orderedIds[i]];
+      if (l == null) continue;
+      final wantReleased = i == 0;
+      if (l.sortIndex != i || l.released != wantReleased) {
+        await upsertLineup(l.copyWith(sortIndex: i, released: wantReleased));
+      }
+    }
   }
 
   /// Die eigene Aufstellung eines Trainers (createdBy) – oder null.

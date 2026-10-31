@@ -13,6 +13,14 @@ class Lineup {
   /// Formation als Freitext, z.B. "4-4-2", "3-5-2".
   final String formation;
 
+  /// Frei wählbarer Name des Plans (z.B. „Plan A offensiv"). null → in der UI
+  /// wird ein Default („Aufstellung N") angezeigt.
+  final String? name;
+
+  /// Reihenfolge in der Aufstellungs-Liste (0 = oben). Die oberste Aufstellung
+  /// ist die gültige Start-11 (zählt für Live & Spielbericht).
+  final int sortIndex;
+
   /// Trainer, der diese Aufstellung erstellt hat (Cloud-User-ID). Nur er darf
   /// sie bearbeiten; andere erstellen Vorschläge.
   final String? createdBy;
@@ -34,6 +42,8 @@ class Lineup {
     required this.matchId,
     required this.teamId,
     this.formation = '4-4-2',
+    this.name,
+    this.sortIndex = 0,
     this.createdBy,
     this.creatorName,
     this.released = false,
@@ -43,6 +53,9 @@ class Lineup {
 
   Lineup copyWith({
     String? formation,
+    String? name,
+    bool clearName = false,
+    int? sortIndex,
     String? createdBy,
     String? creatorName,
     bool? released,
@@ -52,6 +65,8 @@ class Lineup {
     matchId: matchId,
     teamId: teamId,
     formation: formation ?? this.formation,
+    name: clearName ? null : (name ?? this.name),
+    sortIndex: sortIndex ?? this.sortIndex,
     createdBy: createdBy ?? this.createdBy,
     creatorName: creatorName ?? this.creatorName,
     released: released ?? this.released,
@@ -64,6 +79,8 @@ class Lineup {
     'match_id': matchId,
     'team_id': teamId,
     'formation': formation,
+    'name': name,
+    'sort_index': sortIndex,
     'created_by': createdBy,
     'creator_name': creatorName,
     'released': released ? 1 : 0,
@@ -76,6 +93,10 @@ class Lineup {
     matchId: m['match_id'] as String,
     teamId: m['team_id'] as String,
     formation: m['formation'] as String? ?? '4-4-2',
+    name: (m['name'] as String?)?.trim().isEmpty == true
+        ? null
+        : m['name'] as String?,
+    sortIndex: (m['sort_index'] as num?)?.toInt() ?? 0,
     createdBy: m['created_by'] as String?,
     creatorName: m['creator_name'] as String?,
     released: (m['released'] as num?)?.toInt() == 1,

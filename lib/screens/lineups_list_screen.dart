@@ -7,8 +7,10 @@ import '../services/cloud_service.dart';
 import '../state/app_state.dart';
 import 'lineup_editor_screen.dart';
 
-/// Übersicht aller Aufstellungen eines Spiels (je Trainer eine). Alle sichtbar;
-/// bearbeiten darf nur der Ersteller, jeder kann eine für „Live" freigeben.
+/// Übersicht aller Aufstellungen eines Spiels (teamweit, von allen Trainern
+/// sichtbar). Beliebig viele, selbst benannt. Die OBERSTE ist die Start-11 –
+/// sie zählt für Live & Spielbericht. Bearbeiten darf nur der Ersteller;
+/// jeder kann eine fremde als eigene kopieren („Duplizieren").
 class LineupsListScreen extends StatefulWidget {
   const LineupsListScreen({
     super.key,
@@ -22,7 +24,7 @@ class LineupsListScreen extends StatefulWidget {
   final String teamId;
   final String teamName;
 
-  /// Spiel beendet: die freigegebene Aufstellung ist nur noch ansehbar.
+  /// Spiel beendet: die Start-11 ist nur noch ansehbar.
   final bool matchFinished;
 
   @override
@@ -65,7 +67,9 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
     }
     _reloading = true;
     try {
-      final lineups = await _app.lineupsForMatch(widget.matchId, widget.teamId);
+      final all = await _app.lineupsForMatch(widget.matchId, widget.teamId);
+      // Vorschläge aus dem alten Modell nicht mehr anzeigen.
+      final lineups = all.where((l) => l.suggestionOf == null).toList();
       final starters = <String, int>{};
       for (final l in lineups) {
         final entries = await _app.lineupEntries(l.id);
@@ -93,7 +97,13 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
     return l.createdBy == null || (me != null && l.createdBy == me);
   }
 
-  Future<void> _openMine() async {
+  /// Anzeigename: eigener Name oder Default „Aufstellung N".
+  String _displayName(Lineup l, int index) {
+    final n = l.name?.trim();
+    return (n != null && n.isNotEmpty) ? n : 'Aufstellung ${index + 1}';
+  }
+
+  Future<void> _openEditable(Lineup l) async {
     await Navigator.push(
       context,
       MaterialPageRoute(
@@ -101,6 +111,8 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
           matchId: widget.matchId,
           teamId: widget.teamId,
           teamName: widget.teamName,
+          lineupId: l.id,
+          readOnly: false,
         ),
       ),
     );
@@ -123,23 +135,177 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
     if (mounted) _load();
   }
 
-  Future<void> _release(Lineup l) async {
-    await _app.releaseLineup(l);
+  /// Neue Aufstellung: Name eingeben, optional aus einer Vorlage kopieren.
+  Future<void> _createNew() async {
+    final nameCtrl = TextEditingController();
+    Lineup? template;
+    final created = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('Neue Aufstellung'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  hintText: 'z. B. Plan A offensiv',
+                ),
+              ),
+              if (_lineups.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                DropdownButtonFormField<Lineup?>(
+                  initialValue: template,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Vorlage',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    const DropdownMenuItem<Lineup?>(
+                      value: null,
+                      child: Text('Leer beginnen'),
+                    ),
+                    for (var i = 0; i < _lineups.length; i++)
+                      DropdownMenuItem<Lineup?>(
+                        value: _lineups[i],
+                        child: Text(
+                          'Kopie von ${_displayName(_lineups[i], i)}',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (v) => setLocal(() => template = v),
+                ),
+              ],
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Anlegen'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (created != true || !mounted) return;
+    final l = await _app.createLineup(
+      widget.matchId,
+      widget.teamId,
+      name: nameCtrl.text,
+      copyFrom: template,
+    );
+    if (!mounted) return;
+    await _load();
+    // Direkt in den Editor springen.
+    await _openEditable(l);
+  }
+
+  Future<void> _rename(Lineup l, int index) async {
+    final ctrl = TextEditingController(text: l.name ?? '');
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Aufstellung umbenennen'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: InputDecoration(
+            labelText: 'Name',
+            hintText: _displayName(l, index),
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (result == null || !mounted) return;
+    await _app.renameLineup(l, result);
+    if (mounted) _load();
+  }
+
+  Future<void> _duplicate(Lineup l, int index) async {
+    final copy = await _app.createLineup(
+      widget.matchId,
+      widget.teamId,
+      name: 'Kopie von ${_displayName(l, index)}',
+      copyFrom: l,
+    );
+    if (!mounted) return;
+    await _load();
+    await _openEditable(copy);
+  }
+
+  Future<void> _delete(Lineup l, int index) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Aufstellung löschen?'),
+        content: Text('„${_displayName(l, index)}" wird endgültig gelöscht.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Löschen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    await _app.deleteLineup(l);
+    if (mounted) _load();
+  }
+
+  Future<void> _setStart(Lineup l) async {
+    await _app.setAsStartEleven(l);
+    if (mounted) _load();
+  }
+
+  Future<void> _move(int index, int delta) async {
+    final target = index + delta;
+    if (target < 0 || target >= _lineups.length) return;
+    final ids = _lineups.map((l) => l.id).toList();
+    final moved = ids.removeAt(index);
+    ids.insert(target, moved);
+    await _app.reorderLineups(widget.matchId, widget.teamId, ids);
     if (mounted) _load();
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasMine = _lineups.any((l) => l.suggestionOf == null && _mine(l));
     return Scaffold(
       appBar: AppBar(title: Text('Aufstellungen · ${widget.teamName}')),
-      floatingActionButton: hasMine
-          ? null
-          : FloatingActionButton.extended(
-              onPressed: _openMine,
-              icon: const Icon(Icons.add),
-              label: const Text('Meine Aufstellung'),
-            ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _createNew,
+        icon: const Icon(Icons.add),
+        label: const Text('Neue Aufstellung'),
+      ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
@@ -148,149 +314,63 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
                 const Padding(
                   padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Text(
-                    'Jeder Trainer hat seine eigene Aufstellung. Bearbeiten darf '
-                    'nur der Ersteller; für „Live" muss eine freigegeben werden.',
+                    'Lege beliebig viele Aufstellungen an und benenne sie selbst. '
+                    'Die OBERSTE ist die Start-11 (zählt für Live & Bericht) – '
+                    'mit ↑ oder „Start-11" nach oben schieben.',
                     style: TextStyle(fontSize: 12, color: Colors.grey),
                   ),
                 ),
-                if (_lineups.where((l) => l.suggestionOf == null).isEmpty)
+                if (_lineups.isEmpty)
                   const Padding(
                     padding: EdgeInsets.all(24),
                     child: Center(
-                      child: Text('Noch keine Aufstellung – lege deine an.'),
+                      child: Text('Noch keine Aufstellung – lege eine an.'),
                     ),
                   )
                 else
-                  for (final l in _lineups.where((l) => l.suggestionOf == null))
-                    _lineupCard(context, l),
+                  for (var i = 0; i < _lineups.length; i++)
+                    _lineupCard(context, _lineups[i], i),
               ],
             ),
     );
   }
 
-  List<Lineup> _suggestionsFor(String lineupId) =>
-      _lineups.where((s) => s.suggestionOf == lineupId).toList();
-
-  Future<void> _editAsSuggestion(Lineup original) async {
-    final sugg = await _app.createOrOpenSuggestion(original);
-    if (!mounted) return;
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LineupEditorScreen(
-          matchId: widget.matchId,
-          teamId: widget.teamId,
-          teamName: widget.teamName,
-          lineupId: sugg.id,
-          readOnly: false,
-        ),
-      ),
-    );
-    if (mounted) _load();
-  }
-
-  Future<void> _openEditable(Lineup l) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LineupEditorScreen(
-          matchId: widget.matchId,
-          teamId: widget.teamId,
-          teamName: widget.teamName,
-          lineupId: l.id,
-          readOnly: false,
-        ),
-      ),
-    );
-    if (mounted) _load();
-  }
-
-  Future<void> _adopt(Lineup sugg) async {
-    await _app.adoptSuggestion(sugg);
-    if (!mounted) return;
-    _load();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Vorschlag übernommen – Trainer informiert.'),
-      ),
-    );
-  }
-
-  Future<void> _reject(Lineup sugg) async {
-    final who = sugg.creatorName?.trim().isNotEmpty == true
-        ? sugg.creatorName!.trim()
-        : 'des Trainers';
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Vorschlag ablehnen?'),
-        content: Text(
-          'Der Vorschlag von $who wird gelöscht. Der Trainer wird darüber '
-          'informiert.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Abbrechen'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Ablehnen'),
-          ),
-        ],
-      ),
-    );
-    if (ok != true || !mounted) return;
-    await _app.rejectSuggestion(sugg);
-    if (!mounted) return;
-    _load();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Vorschlag abgelehnt – Trainer informiert.'),
-      ),
-    );
-  }
-
-  Widget _lineupCard(BuildContext context, Lineup l) {
+  Widget _lineupCard(BuildContext context, Lineup l, int index) {
     final scheme = Theme.of(context).colorScheme;
     final mine = _mine(l);
+    final isStart = index == 0;
     final count = _starters[l.id] ?? 0;
     final who = mine
-        ? 'Meine Aufstellung'
+        ? 'von mir'
         : (l.creatorName?.trim().isNotEmpty == true
-              ? l.creatorName!.trim()
-              : 'Anderer Trainer');
+              ? 'von ${l.creatorName!.trim()}'
+              : 'anderer Trainer');
+    final canEdit = mine && !(widget.matchFinished && isStart);
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-      shape: l.released
+      shape: isStart
           ? RoundedRectangleBorder(
               side: BorderSide(color: scheme.primary, width: 2),
               borderRadius: BorderRadius.circular(12),
             )
           : null,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 12, 10, 8),
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 8),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(
-                  mine ? Icons.person : Icons.person_outline,
-                  size: 18,
-                  color: scheme.primary,
-                ),
-                const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    who,
+                    _displayName(l, index),
                     style: const TextStyle(
                       fontWeight: FontWeight.w700,
-                      fontSize: 15,
+                      fontSize: 16,
                     ),
                   ),
                 ),
-                if (l.released)
+                if (isStart)
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 8,
@@ -301,7 +381,7 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      'FREIGEGEBEN',
+                      'START-11',
                       style: TextStyle(
                         color: scheme.onPrimary,
                         fontSize: 10,
@@ -313,128 +393,101 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
             ),
             const SizedBox(height: 2),
             Text(
-              '$count/11 Startelf',
-              style: TextStyle(
-                fontSize: 12,
-                color: Theme.of(context).hintColor,
-              ),
+              '$count/11 Startelf · $who',
+              style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
             ),
-            Wrap(
-              alignment: WrapAlignment.end,
-              spacing: 4,
+            const SizedBox(height: 4),
+            Row(
               children: [
-                if (!l.released && !widget.matchFinished)
-                  TextButton.icon(
-                    onPressed: () => _release(l),
-                    icon: const Icon(Icons.verified, size: 16),
-                    label: const Text('Freigeben'),
-                  ),
-                if (mine)
-                  (widget.matchFinished && l.released)
-                      ? OutlinedButton.icon(
-                          onPressed: () => _openView(l),
-                          icon: const Icon(Icons.visibility, size: 16),
-                          label: const Text('Ansehen'),
-                        )
-                      : FilledButton.tonalIcon(
-                          onPressed: _openMine,
-                          icon: const Icon(Icons.edit, size: 16),
-                          label: const Text('Bearbeiten'),
-                        )
-                else ...[
+                // Reihenfolge-Pfeile.
+                IconButton(
+                  tooltip: 'Nach oben',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: index == 0 ? null : () => _move(index, -1),
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                ),
+                IconButton(
+                  tooltip: 'Nach unten',
+                  visualDensity: VisualDensity.compact,
+                  onPressed: index == _lineups.length - 1
+                      ? null
+                      : () => _move(index, 1),
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                ),
+                const Spacer(),
+                _menu(l, index, mine, isStart),
+                if (canEdit)
+                  FilledButton.tonalIcon(
+                    onPressed: () => _openEditable(l),
+                    icon: const Icon(Icons.edit, size: 16),
+                    label: const Text('Bearbeiten'),
+                  )
+                else
                   OutlinedButton.icon(
                     onPressed: () => _openView(l),
                     icon: const Icon(Icons.visibility, size: 16),
                     label: const Text('Ansehen'),
                   ),
-                  if (!_suggestionsFor(l.id).any(_mine))
-                    FilledButton.tonalIcon(
-                      onPressed: () => _editAsSuggestion(l),
-                      icon: const Icon(Icons.edit_note, size: 16),
-                      label: const Text('Als Vorschlag'),
-                    ),
-                ],
               ],
             ),
-            ..._suggestionsFor(l.id).map((s) => _suggestionTile(context, l, s)),
           ],
         ),
       ),
     );
   }
 
-  /// Zeile für einen Vorschlag unter einer Aufstellung.
-  Widget _suggestionTile(BuildContext context, Lineup original, Lineup s) {
-    final scheme = Theme.of(context).colorScheme;
-    final mineSugg = _mine(s);
-    final iAmOwner = _mine(original);
-    final count = _starters[s.id] ?? 0;
-    final who = mineSugg
-        ? 'Mein Vorschlag'
-        : 'Vorschlag von ${s.creatorName?.trim().isNotEmpty == true ? s.creatorName!.trim() : 'Trainer'}';
-    return Container(
-      margin: const EdgeInsets.only(left: 12, top: 6),
-      padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
-      decoration: BoxDecoration(
-        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.edit_note, size: 16, color: scheme.secondary),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  '$who · $count/11',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
+  Widget _menu(Lineup l, int index, bool mine, bool isStart) {
+    return PopupMenuButton<String>(
+      tooltip: 'Mehr',
+      onSelected: (v) {
+        switch (v) {
+          case 'start':
+            _setStart(l);
+          case 'rename':
+            _rename(l, index);
+          case 'duplicate':
+            _duplicate(l, index);
+          case 'delete':
+            _delete(l, index);
+        }
+      },
+      itemBuilder: (ctx) => [
+        if (!isStart)
+          const PopupMenuItem(
+            value: 'start',
+            child: ListTile(
+              leading: Icon(Icons.vertical_align_top),
+              title: Text('Als Start-11'),
+              contentPadding: EdgeInsets.zero,
+            ),
           ),
-          Wrap(
-            alignment: WrapAlignment.end,
-            spacing: 4,
-            children: [
-              if (mineSugg)
-                FilledButton.tonalIcon(
-                  onPressed: () => _openEditable(s),
-                  icon: const Icon(Icons.edit, size: 15),
-                  label: const Text('Bearbeiten'),
-                )
-              else
-                OutlinedButton.icon(
-                  onPressed: () => _openView(s),
-                  icon: const Icon(Icons.visibility, size: 15),
-                  label: const Text('Ansehen'),
-                ),
-              if (iAmOwner) ...[
-                OutlinedButton.icon(
-                  onPressed: () => _reject(s),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: scheme.error,
-                    side: BorderSide(
-                      color: scheme.error.withValues(alpha: 0.5),
-                    ),
-                  ),
-                  icon: const Icon(Icons.close, size: 15),
-                  label: const Text('Ablehnen'),
-                ),
-                FilledButton.icon(
-                  onPressed: () => _adopt(s),
-                  icon: const Icon(Icons.download_done, size: 15),
-                  label: const Text('Übernehmen'),
-                ),
-              ],
-            ],
+        const PopupMenuItem(
+          value: 'duplicate',
+          child: ListTile(
+            leading: Icon(Icons.copy_all_outlined),
+            title: Text('Duplizieren'),
+            contentPadding: EdgeInsets.zero,
+          ),
+        ),
+        if (mine) ...[
+          const PopupMenuItem(
+            value: 'rename',
+            child: ListTile(
+              leading: Icon(Icons.drive_file_rename_outline),
+              title: Text('Umbenennen'),
+              contentPadding: EdgeInsets.zero,
+            ),
+          ),
+          const PopupMenuItem(
+            value: 'delete',
+            child: ListTile(
+              leading: Icon(Icons.delete_outline),
+              title: Text('Löschen'),
+              contentPadding: EdgeInsets.zero,
+            ),
           ),
         ],
-      ),
+      ],
     );
   }
 }

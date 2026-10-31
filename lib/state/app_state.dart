@@ -2179,25 +2179,128 @@ class AppState extends ChangeNotifier {
       await _repo.upsertLineup(claimed);
       return claimed;
     }
+    final all = await _repo.getLineupsForMatch(matchId, teamId);
+    final maxIdx = all.isEmpty
+        ? -1
+        : all.map((l) => l.sortIndex).reduce((a, b) => a > b ? a : b);
     final lineup = Lineup(
-      // Deterministische ID pro (Spiel, Team, Trainer) → genau eine Cloud-Zeile.
+      // Deterministische ID pro (Spiel, Team, Trainer) für die erste eigene;
+      // weitere Aufstellungen bekommen eigene uuid-IDs über createLineup.
       id: 'lu_${matchId}_${teamId}_$me',
       matchId: matchId,
       teamId: teamId,
       formation: formation,
+      sortIndex: maxIdx + 1,
       createdBy: me,
       creatorName: CloudService.myName,
+      released: all.isEmpty,
       createdAt: DateTime.now(),
     );
     await _repo.upsertLineup(lineup);
     return lineup;
   }
 
-  /// Alle Aufstellungen eines Spiels (je Trainer eine), freigegebene zuerst.
+  /// Alle Aufstellungen eines Spiels (teamweit, in Reihenfolge – oberste =
+  /// Start-11).
   Future<List<Lineup>> lineupsForMatch(String matchId, String teamId) =>
       _repo.getLineupsForMatch(matchId, teamId);
 
   Future<Lineup?> getLineupById(String id) => _repo.getLineupById(id);
+
+  /// Legt eine neue, benannte Aufstellung an (unten in der Liste). Optional aus
+  /// einer Vorlage [copyFrom] kopiert (Formation + alle Einträge).
+  Future<Lineup> createLineup(
+    String matchId,
+    String teamId, {
+    String? name,
+    Lineup? copyFrom,
+  }) async {
+    final me = _me;
+    final existing = await _repo.getLineupsForMatch(matchId, teamId);
+    final maxIdx = existing.isEmpty
+        ? -1
+        : existing.map((l) => l.sortIndex).reduce((a, b) => a > b ? a : b);
+    final lineup = Lineup(
+      id: 'lu_${matchId}_${teamId}_${_uuid.v4()}',
+      matchId: matchId,
+      teamId: teamId,
+      formation: copyFrom?.formation ?? '4-4-2',
+      name: (name == null || name.trim().isEmpty) ? null : name.trim(),
+      sortIndex: maxIdx + 1,
+      createdBy: me,
+      creatorName: CloudService.myName,
+      released: existing.isEmpty, // allererste ist automatisch die Start-11
+      createdAt: DateTime.now(),
+    );
+    await _repo.upsertLineup(lineup);
+    if (copyFrom != null) {
+      final entries = await _repo.getLineupEntries(copyFrom.id);
+      final copies = [
+        for (final e in entries)
+          LineupEntry(
+            id: 'le_${lineup.id}_${e.playerId}',
+            lineupId: lineup.id,
+            playerId: e.playerId,
+            role: e.role,
+            positionLabel: e.positionLabel,
+            orderIndex: e.orderIndex,
+            posX: e.posX,
+            posY: e.posY,
+          ),
+      ];
+      await _repo.replaceLineupEntries(lineup.id, copies);
+    }
+    notifyListeners();
+    return lineup;
+  }
+
+  /// Benennt eine Aufstellung um (leer = Default-Name in der UI).
+  Future<void> renameLineup(Lineup lineup, String name) async {
+    final trimmed = name.trim();
+    await _repo.upsertLineup(
+      trimmed.isEmpty
+          ? lineup.copyWith(clearName: true)
+          : lineup.copyWith(name: trimmed),
+    );
+    notifyListeners();
+  }
+
+  /// Verschiebt eine Aufstellung an die Spitze → sie wird die Start-11.
+  Future<void> setAsStartEleven(Lineup lineup) async {
+    final all = await _repo.getLineupsForMatch(lineup.matchId, lineup.teamId);
+    final ids = [
+      lineup.id,
+      for (final l in all)
+        if (l.id != lineup.id) l.id,
+    ];
+    await _repo.reorderLineups(lineup.matchId, lineup.teamId, ids);
+    notifyListeners();
+  }
+
+  /// Schreibt die komplette Reihenfolge neu (0 = oben = Start-11).
+  Future<void> reorderLineups(
+    String matchId,
+    String teamId,
+    List<String> orderedIds,
+  ) async {
+    await _repo.reorderLineups(matchId, teamId, orderedIds);
+    notifyListeners();
+  }
+
+  /// Löscht eine Aufstellung und packt die Reihenfolge der übrigen neu zusammen
+  /// (die neue oberste wird automatisch die Start-11).
+  Future<void> deleteLineup(Lineup lineup) async {
+    await _repo.deleteLineupById(lineup.id);
+    final rest = await _repo.getLineupsForMatch(lineup.matchId, lineup.teamId);
+    if (rest.isNotEmpty) {
+      await _repo.reorderLineups(
+        lineup.matchId,
+        lineup.teamId,
+        rest.map((l) => l.id).toList(),
+      );
+    }
+    notifyListeners();
+  }
 
   /// Gibt diese Aufstellung für „Live" frei (alle anderen werden entsperrt).
   Future<void> releaseLineup(Lineup lineup) async {
