@@ -668,8 +668,11 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     final starters = _starters.length;
     return Scaffold(
       appBar: AppBar(
+        // Titel nah an den Zurück-Pfeil rücken, damit lange Plannamen Platz
+        // haben.
+        titleSpacing: 0,
         title: widget.readOnly
-            ? Text(_planTitle())
+            ? Text(_planTitle(), maxLines: 1, overflow: TextOverflow.ellipsis)
             : InkWell(
                 onTap: _renamePlan,
                 child: Row(
@@ -680,6 +683,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                         _planTitle(),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 18),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -687,14 +691,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                   ],
                 ),
               ),
-        // Wenige Actions, damit der Plannamen oben Platz hat: Ansicht umschalten
-        // + Speichern/Duplizieren; Teilen/Zurücksetzen liegen im ⋮-Menü.
+        // Nur Speichern/Duplizieren bleibt sichtbar; Ansicht umschalten, Teilen
+        // und Zurücksetzen liegen im ⋮-Menü – so hat der Plannamen oben Platz.
         actions: [
-          IconButton(
-            tooltip: _listMode ? 'Feld-Ansicht' : 'Listen-Ansicht',
-            icon: Icon(_listMode ? Icons.grid_view : Icons.view_list),
-            onPressed: () => setState(() => _listMode = !_listMode),
-          ),
           if (!widget.readOnly)
             TextButton(
               onPressed: _save,
@@ -714,13 +713,23 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           PopupMenuButton<String>(
             tooltip: 'Mehr',
             onSelected: (v) {
-              if (v == 'share') {
+              if (v == 'view') {
+                setState(() => _listMode = !_listMode);
+              } else if (v == 'share') {
                 _shareLineup();
               } else if (v == 'reset') {
                 _resetLineup();
               }
             },
             itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'view',
+                child: ListTile(
+                  leading: Icon(_listMode ? Icons.grid_view : Icons.view_list),
+                  title: Text(_listMode ? 'Feld-Ansicht' : 'Listen-Ansicht'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
               PopupMenuItem(
                 value: 'share',
                 child: ListTile(
