@@ -104,6 +104,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   GraphicSettings _settings = const GraphicSettings(id: 'local');
   bool _loading = true;
   bool _sharing = false;
+  // Nur Ergebnis-Grafik: optionales Foto oben (Data-URL, nicht gespeichert).
+  String? _resultPhoto;
 
   // Logische Zeichengrößen (× pixelRatio 3 = 1080×1920 bzw. 1080×1080).
   static const double _storyW = 360, _storyH = 640;
@@ -147,11 +149,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   List<Sponsor> get _barSponsors =>
       _sponsors.where((s) => !s.isMain && s.logo != null).toList();
 
-  Future<String?> _pickImage({required bool asBackground}) async {
+  Future<String?> _pickImage({
+    required bool asBackground,
+    ImageSource source = ImageSource.gallery,
+  }) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final file = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
+        source: source,
         maxWidth: asBackground ? 1080 : 600,
         maxHeight: asBackground ? 1920 : 600,
         imageQuality: asBackground ? 75 : 90,
@@ -166,6 +171,47 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       );
       return null;
     }
+  }
+
+  /// Foto oben für die Ergebnis-Grafik: aufnehmen / aus Galerie / entfernen.
+  Future<void> _pickResultPhoto() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Foto aufnehmen'),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Aus Galerie'),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+            if (_resultPhoto != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Foto entfernen'),
+                onTap: () => Navigator.pop(ctx, 'remove'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'remove') {
+      setState(() => _resultPhoto = null);
+      return;
+    }
+    final url = await _pickImage(
+      asBackground: true,
+      source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
+    );
+    if (url != null && mounted) setState(() => _resultPhoto = url);
   }
 
   Future<void> _openCustomize() async {
@@ -471,6 +517,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               : 'Startelf-Grafik',
         ),
         actions: [
+          if (widget.isResult)
+            IconButton(
+              tooltip: 'Foto oben (aufnehmen/Galerie)',
+              icon: Icon(
+                _resultPhoto != null
+                    ? Icons.add_a_photo
+                    : Icons.add_a_photo_outlined,
+              ),
+              onPressed: _pickResultPhoto,
+            ),
           IconButton(
             tooltip: 'Grafik anpassen',
             icon: const Icon(Icons.tune),
@@ -523,6 +579,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         compact: !_story,
                         result: widget.result,
                         announcement: widget.announcement,
+                        resultPhoto: _resultPhoto,
                         showPhotos: _settings.showPhotos,
                       ),
                     ),
@@ -609,6 +666,7 @@ class _StartelfGraphic extends StatelessWidget {
     required this.compact,
     this.result,
     this.announcement,
+    this.resultPhoto,
     this.showPhotos = false,
   });
 
@@ -629,10 +687,12 @@ class _StartelfGraphic extends StatelessWidget {
   final bool compact;
   final ResultData? result; // gesetzt → Ergebnis statt Startelf
   final AnnouncementData? announcement; // gesetzt → Spielankündigung
+  final String? resultPhoto; // Ergebnis-Grafik: Foto oben (Data-URL)
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
 
   @override
   Widget build(BuildContext context) {
+    if (result != null && resultPhoto != null) return _photoResultLayout();
     final bgBytes = TeamLogo.decode(bgImage);
     final pad = compact ? 16.0 : 20.0;
     return Stack(
@@ -913,6 +973,68 @@ class _StartelfGraphic extends StatelessWidget {
             ],
           ),
         ],
+      ],
+    );
+  }
+
+  /// Ergebnis-Grafik mit Foto oben: Foto (≈52 %) + dunkles Panel mit
+  /// „FULL TIME" + Spielstand/Torschützen/Karten + Sponsoren.
+  Widget _photoResultLayout() {
+    final photoBytes = TeamLogo.decode(resultPhoto);
+    final pad = compact ? 14.0 : 18.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 52,
+          child: photoBytes != null
+              ? Image.memory(
+                  photoBytes,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                )
+              : Container(color: gradTop),
+        ),
+        Expanded(
+          flex: 48,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [gradTop, gradBottom],
+              ),
+            ),
+            padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 14, pad, pad),
+            child: Column(
+              children: [
+                const Text(
+                  'FULL TIME',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                    height: 1.0,
+                  ),
+                ),
+                SizedBox(height: compact ? 8 : 12),
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.topCenter,
+                    child: _resultBlock(),
+                  ),
+                ),
+                if (barSponsors.isNotEmpty) ...[
+                  SizedBox(height: compact ? 6 : 10),
+                  _sponsorBar(),
+                ],
+              ],
+            ),
+          ),
+        ),
       ],
     );
   }
