@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 54;
+  static const _dbVersion = 55;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -473,6 +473,15 @@ class AppDatabase {
         'CREATE INDEX idx_scouting_entries_scout ON scouting_entries (scout_id)',
       );
     }
+    // v54 -> v55: Haupt-Ticker behält immer die volle Kontrolle; Delegierte sind
+    // ZUSÄTZLICH. Neuer optionaler Eigen-Delegierter (Gegner-Delegierter nutzt
+    // weiter live_controller_opp).
+    if (oldV < 55) {
+      await db.execute('ALTER TABLE matches ADD COLUMN live_delegate_own TEXT');
+      await db.execute(
+        'ALTER TABLE matches ADD COLUMN live_delegate_own_name TEXT',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -894,6 +903,8 @@ class AppDatabase {
         live_controller_name TEXT,
         live_controller_opp TEXT,
         live_controller_opp_name TEXT,
+        live_delegate_own TEXT,
+        live_delegate_own_name TEXT,
         live_request_by TEXT,
         live_request_by_name TEXT,
         live_request_scope TEXT,

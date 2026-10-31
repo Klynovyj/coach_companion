@@ -45,18 +45,27 @@ class GameMatch {
   /// live getrackt). Dann überschreibt der FuPa-Import Status/Ergebnis NICHT.
   final bool locallyManaged;
 
-  /// User-ID des Trainers, der das Live-Spiel aktuell steuert (null = niemand).
+  /// User-ID des HAUPT-TICKERS (wer das Spiel gestartet hat). Er hat IMMER die
+  /// volle Kontrolle (beide Seiten + Uhr/Phasen + ganzer Ticker). Delegierte
+  /// kommen nur ZUSÄTZLICH dazu, sie nehmen ihm nichts weg. null = niemand.
   final String? liveController;
 
-  /// Anzeigename des steuernden Trainers (denormalisiert).
+  /// Anzeigename des Haupt-Tickers (denormalisiert).
   final String? liveControllerName;
 
-  /// User-ID des Trainers, der die GEGNER-Erfassung steuert (null = niemand).
-  /// `liveController` steuert die eigene Mannschaft + Uhr/Phasen.
+  /// Optionaler Delegierter für die GEGNER-Erfassung (zusätzlich zum
+  /// Haupt-Ticker). null = kein Delegierter.
   final String? liveControllerOpp;
 
-  /// Anzeigename des Gegner-Steuerers (denormalisiert).
+  /// Anzeigename des Gegner-Delegierten (denormalisiert).
   final String? liveControllerOppName;
+
+  /// Optionaler Delegierter für die EIGENE-Mannschaft-Erfassung (zusätzlich zum
+  /// Haupt-Ticker; ohne Uhr/Phasen). null = kein Delegierter.
+  final String? liveDelegateOwn;
+
+  /// Anzeigename des Eigen-Delegierten (denormalisiert).
+  final String? liveDelegateOwnName;
 
   /// Offene Übernahme-Anfrage: User-ID des Antragstellers (null = keine Anfrage).
   final String? liveRequestBy;
@@ -91,6 +100,8 @@ class GameMatch {
     this.liveControllerName,
     this.liveControllerOpp,
     this.liveControllerOppName,
+    this.liveDelegateOwn,
+    this.liveDelegateOwnName,
     this.liveRequestBy,
     this.liveRequestByName,
     this.liveRequestScope,
@@ -119,6 +130,9 @@ class GameMatch {
     String? liveControllerOpp,
     String? liveControllerOppName,
     bool clearControllerOpp = false,
+    String? liveDelegateOwn,
+    String? liveDelegateOwnName,
+    bool clearDelegateOwn = false,
     String? liveRequestBy,
     String? liveRequestByName,
     String? liveRequestScope,
@@ -154,6 +168,12 @@ class GameMatch {
       liveControllerOppName: clearControllerOpp
           ? null
           : (liveControllerOppName ?? this.liveControllerOppName),
+      liveDelegateOwn: clearDelegateOwn
+          ? null
+          : (liveDelegateOwn ?? this.liveDelegateOwn),
+      liveDelegateOwnName: clearDelegateOwn
+          ? null
+          : (liveDelegateOwnName ?? this.liveDelegateOwnName),
       liveRequestBy: clearRequest ? null : (liveRequestBy ?? this.liveRequestBy),
       liveRequestByName: clearRequest
           ? null
@@ -187,6 +207,8 @@ class GameMatch {
     'live_controller_name': liveControllerName,
     'live_controller_opp': liveControllerOpp,
     'live_controller_opp_name': liveControllerOppName,
+    'live_delegate_own': liveDelegateOwn,
+    'live_delegate_own_name': liveDelegateOwnName,
     'live_request_by': liveRequestBy,
     'live_request_by_name': liveRequestByName,
     'live_request_scope': liveRequestScope,
@@ -215,6 +237,8 @@ class GameMatch {
     liveControllerName: m['live_controller_name'] as String?,
     liveControllerOpp: m['live_controller_opp'] as String?,
     liveControllerOppName: m['live_controller_opp_name'] as String?,
+    liveDelegateOwn: m['live_delegate_own'] as String?,
+    liveDelegateOwnName: m['live_delegate_own_name'] as String?,
     liveRequestBy: m['live_request_by'] as String?,
     liveRequestByName: m['live_request_by_name'] as String?,
     liveRequestScope: m['live_request_scope'] as String?,

@@ -351,12 +351,15 @@ class AppState extends ChangeNotifier {
         final ctrlName = r['live_controller_name'] as String?;
         final ctrlOpp = r['live_controller_opp'] as String?;
         final ctrlOppName = r['live_controller_opp_name'] as String?;
+        final delOwn = r['live_delegate_own'] as String?;
+        final delOwnName = r['live_delegate_own_name'] as String?;
         final reqBy = r['live_request_by'] as String?;
         final reqByName = r['live_request_by_name'] as String?;
         final reqScope = r['live_request_scope'] as String?;
         final ctrlChanged = (local.liveController ?? '') != (ctrl ?? '');
         final ctrlOppChanged =
-            (local.liveControllerOpp ?? '') != (ctrlOpp ?? '');
+            (local.liveControllerOpp ?? '') != (ctrlOpp ?? '') ||
+            (local.liveDelegateOwn ?? '') != (delOwn ?? '');
         final reqChanged = (local.liveRequestBy ?? '') != (reqBy ?? '') ||
             (local.liveRequestScope ?? '') != (reqScope ?? '');
         if (local.status == st &&
@@ -382,6 +385,9 @@ class AppState extends ChangeNotifier {
             liveControllerOpp: ctrlOpp,
             liveControllerOppName: ctrlOppName,
             clearControllerOpp: ctrlOpp == null,
+            liveDelegateOwn: delOwn,
+            liveDelegateOwnName: delOwnName,
+            clearDelegateOwn: delOwn == null,
             liveRequestBy: reqBy,
             liveRequestByName: reqByName,
             liveRequestScope: reqScope,
@@ -2940,14 +2946,13 @@ class AppState extends ChangeNotifier {
     await _repo.upsertMatch(
       match.copyWith(
         status: status,
-        // Starter steuert zunächst BEIDE Seiten (eigene + Gegner); andere sehen
-        // nur Kommentare, bis sie eine Seite übernehmen. Abpfiff gibt beide frei.
+        // Der Starter wird HAUPT-TICKER (volle Kontrolle, beide Seiten + Uhr).
+        // Delegierte sind zunächst keine gesetzt. Abpfiff gibt alles frei.
         liveController: becomeController ? CloudService.userId : null,
         liveControllerName: becomeController ? CloudService.myName : null,
         clearController: releaseController,
-        liveControllerOpp: becomeController ? CloudService.userId : null,
-        liveControllerOppName: becomeController ? CloudService.myName : null,
         clearControllerOpp: releaseController,
+        clearDelegateOwn: releaseController,
       ),
     );
     await _reload();
@@ -2962,12 +2967,12 @@ class AppState extends ChangeNotifier {
           'status': status.storageKey,
           if (becomeController) 'live_controller': CloudService.userId,
           if (becomeController) 'live_controller_name': CloudService.myName,
-          if (becomeController) 'live_controller_opp': CloudService.userId,
-          if (becomeController) 'live_controller_opp_name': CloudService.myName,
           if (releaseController) 'live_controller': null,
           if (releaseController) 'live_controller_name': null,
           if (releaseController) 'live_controller_opp': null,
           if (releaseController) 'live_controller_opp_name': null,
+          if (releaseController) 'live_delegate_own': null,
+          if (releaseController) 'live_delegate_own_name': null,
         });
       } catch (_) {}
       // Geht das Spiel live, Push an alle Team-Mitglieder (auch bei
@@ -2996,23 +3001,15 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  /// Übernimmt die Live-Erfassung pro Seite (mit Bestätigung in der UI). [own] =
-  /// eigene Mannschaft + Uhr/Phasen, [opp] = Gegner-Erfassung. Setzt die
-  /// gewählte(n) Seite(n) auf den aktuellen Nutzer.
-  Future<void> takeOverLiveControl(
-    String matchId, {
-    required bool own,
-    required bool opp,
-  }) async {
-    if (!own && !opp) return;
+  /// Wird HAUPT-TICKER des Spiels (volle Kontrolle, beide Seiten + Uhr). Nur
+  /// sinnvoll, wenn noch kein Haupt-Ticker gesetzt ist.
+  Future<void> becomeMainTicker(String matchId) async {
     final match = await _repo.getMatch(matchId);
     if (match == null) return;
     await _repo.upsertMatch(
       match.copyWith(
-        liveController: own ? CloudService.userId : null,
-        liveControllerName: own ? CloudService.myName : null,
-        liveControllerOpp: opp ? CloudService.userId : null,
-        liveControllerOppName: opp ? CloudService.myName : null,
+        liveController: CloudService.userId,
+        liveControllerName: CloudService.myName,
       ),
     );
     await _reload();
@@ -3022,31 +3019,24 @@ class AppState extends ChangeNotifier {
         CloudService.signedIn) {
       try {
         await CloudService.updateMatch(matchId, {
-          if (own) 'live_controller': CloudService.userId,
-          if (own) 'live_controller_name': CloudService.myName,
-          if (opp) 'live_controller_opp': CloudService.userId,
-          if (opp) 'live_controller_opp_name': CloudService.myName,
+          'live_controller': CloudService.userId,
+          'live_controller_name': CloudService.myName,
         });
       } catch (_) {}
     }
   }
 
-  /// Beantragt die Live-Erfassung beim Haupt-Ticker (Steuerer der eigenen
-  /// Mannschaft). [scope] = 'own' (eigene + Uhr), 'opp' (Gegner) oder 'both'.
-  /// Gibt es noch keinen Haupt-Ticker, wird direkt übernommen (nichts zu
-  /// genehmigen).
+  /// Beantragt die Live-Erfassung beim Haupt-Ticker. [scope] = 'own' (eigene
+  /// Mannschaft), 'opp' (Gegner) oder 'both'. Der Haupt-Ticker behält immer alles
+  /// – eine Genehmigung gibt dem Antragsteller die Seite(n) nur ZUSÄTZLICH. Gibt
+  /// es noch keinen Haupt-Ticker, wird man direkt Haupt-Ticker.
   Future<void> requestLiveControl(String matchId, String scope) async {
     final match = await _repo.getMatch(matchId);
     if (match == null) return;
     final mainTicker = match.liveController;
     final noMainTicker = mainTicker == null || mainTicker.isEmpty;
     if (noMainTicker) {
-      // Kein Haupt-Ticker → direkt anwenden.
-      await takeOverLiveControl(
-        matchId,
-        own: scope == 'own' || scope == 'both',
-        opp: scope == 'opp' || scope == 'both',
-      );
+      await becomeMainTicker(matchId);
       return;
     }
     await _repo.upsertMatch(
@@ -3081,14 +3071,15 @@ class AppState extends ChangeNotifier {
   }
 
   String _scopeLabel(String scope) => switch (scope) {
-    'own' => 'eigene Mannschaft + Uhr',
+    'own' => 'eigene Mannschaft',
     'opp' => 'Gegner',
-    'both' => 'beide Seiten + Uhr',
+    'both' => 'beide Seiten',
     _ => scope,
   };
 
-  /// Genehmigt die offene Übernahme-Anfrage (nur vom Haupt-Ticker aufgerufen):
-  /// setzt die Controller je Umfang auf den Antragsteller und löscht die Anfrage.
+  /// Genehmigt die offene Anfrage (nur vom Haupt-Ticker): gibt dem Antragsteller
+  /// die Seite(n) ZUSÄTZLICH als Delegierten frei. Der Haupt-Ticker behält seine
+  /// volle Kontrolle (beide Seiten + Uhr).
   Future<void> approveLiveRequest(String matchId) async {
     final match = await _repo.getMatch(matchId);
     if (match == null) return;
@@ -3100,8 +3091,8 @@ class AppState extends ChangeNotifier {
     final opp = scope == 'opp' || scope == 'both';
     await _repo.upsertMatch(
       match.copyWith(
-        liveController: own ? reqBy : null,
-        liveControllerName: own ? reqName : null,
+        liveDelegateOwn: own ? reqBy : null,
+        liveDelegateOwnName: own ? reqName : null,
         liveControllerOpp: opp ? reqBy : null,
         liveControllerOppName: opp ? reqName : null,
         clearRequest: true,
@@ -3114,8 +3105,8 @@ class AppState extends ChangeNotifier {
         CloudService.signedIn) {
       try {
         await CloudService.updateMatch(matchId, {
-          if (own) 'live_controller': reqBy,
-          if (own) 'live_controller_name': reqName,
+          if (own) 'live_delegate_own': reqBy,
+          if (own) 'live_delegate_own_name': reqName,
           if (opp) 'live_controller_opp': reqBy,
           if (opp) 'live_controller_opp_name': reqName,
           'live_request_by': null,
@@ -3127,7 +3118,7 @@ class AppState extends ChangeNotifier {
     await _notify(
       reqBy,
       InboxType.liveRequest,
-      'Deine Übernahme wurde genehmigt',
+      'Deine Anfrage wurde genehmigt',
       subtitle: 'Du erfasst jetzt: ${_scopeLabel(scope)}',
       linkType: 'match',
       linkId: matchId,

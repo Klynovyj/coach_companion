@@ -666,12 +666,10 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final match = _match;
     if (match == null) return;
     final me = CloudService.userId;
-    final hasOwn = (match.liveController ?? '').isNotEmpty;
-    final hasOpp = (match.liveControllerOpp ?? '').isNotEmpty;
-    final iOwn = !hasOwn || match.liveController == me;
-    final iOpp = hasOpp && match.liveControllerOpp == me;
-    final ownWho = match.liveControllerName?.trim();
-    final oppWho = match.liveControllerOppName?.trim();
+    // Was ich (als möglicher Delegierter) schon erfassen darf.
+    final iOwn = match.liveDelegateOwn != null && match.liveDelegateOwn == me;
+    final iOpp = match.liveControllerOpp != null &&
+        match.liveControllerOpp == me;
 
     final choice = await showModalBottomSheet<String>(
       context: context,
@@ -684,7 +682,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Steuerung anfragen',
+                  'Erfassung anfragen',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ),
@@ -694,8 +692,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Der Haupt-Ticker muss die Übernahme genehmigen. Bis dahin '
-                  'kannst du nur kommentieren.',
+                  'Der Haupt-Ticker muss freigeben. Die Uhr bleibt beim '
+                  'Haupt-Ticker; bis zur Freigabe kannst du nur kommentieren.',
                   style: TextStyle(fontSize: 12.5, color: Colors.grey),
                 ),
               ),
@@ -704,33 +702,21 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             ListTile(
               enabled: !iOwn,
               leading: const Icon(Icons.sports),
-              title: const Text('Eigene Mannschaft (inkl. Uhr)'),
-              subtitle: Text(
-                iOwn
-                    ? 'Hast du schon'
-                    : (ownWho != null && ownWho.isNotEmpty
-                          ? 'Aktuell: $ownWho'
-                          : 'Noch niemand'),
-              ),
+              title: const Text('Eigene Mannschaft'),
+              subtitle: Text(iOwn ? 'Darfst du schon' : 'Tore/Karten/Wechsel'),
               onTap: () => Navigator.pop(ctx, 'own'),
             ),
             ListTile(
               enabled: !iOpp,
               leading: const Icon(Icons.flag_outlined),
               title: const Text('Gegner'),
-              subtitle: Text(
-                iOpp
-                    ? 'Hast du schon'
-                    : (oppWho != null && oppWho.isNotEmpty
-                          ? 'Aktuell: $oppWho'
-                          : 'Noch niemand'),
-              ),
+              subtitle: Text(iOpp ? 'Darfst du schon' : 'Gegner-Ereignisse'),
               onTap: () => Navigator.pop(ctx, 'opp'),
             ),
             ListTile(
               enabled: !(iOwn && iOpp),
               leading: const Icon(Icons.groups),
-              title: const Text('Beide Seiten (mit Uhr)'),
+              title: const Text('Beide Seiten'),
               onTap: () => Navigator.pop(ctx, 'both'),
             ),
             const SizedBox(height: 8),
@@ -758,11 +744,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     await _refreshEvents();
   }
 
-  /// Steuerungs-Banner: offene Anfrage genehmigen/ablehnen, eigene laufende
-  /// Anfrage, Steuerungs-Status + „Steuerung anfragen".
+  /// Steuerungs-Banner: Haupt-Ticker (volle Kontrolle) genehmigt Anfragen;
+  /// Delegierte erfassen eine Seite zusätzlich; alle anderen kommentieren nur.
   Widget _controlBanner(
     BuildContext context,
     GameMatch match,
+    bool iAmMain,
     bool iControlOwn,
     bool iControlOpp,
   ) {
@@ -772,9 +759,11 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     final hasRequest = reqBy != null && reqBy.isNotEmpty;
     final reqScope = match.liveRequestScope ?? 'both';
     final reqName = match.liveRequestByName?.trim();
+    final oppDeleg = match.liveControllerOppName?.trim();
+    final ownDeleg = match.liveDelegateOwnName?.trim();
 
-    // 1) Ich bin Haupt-Ticker und es liegt eine fremde Anfrage vor → genehmigen.
-    if (hasRequest && reqBy != me && iControlOwn) {
+    // 1) Haupt-Ticker + offene fremde Anfrage → genehmigen/ablehnen.
+    if (hasRequest && reqBy != me && iAmMain) {
       return Container(
         width: double.infinity,
         color: scheme.tertiaryContainer,
@@ -786,7 +775,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             Expanded(
               child: Text(
                 '${(reqName != null && reqName.isNotEmpty) ? reqName : 'Ein Trainer'} '
-                'möchte übernehmen: ${_scopeLabel(reqScope)}',
+                'möchte erfassen: ${_scopeLabel(reqScope)}',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
@@ -796,7 +785,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             ),
             FilledButton(
               onPressed: _approveRequest,
-              child: const Text('Genehmigen'),
+              child: const Text('Freigeben'),
             ),
           ],
         ),
@@ -815,7 +804,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                'Anfrage läuft (${_scopeLabel(reqScope)}) – warte auf Genehmigung.',
+                'Anfrage läuft (${_scopeLabel(reqScope)}) – warte auf Freigabe.',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
@@ -828,30 +817,34 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       );
     }
 
-    // 3) Ich steuere beide Seiten → grüner Hinweis, kein Button.
-    if (iControlOwn && iControlOpp) {
+    // 3) Haupt-Ticker → volle Kontrolle, grüner Hinweis (ggf. Delegierte nennen).
+    if (iAmMain) {
+      final deleg = [
+        if (oppDeleg != null && oppDeleg.isNotEmpty) 'Gegner: $oppDeleg',
+        if (ownDeleg != null && ownDeleg.isNotEmpty) 'eigene: $ownDeleg',
+      ].join(', ');
       return _banner(
         context,
         scheme.primaryContainer,
         Icons.sports,
-        'Du steuerst das ganze Spiel (beide Seiten + Uhr).',
+        deleg.isEmpty
+            ? 'Du bist Haupt-Ticker – volle Kontrolle (beide Seiten + Uhr).'
+            : 'Du bist Haupt-Ticker – volle Kontrolle. Zusätzlich erfasst: $deleg.',
       );
     }
 
-    // 4) Teilweise/keine Steuerung → Status + „Steuerung anfragen".
-    final ownWho = match.liveControllerName?.trim();
-    final oppWho = match.liveControllerOppName?.trim();
+    // 4) Delegierter → erfasst eine Seite (freigegeben); kann mehr anfragen.
+    final mainWho = match.liveControllerName?.trim();
     String text;
-    if (iControlOwn) {
+    if (iControlOwn || iControlOpp) {
+      final side = (iControlOwn && iControlOpp)
+          ? 'beide Seiten'
+          : (iControlOpp ? 'den Gegner' : 'die eigene Mannschaft');
       text =
-          'Du steuerst die eigene Mannschaft + Uhr. Gegner erfasst: '
-          '${(oppWho != null && oppWho.isNotEmpty) ? oppWho : 'niemand'}.';
-    } else if (iControlOpp) {
-      text =
-          'Du erfasst den Gegner. Spiel/Uhr: '
-          '${(ownWho != null && ownWho.isNotEmpty) ? ownWho : 'niemand'}.';
+          'Du erfasst $side (freigegeben). Haupt-Ticker: '
+          '${(mainWho != null && mainWho.isNotEmpty) ? mainWho : 'unbekannt'}.';
     } else {
-      text = 'Nur Kommentare möglich – Steuerung anfragen, um zu erfassen.';
+      text = 'Nur Kommentare möglich – Erfassung beim Haupt-Ticker anfragen.';
     }
     return Container(
       width: double.infinity,
@@ -869,7 +862,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
           ),
           TextButton(
             onPressed: _requestControl,
-            child: const Text('Steuerung anfragen'),
+            child: const Text('Anfragen'),
           ),
         ],
       ),
@@ -889,20 +882,21 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     // Darf dieser Nutzer mitschreiben? Zuschauer (und „nur zuschauen"-Modus)
     // sehen nur den Ticker.
     final canEdit = _state.canLiveEdit;
-    // Live-Steuerung ist jetzt PRO SEITE: live_controller = eigene Mannschaft +
-    // Uhr/Phasen, live_controller_opp = Gegner-Erfassung. Ohne Übernahme darf man
-    // nur kommentieren.
+    // HAUPT-TICKER (live_controller = Starter) hat IMMER die volle Kontrolle
+    // (beide Seiten + Uhr). Delegierte (live_delegate_own / live_controller_opp)
+    // dürfen eine Seite ZUSÄTZLICH erfassen; sie nehmen dem Haupt-Ticker nichts
+    // weg. Ohne Rolle darf man nur kommentieren.
     final me = CloudService.userId;
-    final ownCtrl = match.liveController;
-    final oppCtrl = match.liveControllerOpp;
-    final ownSet = ownCtrl != null && ownCtrl.isNotEmpty;
-    final oppSet = oppCtrl != null && oppCtrl.isNotEmpty;
-    // Ist noch niemand gesetzt (vor dem Anpfiff), darf jeder Berechtigte starten.
-    final iControlOwn = !ownSet || ownCtrl == me;
-    final iControlOpp = oppSet && oppCtrl == me;
-    // Phasen-Leiste (Anpfiff/Halbzeit/Abpfiff …) gehört zur eigenen Mannschaft.
-    final editing = canEdit && iControlOwn && !_watchMode;
-    // Erfassen nur für die Seite(n), die man übernommen hat.
+    final mainTicker = match.liveController;
+    final mainSet = mainTicker != null && mainTicker.isNotEmpty;
+    // Vor dem Anpfiff ist niemand gesetzt → jeder Berechtigte darf starten.
+    final iAmMain = !mainSet || mainTicker == me;
+    final delOwn = match.liveDelegateOwn;
+    final delOpp = match.liveControllerOpp;
+    final iControlOwn = iAmMain || (delOwn != null && delOwn == me);
+    final iControlOpp = iAmMain || (delOpp != null && delOpp == me);
+    // Uhr/Phasen (Anpfiff/Halbzeit/Abpfiff …) nur der Haupt-Ticker.
+    final editing = canEdit && iAmMain && !_watchMode;
     final canRecord = canEdit && !_watchMode;
     final canRecordOwn = canRecord && iControlOwn;
     final canRecordOpp = canRecord && iControlOpp;
@@ -954,7 +948,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               'Du schaust zu – du siehst nur den Ticker.',
             )
           else
-            _controlBanner(context, match, iControlOwn, iControlOpp),
+            _controlBanner(context, match, iAmMain, iControlOwn, iControlOpp),
           _Scoreboard(
             match: match,
             ownName: _ownTeam?.shortName ?? _ownTeam?.name ?? 'Heim',
@@ -996,7 +990,7 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               padding: const EdgeInsets.only(bottom: 16),
               children: [
                 if (canEdit && !_watchMode && _phase == _Phase.shootout &&
-                    iControlOwn)
+                    iAmMain)
                   _shootoutPanel(context, match),
                 if (_phase != _Phase.shootout &&
                     _events.any(
