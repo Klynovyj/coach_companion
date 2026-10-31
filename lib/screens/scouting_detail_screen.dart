@@ -337,40 +337,50 @@ class _ScoutingDetailScreenState extends State<ScoutingDetailScreen> {
                 ),
               )
             else ...[
+              const SizedBox(height: 10),
+              // Hauptwerte als drei gleich breite Kacheln.
+              Row(
+                children: [
+                  _bigStat('Spiele', stats['totalMatches']),
+                  const SizedBox(width: 8),
+                  _bigStat('Tore', stats['totalGoals']),
+                  const SizedBox(width: 8),
+                  _bigStat('Vorlagen', stats['totalAssists']),
+                ],
+              ),
+              const SizedBox(height: 10),
+              // Karten + Top-Elf als kompakte Zeile.
               Wrap(
-                spacing: 16,
+                spacing: 8,
                 runSpacing: 8,
                 children: [
-                  _stat('Spiele', stats['totalMatches']),
-                  _stat('Tore', stats['totalGoals']),
-                  _stat('Vorlagen', stats['totalAssists']),
-                  _stat('Gelb', stats['totalYellow']),
-                  _stat('Gelb-Rot', stats['totalYellowRed']),
-                  _stat('Rot', stats['totalRed']),
-                  _stat('Top-Elf', stats['totalTopEleven']),
+                  _miniStat('Gelb', stats['totalYellow'],
+                      const Color(0xFFF9A825)),
+                  _miniStat('Gelb-Rot', stats['totalYellowRed'],
+                      const Color(0xFFEF6C00)),
+                  _miniStat('Rot', stats['totalRed'], const Color(0xFFC62828)),
+                  _miniStat('Top-Elf', stats['totalTopEleven'],
+                      Theme.of(context).colorScheme.primary),
                 ],
               ),
               if (stations.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 16),
                 const Text(
                   'Stationen',
-                  style: TextStyle(fontWeight: FontWeight.w600),
+                  style: TextStyle(fontWeight: FontWeight.w700),
                 ),
-                const SizedBox(height: 4),
-                for (final s in stations)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      '${s['club'] ?? ''} · ${s['competition'] ?? ''} — '
-                      '${s['matches'] ?? 0} Sp, ${s['goals'] ?? 0} T, '
-                      '${s['assists'] ?? 0} V',
-                      style: const TextStyle(fontSize: 12.5),
-                    ),
-                  ),
+                const SizedBox(height: 6),
+                _stationHeader(),
+                const Divider(height: 8),
+                for (var i = 0; i < stations.length; i++) ...[
+                  _stationRow(stations[i] as Map),
+                  if (i < stations.length - 1)
+                    Divider(height: 1, color: Theme.of(context).dividerColor),
+                ],
               ],
               if (p.statsUpdatedAt != null)
                 Padding(
-                  padding: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.only(top: 10),
                   child: Text(
                     'Stand: ${_df.format(p.statsUpdatedAt!)}',
                     style: TextStyle(
@@ -386,19 +396,114 @@ class _ScoutingDetailScreenState extends State<ScoutingDetailScreen> {
     );
   }
 
-  Widget _stat(String label, Object? value) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          '${value ?? 0}',
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+  Widget _bigStat(String label, Object? value) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
         ),
-        Text(
-          label,
+        child: Column(
+          children: [
+            Text(
+              '${value ?? 0}',
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            ),
+            Text(
+              label,
+              style: TextStyle(fontSize: 11.5, color: Theme.of(context).hintColor),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _miniStat(String label, Object? value, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '${value ?? 0}',
+              style: TextStyle(fontWeight: FontWeight.bold, color: color),
+            ),
+            TextSpan(
+              text: '  $label',
+              style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _numCell(String text, {bool header = false}) => SizedBox(
+    width: 36,
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        fontSize: header ? 11 : 13,
+        fontWeight: header ? FontWeight.w600 : FontWeight.w700,
+        color: header ? Theme.of(context).hintColor : null,
+      ),
+    ),
+  );
+
+  Widget _stationHeader() => Row(
+    children: [
+      Expanded(
+        child: Text(
+          'Verein / Wettbewerb',
           style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
         ),
-      ],
+      ),
+      _numCell('Sp', header: true),
+      _numCell('T', header: true),
+      _numCell('V', header: true),
+    ],
+  );
+
+  Widget _stationRow(Map s) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${s['club'] ?? ''}',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  '${s['competition'] ?? ''}',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: Theme.of(context).hintColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _numCell('${s['matches'] ?? 0}'),
+          _numCell('${s['goals'] ?? 0}'),
+          _numCell('${s['assists'] ?? 0}'),
+        ],
+      ),
     );
   }
 
