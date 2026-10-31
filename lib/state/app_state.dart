@@ -290,6 +290,8 @@ class AppState extends ChangeNotifier {
   Timer? _fupaTimer;
   Timer? _fullTimer;
   Timer? _liveTimer;
+  // true, wenn aktuell ein Spiel live ist → schnellerer Abgleich-Takt.
+  bool _liveActive = false;
   bool _autoRefreshing = false;
 
   /// Startet (oder behält) das Realtime-Abo + die periodische FuPa-Auffrischung
@@ -318,13 +320,30 @@ class AppState extends ChangeNotifier {
     );
     maybeAutoFullRefresh();
     maybeAutoRefreshFupa();
-    // Status/Ergebnis (live gehen, Abpfiff, zurücksetzen) zuverlässig abgleichen
-    // – auch falls ein Realtime-Event verloren geht (z.B. Hintergrund/Android).
-    _liveTimer = Timer.periodic(
-      const Duration(seconds: 15),
-      (_) => _pollMatchSync(),
-    );
-    _pollMatchSync();
+    // Status/Ergebnis + Ticker zuverlässig abgleichen (fängt verpasste Realtime-
+    // Events, z.B. Hintergrund/Android). Während eines Live-Spiels SCHNELL (für
+    // einen flüssigen Ticker), sonst sparsam – siehe _scheduleLivePoll.
+    _scheduleLivePoll(immediate: true);
+  }
+
+  /// Selbst-planender Abgleich-Timer: läuft während eines Live-Spiels alle paar
+  /// Sekunden (flüssiger Ticker), sonst selten (schont Akku/Datenverbrauch).
+  void _scheduleLivePoll({bool immediate = false}) {
+    _liveTimer?.cancel();
+    Future<void> run() async {
+      await _pollMatchSync();
+      // Nur weiterlaufen, solange dieses Team noch synchronisiert wird.
+      if (_syncedTeamId != null) _scheduleLivePoll();
+    }
+
+    if (immediate) {
+      run();
+    } else {
+      _liveTimer = Timer(
+        Duration(seconds: _liveActive ? 3 : 15),
+        run,
+      );
+    }
   }
 
   /// Gleicht Status + Ergebnis aller Spiele mit der Cloud ab (leichtgewichtig).
@@ -402,6 +421,8 @@ class AppState extends ChangeNotifier {
         }
         changed = true;
       }
+      // Taktung: läuft ein Spiel live, schneller abgleichen (flüssiger Ticker).
+      _liveActive = liveIds.isNotEmpty;
       // Ereignisse laufender Spiele nachziehen: Realtime kann (Android-
       // Hintergrund/Netz) Ticker-Einträge verpassen – so erscheint die Erfassung
       // eines anderen Trainers auch beim Haupt-Ticker. Upsert-only (Löschungen
