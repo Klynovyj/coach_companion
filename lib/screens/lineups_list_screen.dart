@@ -345,7 +345,9 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
         : (l.creatorName?.trim().isNotEmpty == true
               ? 'von ${l.creatorName!.trim()}'
               : 'anderer Trainer');
-    final canEdit = mine && !(widget.matchFinished && isStart);
+    // Jeder Trainer darf jede Aufstellung bearbeiten (nicht nur der Ersteller).
+    // Einzige Ausnahme: beendetes Spiel → die Start-11 ist nur noch ansehbar.
+    final canEdit = !(widget.matchFinished && isStart);
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
       shape: isStart
@@ -415,7 +417,7 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
                   icon: const Icon(Icons.keyboard_arrow_down),
                 ),
                 const Spacer(),
-                _menu(l, index, mine, isStart),
+                _menu(l, index, isStart),
                 if (canEdit)
                   FilledButton.tonalIcon(
                     onPressed: () => _openEditable(l),
@@ -436,7 +438,7 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
     );
   }
 
-  Widget _menu(Lineup l, int index, bool mine, bool isStart) {
+  Widget _menu(Lineup l, int index, bool isStart) {
     return PopupMenuButton<String>(
       tooltip: 'Mehr',
       onSelected: (v) {
@@ -469,24 +471,23 @@ class _LineupsListScreenState extends State<LineupsListScreen> {
             contentPadding: EdgeInsets.zero,
           ),
         ),
-        if (mine) ...[
-          const PopupMenuItem(
-            value: 'rename',
-            child: ListTile(
-              leading: Icon(Icons.drive_file_rename_outline),
-              title: Text('Umbenennen'),
-              contentPadding: EdgeInsets.zero,
-            ),
+        // Jeder Trainer darf jede Aufstellung umbenennen/löschen.
+        const PopupMenuItem(
+          value: 'rename',
+          child: ListTile(
+            leading: Icon(Icons.drive_file_rename_outline),
+            title: Text('Umbenennen'),
+            contentPadding: EdgeInsets.zero,
           ),
-          const PopupMenuItem(
-            value: 'delete',
-            child: ListTile(
-              leading: Icon(Icons.delete_outline),
-              title: Text('Löschen'),
-              contentPadding: EdgeInsets.zero,
-            ),
+        ),
+        const PopupMenuItem(
+          value: 'delete',
+          child: ListTile(
+            leading: Icon(Icons.delete_outline),
+            title: Text('Löschen'),
+            contentPadding: EdgeInsets.zero,
           ),
-        ],
+        ),
       ],
     );
   }
