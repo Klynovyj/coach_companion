@@ -1,6 +1,6 @@
 {
-  "versionCode": 67,
-  "versionName": "1.3.62",
+  "versionCode": 68,
+  "versionName": "1.3.63",
   "apkUrl": "https://github.com/Klynovyj/coach_companion/releases/latest/download/app-release.apk",
-  "notes": "Live-Spiel:\n- Uhr-Buttons (Anpfiff/Halbzeit/Abpfiff ...) muessen jetzt 3 Sekunden gehalten werden - kein versehentliches Tippen mehr (mit Fortschrittsanzeige)\n- Ticker schneller: waehrend eines Live-Spiels wird alle paar Sekunden abgeglichen\n- Abpfiff/Phasen eines anderen Geraets kommen zeitnah an (Uhr stoppt nicht mehr verspaetet)\n\nSpielplan:\n- Lange Mannschaftsnamen brechen um statt abgeschnitten zu werden\n\nWichtig (Cloud, fuer Geraete-Sync): im Supabase-SQL-Editor stage37-stage42 ausfuehren (falls noch nicht geschehen)."
+  "notes": "Kleinere Verbesserungen:\n- Startelf-Grafik: Anstosszeit wird mit angezeigt (z.B. 16:00 Uhr)\n- Aufstellung: langer Plannamen oben wieder voll lesbar (Ansicht/Teilen/Zuruecksetzen im Mehr-Menue)\n\nAus den letzten Updates (falls noch nicht installiert): Uhr-Buttons 3 Sekunden halten, schnellerer Live-Ticker/Abpfiff-Sync, Spielplan-Namen umbrechen, Scouting, starker Fuss, Spieler-Info per Tap.\n\nWichtig (Cloud, fuer Geraete-Sync): im Supabase-SQL-Editor stage37-stage42 ausfuehren (falls noch nicht geschehen)."
 }
