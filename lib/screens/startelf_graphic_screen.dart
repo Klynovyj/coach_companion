@@ -116,6 +116,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   bool _sharing = false;
   // Nur Ergebnis-Grafik: optionales Foto oben (Data-URL, nicht gespeichert).
   String? _resultPhoto;
+  // Ausrichtung des FULL-TIME-Fotos (per Finger verschiebbar, nicht gespeichert).
+  Alignment _photoAlign = Alignment.center;
 
   // Logische Zeichengrößen (× pixelRatio 3 = 1080×1920 bzw. 1080×1080).
   static const double _storyW = 360, _storyH = 640;
@@ -234,7 +236,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
       edit: true,
     );
-    if (url != null && mounted) setState(() => _resultPhoto = url);
+    if (url != null && mounted) {
+      setState(() {
+        _resultPhoto = url;
+        _photoAlign = Alignment.center; // neue Position zurücksetzen
+      });
+    }
   }
 
   Future<void> _openCustomize() async {
@@ -638,6 +645,24 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         resultPhoto: _resultPhoto,
                         showPhotos: _settings.showPhotos,
                         bgPreset: _settings.bgPreset,
+                        photoAlign: _photoAlign,
+                        onPhotoPanUpdate: _resultPhoto == null
+                            ? null
+                            : (delta) {
+                                // Logische Fotohöhe = 52 % der Grafikhöhe; Delta
+                                // über die halbe Kante in eine Alignment-Änderung
+                                // umrechnen (Faktor 2 = flott), auf −1…1 begrenzen.
+                                final photoH = h * 0.52;
+                                setState(() {
+                                  final nx = (_photoAlign.x -
+                                          delta.dx / (w / 2) * 2)
+                                      .clamp(-1.0, 1.0);
+                                  final ny = (_photoAlign.y -
+                                          delta.dy / (photoH / 2) * 2)
+                                      .clamp(-1.0, 1.0);
+                                  _photoAlign = Alignment(nx, ny);
+                                });
+                              },
                       ),
                     ),
                   ),
@@ -645,6 +670,28 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               ),
             ),
           ),
+          if (_resultPhoto != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.open_with,
+                    size: 15,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Foto zum Positionieren ziehen',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           SafeArea(
             top: false,
             child: Padding(
@@ -764,6 +811,8 @@ class _StartelfGraphic extends StatelessWidget {
     this.resultPhoto,
     this.showPhotos = false,
     this.bgPreset,
+    this.photoAlign = Alignment.center,
+    this.onPhotoPanUpdate,
   });
 
   final String title;
@@ -786,6 +835,8 @@ class _StartelfGraphic extends StatelessWidget {
   final String? resultPhoto; // Ergebnis-Grafik: Foto oben (Data-URL)
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
   final String? bgPreset; // eingebautes Hintergrund-Design ('stripes')
+  final Alignment photoAlign; // Ausrichtung des FULL-TIME-Fotos (verschiebbar)
+  final void Function(Offset delta)? onPhotoPanUpdate; // Finger-Verschiebung
 
   @override
   Widget build(BuildContext context) {
@@ -811,13 +862,26 @@ class _StartelfGraphic extends StatelessWidget {
               SizedBox(height: compact ? 12 : 18),
               _divider(),
               SizedBox(height: compact ? 12 : 16),
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.topCenter,
-                  child: result != null ? _resultBlock() : _lineupBlock(),
+              if (result != null) ...[
+                // Spielstand groß & fix (der Blickfang) …
+                _scoreRow(),
+                SizedBox(height: compact ? 10 : 14),
+                // … darunter skalieren nur Torschützen/Karten mit.
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.topCenter,
+                    child: _scorersCardsBlock(),
+                  ),
                 ),
-              ),
+              ] else
+                Expanded(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.topCenter,
+                    child: _lineupBlock(),
+                  ),
+                ),
               if (barSponsors.isNotEmpty) ...[
                 SizedBox(height: compact ? 6 : 10),
                 _sponsorBar(),
@@ -920,29 +984,35 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
+  /// Hauptsponsor als zentraler Blickfang: kleines „PRÄSENTIERT VON" darüber,
+  /// darunter das Logo groß & mittig (ohne Logo der Name groß).
   Widget _presentedBy(Sponsor s) {
     final logoBytes = TeamLogo.decode(s.logo);
-    return Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
           'PRÄSENTIERT VON',
+          textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.8),
-            fontSize: compact ? 9 : 10,
+            fontSize: compact ? 10 : 11,
             fontWeight: FontWeight.w700,
-            letterSpacing: 1,
+            letterSpacing: 2,
           ),
         ),
-        const SizedBox(width: 8),
+        SizedBox(height: compact ? 5 : 7),
         if (logoBytes != null)
-          _logoChip(logoBytes, height: compact ? 24 : 30)
+          _logoChip(logoBytes, height: compact ? 38 : 50)
         else
           Text(
             s.name,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white,
-              fontSize: compact ? 13 : 15,
-              fontWeight: FontWeight.bold,
+              fontSize: compact ? 22 : 28,
+              fontWeight: FontWeight.w900,
             ),
           ),
       ],
@@ -1094,10 +1164,16 @@ class _StartelfGraphic extends StatelessWidget {
         Expanded(
           flex: 52,
           child: photoBytes != null
-              ? Image.memory(
-                  photoBytes,
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
+              ? GestureDetector(
+                  onPanUpdate: onPhotoPanUpdate == null
+                      ? null
+                      : (d) => onPhotoPanUpdate!(d.delta),
+                  child: Image.memory(
+                    photoBytes,
+                    fit: BoxFit.cover,
+                    alignment: photoAlign,
+                    gaplessPlayback: true,
+                  ),
                 )
               : Container(color: gradTop),
         ),
@@ -1130,11 +1206,13 @@ class _StartelfGraphic extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: compact ? 8 : 12),
+                _scoreRow(),
+                SizedBox(height: compact ? 8 : 10),
                 Expanded(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.topCenter,
-                    child: _resultBlock(),
+                    child: _scorersCardsBlock(),
                   ),
                 ),
                 if (barSponsors.isNotEmpty) ...[
@@ -1149,11 +1227,65 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Ergebnis-Block: großer Spielstand + Torschützen + Karten (je Seite).
-  Widget _resultBlock() {
+  /// Großer, fixer Spielstand (der Blickfang): Logos + riesiger Score + Namen.
+  Widget _scoreRow() {
     final r = result!;
     final ownLogo = TeamLogo.decode(logo);
     final oppLogo = TeamLogo.decode(opponentLogo);
+    final logoH = compact ? 60.0 : 78.0;
+
+    Widget side(Uint8List? bytes, String name) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (bytes != null)
+          _logoChip(bytes, height: logoH)
+        else
+          SizedBox(height: logoH),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: 130,
+          child: Text(
+            name.toUpperCase(),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Expanded(child: side(ownLogo, title)),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          child: Text(
+            '${r.ownScore} : ${r.oppScore}',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 48 : 64,
+              fontWeight: FontWeight.w900,
+              height: 1.0,
+            ),
+          ),
+        ),
+        Expanded(
+          child: side(oppLogo, opponentName.isEmpty ? 'Gegner' : opponentName),
+        ),
+      ],
+    );
+  }
+
+  /// Torschützen + Karten (je Seite). Skaliert bei vielen Einträgen kleiner.
+  Widget _scorersCardsBlock() {
+    final r = result!;
     String mark(String k) => k == 'rot'
         ? '🟥'
         : (k == 'gelbrot' ? '🟧' : '🟨');
@@ -1173,32 +1305,6 @@ class _StartelfGraphic extends StatelessWidget {
       for (final c in r.oppCards)
         (text: "${mark(c.kind)} ${c.minute}' ${c.name}", photo: c.photo),
     ];
-
-    Widget side(Uint8List? bytes, String name) => Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (bytes != null)
-          _logoChip(bytes, height: 56)
-        else
-          const SizedBox(height: 56),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: 120,
-          child: Text(
-            name.toUpperCase(),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              height: 1.1,
-            ),
-          ),
-        ),
-      ],
-    );
 
     Widget avatar(String? photo) {
       final bytes = TeamLogo.decode(photo);
@@ -1289,27 +1395,6 @@ class _StartelfGraphic extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(child: side(ownLogo, title)),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                child: Text(
-                  '${r.ownScore} : ${r.oppScore}',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 46,
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: side(oppLogo, opponentName.isEmpty ? 'Gegner' : opponentName),
-              ),
-            ],
-          ),
           section('TORE', ownGoals, oppGoals),
           section('KARTEN', ownCards, oppCards),
         ],
@@ -1393,6 +1478,87 @@ class _StartelfGraphic extends StatelessWidget {
 
     final titleWord = a.isCup ? 'POKALSPIEL' : 'SPIELTAG';
 
+    // Zentraler Inhalt (Sponsor → Titel → Logos → Namen → Info). Liegt in einer
+    // FittedBox mit fester Breite, damit er immer in die Grafik passt und die
+    // Adresse unten nie abgeschnitten wird (egal ob Story oder Post).
+    final central = SizedBox(
+      width: 320,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          if (mainSponsor != null) ...[
+            _presentedBy(mainSponsor!),
+            SizedBox(height: compact ? 14 : 18),
+          ],
+          Text(
+            titleWord,
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 52,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2,
+              height: 1.0,
+            ),
+          ),
+          if ((a.matchday ?? '').trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                '${a.matchday!.trim()}. SPIELTAG',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                ),
+              ),
+            ),
+          SizedBox(height: compact ? 20 : 30),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: Center(child: side(ownLogo))),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Text(
+                  'VS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: compact ? 34 : 44,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+              Expanded(child: Center(child: side(oppLogo))),
+            ],
+          ),
+          SizedBox(height: compact ? 8 : 12),
+          Row(
+            children: [
+              Expanded(child: nameText(title)),
+              const SizedBox(width: 56),
+              Expanded(
+                child: nameText(
+                  opponentName.isEmpty ? 'Gegner' : opponentName,
+                ),
+              ),
+            ],
+          ),
+          SizedBox(height: compact ? 20 : 28),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: rows,
+          ),
+        ],
+      ),
+    );
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1402,84 +1568,17 @@ class _StartelfGraphic extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Spacer(flex: 2),
-              if (mainSponsor != null) ...[
-                _presentedBy(mainSponsor!),
-                SizedBox(height: compact ? 10 : 14),
-              ],
-              // Titel immer EINZEILIG: skaliert automatisch auf die Breite.
-              SizedBox(
-                width: double.infinity,
+              Expanded(
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.center,
-                  child: Text(
-                    titleWord,
-                    maxLines: 1,
-                    softWrap: false,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 52,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2,
-                      height: 1.0,
-                    ),
-                  ),
+                  child: central,
                 ),
               ),
-              if ((a.matchday ?? '').trim().isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    '${a.matchday!.trim()}. SPIELTAG',
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 1.5,
-                    ),
-                  ),
-                ),
-              SizedBox(height: compact ? 20 : 30),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(child: Center(child: side(ownLogo))),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Text(
-                      'VS',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: compact ? 34 : 44,
-                        fontWeight: FontWeight.w900,
-                        height: 1.0,
-                      ),
-                    ),
-                  ),
-                  Expanded(child: Center(child: side(oppLogo))),
-                ],
-              ),
-              SizedBox(height: compact ? 8 : 12),
-              Row(
-                children: [
-                  Expanded(child: nameText(title)),
-                  const SizedBox(width: 56),
-                  Expanded(
-                    child: nameText(
-                      opponentName.isEmpty ? 'Gegner' : opponentName,
-                    ),
-                  ),
-                ],
-              ),
-              SizedBox(height: compact ? 20 : 28),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: rows,
-              ),
-              const Spacer(flex: 3),
-              if (barSponsors.isNotEmpty) _sponsorBar(),
+              if (barSponsors.isNotEmpty) ...[
+                SizedBox(height: compact ? 8 : 12),
+                _sponsorBar(),
+              ],
             ],
           ),
         ),
