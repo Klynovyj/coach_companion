@@ -296,26 +296,29 @@ class Player {
 List<Player> dedupePlayersByName(List<Player> players) {
   final byKey = <String, Player>{};
   final order = <String>[];
-  bool richer(Player a, Player b) {
-    final ax = a.externalId != null && a.externalId!.isNotEmpty;
-    final bx = b.externalId != null && b.externalId!.isNotEmpty;
-    if (ax != bx) return ax; // Zeile mit FuPa-ID gewinnt.
-    final an = (a.number != null ? 1 : 0) + (a.position != null ? 1 : 0);
-    final bn = (b.number != null ? 1 : 0) + (b.position != null ? 1 : 0);
-    return an >= bn;
-  }
-
   for (final p in players) {
     final key = p.dedupKey;
     final existing = byKey[key];
     if (existing == null) {
       byKey[key] = p;
       order.add(key);
-    } else if (richer(p, existing)) {
+    } else if (playerIsRicher(p, existing)) {
       byKey[key] = p;
     }
   }
   return [for (final k in order) byKey[k]!];
+}
+
+/// Welche von zwei Zeilen desselben Spielers ist „reicher" (beim Entdoppeln zu
+/// behalten): die mit FuPa-ID (externalId), sonst die mit mehr Infos
+/// (Nummer/Position). Gleichstand → [a].
+bool playerIsRicher(Player a, Player b) {
+  final ax = a.externalId != null && a.externalId!.isNotEmpty;
+  final bx = b.externalId != null && b.externalId!.isNotEmpty;
+  if (ax != bx) return ax; // Zeile mit FuPa-ID gewinnt.
+  final an = (a.number != null ? 1 : 0) + (a.position != null ? 1 : 0);
+  final bn = (b.number != null ? 1 : 0) + (b.position != null ? 1 : 0);
+  return an >= bn;
 }
 
 /// Vordefinierte Positionen für die Mehrfachauswahl im Spielerprofil.

@@ -832,29 +832,57 @@ class AppState extends ChangeNotifier {
     final own = await _repo.getOwnTeam();
     if (own == null) return 0;
     final players = await _repo.getPlayers(own.id);
-    final deduped = dedupePlayersByName(players);
-    if (deduped.length == players.length) return 0;
+    final deleteIds = <String>{};
+
+    // 1) Entdoppeln über die FuPa-ID (external_id): gleiche ID = dieselbe Person,
+    //    unabhängig davon, wie der Name geschrieben ist. Immer sicher – fängt
+    //    Klone, die die reine Namens-Prüfung (z.B. bei leicht abweichender
+    //    Schreibweise) übersieht.
+    final byExt = <String, Player>{};
+    for (final p in players) {
+      final ext = p.externalId?.trim();
+      if (ext == null || ext.isEmpty) continue;
+      final existing = byExt[ext];
+      if (existing == null) {
+        byExt[ext] = p;
+      } else if (playerIsRicher(p, existing)) {
+        deleteIds.add(existing.id);
+        byExt[ext] = p;
+      } else {
+        deleteIds.add(p.id);
+      }
+    }
+
+    // 2) Zusätzlich über den Namen (fängt Klone OHNE FuPa-ID). Nur dort, wo die
+    //    behaltene Zeile eine FuPa-ID hat → es fallen ausschließlich Nicht-FuPa-
+    //    Klone weg, nie zwei echte Gleichnamige.
+    final remaining = players
+        .where((p) => !deleteIds.contains(p.id))
+        .toList();
+    final deduped = dedupePlayersByName(remaining);
     final keep = {for (final p in deduped) p.id};
-    // Nur Namen bereinigen, deren behaltene Zeile eine FuPa-ID hat – so werden
-    // ausschließlich die Nicht-FuPa-Klone entfernt, nie zwei echte Gleichnamige.
     final safeNames = {
       for (final p in deduped)
         if (p.externalId != null && p.externalId!.isNotEmpty) p.dedupKey,
     };
+    for (final p in remaining) {
+      if (keep.contains(p.id)) continue;
+      if (!safeNames.contains(p.dedupKey)) continue; // mehrdeutig → stehen lassen
+      deleteIds.add(p.id);
+    }
+
+    if (deleteIds.isEmpty) return 0;
     final canPush =
         _activeCloudTeamId != null &&
         CloudService.ready &&
         CloudService.signedIn;
     var removed = 0;
-    for (final p in players) {
-      if (keep.contains(p.id)) continue;
-      // Mehrdeutig (keine FuPa-Zeile im Namen) → stehen lassen.
-      if (!safeNames.contains(p.dedupKey)) continue;
-      await _repo.deletePlayer(p.id);
+    for (final id in deleteIds) {
+      await _repo.deletePlayer(id);
       removed++;
       if (canPush) {
         try {
-          await CloudService.deleteWhere('players', {'id': p.id});
+          await CloudService.deleteWhere('players', {'id': id});
         } catch (_) {
           // Offline/keine Rechte – lokale Bereinigung bleibt gültig.
         }
@@ -1011,6 +1039,10 @@ class AppState extends ChangeNotifier {
 
     await _reload();
     notifyListeners();
+    // Direkt nach dem Import doppelte eigene Spieler bereinigen (z.B. wenn eine
+    // Cloud-Zeile und eine frische FuPa-Zeile derselben Person entstanden sind),
+    // bevor der Kader geteilt wird – so bleibt kein Klon stehen.
+    await cleanupDuplicateOwnPlayers();
     // Falls dieses Team ein Cloud-Team ist: Aktualisierung direkt teilen.
     await pushTeamToCloud();
     // Kader kann sich geändert haben → Geburtstage neu planen.
