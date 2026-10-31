@@ -820,6 +820,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
               );
             },
           ),
+          const SizedBox(height: 14),
+          _strongFootField(context, p),
           const SizedBox(height: 16),
           const Divider(height: 1),
           const SizedBox(height: 14),
@@ -832,6 +834,42 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
           _birthdateField(context, p),
         ],
       ),
+    );
+  }
+
+  /// Starker Fuß (links/rechts/beide) – antippen zum Setzen, nochmal zum Lösen.
+  Widget _strongFootField(BuildContext context, Player p) {
+    const opts = [
+      ('links', 'Links'),
+      ('rechts', 'Rechts'),
+      ('beide', 'Beide'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 4, bottom: 6),
+          child: Text(
+            'Starker Fuß',
+            style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor),
+          ),
+        ),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final (val, label) in opts)
+              ChoiceChip(
+                label: Text(label),
+                selected: p.strongFoot == val,
+                onSelected: (_) => _apply(
+                  p.strongFoot == val
+                      ? p.copyWith(clearStrongFoot: true)
+                      : p.copyWith(strongFoot: val),
+                ),
+              ),
+          ],
+        ),
+      ],
     );
   }
 

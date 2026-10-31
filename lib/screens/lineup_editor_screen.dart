@@ -925,9 +925,14 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
     );
   }
 
-  /// Draggable mit pointer-Anker: Drop-Punkt = Zeigerposition.
+  /// Draggable mit pointer-Anker: Drop-Punkt = Zeigerposition. Antippen (ohne
+  /// Ziehen) zeigt die Spieler-Info.
   Widget _draggable(Player p, Widget child, {double anchor = 26}) {
-    if (widget.readOnly) return child; // Nur ansehen – kein Ziehen.
+    final tappable = GestureDetector(
+      onTap: () => _showPlayerInfo(p),
+      child: child,
+    );
+    if (widget.readOnly) return tappable; // Nur ansehen – kein Ziehen, aber Info.
     return Draggable<String>(
       data: p.id,
       dragAnchorStrategy: pointerDragAnchorStrategy,
@@ -936,9 +941,87 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
         child: Material(color: Colors.transparent, child: child),
       ),
       childWhenDragging: Opacity(opacity: 0.3, child: child),
-      child: child,
+      child: tappable,
     );
   }
+
+  String _strongFootLabel(String? f) => switch (f) {
+    'links' => 'Links',
+    'rechts' => 'Rechts',
+    'beide' => 'Beide',
+    _ => '–',
+  };
+
+  /// Info-Dialog zu einem Spieler (Tap in der Aufstellung).
+  void _showPlayerInfo(Player p) {
+    final stat = _statByKey[p.dedupKey];
+    final nr = _numberFor(p);
+    final positions = p.positions.isNotEmpty
+        ? p.positions.join(', ')
+        : (p.position ?? '–');
+    final suspended =
+        _match != null && _app.isSuspendedForMatch(p, _match!);
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            PlayerAvatar(player: p, radius: 20),
+            const SizedBox(width: 10),
+            Expanded(child: Text(p.fullName)),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (suspended)
+              const Padding(
+                padding: EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '⛔ Gesperrt für dieses Spiel',
+                  style: TextStyle(
+                    color: Colors.red,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            _infoRow('Nummer', nr != null ? '$nr' : '–'),
+            _infoRow('Position', positions),
+            if (p.wishPosition != null && p.wishPosition!.isNotEmpty)
+              _infoRow('Wunschposition', p.wishPosition!),
+            _infoRow('Starker Fuß', _strongFootLabel(p.strongFoot)),
+            if (stat != null) _infoRow('Saison', '${stat.minutes} Min'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Schließen'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoRow(String label, String value) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: TextStyle(color: Theme.of(context).hintColor),
+          ),
+        ),
+        Expanded(
+          child: Text(value, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ),
+      ],
+    ),
+  );
 
   Widget _benchSection() => _dropZone(
     title: 'Ersatzbank',

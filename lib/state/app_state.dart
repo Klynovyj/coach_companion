@@ -1214,6 +1214,7 @@ class AppState extends ChangeNotifier {
         .where((s) => s.isNotEmpty)
         .toList(),
     wishPosition: p['wish_position'] as String?,
+    strongFoot: p['strong_foot'] as String?,
     staffRole: p['staff_role'] as String?,
     suspendedGames: (p['suspended_games'] as num?)?.toInt() ?? 0,
     suspensionCompetition: p['suspension_competition'] as String?,
@@ -1247,6 +1248,7 @@ class AppState extends ChangeNotifier {
     'nickname': p.nickname,
     'positions': p.positions.join(','),
     'wish_position': p.wishPosition,
+    'strong_foot': p.strongFoot,
     'staff_role': p.staffRole,
     'suspended_games': p.suspendedGames,
     'suspension_competition': p.suspensionCompetition,
@@ -1316,6 +1318,9 @@ class AppState extends ChangeNotifier {
             .where((s) => s.isNotEmpty)
             .toList(),
         wishPosition: record['wish_position'] as String?,
+        strongFoot: record['strong_foot'] as String?,
+        clearStrongFoot:
+            record.containsKey('strong_foot') && record['strong_foot'] == null,
         staffRole: record['staff_role'] as String?,
         suspendedGames: (record['suspended_games'] as num?)?.toInt(),
         suspensionCompetition: record['suspension_competition'] as String?,

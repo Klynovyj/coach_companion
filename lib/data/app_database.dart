@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 55;
+  static const _dbVersion = 56;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -482,6 +482,10 @@ class AppDatabase {
         'ALTER TABLE matches ADD COLUMN live_delegate_own_name TEXT',
       );
     }
+    // v55 -> v56: starker Fuß am Spieler (links/rechts/beide).
+    if (oldV < 56) {
+      await db.execute('ALTER TABLE players ADD COLUMN strong_foot TEXT');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -857,6 +861,7 @@ class AppDatabase {
         number INTEGER,
         position TEXT,
         wish_position TEXT,
+        strong_foot TEXT,
         status TEXT NOT NULL DEFAULT 'fit',
         base_status TEXT NOT NULL DEFAULT 'fit',
         captain_role TEXT NOT NULL DEFAULT 'none',

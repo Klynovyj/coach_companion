@@ -22,6 +22,9 @@ class Player {
   /// Wunschposition (Freitext).
   final String? wishPosition;
 
+  /// Starker Fuß: 'links', 'rechts' oder 'beide' (null = nicht angegeben).
+  final String? strongFoot;
+
   /// Gehört zur Stammelf (Stamm-11)?
   final bool isStarter;
 
@@ -100,6 +103,7 @@ class Player {
     this.position,
     this.positions = const [],
     this.wishPosition,
+    this.strongFoot,
     this.isStarter = false,
     this.staffRole,
     this.status = PlayerStatus.fit,
@@ -161,6 +165,8 @@ class Player {
     List<String>? positions,
     String? wishPosition,
     bool clearWishPosition = false,
+    String? strongFoot,
+    bool clearStrongFoot = false,
     bool? isStarter,
     String? staffRole,
     bool clearStaffRole = false,
@@ -195,6 +201,7 @@ class Player {
       wishPosition: clearWishPosition
           ? null
           : (wishPosition ?? this.wishPosition),
+      strongFoot: clearStrongFoot ? null : (strongFoot ?? this.strongFoot),
       isStarter: isStarter ?? this.isStarter,
       staffRole: clearStaffRole ? null : (staffRole ?? this.staffRole),
       status: status ?? this.status,
@@ -228,6 +235,7 @@ class Player {
     'position': position,
     'positions': positions.join(','),
     'wish_position': wishPosition,
+    'strong_foot': strongFoot,
     'is_starter': isStarter ? 1 : 0,
     'staff_role': staffRole,
     'status': status.storageKey,
@@ -262,6 +270,7 @@ class Player {
         .where((s) => s.isNotEmpty)
         .toList(),
     wishPosition: m['wish_position'] as String?,
+    strongFoot: m['strong_foot'] as String?,
     isStarter: (m['is_starter'] as int? ?? 0) == 1,
     staffRole: m['staff_role'] as String?,
     status: PlayerStatus.fromKey(m['status'] as String?),
