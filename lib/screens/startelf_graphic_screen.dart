@@ -1190,29 +1190,40 @@ class _StartelfGraphic extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 14, pad, pad),
             child: Column(
               children: [
-                if (mainSponsor != null) ...[
-                  _presentedBy(mainSponsor!),
-                  SizedBox(height: compact ? 6 : 10),
-                ],
-                const Text(
-                  'FULL TIME',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 28,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.5,
-                    height: 1.0,
-                  ),
-                ),
-                SizedBox(height: compact ? 8 : 12),
-                _scoreRow(),
-                SizedBox(height: compact ? 8 : 10),
+                // Gesamter Panel-Inhalt (Sponsor → FULL TIME → Score →
+                // Torschützen) als EINE Einheit skalieren, damit im quadratischen
+                // Post nichts überläuft. Der Score bleibt das größte Element.
                 Expanded(
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
-                    alignment: Alignment.topCenter,
-                    child: _scorersCardsBlock(),
+                    alignment: Alignment.center,
+                    child: SizedBox(
+                      width: 320,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (mainSponsor != null) ...[
+                            _presentedBy(mainSponsor!),
+                            const SizedBox(height: 10),
+                          ],
+                          const Text(
+                            'FULL TIME',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1.5,
+                              height: 1.0,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          _scoreRow(),
+                          const SizedBox(height: 10),
+                          _scorersCardsBlock(),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
                 if (barSponsors.isNotEmpty) ...[

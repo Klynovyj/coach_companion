@@ -120,9 +120,14 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
     return (m, e);
   }
 
-  /// „Nachtragen" ist aktiv: Modus an, aber keine laufende Halbzeit (und kein
-  /// Zuschauen). Dann sind die Aktions-Buttons nutzbar und fragen die Minute ab.
-  bool get _nachtragen => _addLater && !_actionsEnabled && !_watchMode;
+  /// „Nachtragen" ist aktiv: Schalter an ODER das Spiel ist beendet (nach dem
+  /// Abpfiff kann man immer noch Aktionen tickern) – aber keine laufende
+  /// Halbzeit und kein Zuschauen. Dann sind die Aktions-Buttons nutzbar und
+  /// fragen die Minute ab.
+  bool get _nachtragen =>
+      (_addLater || _phase == _Phase.finished) &&
+      !_actionsEnabled &&
+      !_watchMode;
 
   late final AppState _state;
 
@@ -1029,9 +1034,12 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Nachtragen-Schalter: bei beendetem/pausiertem Spiel
-                      // Aktionen mit abgefragter Minute erfassen.
-                      if (!_actionsEnabled && _phase != _Phase.notStarted)
+                      // Nachtragen-Schalter nur bei pausiertem Spiel (Halbzeit
+                      // etc.). Nach dem Abpfiff ist Nachtragen automatisch aktiv,
+                      // daher dort kein Schalter nötig.
+                      if (!_actionsEnabled &&
+                          _phase != _Phase.notStarted &&
+                          _phase != _Phase.finished)
                         SwitchListTile(
                           dense: true,
                           secondary: const Icon(Icons.edit_calendar),
