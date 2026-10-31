@@ -336,12 +336,14 @@ class AppState extends ChangeNotifier {
     try {
       final rows = await CloudService.matchSyncRows(teamId);
       var changed = false;
+      final liveIds = <String>[];
       for (final r in rows) {
         final id = r['id'] as String?;
         if (id == null) continue;
         final local = await _repo.getMatch(id);
         if (local == null) continue;
         final st = MatchStatus.fromKey(r['status'] as String?);
+        if (st == MatchStatus.live) liveIds.add(id);
         final own = (r['own_score'] as num?)?.toInt() ?? local.ownScore;
         final opp =
             (r['opponent_score'] as num?)?.toInt() ?? local.opponentScore;
@@ -394,10 +396,17 @@ class AppState extends ChangeNotifier {
         }
         changed = true;
       }
-      if (changed) {
-        await _reload();
-        notifyListeners();
+      // Ereignisse laufender Spiele nachziehen: Realtime kann (Android-
+      // Hintergrund/Netz) Ticker-Einträge verpassen – so erscheint die Erfassung
+      // eines anderen Trainers auch beim Haupt-Ticker. Upsert-only (Löschungen
+      // kommen über Realtime-DELETE), damit ein verzögerter leerer Abruf nichts
+      // lokal entfernt.
+      var eventsChanged = false;
+      for (final id in liveIds) {
+        if (await _syncLiveEvents(id, teamId)) eventsChanged = true;
       }
+      if (changed) await _reload();
+      if (changed || eventsChanged) notifyListeners();
     } catch (_) {
       // Offline/Teilfehler – nächster Tick versucht es erneut.
     }
@@ -648,6 +657,31 @@ class AppState extends ChangeNotifier {
       'created_at':
           (r['created_at'] as String?) ?? DateTime.now().toIso8601String(),
     });
+  }
+
+  /// Zieht die Ereignisse EINES laufenden Spiels aus der Cloud und wendet sie an
+  /// (upsert, inkl. Eigen/Gegner-Zuordnung). Gibt true zurück, wenn dabei ein
+  /// lokal noch nicht vorhandenes Ereignis dazukam (→ UI auffrischen). Löschungen
+  /// bleiben dem Realtime-DELETE überlassen, damit nichts versehentlich wegfällt.
+  Future<bool> _syncLiveEvents(String matchId, String teamId) async {
+    try {
+      final rows = await CloudService.matchEvents(matchId);
+      final localIds = {
+        for (final e in await _repo.getEvents(matchId)) e.id,
+      };
+      final now = DateTime.now();
+      var added = false;
+      for (final r in rows) {
+        final map = Map<String, dynamic>.from(r);
+        final id = map['id'] as String?;
+        if (id == null) continue;
+        if (!localIds.contains(id)) added = true;
+        await _applyRemoteEvent(map, teamId, now);
+      }
+      return added;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Zieht Spiele, Kader, Ereignisse und Bereiche des aktiven Teams frisch aus

@@ -189,6 +189,16 @@ class CloudService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// Ereignisse genau eines Spiels (für den Live-Poll, damit der Ticker auch
+  /// ohne Realtime synchron bleibt).
+  static Future<List<Map<String, dynamic>>> matchEvents(String matchId) async {
+    final rows = await _c
+        .from('match_events')
+        .select()
+        .eq('match_id', matchId);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
   /// Ersetzt die Cloud-Statistik eines Teams (delete + insert, ein Stand).
   static Future<void> uploadStats(
     String teamId,
