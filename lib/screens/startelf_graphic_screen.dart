@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../models/graphic_settings.dart';
 import '../models/sponsor.dart';
+import '../services/cloud_service.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
@@ -114,6 +115,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   GraphicSettings _settings = const GraphicSettings(id: 'local');
   bool _loading = true;
   bool _sharing = false;
+  bool _aiBusy = false;
   // Nur Ergebnis-Grafik: optionales Foto oben (Data-URL, nicht gespeichert).
   String? _resultPhoto;
   // FULL-TIME-Foto: verschieben & zoomen (Pinch/Drag), nicht gespeichert.
@@ -558,24 +560,32 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     );
   }
 
+  /// Die aktuell angezeigte Grafik als PNG-Bytes aufnehmen (1080 px breit).
+  Future<Uint8List?> _captureGraphicPng() async {
+    final boundary =
+        _boundaryKey.currentContext?.findRenderObject()
+            as RenderRepaintBoundary?;
+    if (boundary == null) return null;
+    final logicalWidth = _story ? _storyW : _postW;
+    final image = await boundary.toImage(pixelRatio: 1080 / logicalWidth);
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    return data?.buffer.asUint8List();
+  }
+
+  String get _kind => widget.isAnnouncement
+      ? 'Spieltag'
+      : (widget.isResult ? 'Ergebnis' : 'Startelf');
+
   Future<void> _share() async {
     if (_sharing) return;
     setState(() => _sharing = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final boundary =
-          _boundaryKey.currentContext?.findRenderObject()
-              as RenderRepaintBoundary?;
-      if (boundary == null) return;
-      final logicalWidth = _story ? _storyW : _postW;
-      final image = await boundary.toImage(pixelRatio: 1080 / logicalWidth);
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      if (data == null) return;
-      final kind = widget.isAnnouncement
-          ? 'Spieltag'
-          : (widget.isResult ? 'Ergebnis' : 'Startelf');
+      final bytes = await _captureGraphicPng();
+      if (bytes == null) return;
+      final kind = _kind;
       final savedPath = await shareOrSaveImage(
-        data.buffer.asUint8List(),
+        bytes,
         '${kind}_$_title',
         text: '$kind – $_title',
       );
@@ -594,6 +604,116 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     } finally {
       if (mounted) setState(() => _sharing = false);
     }
+  }
+
+  /// „Mit KI bearbeiten": Wunsch abfragen → aktuelle Grafik als PNG an die
+  /// Edge-Function „ai-image" (Gemini) → Ergebnis als Vorschau (teilen/verwerfen).
+  Future<void> _aiEdit() async {
+    if (_aiBusy) return;
+    final prompt = await _askAiWish();
+    if (prompt == null || prompt.trim().isEmpty || !mounted) return;
+    setState(() => _aiBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await _captureGraphicPng();
+      if (bytes == null) return;
+      final edited = await CloudService.aiImage(
+        imageB64: base64Encode(bytes),
+        mime: 'image/png',
+        prompt: prompt.trim(),
+      );
+      if (edited == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Die KI hat kein Bild zurückgegeben.')),
+        );
+        return;
+      }
+      if (!mounted) return;
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => _AiResultPreview(
+            bytes: edited,
+            name: '${_kind}_KI_$_title',
+            shareText: '$_kind – $_title',
+            onRetry: _aiEdit,
+          ),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('KI-Bearbeitung fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
+  /// Dialog für den KI-Wunsch (Freitext + Vorschlags-Chips).
+  Future<String?> _askAiWish() async {
+    final ctrl = TextEditingController();
+    const ideas = <String>[
+      'Heller & kräftiger',
+      'Dramatischer Look',
+      'Konfetti & Feier',
+      'Stadion-Hintergrund',
+      'Mehr Vereinsfarben',
+    ];
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mit KI bearbeiten'),
+        content: StatefulBuilder(
+          builder: (ctx, setLocal) => Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Wünsche zu Bild & Design:'),
+              const SizedBox(height: 8),
+              TextField(
+                controller: ctrl,
+                maxLines: 3,
+                autofocus: true,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'z.B. heller, dramatischer, Konfetti …',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final s in ideas)
+                    ActionChip(
+                      label: Text(s),
+                      onPressed: () => setLocal(() {
+                        ctrl.text = ctrl.text.trim().isEmpty
+                            ? s
+                            : '${ctrl.text.trim()}, $s';
+                        ctrl.selection = TextSelection.collapsed(
+                          offset: ctrl.text.length,
+                        );
+                      }),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Erstellen'),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -712,19 +832,41 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             top: false,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _sharing ? null : _share,
-                  icon: _sharing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.share),
-                  label: const Text('Teilen (WhatsApp)'),
-                ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: (_sharing || _aiBusy) ? null : _aiEdit,
+                      icon: _aiBusy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.auto_awesome),
+                      label: Text(
+                        _aiBusy ? 'KI bearbeitet …' : 'Mit KI bearbeiten',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: (_sharing || _aiBusy) ? null : _share,
+                      icon: _sharing
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.share),
+                      label: const Text('Teilen (WhatsApp)'),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -763,6 +905,87 @@ Color _hex(String h) {
   var s = h.replaceAll('#', '').trim();
   if (s.length == 6) s = 'FF$s';
   return Color(int.tryParse(s, radix: 16) ?? 0xFF0E3325);
+}
+
+/// Vorschau der KI-bearbeiteten Grafik: Bild (zoombar) + Teilen / Nochmal
+/// bearbeiten / Verwerfen.
+class _AiResultPreview extends StatelessWidget {
+  const _AiResultPreview({
+    required this.bytes,
+    required this.name,
+    required this.shareText,
+    required this.onRetry,
+  });
+
+  final Uint8List bytes;
+  final String name;
+  final String shareText;
+  final Future<void> Function() onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('KI-Vorschau')),
+      backgroundColor: Colors.black,
+      body: Center(
+        child: InteractiveViewer(
+          minScale: 0.5,
+          maxScale: 4,
+          child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await shareOrSaveImage(bytes, name, text: shareText);
+                    } catch (e) {
+                      messenger.showSnackBar(
+                        SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.share),
+                  label: const Text('Teilen (WhatsApp)'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        onRetry();
+                      },
+                      icon: const Icon(Icons.auto_awesome),
+                      label: const Text('Nochmal'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () => Navigator.pop(context),
+                      icon: const Icon(Icons.close),
+                      label: const Text('Verwerfen'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Eingebautes Hintergrund-Design „Streifen": diagonale, halbtransparente helle

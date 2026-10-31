@@ -1,6 +1,9 @@
 // Mehrbenutzer-Cloud (Supabase): Auth, Teams, Spiele, Ereignisse + Realtime.
 // Stufe 1: Trainer schreiben, alle Mitglieder sehen in Echtzeit zu.
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -153,6 +156,25 @@ class CloudService {
     final data = res.data;
     if (data is Map && data['exercise'] is Map) {
       return Map<String, dynamic>.from(data['exercise'] as Map);
+    }
+    return null;
+  }
+
+  /// KI-Bildbearbeitung: ruft die Edge-Function „ai-image" (Gemini) auf und
+  /// liefert das bearbeitete Bild als Bytes. Wirft bei Fehlern (kein Key/Netz/
+  /// Modell) – der Aufrufer zeigt eine Meldung.
+  static Future<Uint8List?> aiImage({
+    required String imageB64,
+    required String mime,
+    required String prompt,
+  }) async {
+    final res = await _c.functions.invoke(
+      'ai-image',
+      body: {'image': imageB64, 'mime': mime, 'prompt': prompt},
+    );
+    final data = res.data;
+    if (data is Map && data['image'] is String) {
+      return base64Decode(data['image'] as String);
     }
     return null;
   }
