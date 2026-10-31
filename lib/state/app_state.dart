@@ -362,7 +362,14 @@ class AppState extends ChangeNotifier {
         final local = await _repo.getMatch(id);
         if (local == null) continue;
         final st = MatchStatus.fromKey(r['status'] as String?);
-        if (st == MatchStatus.live) liveIds.add(id);
+        // Ereignisse nachziehen, solange ein Spiel in der Cloud ODER lokal noch
+        // live ist. Wichtig beim Abpfiff durch ein anderes Gerät: der Cloud-
+        // Status ist dann schon „beendet", aber der Abpfiff-MARKER (match_event)
+        // muss noch zu Geräten, deren Uhr lokal weiterläuft – sonst stoppt die
+        // Uhr dort erst sehr spät.
+        if (st == MatchStatus.live || local.status == MatchStatus.live) {
+          liveIds.add(id);
+        }
         final own = (r['own_score'] as num?)?.toInt() ?? local.ownScore;
         final opp =
             (r['opponent_score'] as num?)?.toInt() ?? local.opponentScore;
