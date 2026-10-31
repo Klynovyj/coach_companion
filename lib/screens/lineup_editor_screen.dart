@@ -687,20 +687,9 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                   ],
                 ),
               ),
+        // Wenige Actions, damit der Plannamen oben Platz hat: Ansicht umschalten
+        // + Speichern/Duplizieren; Teilen/Zurücksetzen liegen im ⋮-Menü.
         actions: [
-          IconButton(
-            tooltip: _listMode
-                ? 'Kader teilen (WhatsApp)'
-                : 'Aufstellung teilen',
-            icon: const Icon(Icons.share),
-            onPressed: _shareLineup,
-          ),
-          if (!widget.readOnly)
-            IconButton(
-              tooltip: 'Aufstellung zurücksetzen',
-              icon: const Icon(Icons.restart_alt),
-              onPressed: _resetLineup,
-            ),
           IconButton(
             tooltip: _listMode ? 'Feld-Ansicht' : 'Listen-Ansicht',
             icon: Icon(_listMode ? Icons.grid_view : Icons.view_list),
@@ -722,6 +711,35 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
                 style: TextStyle(color: Colors.white),
               ),
             ),
+          PopupMenuButton<String>(
+            tooltip: 'Mehr',
+            onSelected: (v) {
+              if (v == 'share') {
+                _shareLineup();
+              } else if (v == 'reset') {
+                _resetLineup();
+              }
+            },
+            itemBuilder: (_) => [
+              PopupMenuItem(
+                value: 'share',
+                child: ListTile(
+                  leading: const Icon(Icons.share),
+                  title: Text(_listMode ? 'Kader teilen' : 'Aufstellung teilen'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
+              if (!widget.readOnly)
+                const PopupMenuItem(
+                  value: 'reset',
+                  child: ListTile(
+                    leading: Icon(Icons.restart_alt),
+                    title: Text('Zurücksetzen'),
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                ),
+            ],
+          ),
         ],
       ),
       body: ListView(
