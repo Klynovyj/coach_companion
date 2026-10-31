@@ -1097,6 +1097,10 @@ class _StartelfGraphic extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 14, pad, pad),
             child: Column(
               children: [
+                if (mainSponsor != null) ...[
+                  _presentedBy(mainSponsor!),
+                  SizedBox(height: compact ? 6 : 10),
+                ],
                 const Text(
                   'FULL TIME',
                   textAlign: TextAlign.center,
@@ -1386,15 +1390,24 @@ class _StartelfGraphic extends StatelessWidget {
                 _presentedBy(mainSponsor!),
                 SizedBox(height: compact ? 10 : 14),
               ],
-              Text(
-                titleWord,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: compact ? 38 : 48,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 2,
-                  height: 1.0,
+              // Titel immer EINZEILIG: skaliert automatisch auf die Breite.
+              SizedBox(
+                width: double.infinity,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.center,
+                  child: Text(
+                    titleWord,
+                    maxLines: 1,
+                    softWrap: false,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 52,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                      height: 1.0,
+                    ),
+                  ),
                 ),
               ),
               if ((a.matchday ?? '').trim().isNotEmpty)
