@@ -43,10 +43,19 @@ class ResultData {
   });
 }
 
+/// Daten für die Spielankündigungs-Grafik (Überschrift „SPIELTAG"). Teams/Logos/
+/// Datum/Heim-Auswärts kommen aus den bestehenden Screen-Feldern.
+class AnnouncementData {
+  final String? matchday;
+  final String? competition;
+  const AnnouncementData({this.matchday, this.competition});
+}
+
 /// Erzeugt die teilbare Startelf-Grafik im Instagram-Format (Story 9:16 oder
 /// Post 1:1). Titel, Logo und Hintergrund sind über ein „Grafik anpassen"-Panel
 /// einstellbar (teamweit, cloud-synchron). Sponsoren kommen aus der
-/// Sponsoring-Verwaltung.
+/// Sponsoring-Verwaltung. Mit [result] bzw. [announcement] rendert sie statt der
+/// Startelf das Ergebnis bzw. die Spielankündigung.
 class StartelfGraphicScreen extends StatefulWidget {
   const StartelfGraphicScreen({
     super.key,
@@ -59,6 +68,7 @@ class StartelfGraphicScreen extends StatefulWidget {
     this.opponentName = '',
     this.opponentLogo,
     this.result,
+    this.announcement,
   });
 
   /// Default-Titel (offizieller Teamname) und Default-Logo – werden genutzt,
@@ -77,7 +87,11 @@ class StartelfGraphicScreen extends StatefulWidget {
   /// Gesetzt → Ergebnis-Grafik statt Startelf-Grafik.
   final ResultData? result;
 
+  /// Gesetzt → Spielankündigungs-Grafik („SPIELTAG").
+  final AnnouncementData? announcement;
+
   bool get isResult => result != null;
+  bool get isAnnouncement => announcement != null;
 
   @override
   State<StartelfGraphicScreen> createState() => _StartelfGraphicScreenState();
@@ -415,10 +429,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       final image = await boundary.toImage(pixelRatio: 1080 / logicalWidth);
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       if (data == null) return;
+      final kind = widget.isAnnouncement
+          ? 'Spieltag'
+          : (widget.isResult ? 'Ergebnis' : 'Startelf');
       final savedPath = await shareOrSaveImage(
         data.buffer.asUint8List(),
-        '${widget.isResult ? 'Ergebnis' : 'Startelf'}_$_title',
-        text: '${widget.isResult ? 'Ergebnis' : 'Startelf'} – $_title',
+        '${kind}_$_title',
+        text: '$kind – $_title',
       );
       if (savedPath != null && mounted) {
         messenger.showSnackBar(
@@ -446,7 +463,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     final h = _story ? _storyH : _postH;
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.isResult ? 'Ergebnis-Grafik' : 'Startelf-Grafik'),
+        title: Text(
+          widget.isAnnouncement
+              ? 'Spielankündigung'
+              : widget.isResult
+              ? 'Ergebnis-Grafik'
+              : 'Startelf-Grafik',
+        ),
         actions: [
           IconButton(
             tooltip: 'Grafik anpassen',
@@ -499,6 +522,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                             : null,
                         compact: !_story,
                         result: widget.result,
+                        announcement: widget.announcement,
                         showPhotos: _settings.showPhotos,
                       ),
                     ),
@@ -584,6 +608,7 @@ class _StartelfGraphic extends StatelessWidget {
     required this.opponentLogo,
     required this.compact,
     this.result,
+    this.announcement,
     this.showPhotos = false,
   });
 
@@ -603,6 +628,7 @@ class _StartelfGraphic extends StatelessWidget {
   final String? opponentLogo; // null = nicht anzeigen
   final bool compact;
   final ResultData? result; // gesetzt → Ergebnis statt Startelf
+  final AnnouncementData? announcement; // gesetzt → Spielankündigung
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
 
   @override
@@ -649,7 +675,7 @@ class _StartelfGraphic extends StatelessWidget {
                 _presentedBy(mainSponsor!),
               ],
               SizedBox(height: compact ? 8 : 10),
-              _matchInfo(),
+              if (announcement == null) _matchInfo(),
               SizedBox(height: compact ? 12 : 18),
               _divider(),
               SizedBox(height: compact ? 12 : 16),
@@ -657,7 +683,9 @@ class _StartelfGraphic extends StatelessWidget {
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.topCenter,
-                  child: result != null ? _resultBlock() : _lineupBlock(),
+                  child: announcement != null
+                      ? _announcementBlock()
+                      : (result != null ? _resultBlock() : _lineupBlock()),
                 ),
               ),
               if (barSponsors.isNotEmpty) ...[
@@ -708,7 +736,9 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               ),
               Text(
-                result != null ? 'ERGEBNIS' : 'STARTELF',
+                announcement != null
+                    ? 'SPIELTAG'
+                    : (result != null ? 'ERGEBNIS' : 'STARTELF'),
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 30,
@@ -1050,6 +1080,105 @@ class _StartelfGraphic extends StatelessWidget {
           ),
           section('TORE', ownGoals, oppGoals),
           section('KARTEN', ownCards, oppCards),
+        ],
+      ),
+    );
+  }
+
+  /// Ankündigungs-Block: Matchup (eigenes Team VS Gegner) + Eckdaten.
+  Widget _announcementBlock() {
+    final a = announcement!;
+    final ownLogo = TeamLogo.decode(logo);
+    final oppLogo = TeamLogo.decode(opponentLogo);
+
+    Widget side(Uint8List? bytes, String name) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (bytes != null)
+          _logoChip(bytes, height: 64)
+        else
+          const SizedBox(height: 64),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: 130,
+          child: Text(
+            name.toUpperCase(),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final info = <String>[];
+    if ((a.matchday ?? '').trim().isNotEmpty) {
+      info.add('${a.matchday!.trim()}. SPIELTAG');
+    }
+    if ((a.competition ?? '').trim().isNotEmpty) {
+      info.add(a.competition!.trim().toUpperCase());
+    }
+    info.add(isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL');
+    if (matchDate != null) {
+      final local = matchDate!.toLocal();
+      info.add(
+        DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(local).toUpperCase(),
+      );
+      if (local.hour != 0 || local.minute != 0) {
+        info.add('ANSTOSS ${DateFormat('HH:mm', 'de_DE').format(local)} UHR');
+      }
+    }
+
+    return SizedBox(
+      width: 320,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: side(ownLogo, title)),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  'VS',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: side(
+                  oppLogo,
+                  opponentName.isEmpty ? 'Gegner' : opponentName,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          for (final l in info)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Text(
+                l,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.92),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+            ),
         ],
       ),
     );

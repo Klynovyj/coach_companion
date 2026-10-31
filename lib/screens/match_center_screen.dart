@@ -15,6 +15,7 @@ import '../widgets/team_logo.dart';
 import 'gegner_analyse_screen.dart';
 import 'lineups_list_screen.dart';
 import 'live_match_screen.dart';
+import 'startelf_graphic_screen.dart';
 import 'nomination_screen.dart';
 import 'rating_screen.dart';
 
@@ -497,6 +498,64 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
   Future<void> _shareAnnouncement() async {
     final match = _match;
     if (match == null) return;
+    // Auswahl: Text (bisher) oder Grafik (Spielankündigung).
+    final mode = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Spieltags-Info teilen',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.image),
+              title: const Text('Als Grafik (Story/Post)'),
+              subtitle: const Text('Spielankündigung für WhatsApp/Instagram'),
+              onTap: () => Navigator.pop(ctx, 'graphic'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Als Text'),
+              subtitle: const Text('Nachricht mit Aufgebot & Infos'),
+              onTap: () => Navigator.pop(ctx, 'text'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (mode == null || !mounted) return;
+    if (mode == 'graphic') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => StartelfGraphicScreen(
+            teamName: _ownTeam?.name ?? 'Heim',
+            teamLogo: _ownTeam?.logoPath,
+            starters: const [],
+            benchNames: const [],
+            matchDate: match.kickoff,
+            isHome: match.venue == Venue.home,
+            opponentName: _opponentTeam?.name ?? match.opponentName,
+            opponentLogo: _opponentTeam?.logoPath ?? match.opponentLogoPath,
+            announcement: AnnouncementData(
+              matchday: match.matchday?.toString(),
+              competition: match.competition,
+            ),
+          ),
+        ),
+      );
+      return;
+    }
     final state = context.read<AppState>();
     var info = await state.matchAnnouncement(widget.matchId);
     // Noch nichts für dieses Spiel gespeichert → Werte vom letzten Spieltag
