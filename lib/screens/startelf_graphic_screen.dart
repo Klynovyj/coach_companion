@@ -116,8 +116,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   bool _sharing = false;
   // Nur Ergebnis-Grafik: optionales Foto oben (Data-URL, nicht gespeichert).
   String? _resultPhoto;
-  // Ausrichtung des FULL-TIME-Fotos (per Finger verschiebbar, nicht gespeichert).
-  Alignment _photoAlign = Alignment.center;
+  // FULL-TIME-Foto: verschieben & zoomen (Pinch/Drag), nicht gespeichert.
+  final TransformationController _photoCtrl = TransformationController();
 
   // Logische Zeichengrößen (× pixelRatio 3 = 1080×1920 bzw. 1080×1080).
   static const double _storyW = 360, _storyH = 640;
@@ -127,6 +127,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   void initState() {
     super.initState();
     _load();
+  }
+
+  @override
+  void dispose() {
+    _photoCtrl.dispose();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -217,6 +223,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             ),
             if (_resultPhoto != null)
               ListTile(
+                leading: const Icon(Icons.tune),
+                title: const Text('Foto bearbeiten'),
+                subtitle: const Text('Zuschneiden, Helligkeit, Kontrast'),
+                onTap: () => Navigator.pop(ctx, 'edit'),
+              ),
+            if (_resultPhoto != null)
+              ListTile(
                 leading: const Icon(Icons.delete_outline),
                 title: const Text('Foto entfernen'),
                 onTap: () => Navigator.pop(ctx, 'remove'),
@@ -231,6 +244,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       setState(() => _resultPhoto = null);
       return;
     }
+    if (choice == 'edit') {
+      await _editCurrentResultPhoto();
+      return;
+    }
     final url = await _pickImage(
       asBackground: true,
       source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
@@ -239,9 +256,25 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     if (url != null && mounted) {
       setState(() {
         _resultPhoto = url;
-        _photoAlign = Alignment.center; // neue Position zurücksetzen
+        _photoCtrl.value = Matrix4.identity(); // Zoom/Position zurücksetzen
       });
     }
+  }
+
+  /// Das bereits gewählte FULL-TIME-Foto nachträglich im Editor bearbeiten
+  /// (zuschneiden/drehen/Helligkeit/Kontrast).
+  Future<void> _editCurrentResultPhoto() async {
+    final bytes = TeamLogo.decode(_resultPhoto);
+    if (bytes == null) return;
+    final edited = await Navigator.push<Uint8List?>(
+      context,
+      MaterialPageRoute(builder: (_) => PhotoEditorScreen(imageBytes: bytes)),
+    );
+    if (edited == null || !mounted) return;
+    setState(() {
+      _resultPhoto = 'data:image/jpeg;base64,${base64Encode(edited)}';
+      _photoCtrl.value = Matrix4.identity(); // Zoom/Position zurücksetzen
+    });
   }
 
   Future<void> _openCustomize() async {
@@ -645,24 +678,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         resultPhoto: _resultPhoto,
                         showPhotos: _settings.showPhotos,
                         bgPreset: _settings.bgPreset,
-                        photoAlign: _photoAlign,
-                        onPhotoPanUpdate: _resultPhoto == null
-                            ? null
-                            : (delta) {
-                                // Logische Fotohöhe = 52 % der Grafikhöhe; Delta
-                                // über die halbe Kante in eine Alignment-Änderung
-                                // umrechnen (Faktor 2 = flott), auf −1…1 begrenzen.
-                                final photoH = h * 0.52;
-                                setState(() {
-                                  final nx = (_photoAlign.x -
-                                          delta.dx / (w / 2) * 2)
-                                      .clamp(-1.0, 1.0);
-                                  final ny = (_photoAlign.y -
-                                          delta.dy / (photoH / 2) * 2)
-                                      .clamp(-1.0, 1.0);
-                                  _photoAlign = Alignment(nx, ny);
-                                });
-                              },
+                        photoController: _photoCtrl,
                       ),
                     ),
                   ),
@@ -683,7 +699,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'Foto zum Positionieren ziehen',
+                    'Foto ziehen & zoomen (Finger)',
                     style: TextStyle(
                       fontSize: 12,
                       color: Theme.of(context).colorScheme.outline,
@@ -811,8 +827,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.resultPhoto,
     this.showPhotos = false,
     this.bgPreset,
-    this.photoAlign = Alignment.center,
-    this.onPhotoPanUpdate,
+    this.photoController,
   });
 
   final String title;
@@ -835,8 +850,7 @@ class _StartelfGraphic extends StatelessWidget {
   final String? resultPhoto; // Ergebnis-Grafik: Foto oben (Data-URL)
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
   final String? bgPreset; // eingebautes Hintergrund-Design ('stripes')
-  final Alignment photoAlign; // Ausrichtung des FULL-TIME-Fotos (verschiebbar)
-  final void Function(Offset delta)? onPhotoPanUpdate; // Finger-Verschiebung
+  final TransformationController? photoController; // FULL-TIME-Foto zoom/pan
 
   @override
   Widget build(BuildContext context) {
@@ -1163,19 +1177,26 @@ class _StartelfGraphic extends StatelessWidget {
       children: [
         Expanded(
           flex: 52,
-          child: photoBytes != null
-              ? GestureDetector(
-                  onPanUpdate: onPhotoPanUpdate == null
-                      ? null
-                      : (d) => onPhotoPanUpdate!(d.delta),
-                  child: Image.memory(
-                    photoBytes,
-                    fit: BoxFit.cover,
-                    alignment: photoAlign,
-                    gaplessPlayback: true,
-                  ),
-                )
-              : Container(color: gradTop),
+          child: Container(
+            color: gradTop,
+            clipBehavior: Clip.hardEdge,
+            // Foto per Finger verschieben UND zoomen (auch kleiner ziehen);
+            // der aktuelle Zustand wird so in die exportierte Grafik gerendert.
+            child: photoBytes != null
+                ? InteractiveViewer(
+                    transformationController: photoController,
+                    minScale: 0.4,
+                    maxScale: 4,
+                    boundaryMargin: const EdgeInsets.all(double.infinity),
+                    clipBehavior: Clip.hardEdge,
+                    child: Image.memory(
+                      photoBytes,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    ),
+                  )
+                : null,
+          ),
         ),
         Expanded(
           flex: 48,
