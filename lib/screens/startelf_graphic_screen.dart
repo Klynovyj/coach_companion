@@ -716,9 +716,12 @@ class _StartelfGraphic extends StatelessWidget {
   Widget _matchInfo() {
     final line1 = <String>[isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL'];
     if (matchDate != null) {
-      line1.add(
-        DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(matchDate!.toLocal()),
-      );
+      final local = matchDate!.toLocal();
+      line1.add(DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(local));
+      // Anstoßzeit anhängen, falls eine Uhrzeit gesetzt ist (nicht 00:00).
+      if (local.hour != 0 || local.minute != 0) {
+        line1.add('${DateFormat('HH:mm', 'de_DE').format(local)} Uhr');
+      }
     }
     final oppBytes = TeamLogo.decode(opponentLogo);
     return Column(
