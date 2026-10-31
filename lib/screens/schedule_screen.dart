@@ -225,11 +225,13 @@ class _MatchCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Flexible(
                           child: Text(
                             match.opponentName,
-                            maxLines: 1,
+                            // Lange Vereinsnamen umbrechen statt abschneiden.
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               fontWeight: FontWeight.w700,
@@ -238,7 +240,10 @@ class _MatchCard extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        _matchSourceBadge(context, match),
+                        Padding(
+                          padding: const EdgeInsets.only(top: 1),
+                          child: _matchSourceBadge(context, match),
+                        ),
                       ],
                     ),
                     const SizedBox(height: 2),
