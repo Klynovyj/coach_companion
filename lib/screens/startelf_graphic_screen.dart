@@ -13,6 +13,7 @@ import '../models/sponsor.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import 'photo_editor_screen.dart';
 
 /// Ein Spieler in der Startelf-Grafik (Nummer + Anzeigename, optional eine
 /// Positionsangabe – z.B. „Torwart").
@@ -161,17 +162,29 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Future<String?> _pickImage({
     required bool asBackground,
     ImageSource source = ImageSource.gallery,
+    bool edit = false,
   }) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final file = await ImagePicker().pickImage(
         source: source,
-        maxWidth: asBackground ? 1080 : 600,
-        maxHeight: asBackground ? 1920 : 600,
-        imageQuality: asBackground ? 75 : 90,
+        maxWidth: asBackground ? 1600 : 600,
+        maxHeight: asBackground ? 2400 : 600,
+        imageQuality: asBackground ? 85 : 90,
       );
       if (file == null) return null;
-      final bytes = await file.readAsBytes();
+      var bytes = await file.readAsBytes();
+      // Vor dem Übernehmen bearbeiten (zuschneiden/drehen/Helligkeit/Kontrast).
+      if (edit && mounted) {
+        final edited = await Navigator.push<Uint8List?>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => PhotoEditorScreen(imageBytes: bytes),
+          ),
+        );
+        if (edited == null) return null; // Abbruch im Editor
+        bytes = edited;
+      }
       final mime = asBackground ? 'image/jpeg' : 'image/png';
       return 'data:$mime;base64,${base64Encode(bytes)}';
     } catch (e) {
@@ -219,6 +232,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     final url = await _pickImage(
       asBackground: true,
       source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
+      edit: true,
     );
     if (url != null && mounted) setState(() => _resultPhoto = url);
   }
@@ -290,7 +304,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     label: 'Hintergrundbild',
                     preview: _settings.bgImage,
                     onPick: () async {
-                      final url = await _pickImage(asBackground: true);
+                      final url = await _pickImage(
+                        asBackground: true,
+                        edit: true,
+                      );
                       if (url != null) apply(_settings.copyWith(bgImage: url));
                     },
                     onClear: _settings.bgImage == null
