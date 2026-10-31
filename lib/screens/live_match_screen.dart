@@ -19,6 +19,7 @@ import '../state/app_state.dart';
 import '../widgets/injury_icon.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/reset_dialog.dart';
+import 'startelf_graphic_screen.dart';
 import '../widgets/team_logo.dart';
 
 /// Spielphasen des Live-Modus.
@@ -925,9 +926,9 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
               onPressed: () => setState(() => _watchMode = !_watchMode),
             ),
           IconButton(
-            tooltip: 'Bericht teilen (WhatsApp)',
+            tooltip: 'Teilen',
             icon: const Icon(Icons.share),
-            onPressed: _shareReport,
+            onPressed: _shareMenu,
           ),
           if (editing)
             PopupMenuButton<String>(
@@ -2181,6 +2182,116 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
       });
     }
     await _load();
+  }
+
+  /// Teilen-Auswahl: Text-Spielbericht oder Ergebnis-Grafik.
+  Future<void> _shareMenu() async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Teilen',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.image),
+              title: const Text('Als Grafik (Story/Post)'),
+              subtitle: const Text(
+                'Ergebnis-Bild für WhatsApp-Status / Instagram',
+              ),
+              onTap: () => Navigator.pop(ctx, 'graphic'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('Als Text (Spielbericht)'),
+              subtitle: const Text('Kompletter Ticker als Nachricht'),
+              onTap: () => Navigator.pop(ctx, 'text'),
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'graphic') {
+      await _shareResultGraphic();
+    } else if (choice == 'text') {
+      await _shareReport();
+    }
+  }
+
+  /// Öffnet die Ergebnis-Grafik (Torschützen + Karten aus den Ereignissen).
+  Future<void> _shareResultGraphic() async {
+    final match = _match;
+    if (match == null) return;
+    final ownId = match.ownTeamId;
+    bool own(MatchEvent e) => e.teamId == ownId;
+
+    List<({int minute, String name})> goals(bool mine) => [
+      for (final e in _events)
+        if ((e.type == MatchEventType.goal ||
+                e.type == MatchEventType.penalty) &&
+            own(e) == mine)
+          (
+            minute: e.minute,
+            name: e.playerId != null
+                ? _playerName(e.playerId)
+                : (mine ? 'Tor' : 'Gegner'),
+          ),
+    ]..sort((a, b) => a.minute.compareTo(b.minute));
+
+    String cardKind(MatchEventType t) => t == MatchEventType.redCard
+        ? 'rot'
+        : (t == MatchEventType.secondYellow ? 'gelbrot' : 'gelb');
+    List<({int minute, String name, String kind})> cards(bool mine) => [
+      for (final e in _events)
+        if ((e.type == MatchEventType.yellowCard ||
+                e.type == MatchEventType.secondYellow ||
+                e.type == MatchEventType.redCard) &&
+            own(e) == mine)
+          (
+            minute: e.minute,
+            name: e.playerId != null
+                ? _playerName(e.playerId)
+                : (mine ? 'Spieler' : 'Gegner'),
+            kind: cardKind(e.type),
+          ),
+    ]..sort((a, b) => a.minute.compareTo(b.minute));
+
+    final team = _ownTeam;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StartelfGraphicScreen(
+          teamName: team?.name ?? 'Heim',
+          teamLogo: team?.logoPath,
+          starters: const [],
+          benchNames: const [],
+          matchDate: match.kickoff,
+          isHome: match.venue == Venue.home,
+          opponentName: _opponentTeam?.name ?? match.opponentName,
+          opponentLogo: _opponentTeam?.logoPath ?? match.opponentLogoPath,
+          result: ResultData(
+            ownScore: match.ownScore,
+            oppScore: match.opponentScore,
+            ownGoals: goals(true),
+            oppGoals: goals(false),
+            ownCards: cards(true),
+            oppCards: cards(false),
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _shareReport() async {

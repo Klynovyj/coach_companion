@@ -23,6 +23,26 @@ class StartelfPlayer {
   const StartelfPlayer(this.number, this.name, {this.position});
 }
 
+/// Daten für die Ergebnis-Grafik (Spielstand + Torschützen + Karten je Seite).
+/// Wird [StartelfGraphicScreen] optional mitgegeben – dann rendert die Grafik
+/// das Ergebnis statt der Startelf. kind der Karte: 'gelb' | 'gelbrot' | 'rot'.
+class ResultData {
+  final int ownScore;
+  final int oppScore;
+  final List<({int minute, String name})> ownGoals;
+  final List<({int minute, String name})> oppGoals;
+  final List<({int minute, String name, String kind})> ownCards;
+  final List<({int minute, String name, String kind})> oppCards;
+  const ResultData({
+    required this.ownScore,
+    required this.oppScore,
+    this.ownGoals = const [],
+    this.oppGoals = const [],
+    this.ownCards = const [],
+    this.oppCards = const [],
+  });
+}
+
 /// Erzeugt die teilbare Startelf-Grafik im Instagram-Format (Story 9:16 oder
 /// Post 1:1). Titel, Logo und Hintergrund sind über ein „Grafik anpassen"-Panel
 /// einstellbar (teamweit, cloud-synchron). Sponsoren kommen aus der
@@ -38,6 +58,7 @@ class StartelfGraphicScreen extends StatefulWidget {
     this.isHome = true,
     this.opponentName = '',
     this.opponentLogo,
+    this.result,
   });
 
   /// Default-Titel (offizieller Teamname) und Default-Logo – werden genutzt,
@@ -52,6 +73,11 @@ class StartelfGraphicScreen extends StatefulWidget {
   final bool isHome;
   final String opponentName;
   final String? opponentLogo;
+
+  /// Gesetzt → Ergebnis-Grafik statt Startelf-Grafik.
+  final ResultData? result;
+
+  bool get isResult => result != null;
 
   @override
   State<StartelfGraphicScreen> createState() => _StartelfGraphicScreenState();
@@ -381,8 +407,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       if (data == null) return;
       final savedPath = await shareOrSaveImage(
         data.buffer.asUint8List(),
-        'Startelf_$_title',
-        text: 'Startelf – $_title',
+        '${widget.isResult ? 'Ergebnis' : 'Startelf'}_$_title',
+        text: '${widget.isResult ? 'Ergebnis' : 'Startelf'} – $_title',
       );
       if (savedPath != null && mounted) {
         messenger.showSnackBar(
@@ -410,7 +436,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     final h = _story ? _storyH : _postH;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Startelf-Grafik'),
+        title: Text(widget.isResult ? 'Ergebnis-Grafik' : 'Startelf-Grafik'),
         actions: [
           IconButton(
             tooltip: 'Grafik anpassen',
@@ -462,6 +488,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                             ? widget.opponentLogo
                             : null,
                         compact: !_story,
+                        result: widget.result,
                       ),
                     ),
                   ),
@@ -545,6 +572,7 @@ class _StartelfGraphic extends StatelessWidget {
     required this.opponentName,
     required this.opponentLogo,
     required this.compact,
+    this.result,
   });
 
   final String title;
@@ -562,6 +590,7 @@ class _StartelfGraphic extends StatelessWidget {
   final String opponentName;
   final String? opponentLogo; // null = nicht anzeigen
   final bool compact;
+  final ResultData? result; // gesetzt → Ergebnis statt Startelf
 
   @override
   Widget build(BuildContext context) {
@@ -615,7 +644,7 @@ class _StartelfGraphic extends StatelessWidget {
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.topCenter,
-                  child: _lineupBlock(),
+                  child: result != null ? _resultBlock() : _lineupBlock(),
                 ),
               ),
               if (barSponsors.isNotEmpty) ...[
@@ -665,9 +694,9 @@ class _StartelfGraphic extends StatelessWidget {
                   letterSpacing: 0.5,
                 ),
               ),
-              const Text(
-                'STARTELF',
-                style: TextStyle(
+              Text(
+                result != null ? 'ERGEBNIS' : 'STARTELF',
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 30,
                   fontWeight: FontWeight.w900,
@@ -842,6 +871,131 @@ class _StartelfGraphic extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+
+  /// Ergebnis-Block: großer Spielstand + Torschützen + Karten (je Seite).
+  Widget _resultBlock() {
+    final r = result!;
+    final ownLogo = TeamLogo.decode(logo);
+    final oppLogo = TeamLogo.decode(opponentLogo);
+    String mark(String k) => k == 'rot'
+        ? '🟥'
+        : (k == 'gelbrot' ? '🟧' : '🟨');
+    final ownGoals = [for (final g in r.ownGoals) "${g.minute}' ${g.name}"];
+    final oppGoals = [for (final g in r.oppGoals) "${g.minute}' ${g.name}"];
+    final ownCards = [
+      for (final c in r.ownCards) "${mark(c.kind)} ${c.minute}' ${c.name}",
+    ];
+    final oppCards = [
+      for (final c in r.oppCards) "${mark(c.kind)} ${c.minute}' ${c.name}",
+    ];
+
+    Widget side(Uint8List? bytes, String name) => Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (bytes != null)
+          _logoChip(bytes, height: 56)
+        else
+          const SizedBox(height: 56),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: 120,
+          child: Text(
+            name.toUpperCase(),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    Widget section(String heading, List<String> left, List<String> right) {
+      if (left.isEmpty && right.isEmpty) return const SizedBox.shrink();
+      Widget col(List<String> lines, {required bool end}) => Column(
+        crossAxisAlignment: end
+            ? CrossAxisAlignment.end
+            : CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final l in lines)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Text(
+                l,
+                textAlign: end ? TextAlign.right : TextAlign.left,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+        ],
+      );
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(height: 16),
+          Text(
+            heading,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.7),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: col(left, end: false)),
+              const SizedBox(width: 12),
+              Expanded(child: col(right, end: true)),
+            ],
+          ),
+        ],
+      );
+    }
+
+    return SizedBox(
+      width: 320,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: side(ownLogo, title)),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                child: Text(
+                  '${r.ownScore} : ${r.oppScore}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 46,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+              Expanded(
+                child: side(oppLogo, opponentName.isEmpty ? 'Gegner' : opponentName),
+              ),
+            ],
+          ),
+          section('TORE', ownGoals, oppGoals),
+          section('KARTEN', ownCards, oppCards),
+        ],
+      ),
     );
   }
 
