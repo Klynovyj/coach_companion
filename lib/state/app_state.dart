@@ -223,6 +223,48 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  /// Zieht die Trainings-Daten (Übungs-Bibliothek + Einheiten) frisch aus der
+  /// Cloud, damit Änderungen anderer Trainer OHNE App-Neustart erscheinen.
+  /// Wird beim Öffnen der Trainings-Screens aufgerufen (Realtime greift bei
+  /// diesen Tabellen nicht zuverlässig). No-op ohne aktives Cloud-Team.
+  Future<void> refreshTrainingFromCloud() async {
+    final teamId = _activeCloudTeamId;
+    if (teamId == null || !CloudService.ready || !CloudService.signedIn) return;
+    var changed = false;
+    for (final table in const [
+      'exercises',
+      'training_sessions',
+      'session_items',
+    ]) {
+      try {
+        final rows = await CloudService.fetchForTeam(table, teamId);
+        final ids = <String>[];
+        for (final r in rows) {
+          final map = Map<String, Object?>.from(r);
+          map.remove('team_id');
+          final id = r['id'] as String?;
+          if (id != null) ids.add(id);
+          try {
+            await _repo.upsertRawById(table, map);
+            changed = true;
+          } catch (_) {
+            // Einzelne Zeile überspringen (z.B. fehlender Fremdschlüssel).
+          }
+        }
+        // Löschungen anderer Trainer übernehmen – aber nur, wenn die Cloud
+        // tatsächlich Zeilen lieferte (sonst würde eine leere Antwort die
+        // lokale Tabelle vernichten).
+        if (ids.isNotEmpty) {
+          await _repo.deleteRowsNotIn(table, ids);
+          changed = true;
+        }
+      } catch (_) {
+        // Tabelle nicht erreichbar – überspringen.
+      }
+    }
+    if (changed) notifyListeners();
+  }
+
   /// Lädt die Cloud-Ereignisse eines Teams in den lokalen Cache. Gegner-
   /// Ereignisse (is_opponent) werden dem lokalen Gegner-Team des Spiels
   /// zugeordnet; fehlt es, wird das Ereignis übersprungen.

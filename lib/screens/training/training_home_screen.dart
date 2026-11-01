@@ -20,6 +20,16 @@ class _TrainingHomeScreenState extends State<TrainingHomeScreen> {
   bool _showArchived = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Einheiten/Übungen anderer Trainer frisch aus der Cloud ziehen
+    // (ohne App-Neustart; Realtime greift hier nicht zuverlässig).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AppState>().refreshTrainingFromCloud();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     return Scaffold(

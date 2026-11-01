@@ -41,6 +41,10 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
   void initState() {
     super.initState();
     _loadCategories();
+    // Übungen anderer Trainer frisch aus der Cloud ziehen (ohne App-Neustart).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AppState>().refreshTrainingFromCloud();
+    });
   }
 
   Future<void> _loadCategories() async {
