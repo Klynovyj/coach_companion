@@ -9,7 +9,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
+import 'package:uuid/uuid.dart';
 
+import '../models/graphic_preset.dart';
 import '../models/graphic_settings.dart';
 import '../models/sponsor.dart';
 import '../services/cloud_service.dart';
@@ -431,6 +433,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
 
   Future<void> _openCustomize() async {
     final titleCtrl = TextEditingController(text: _settings.title ?? '');
+    final state = context.read<AppState>();
+    var presets = await state.graphicPresets();
+    if (!mounted) return;
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -441,6 +446,124 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             setState(() => _settings = s); // Live-Vorschau hinter dem Sheet
             setSheet(() {});
             _refreshBgDark();
+          }
+
+          Future<void> reloadPresets() async {
+            presets = await state.graphicPresets();
+            setSheet(() {});
+          }
+
+          // Aktuellen Look als Vorlage speichern (Name abfragen).
+          Future<void> savePreset() async {
+            final nameCtrl = TextEditingController();
+            final name = await showDialog<String>(
+              context: ctx,
+              builder: (dctx) => AlertDialog(
+                title: const Text('Als Vorlage speichern'),
+                content: TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(
+                    labelText: 'Name der Vorlage',
+                    hintText: 'z. B. Flammen Schwarz-Gold',
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dctx),
+                    child: const Text('Abbrechen'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dctx, nameCtrl.text.trim()),
+                    child: const Text('Speichern'),
+                  ),
+                ],
+              ),
+            );
+            if (name == null || name.isEmpty) return;
+            await state.saveGraphicPreset(
+              GraphicPreset(
+                id: const Uuid().v4(),
+                name: name,
+                bgImage: _settings.bgImage,
+                gradTop: _settings.gradTop,
+                gradBottom: _settings.gradBottom,
+                overlayOpacity: _settings.overlayOpacity,
+                bgOpacity: _settings.bgOpacity,
+                bgBlend: _settings.bgBlend,
+                accent: _settings.accent,
+                createdAt: DateTime.now().toIso8601String(),
+              ),
+            );
+            await reloadPresets();
+          }
+
+          // Vorlage auf die aktuellen Einstellungen anwenden.
+          void applyPreset(GraphicPreset p) => apply(
+            _settings.copyWith(
+              bgImage: p.bgImage,
+              clearBgImage: p.bgImage == null,
+              gradTop: p.gradTop,
+              gradBottom: p.gradBottom,
+              overlayOpacity: p.overlayOpacity,
+              bgOpacity: p.bgOpacity,
+              bgBlend: p.bgBlend,
+              accent: p.accent,
+              clearAccent: p.accent == null,
+            ),
+          );
+
+          Future<void> renamePreset(GraphicPreset p) async {
+            final c = TextEditingController(text: p.name);
+            final name = await showDialog<String>(
+              context: ctx,
+              builder: (dctx) => AlertDialog(
+                title: const Text('Vorlage umbenennen'),
+                content: TextField(
+                  controller: c,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.words,
+                  decoration: const InputDecoration(labelText: 'Name'),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dctx),
+                    child: const Text('Abbrechen'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dctx, c.text.trim()),
+                    child: const Text('Speichern'),
+                  ),
+                ],
+              ),
+            );
+            if (name == null || name.isEmpty) return;
+            await state.saveGraphicPreset(p.copyWith(name: name));
+            await reloadPresets();
+          }
+
+          Future<void> deletePreset(GraphicPreset p) async {
+            final ok = await showDialog<bool>(
+              context: ctx,
+              builder: (dctx) => AlertDialog(
+                title: Text('„${p.name}" löschen?'),
+                content: const Text('Die Vorlage wird für alle entfernt.'),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dctx, false),
+                    child: const Text('Abbrechen'),
+                  ),
+                  FilledButton(
+                    onPressed: () => Navigator.pop(dctx, true),
+                    child: const Text('Löschen'),
+                  ),
+                ],
+              ),
+            );
+            if (ok != true) return;
+            await state.deleteGraphicPreset(p.id);
+            await reloadPresets();
           }
 
           return Padding(
@@ -653,6 +776,59 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         ),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  // Eigene Hintergrund-Vorlagen (kompletter Look) -----------
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: savePreset,
+                      icon: const Icon(Icons.bookmark_add_outlined),
+                      label: const Text('Aktuellen Look als Vorlage speichern'),
+                    ),
+                  ),
+                  if (presets.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    const Text('Gespeicherte Vorlagen'),
+                    const SizedBox(height: 6),
+                    for (final p in presets)
+                      Card(
+                        margin: const EdgeInsets.only(bottom: 6),
+                        child: ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.only(
+                            left: 10,
+                            right: 2,
+                          ),
+                          leading: _presetSwatch(p),
+                          title: Text(
+                            p.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: () => applyPreset(p),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                tooltip: 'Umbenennen',
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                onPressed: () => renamePreset(p),
+                              ),
+                              IconButton(
+                                tooltip: 'Löschen',
+                                visualDensity: VisualDensity.compact,
+                                icon: const Icon(
+                                  Icons.delete_outline,
+                                  size: 20,
+                                ),
+                                onPressed: () => deletePreset(p),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
                   const SizedBox(height: 16),
                   // Akzentfarbe (Linien, VS, Spielstand, Datum/Uhrzeit) -----
                   const Text('Akzentfarbe'),
@@ -681,9 +857,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         },
       ),
     );
-    // Speichern + in die Cloud spiegeln.
+    // Speichern + in die Cloud spiegeln. (state = oben gelesener AppState)
     if (!mounted) return;
-    final state = context.read<AppState>();
     await state.saveGraphicSettings(_settings);
     await state.pushGraphicSettingsToCloud();
   }
@@ -756,6 +931,31 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  /// Kleine Vorschau einer Hintergrund-Vorlage (Bild bzw. Verlauf + Akzentrand).
+  Widget _presetSwatch(GraphicPreset p) {
+    final bytes = TeamLogo.decode(p.bgImage);
+    final accent = p.accent;
+    return Container(
+      width: 38,
+      height: 38,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [_hex(p.gradTop), _hex(p.gradBottom)],
+        ),
+        border: accent != null
+            ? Border.all(color: _hex(accent), width: 2)
+            : null,
+      ),
+      child: bytes != null
+          ? Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true)
+          : null,
     );
   }
 

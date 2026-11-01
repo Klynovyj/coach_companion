@@ -649,6 +649,7 @@ class CloudService {
     'player_absences',
     'sponsors',
     'graphic_settings',
+    'graphic_presets',
     'match_ratings',
     'player_of_month',
     'player_stats',

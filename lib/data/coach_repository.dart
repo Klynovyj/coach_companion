@@ -14,6 +14,7 @@ import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
 import '../models/team_event.dart';
+import '../models/graphic_preset.dart';
 import '../models/graphic_settings.dart';
 import '../models/match_rating.dart';
 import '../models/player_of_month.dart';
@@ -1301,6 +1302,22 @@ class CoachRepository {
     // Sync, damit keine fremde Cloud-Zeile gelöscht wird).
     await db.delete('graphic_settings', where: 'id != ?', whereArgs: [s.id]);
     await _upsertById('graphic_settings', s.toMap()); // Hook → Cloud-Upsert
+  }
+
+  // ------------------------------------------- Hintergrund-Vorlagen (Presets)
+  Future<List<GraphicPreset>> getGraphicPresets() async {
+    final db = await _db;
+    final rows = await db.query('graphic_presets', orderBy: 'created_at DESC');
+    return rows.map(GraphicPreset.fromMap).toList();
+  }
+
+  Future<void> upsertGraphicPreset(GraphicPreset p) =>
+      _upsertById('graphic_presets', p.toMap()); // Hook → Cloud-Upsert
+
+  Future<void> deleteGraphicPreset(String id) async {
+    final db = await _db;
+    await db.delete('graphic_presets', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('graphic_presets', {'id': id}); // Hook → Cloud-Delete
   }
 
   // --------------------------------------------------- Spielergespräche

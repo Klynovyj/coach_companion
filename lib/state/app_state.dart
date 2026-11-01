@@ -26,6 +26,7 @@ import '../models/team_event.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
+import '../models/graphic_preset.dart';
 import '../models/graphic_settings.dart';
 import '../models/match_rating.dart';
 import '../models/player_of_month.dart';
@@ -122,6 +123,7 @@ class AppState extends ChangeNotifier {
     'player_absences',
     'sponsors',
     'graphic_settings',
+    'graphic_presets',
     'match_ratings',
     'player_of_month',
     'activities',
@@ -4870,6 +4872,20 @@ class AppState extends ChangeNotifier {
         });
       } catch (_) {}
     }
+  }
+
+  // ------------------------------------------------- Hintergrund-Vorlagen
+  /// Gespeicherte Hintergrund-Vorlagen (kompletter Look), team-weit synchron.
+  Future<List<GraphicPreset>> graphicPresets() => _repo.getGraphicPresets();
+
+  Future<void> saveGraphicPreset(GraphicPreset p) async {
+    await _repo.upsertGraphicPreset(p);
+    notifyListeners();
+  }
+
+  Future<void> deleteGraphicPreset(String id) async {
+    await _repo.deleteGraphicPreset(id);
+    notifyListeners();
   }
 
   // ----------------------------------------------------- Spielergespräche

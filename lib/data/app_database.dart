@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 61;
+  static const _dbVersion = 62;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -519,6 +519,10 @@ class AppDatabase {
       );
       await db.execute('ALTER TABLE graphic_settings ADD COLUMN bg_blend TEXT');
     }
+    // v61 -> v62: gespeicherte Hintergrund-Vorlagen (kompletter Look).
+    if (oldV < 62) {
+      await db.execute(_graphicPresetsTableSql);
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -833,6 +837,22 @@ class AppDatabase {
       )
   ''';
 
+  // Gespeicherte Hintergrund-Vorlagen (kompletter Look), team-weit & synchron.
+  static const _graphicPresetsTableSql = '''
+      CREATE TABLE graphic_presets (
+        id TEXT PRIMARY KEY,
+        name TEXT,
+        bg_image TEXT,
+        grad_top TEXT,
+        grad_bottom TEXT,
+        overlay_opacity INTEGER,
+        bg_opacity INTEGER,
+        bg_blend TEXT,
+        accent TEXT,
+        created_at TEXT
+      )
+  ''';
+
   // Spieler des Monats (teamweit, einer je Monat; lokal ohne team_id).
   static const _playerOfMonthTableSql = '''
       CREATE TABLE player_of_month (
@@ -1074,6 +1094,7 @@ class AppDatabase {
     await db.execute(_playerTalksTableSql);
     await db.execute(_sponsorsTableSql);
     await db.execute(_graphicSettingsTableSql);
+    await db.execute(_graphicPresetsTableSql);
     await db.execute(_eventMentionsTableSql);
     await db.execute(_playerAbsencesTableSql);
     await db.execute(
