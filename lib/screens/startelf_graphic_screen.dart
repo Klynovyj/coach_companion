@@ -1031,11 +1031,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     return 'KI-Fehler: $snippet';
   }
 
-  /// Dialog für den KI-Wunsch: Modus (Design-Hintergrund / Komplett neu) +
-  /// Freitext + Vorschlags-Chips. Gibt Wunsch und Modus zurück.
+  /// Dialog für den KI-Wunsch (Freitext + Vorschlags-Chips). Die KI gestaltet
+  /// NUR den Hintergrund – Logos, Namen, Sponsoren & Score bleiben unverändert
+  /// (die App legt sie scharf darüber). Gibt Wunsch + Modus ('background') zurück.
   Future<({String prompt, String mode})?> _askAiWish() async {
     final ctrl = TextEditingController();
-    var mode = 'background'; // Standard: Inhalt bleibt scharf
     const ideas = <String>[
       'Heller & kräftiger',
       'Dramatischer Look',
@@ -1055,30 +1055,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'background',
-                      label: Text('Design-Hintergrund'),
-                      icon: Icon(Icons.wallpaper),
-                    ),
-                    ButtonSegment(
-                      value: 'compose',
-                      label: Text('Komplett neu'),
-                      icon: Icon(Icons.auto_awesome),
-                    ),
-                  ],
-                  selected: {mode},
-                  showSelectedIcon: false,
-                  onSelectionChanged: (s) => setLocal(() => mode = s.first),
-                ),
-                const SizedBox(height: 6),
                 Text(
-                  mode == 'background'
-                      ? 'KI gestaltet nur den Hintergrund – Logos, Namen & Score '
-                            'bleiben scharf.'
-                      : 'KI baut die ganze Grafik neu – maximal kreativ, Texte/'
-                            'Logos können leicht abweichen.',
+                  'Die KI gestaltet nur den Hintergrund. Deine Logos, Namen, '
+                  'Sponsoren & der Score bleiben unverändert und scharf.',
                   style: Theme.of(ctx).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 12),
@@ -1123,8 +1102,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             child: const Text('Abbrechen'),
           ),
           FilledButton(
-            onPressed: () =>
-                Navigator.pop(ctx, (prompt: ctrl.text.trim(), mode: mode)),
+            onPressed: () => Navigator.pop(
+              ctx,
+              (prompt: ctrl.text.trim(), mode: 'background'),
+            ),
             child: const Text('Erstellen'),
           ),
         ],
