@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
@@ -148,6 +149,42 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       if (p.place == _PhotoPlace.band) p.dataUrl,
   ];
 
+  // Ist der wirksame Hintergrund dunkel? → steuert die Auto-Logo-Variante.
+  bool _bgDark = false;
+  String? _bgDarkFor; // Für welchen Hintergrund zuletzt berechnet.
+
+  /// Hintergrundhelligkeit bestimmen (einmal je Hintergrund). Dunkel → helles/
+  /// SW-Logo, hell → farbiges Logo.
+  Future<void> _refreshBgDark() async {
+    final src = _photoBg ?? _settings.bgImage;
+    if (src == _bgDarkFor) return;
+    _bgDarkFor = src;
+    bool dark = true; // Default-Verlauf (dunkelgrün) → eher dunkel.
+    final bytes = TeamLogo.decode(src);
+    if (bytes != null) {
+      try {
+        final im = img.decodeImage(bytes);
+        if (im != null) {
+          final small = img.copyResize(im, width: 16);
+          var tot = 0.0;
+          var n = 0;
+          for (final p in small) {
+            tot += 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
+            n++;
+          }
+          dark = n > 0 && (tot / n) < 115;
+        }
+      } catch (_) {}
+    }
+    if (mounted && dark != _bgDark) setState(() => _bgDark = dark);
+  }
+
+  /// Effektives Vereinslogo: auf dunklem Hintergrund das dunkel-Logo (sonst
+  /// Standard). Fällt auf das Team-Logo zurück.
+  String? get _effectiveLogo => _bgDark
+      ? (_settings.logoDark ?? _settings.logo ?? widget.teamLogo)
+      : (_settings.logo ?? widget.teamLogo);
+
   // Logische Zeichengrößen (× pixelRatio 3 = 1080×1920 bzw. 1080×1080).
   static const double _storyW = 360, _storyH = 640;
   static const double _postW = 360, _postH = 360;
@@ -174,6 +211,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _settings = settings;
       _loading = false;
     });
+    _refreshBgDark();
     // Lokale Einstellung (evtl. vor Existenz der Cloud-Tabelle angelegt) in die
     // Cloud nachschieben, damit sie auf anderen Geräten erscheint.
     state.pushGraphicSettingsToCloud();
@@ -403,6 +441,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           void apply(GraphicSettings s) {
             setState(() => _settings = s); // Live-Vorschau hinter dem Sheet
             setSheet(() {});
+            _refreshBgDark();
           }
 
           return Padding(
@@ -442,8 +481,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   const SizedBox(height: 16),
                   // Logo -------------------------------------------------
                   _rowWithImage(
-                    label: 'Logo',
-                    preview: _logo,
+                    label: 'Logo (hell)',
+                    preview: _settings.logo,
                     onPick: () async {
                       final url = await _pickImage(asBackground: false);
                       if (url != null) apply(_settings.copyWith(logo: url));
@@ -452,6 +491,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         ? null
                         : () => apply(_settings.copyWith(clearLogo: true)),
                     clearLabel: 'Team-Logo',
+                  ),
+                  const SizedBox(height: 10),
+                  // Logo für dunkle Hintergründe -------------------------
+                  _rowWithImage(
+                    label: 'Logo (dunkel)',
+                    preview: _settings.logoDark,
+                    onPick: () async {
+                      final url = await _pickImage(asBackground: false);
+                      if (url != null) apply(_settings.copyWith(logoDark: url));
+                    },
+                    onClear: _settings.logoDark == null
+                        ? null
+                        : () => apply(_settings.copyWith(clearLogoDark: true)),
+                    clearLabel: 'Entfernen',
                   ),
                   const SizedBox(height: 12),
                   // Hintergrundbild -------------------------------------
@@ -501,6 +554,23 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     ],
                   ),
                   const SizedBox(height: 8),
+                  // Design-Modus ----------------------------------------
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Design-Modus (eigenes Branding)'),
+                    subtitle: const Text(
+                      'Dein Hintergrundbild füllt alles; eigenes Logo/Titel aus, '
+                      'nur Teams/Datum/Score – frei verschiebbar.',
+                    ),
+                    value: _settings.designMode,
+                    onChanged: (v) => apply(
+                      _settings.copyWith(
+                        designMode: v,
+                        // Beim Aktivieren Hintergrund voll zeigen.
+                        overlayOpacity: v ? 20 : _settings.overlayOpacity,
+                      ),
+                    ),
+                  ),
                   // Gegner-Logo ------------------------------------------
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -884,6 +954,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             ),
           );
         });
+        _refreshBgDark();
         messenger.showSnackBar(
           const SnackBar(
             content: Text(
@@ -1121,7 +1192,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                       height: h,
                       child: _StartelfGraphic(
                         title: _title,
-                        logo: _logo,
+                        logo: _effectiveLogo,
                         starters: widget.starters,
                         benchNames: widget.benchNames,
                         mainSponsor: _mainSponsor,
@@ -1133,7 +1204,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         matchDate: widget.matchDate,
                         isHome: widget.isHome,
                         opponentName: widget.opponentName,
-                        opponentLogo: _settings.showOpponentLogo
+                        opponentLogo:
+                            (_settings.showOpponentLogo || _settings.designMode)
                             ? widget.opponentLogo
                             : null,
                         compact: !_story,
@@ -1144,6 +1216,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         showPhotos: _settings.showPhotos,
                         bgPreset: _settings.bgPreset,
                         photoController: _photoCtrl,
+                        designMode: _settings.designMode,
+                        infoPos: Offset(_settings.infoX, _settings.infoY),
+                        onInfoMove: (p) => setState(
+                          () => _settings = _settings.copyWith(
+                            infoX: p.dx,
+                            infoY: p.dy,
+                          ),
+                        ),
+                        onInfoMoveEnd: () =>
+                            context.read<AppState>().saveGraphicSettings(
+                              _settings,
+                            ),
                       ),
                     ),
                   ),
@@ -1151,7 +1235,29 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               ),
             ),
           ),
-          if (_bandPhotos.length == 1)
+          if (_settings.designMode)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.open_with,
+                    size: 15,
+                    color: Theme.of(context).colorScheme.outline,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Info-Block ziehen zum Platzieren',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          if (_bandPhotos.length == 1 && !_settings.designMode)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
               child: Row(
@@ -1412,6 +1518,10 @@ class _StartelfGraphic extends StatelessWidget {
     this.showPhotos = false,
     this.bgPreset,
     this.photoController,
+    this.designMode = false,
+    this.infoPos = const Offset(0.5, 0.72),
+    this.onInfoMove,
+    this.onInfoMoveEnd,
   });
 
   final String title;
@@ -1436,9 +1546,14 @@ class _StartelfGraphic extends StatelessWidget {
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
   final String? bgPreset; // eingebautes Hintergrund-Design ('stripes')
   final TransformationController? photoController; // einzelnes Band-Foto zoom/pan
+  final bool designMode; // eigenes Branding-Design, nur Spiel-Infos drüber
+  final Offset infoPos; // Position des Info-Blocks (0..1)
+  final void Function(Offset pos)? onInfoMove; // Live-Verschieben
+  final VoidCallback? onInfoMoveEnd; // Speichern nach dem Verschieben
 
   @override
   Widget build(BuildContext context) {
+    if (designMode) return _designLayout();
     final content = announcement != null
         ? _announcementLayout()
         : _standardLayout();
@@ -1447,6 +1562,114 @@ class _StartelfGraphic extends StatelessWidget {
     ].whereType<Uint8List>().toList();
     if (band.isEmpty) return content;
     return _withPhotoBand(band, content);
+  }
+
+  /// Design-Modus: nur Hintergrund-Design + verschiebbarer Info-Block
+  /// (kein eigenes Logo/Titel). Je Grafiktyp andere Infos.
+  Widget _designLayout() {
+    return LayoutBuilder(
+      builder: (ctx, c) {
+        final w = c.maxWidth, h = c.maxHeight;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            _bgBase(),
+            Align(
+              alignment: Alignment(infoPos.dx * 2 - 1, infoPos.dy * 2 - 1),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanUpdate: (d) {
+                  final nx = (infoPos.dx + d.delta.dx / w).clamp(0.14, 0.86);
+                  final ny = (infoPos.dy + d.delta.dy / h).clamp(0.12, 0.9);
+                  onInfoMove?.call(Offset(nx, ny));
+                },
+                onPanEnd: (_) => onInfoMoveEnd?.call(),
+                child: _designInfoBlock(),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Kompakter Info-Block (über dem Design): Teams/VS + Datum bzw. Score.
+  Widget _designInfoBlock() {
+    final ownLogo = TeamLogo.decode(logo);
+    final oppLogo = TeamLogo.decode(opponentLogo);
+    final logoH = compact ? 56.0 : 70.0;
+
+    Widget vs() => Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (ownLogo != null) _logoChip(ownLogo, height: logoH),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14),
+          child: Text(
+            'VS',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 34,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+        if (oppLogo != null) _logoChip(oppLogo, height: logoH),
+      ],
+    );
+
+    final children = <Widget>[vs(), const SizedBox(height: 12)];
+
+    final r = result;
+    final a = announcement;
+    if (r != null) {
+      children.add(
+        Text(
+          '${r.ownScore} : ${r.oppScore}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 56,
+            fontWeight: FontWeight.w900,
+            height: 1.0,
+          ),
+        ),
+      );
+    } else if (a != null && matchDate != null) {
+      final d = matchDate!.toLocal();
+      children.add(
+        Text(
+          DateFormat('EEEE, dd.MM.yyyy', 'de_DE').format(d),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 20,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      );
+      if (d.hour != 0 || d.minute != 0) {
+        children.add(
+          Text(
+            '${DateFormat('HH:mm', 'de_DE').format(d)} Uhr',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        );
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.28),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: children),
+    );
   }
 
   /// Foto-Bereich oben + darunter der eigentliche Inhalt (für alle Typen).

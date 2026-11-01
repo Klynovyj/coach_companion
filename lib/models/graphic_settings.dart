@@ -25,6 +25,18 @@ class GraphicSettings {
   /// Ein eigenes Hintergrundbild [bgImage] hat Vorrang.
   final String? bgPreset;
 
+  /// Logo für dunkle Hintergründe (Data-URL). Im Design-Modus wird je nach
+  /// Hintergrundhelligkeit [logo] oder [logoDark] genutzt.
+  final String? logoDark;
+
+  /// Design-Modus: eigenes Branding-Design als Hintergrund, App-Logo/Titel aus;
+  /// nur die Spiel-Infos werden (verschiebbar) darübergelegt.
+  final bool designMode;
+
+  /// Position des Info-Blocks im Design-Modus (0..1, normiert).
+  final double infoX;
+  final double infoY;
+
   static const defaultGradTop = '#0E3325';
   static const defaultGradBottom = '#15603F';
   static const defaultOverlay = 85;
@@ -40,6 +52,10 @@ class GraphicSettings {
     this.showOpponentLogo = false,
     this.showPhotos = false,
     this.bgPreset,
+    this.logoDark,
+    this.designMode = false,
+    this.infoX = 0.5,
+    this.infoY = 0.72,
   });
 
   GraphicSettings copyWith({
@@ -57,6 +73,11 @@ class GraphicSettings {
     bool? showPhotos,
     String? bgPreset,
     bool clearBgPreset = false,
+    String? logoDark,
+    bool clearLogoDark = false,
+    bool? designMode,
+    double? infoX,
+    double? infoY,
   }) => GraphicSettings(
     id: id ?? this.id,
     title: clearTitle ? null : (title ?? this.title),
@@ -68,6 +89,10 @@ class GraphicSettings {
     showOpponentLogo: showOpponentLogo ?? this.showOpponentLogo,
     showPhotos: showPhotos ?? this.showPhotos,
     bgPreset: clearBgPreset ? null : (bgPreset ?? this.bgPreset),
+    logoDark: clearLogoDark ? null : (logoDark ?? this.logoDark),
+    designMode: designMode ?? this.designMode,
+    infoX: infoX ?? this.infoX,
+    infoY: infoY ?? this.infoY,
   );
 
   Map<String, Object?> toMap() => {
@@ -81,6 +106,10 @@ class GraphicSettings {
     'show_opponent_logo': showOpponentLogo ? 1 : 0,
     'show_photos': showPhotos ? 1 : 0,
     'bg_preset': bgPreset,
+    'logo_dark': logoDark,
+    'design_mode': designMode ? 1 : 0,
+    'info_x': infoX,
+    'info_y': infoY,
   };
 
   factory GraphicSettings.fromMap(Map<String, Object?> m) => GraphicSettings(
@@ -99,5 +128,11 @@ class GraphicSettings {
     bgPreset: (m['bg_preset'] as String?)?.trim().isEmpty == true
         ? null
         : m['bg_preset'] as String?,
+    logoDark: (m['logo_dark'] as String?)?.trim().isEmpty == true
+        ? null
+        : m['logo_dark'] as String?,
+    designMode: m['design_mode'] == true || m['design_mode'] == 1,
+    infoX: (m['info_x'] as num?)?.toDouble() ?? 0.5,
+    infoY: (m['info_y'] as num?)?.toDouble() ?? 0.72,
   );
 }
