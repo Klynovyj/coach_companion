@@ -908,6 +908,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         low.contains('secret setzen')) {
       return 'Gemini ist noch nicht eingerichtet (Secret fehlt).';
     }
+    if (low.contains('nicht freigeschaltet')) {
+      return 'KI ist für dich nicht freigeschaltet (Einstellungen → '
+          'KI-Berechtigungen).';
+    }
     if (low.contains('kein bild von der ki')) {
       return 'Die KI hat kein Bild zurückgegeben – anderen Wunsch probieren.';
     }
@@ -917,7 +921,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         low.contains('clientexception')) {
       return 'Keine Verbindung zur KI – Internet prüfen und erneut versuchen.';
     }
-    return 'KI-Bearbeitung fehlgeschlagen. Bitte später erneut versuchen.';
+    // Unbekannter Fehler: kurzen Rohhinweis mitgeben, damit die echte Ursache
+    // sichtbar ist (Function-/Gemini-Meldung), statt nur „später versuchen".
+    final detail = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final snippet = detail.length > 160 ? '${detail.substring(0, 160)}…' : detail;
+    return 'KI-Fehler: $snippet';
   }
 
   /// Dialog für den KI-Wunsch: Modus (Design-Hintergrund / Komplett neu) +

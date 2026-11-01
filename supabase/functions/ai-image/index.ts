@@ -68,10 +68,14 @@ Deno.serve(async (req) => {
       return new Response("unauthorized", { status: 401 });
     }
 
-    // Serverseitige Freigabe (Admin steuert pro Benutzer). Gesperrte Nutzer
-    // koennen keine Kosten ausloesen.
-    const { data: aiOk } = await asUser.rpc("has_ai_access", { kind: "image" });
-    if (aiOk !== true) {
+    // Serverseitige Freigabe (Admin steuert pro Benutzer). NUR sperren, wenn der
+    // Nutzer AUSDRUECKLICH deaktiviert ist. Fehlt die Pruef-Funktion (Migration
+    // stage45 nicht angewendet) oder gibt es einen Fehler, NICHT blocken –
+    // sonst waere die KI ohne die Migration komplett tot.
+    const { data: aiOk, error: aiErr } = await asUser.rpc("has_ai_access", {
+      kind: "image",
+    });
+    if (!aiErr && aiOk === false) {
       return new Response(
         "KI (Bild) ist für dich nicht freigeschaltet",
         { status: 403 },
