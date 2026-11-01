@@ -256,8 +256,14 @@ class StartScreen extends StatelessWidget {
   /// Abschnitt „Form & Bilanz": Form-Streifen der letzten 5 + Kennzahl-Kacheln.
   /// Ganz aus den beendeten Spielen berechnet (keine Extra-Daten nötig).
   Widget _seasonSection(BuildContext context, List<GameMatch> matches) {
+    // Nur Meisterschaftsspiele zählen – Pokalspiele (competition enthält
+    // „pokal") bleiben außen vor.
+    bool isCup(GameMatch m) =>
+        (m.competition ?? '').toLowerCase().contains('pokal');
     final finished =
-        matches.where((m) => m.status == MatchStatus.finished).toList()
+        matches
+            .where((m) => m.status == MatchStatus.finished && !isCup(m))
+            .toList()
           ..sort(
             (a, b) =>
                 (a.kickoff ?? a.createdAt).compareTo(b.kickoff ?? b.createdAt),
