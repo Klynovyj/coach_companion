@@ -2151,6 +2151,36 @@ class _StartelfGraphic extends StatelessWidget {
 
   /// Spielankündigungs-Grafik: Titel (POKALSPIEL/SPIELTAG) + große Logos „VS" +
   /// Datum/Uhrzeit/Spielstätte/Adresse mit Icons.
+  /// Pille „HEIMSPIEL" / „AUSWÄRTSSPIEL" mit Icon (Akzentfarbe).
+  Widget _homeAwayBadge() {
+    final label = isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL';
+    final icon = isHome ? Icons.home_rounded : Icons.flight_takeoff_rounded;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _accent.withValues(alpha: 0.9), width: 1.5),
+        color: _accent.withValues(alpha: 0.12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: _accent, size: 17),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: _accent,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _announcementLayout() {
     final a = announcement!;
     final ownLogo = TeamLogo.decode(logo);
@@ -2246,8 +2276,8 @@ class _StartelfGraphic extends StatelessWidget {
             maxLines: 1,
             softWrap: false,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: _accent,
               fontSize: 52,
               fontWeight: FontWeight.w900,
               letterSpacing: 2,
@@ -2267,7 +2297,9 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               ),
             ),
-          SizedBox(height: compact ? 20 : 30),
+          SizedBox(height: compact ? 12 : 16),
+          _homeAwayBadge(),
+          SizedBox(height: compact ? 16 : 22),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2277,7 +2309,7 @@ class _StartelfGraphic extends StatelessWidget {
                 child: Text(
                   'VS',
                   style: TextStyle(
-                    color: Colors.white,
+                    color: _accent,
                     fontSize: compact ? 34 : 44,
                     fontWeight: FontWeight.w900,
                     height: 1.0,
