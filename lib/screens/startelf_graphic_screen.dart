@@ -645,10 +645,28 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                           ),
                           label: Text(p.$1),
                           onPressed: () => apply(
-                            _settings.copyWith(gradTop: p.$2, gradBottom: p.$3),
+                            _settings.copyWith(
+                              gradTop: p.$2,
+                              gradBottom: p.$3,
+                              accent: p.$4,
+                              clearAccent: p.$4 == null,
+                            ),
                           ),
                         ),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  // Akzentfarbe (Linien, VS, Spielstand, Datum/Uhrzeit) -----
+                  const Text('Akzentfarbe'),
+                  const SizedBox(height: 6),
+                  _swatches(
+                    selected: _settings.accent ?? '#FFFFFF',
+                    palette: _accentPalette,
+                    onPick: (hex) => apply(
+                      hex == '#FFFFFF'
+                          ? _settings.copyWith(clearAccent: true)
+                          : _settings.copyWith(accent: hex),
+                    ),
                   ),
                   const SizedBox(height: 16),
                   SizedBox(
@@ -715,12 +733,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Widget _swatches({
     required String selected,
     required void Function(String) onPick,
+    List<String>? palette,
   }) {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
       children: [
-        for (final hex in _palette)
+        for (final hex in (palette ?? _palette))
           GestureDetector(
             onTap: () => onPick(hex),
             child: Container(
@@ -1117,6 +1136,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         bgPreset: _settings.bgPreset,
                         photoController: _photoCtrl,
                         designMode: _settings.designMode,
+                        accent: _settings.accent == null
+                            ? null
+                            : _hex(_settings.accent!),
                         infoPos: Offset(_settings.infoX, _settings.infoY),
                         onInfoMove: (p) => setState(
                           () => _settings = _settings.copyWith(
@@ -1258,13 +1280,24 @@ const _palette = <String>[
   '#3F3F46',
 ];
 
-// Fertige Verlauf-Vorlagen (Name, oben, unten).
-const _presets = <(String, String, String)>[
-  ('Dunkelgrün', '#0E3325', '#15603F'),
-  ('Vereinsgrün', '#0B6B43', '#0E3D28'),
-  ('Schwarz', '#1F2937', '#000000'),
-  ('Nacht', '#0C4A6E', '#111827'),
-  ('Weinrot', '#7F1D1D', '#111827'),
+// Fertige Verlauf-Vorlagen (Name, oben, unten, Akzentfarbe/null = Weiß).
+const _presets = <(String, String, String, String?)>[
+  ('Dunkelgrün', '#0E3325', '#15603F', null),
+  ('Vereinsgrün', '#0B6B43', '#0E3D28', null),
+  ('Schwarz', '#1F2937', '#000000', null),
+  ('Schwarz-Gold', '#1C1403', '#000000', '#D4AF37'),
+  ('Nacht', '#0C4A6E', '#111827', null),
+  ('Weinrot', '#7F1D1D', '#111827', null),
+];
+
+// Akzentfarben für Highlights (erste = Weiß = „kein Akzent").
+const _accentPalette = <String>[
+  '#FFFFFF', // kein Akzent (Weiß wie bisher)
+  '#D4AF37', // Gold
+  '#E9C46A', // Hellgold
+  '#C0A062', // Altgold
+  '#C0C0C0', // Silber
+  '#38BDF8', // Hellblau
 ];
 
 Color _hex(String h) {
@@ -1422,6 +1455,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.infoPos = const Offset(0.5, 0.72),
     this.onInfoMove,
     this.onInfoMoveEnd,
+    this.accent,
   });
 
   final String title;
@@ -1450,6 +1484,10 @@ class _StartelfGraphic extends StatelessWidget {
   final Offset infoPos; // Position des Info-Blocks (0..1)
   final void Function(Offset pos)? onInfoMove; // Live-Verschieben
   final VoidCallback? onInfoMoveEnd; // Speichern nach dem Verschieben
+  final Color? accent; // Akzentfarbe (Gold etc.); null = Weiß wie bisher
+
+  /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
+  Color get _accent => accent ?? Colors.white;
 
   @override
   Widget build(BuildContext context) {
@@ -1504,12 +1542,12 @@ class _StartelfGraphic extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (ownLogo != null) _logoChip(ownLogo, height: logoH),
-        const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 14),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
             'VS',
             style: TextStyle(
-              color: Colors.white,
+              color: _accent,
               fontSize: 34,
               fontWeight: FontWeight.w900,
             ),
@@ -1527,8 +1565,8 @@ class _StartelfGraphic extends StatelessWidget {
       children.add(
         Text(
           '${r.ownScore} : ${r.oppScore}',
-          style: const TextStyle(
-            color: Colors.white,
+          style: TextStyle(
+            color: _accent,
             fontSize: 56,
             fontWeight: FontWeight.w900,
             height: 1.0,
@@ -1552,8 +1590,8 @@ class _StartelfGraphic extends StatelessWidget {
         children.add(
           Text(
             '${DateFormat('HH:mm', 'de_DE').format(d)} Uhr',
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: _accent,
               fontSize: 24,
               fontWeight: FontWeight.w900,
             ),
@@ -1719,8 +1757,8 @@ class _StartelfGraphic extends StatelessWidget {
       borderRadius: BorderRadius.circular(1),
       gradient: LinearGradient(
         colors: [
-          Colors.white.withValues(alpha: 0.35),
-          Colors.white.withValues(alpha: 0.08),
+          _accent.withValues(alpha: 0.55),
+          _accent.withValues(alpha: 0.08),
         ],
       ),
     ),
@@ -1752,8 +1790,8 @@ class _StartelfGraphic extends StatelessWidget {
                 announcement != null
                     ? 'SPIELTAG'
                     : (result != null ? 'ERGEBNIS' : 'STARTELF'),
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color: _accent,
                   fontSize: 30,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.5,
@@ -1822,7 +1860,7 @@ class _StartelfGraphic extends StatelessWidget {
         Text(
           line1.join('  ·  '),
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.8),
+            color: _accent.withValues(alpha: 0.85),
             fontSize: compact ? 10 : 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 1,
@@ -1978,7 +2016,7 @@ class _StartelfGraphic extends StatelessWidget {
           child: Text(
             '${r.ownScore} : ${r.oppScore}',
             style: TextStyle(
-              color: Colors.white,
+              color: _accent,
               fontSize: compact ? 48 : 64,
               fontWeight: FontWeight.w900,
               height: 1.0,

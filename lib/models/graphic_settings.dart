@@ -37,6 +37,10 @@ class GraphicSettings {
   final double infoX;
   final double infoY;
 
+  /// Akzentfarbe (Hex, z.B. „#D4AF37") für Highlights (Trennlinie, VS, Score,
+  /// Datum/Uhrzeit, Rubrik-Label). null = Weiß wie bisher.
+  final String? accent;
+
   static const defaultGradTop = '#0E3325';
   static const defaultGradBottom = '#15603F';
   static const defaultOverlay = 85;
@@ -56,6 +60,7 @@ class GraphicSettings {
     this.designMode = false,
     this.infoX = 0.5,
     this.infoY = 0.72,
+    this.accent,
   });
 
   GraphicSettings copyWith({
@@ -78,6 +83,8 @@ class GraphicSettings {
     bool? designMode,
     double? infoX,
     double? infoY,
+    String? accent,
+    bool clearAccent = false,
   }) => GraphicSettings(
     id: id ?? this.id,
     title: clearTitle ? null : (title ?? this.title),
@@ -93,6 +100,7 @@ class GraphicSettings {
     designMode: designMode ?? this.designMode,
     infoX: infoX ?? this.infoX,
     infoY: infoY ?? this.infoY,
+    accent: clearAccent ? null : (accent ?? this.accent),
   );
 
   Map<String, Object?> toMap() => {
@@ -110,6 +118,7 @@ class GraphicSettings {
     'design_mode': designMode ? 1 : 0,
     'info_x': infoX,
     'info_y': infoY,
+    'accent': accent,
   };
 
   factory GraphicSettings.fromMap(Map<String, Object?> m) => GraphicSettings(
@@ -134,5 +143,8 @@ class GraphicSettings {
     designMode: m['design_mode'] == true || m['design_mode'] == 1,
     infoX: (m['info_x'] as num?)?.toDouble() ?? 0.5,
     infoY: (m['info_y'] as num?)?.toDouble() ?? 0.72,
+    accent: (m['accent'] as String?)?.trim().isEmpty == true
+        ? null
+        : m['accent'] as String?,
   );
 }
