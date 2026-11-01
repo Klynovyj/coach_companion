@@ -2030,11 +2030,12 @@ class _StartelfGraphic extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _header(),
+              // „Präsentiert von …" (Hauptsponsor) ganz oben.
               if (mainSponsor != null) ...[
-                SizedBox(height: compact ? 8 : 12),
                 _presentedBy(mainSponsor!),
+                SizedBox(height: compact ? 10 : 14),
               ],
+              _header(),
               SizedBox(height: compact ? 8 : 10),
               if (announcement == null) _matchInfo(),
               SizedBox(height: compact ? 12 : 18),
@@ -2056,10 +2057,12 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               ] else
                 Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topCenter,
-                    child: _lineupBlock(),
+                  child: Center(
+                    child: FittedBox(
+                      fit: BoxFit.contain,
+                      alignment: Alignment.center,
+                      child: _lineupBlock(),
+                    ),
                   ),
                 ),
               if (barSponsors.isNotEmpty) ...[
@@ -2141,11 +2144,11 @@ class _StartelfGraphic extends StatelessWidget {
     return Row(
       children: [
         if (logoBytes != null) ...[
-          _logoChip(logoBytes, height: compact ? 34 : 44, circle: logoCircle),
-          const SizedBox(width: 10),
+          _logoChip(logoBytes, height: compact ? 58 : 72, circle: logoCircle),
+          const SizedBox(width: 12),
         ] else if (logo != null) ...[
-          TeamLogo(logoPath: logo, size: compact ? 34 : 44),
-          const SizedBox(width: 10),
+          TeamLogo(logoPath: logo, size: compact ? 58 : 72),
+          const SizedBox(width: 12),
         ],
         Expanded(
           child: Column(
@@ -2273,39 +2276,39 @@ class _StartelfGraphic extends StatelessWidget {
 
   Widget _lineupBlock() {
     final numStyle = TextStyle(
-      color: Colors.white.withValues(alpha: 0.85),
-      fontSize: 20,
-      fontWeight: FontWeight.w800,
+      color: _accent.withValues(alpha: 0.95),
+      fontSize: 26,
+      fontWeight: FontWeight.w900,
       fontFeatures: const [ui.FontFeature.tabularFigures()],
     );
     const nameStyle = TextStyle(
       color: Colors.white,
-      fontSize: 21,
-      fontWeight: FontWeight.w800,
+      fontSize: 27,
+      fontWeight: FontWeight.w900,
       letterSpacing: 0.5,
       height: 1.05,
     );
     final posStyle = TextStyle(
-      color: Colors.white.withValues(alpha: 0.7),
-      fontSize: 11,
+      color: Colors.white.withValues(alpha: 0.72),
+      fontSize: 13,
       fontWeight: FontWeight.w700,
       letterSpacing: 1,
     );
-    return Column(
+    final inner = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final p in starters)
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
+            padding: const EdgeInsets.symmetric(vertical: 5),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 38,
+                  width: 46,
                   child: Text(p.number?.toString() ?? '', style: numStyle),
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(width: 12),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
@@ -2319,28 +2322,28 @@ class _StartelfGraphic extends StatelessWidget {
             ),
           ),
         if (benchNames.isNotEmpty) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
                 'BANK',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  fontSize: 15,
+                  color: _accent.withValues(alpha: 0.95),
+                  fontSize: 17,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1,
                 ),
               ),
               const SizedBox(width: 12),
               SizedBox(
-                width: 260,
+                width: 300,
                 child: Text(
                   benchNames.map((n) => n.toUpperCase()).join(', '),
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.92),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
                     height: 1.3,
                   ),
                 ),
@@ -2349,6 +2352,15 @@ class _StartelfGraphic extends StatelessWidget {
           ),
         ],
       ],
+    );
+    // Dunkler Scrim, damit der Kader auf Fotos/Verlauf klar im Fokus steht.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.32),
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: inner,
     );
   }
 
