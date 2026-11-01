@@ -2416,19 +2416,6 @@ class _StartelfGraphic extends StatelessWidget {
         ? _logoChip(bytes, height: logoH)
         : SizedBox(height: logoH, width: logoH);
 
-    Widget nameText(String n) => Text(
-      n.toUpperCase(),
-      textAlign: TextAlign.center,
-      maxLines: 2,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: Colors.white,
-        fontSize: 16,
-        fontWeight: FontWeight.w800,
-        height: 1.1,
-      ),
-    );
-
     // Datum/Uhrzeit stehen im Fokus → groesser als Spielstaette/Adresse.
     Widget infoRow(IconData icon, String text, {bool big = false}) => Padding(
       padding: EdgeInsets.symmetric(vertical: big ? 5 : 4),
@@ -2547,18 +2534,6 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               ),
               Expanded(child: Center(child: side(oppLogo))),
-            ],
-          ),
-          SizedBox(height: compact ? 8 : 12),
-          Row(
-            children: [
-              Expanded(child: nameText(title)),
-              const SizedBox(width: 56),
-              Expanded(
-                child: nameText(
-                  opponentName.isEmpty ? 'Gegner' : opponentName,
-                ),
-              ),
             ],
           ),
           SizedBox(height: compact ? 20 : 28),
