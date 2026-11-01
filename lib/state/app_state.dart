@@ -5007,7 +5007,10 @@ class AppState extends ChangeNotifier {
   /// (aus den Wechsel-Ereignissen). Ohne Aufstellung ersatzweise die Zugesagten
   /// – nur diese Spieler lassen sich für das Spiel bewerten.
   Future<Set<String>> playedPlayerIds(String matchId, String ownTeamId) async {
-    final lineup = await _repo.getLineup(matchId, ownTeamId);
+    // Die gültige Start-11 (oberste echte Aufstellung) – Vorschläge zählen
+    // NICHT, sonst werden Spieler aus einer Vorschlags-Aufstellung fälschlich
+    // als „gespielt" angeboten (wie Live & Bericht: getReleasedLineup).
+    final lineup = await _repo.getReleasedLineup(matchId, ownTeamId);
     if (lineup != null) {
       final played = <String>{
         for (final e in await _repo.getLineupEntries(lineup.id))
