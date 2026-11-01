@@ -41,6 +41,10 @@ class GraphicSettings {
   /// Datum/Uhrzeit, Rubrik-Label). null = Weiß wie bisher.
   final String? accent;
 
+  /// Form des Logo-Hintergrunds (weißes Feld): 'rounded' (eckig/abgerundet) oder
+  /// 'circle' (rund). Gilt für die Vereins-/Gegner-Logos, nicht für Sponsoren.
+  final String logoShape;
+
   /// Deckkraft des Hintergrundbilds (0–100). Darunter scheint der Verlauf durch.
   final int bgOpacity;
 
@@ -69,6 +73,7 @@ class GraphicSettings {
     this.infoX = 0.5,
     this.infoY = 0.72,
     this.accent,
+    this.logoShape = 'rounded',
     this.bgOpacity = 100,
     this.bgBlend = 'normal',
   });
@@ -95,6 +100,7 @@ class GraphicSettings {
     double? infoY,
     String? accent,
     bool clearAccent = false,
+    String? logoShape,
     int? bgOpacity,
     String? bgBlend,
   }) => GraphicSettings(
@@ -113,6 +119,7 @@ class GraphicSettings {
     infoX: infoX ?? this.infoX,
     infoY: infoY ?? this.infoY,
     accent: clearAccent ? null : (accent ?? this.accent),
+    logoShape: logoShape ?? this.logoShape,
     bgOpacity: bgOpacity ?? this.bgOpacity,
     bgBlend: bgBlend ?? this.bgBlend,
   );
@@ -133,6 +140,7 @@ class GraphicSettings {
     'info_x': infoX,
     'info_y': infoY,
     'accent': accent,
+    'logo_shape': logoShape,
     'bg_opacity': bgOpacity,
     'bg_blend': bgBlend,
   };
@@ -162,6 +170,9 @@ class GraphicSettings {
     accent: (m['accent'] as String?)?.trim().isEmpty == true
         ? null
         : m['accent'] as String?,
+    logoShape: (m['logo_shape'] as String?)?.trim().isNotEmpty == true
+        ? m['logo_shape'] as String
+        : 'rounded',
     bgOpacity: (m['bg_opacity'] as num?)?.toInt() ?? 100,
     bgBlend: (m['bg_blend'] as String?)?.trim().isNotEmpty == true
         ? m['bg_blend'] as String

@@ -628,6 +628,27 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         : () => apply(_settings.copyWith(clearLogoDark: true)),
                     clearLabel: 'Entfernen',
                   ),
+                  const SizedBox(height: 10),
+                  // Form des Logo-Hintergrunds (eckig/rund) -------------
+                  Row(
+                    children: [
+                      const Text('Logo-Hintergrund'),
+                      const SizedBox(width: 12),
+                      ChoiceChip(
+                        label: const Text('Eckig'),
+                        selected: _settings.logoShape != 'circle',
+                        onSelected: (_) =>
+                            apply(_settings.copyWith(logoShape: 'rounded')),
+                      ),
+                      const SizedBox(width: 8),
+                      ChoiceChip(
+                        label: const Text('Rund'),
+                        selected: _settings.logoShape == 'circle',
+                        onSelected: (_) =>
+                            apply(_settings.copyWith(logoShape: 'circle')),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 12),
                   // Hintergrundbild -------------------------------------
                   _rowWithImage(
@@ -1338,6 +1359,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                             : _hex(_settings.accent!),
                         bgOpacity: _settings.bgOpacity / 100,
                         bgBlend: _blendModeOf(_settings.bgBlend),
+                        logoCircle: _settings.logoShape == 'circle',
                         infoPos: Offset(_settings.infoX, _settings.infoY),
                         onInfoMove: (p) => setState(
                           () => _settings = _settings.copyWith(
@@ -1691,6 +1713,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.onInfoMove,
     this.onInfoMoveEnd,
     this.accent,
+    this.logoCircle = false,
     this.bgOpacity = 1.0,
     this.bgBlend = BlendMode.srcOver,
   });
@@ -1721,6 +1744,7 @@ class _StartelfGraphic extends StatelessWidget {
   final void Function(Offset pos)? onInfoMove; // Live-Verschieben
   final VoidCallback? onInfoMoveEnd; // Speichern nach dem Verschieben
   final Color? accent; // Akzentfarbe (Gold etc.); null = Weiß wie bisher
+  final bool logoCircle; // Vereins-/Gegner-Logos auf rundem Feld (statt eckig)
   final double bgOpacity; // Deckkraft des Hintergrundbilds (0..1)
   final BlendMode bgBlend; // Mischmodus des Hintergrundbilds mit dem Verlauf
 
@@ -1779,7 +1803,8 @@ class _StartelfGraphic extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        if (ownLogo != null) _logoChip(ownLogo, height: logoH),
+        if (ownLogo != null)
+          _logoChip(ownLogo, height: logoH, circle: logoCircle),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
@@ -1791,7 +1816,8 @@ class _StartelfGraphic extends StatelessWidget {
             ),
           ),
         ),
-        if (oppLogo != null) _logoChip(oppLogo, height: logoH),
+        if (oppLogo != null)
+          _logoChip(oppLogo, height: logoH, circle: logoCircle),
       ],
     );
 
@@ -2019,7 +2045,7 @@ class _StartelfGraphic extends StatelessWidget {
     return Row(
       children: [
         if (logoBytes != null) ...[
-          _logoChip(logoBytes, height: compact ? 34 : 44),
+          _logoChip(logoBytes, height: compact ? 34 : 44, circle: logoCircle),
           const SizedBox(width: 10),
         ] else if (logo != null) ...[
           TeamLogo(logoPath: logo, size: compact ? 34 : 44),
@@ -2125,7 +2151,7 @@ class _StartelfGraphic extends StatelessWidget {
           Row(
             children: [
               if (oppBytes != null) ...[
-                _logoChip(oppBytes, height: compact ? 20 : 24),
+                _logoChip(oppBytes, height: compact ? 20 : 24, circle: logoCircle),
                 const SizedBox(width: 8),
               ],
               Flexible(
@@ -2239,7 +2265,7 @@ class _StartelfGraphic extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (bytes != null)
-          _logoChip(bytes, height: logoH)
+          _logoChip(bytes, height: logoH, circle: logoCircle)
         else
           SizedBox(height: logoH),
         const SizedBox(height: 8),
@@ -2413,7 +2439,7 @@ class _StartelfGraphic extends StatelessWidget {
     final logoH = compact ? 72.0 : 92.0;
 
     Widget side(Uint8List? bytes) => bytes != null
-        ? _logoChip(bytes, height: logoH)
+        ? _logoChip(bytes, height: logoH, circle: logoCircle)
         : SizedBox(height: logoH, width: logoH);
 
     // Datum/Uhrzeit stehen im Fokus → groesser als Spielstaette/Adresse.
@@ -2593,22 +2619,37 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  Widget _logoChip(Uint8List bytes, {required double height}) {
+  Widget _logoChip(Uint8List bytes, {required double height, bool circle = false}) {
+    // Leichter 3D-/Erhebungs-Effekt: Schlagschatten unten.
+    final shadow = [
+      BoxShadow(
+        color: Colors.black.withValues(alpha: 0.55),
+        blurRadius: 12,
+        offset: const Offset(0, 5),
+      ),
+    ];
+    if (circle) {
+      // Rundes weißes Feld (quadratisch, Logo zentriert).
+      return Container(
+        width: height,
+        height: height,
+        padding: const EdgeInsets.all(6),
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: shadow,
+        ),
+        child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+      );
+    }
     return Container(
       height: height,
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(6),
-        // Leichter 3D-/Erhebungs-Effekt: Schlagschatten unten + heller
-        // Glanzrand oben.
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.55),
-            blurRadius: 12,
-            offset: const Offset(0, 5),
-          ),
-        ],
+        boxShadow: shadow,
         border: Border.all(
           color: Colors.white.withValues(alpha: 0.9),
           width: 0.5,
