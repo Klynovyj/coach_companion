@@ -16,6 +16,18 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   @override
+  void initState() {
+    super.initState();
+    // Admin-/Rollen-Status frisch bestimmen, damit die KI-Karte zuverlässig
+    // erscheint. _isAdminHere startet mit false und wird nur durch
+    // refreshLiveRole gesetzt – beim Öffnen hier erzwingen (jetzt sicher
+    // angemeldet/online).
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<AppState>().refreshLiveRole();
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
 
