@@ -45,10 +45,14 @@ function guardText(mode: string, aspect: string, roles: string[]): string {
     "Du gestaltest eine Fussball-Sportgrafik (Social-Media-Post) im " +
     "Seitenverhaeltnis " + aspect + ". Dir liegen mehrere Bilder bei; ihre " +
     "Rollen in Reihenfolge: " + roles.join(", ") + ". Baue daraus eine " +
-    "ansprechende, kreative Grafik. Nutze die echten Logos (home_logo/" +
-    "away_logo) und Sponsoren-Logos unveraendert und gut sichtbar. Halte " +
-    "Teamnamen, Spielstand, Datum und Zahlen exakt und gut lesbar. Wunsch " +
-    "des Nutzers: "
+    "ansprechende, kreative Grafik. WICHTIG: Uebernimm die mitgeschickten " +
+    "Vereins- und Sponsorenlogos EXAKT und unveraendert - kopiere sie 1:1, " +
+    "zeichne sie NICHT neu, aendere KEINE Formen, Buchstaben, Schrift oder " +
+    "Farben im Logo. Du darfst hoechstens den weissen Kasten/Rahmen um ein " +
+    "Logo entfernen (freistellen), niemals das Logo selbst veraendern. " +
+    "Schreibe Teamnamen, Datum und Uhrzeit EXAKT wie angegeben (keine " +
+    "erfundenen Zusaetze wie 'F.C.', keine Tippfehler); Datum und Uhrzeit " +
+    "gross und prominent platzieren. Wunsch des Nutzers: "
   );
 }
 

@@ -2014,21 +2014,22 @@ class _StartelfGraphic extends StatelessWidget {
       ),
     );
 
-    Widget infoRow(IconData icon, String text) => Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+    // Datum/Uhrzeit stehen im Fokus → groesser als Spielstaette/Adresse.
+    Widget infoRow(IconData icon, String text, {bool big = false}) => Padding(
+      padding: EdgeInsets.symmetric(vertical: big ? 5 : 4),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 22),
+          Icon(icon, color: Colors.white, size: big ? 28 : 22),
           const SizedBox(width: 10),
           Flexible(
             child: Text(
               text,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 color: Colors.white,
-                fontSize: 17,
+                fontSize: big ? 24 : 17,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -2044,6 +2045,7 @@ class _StartelfGraphic extends StatelessWidget {
         infoRow(
           Icons.event,
           DateFormat('EEEE, dd.MM.yyyy', 'de_DE').format(local),
+          big: true,
         ),
       );
       if (local.hour != 0 || local.minute != 0) {
@@ -2051,6 +2053,7 @@ class _StartelfGraphic extends StatelessWidget {
           infoRow(
             Icons.schedule,
             '${DateFormat('HH:mm', 'de_DE').format(local)} Uhr',
+            big: true,
           ),
         );
       }
