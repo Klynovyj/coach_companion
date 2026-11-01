@@ -876,23 +876,29 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: (_sharing || _aiBusy) ? null : _aiEdit,
-                      icon: _aiBusy
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.auto_awesome),
-                      label: Text(
-                        _aiBusy ? 'KI bearbeitet …' : 'Mit KI bearbeiten',
+                  // KI-Bearbeitung nur, wenn der Admin die Grafik-KI (Gemini)
+                  // für diesen Nutzer freigeschaltet hat.
+                  if (context.watch<AppState>().canAiImage) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: (_sharing || _aiBusy) ? null : _aiEdit,
+                        icon: _aiBusy
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.auto_awesome),
+                        label: Text(
+                          _aiBusy ? 'KI bearbeitet …' : 'Mit KI bearbeiten',
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
+                    const SizedBox(height: 8),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(

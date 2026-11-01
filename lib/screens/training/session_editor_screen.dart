@@ -139,6 +139,7 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
   /// neue per KI zu generieren.
   Future<void> _suggest() async {
     final state = context.read<AppState>();
+    final canAi = state.canAiCoach; // KI-Co-Trainer vom Admin freigeschaltet?
     final forPlayers = int.tryParse(_field.text.trim());
     final forGk = int.tryParse(_gk.text.trim());
     final matches = await state.exercises(
@@ -203,7 +204,7 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
                         ],
                       ],
                     ),
-                    trailing: fits
+                    trailing: (fits || !canAi)
                         ? const Icon(Icons.add)
                         : TextButton.icon(
                             onPressed: () {
@@ -220,16 +221,20 @@ class _SessionEditorScreenState extends State<SessionEditorScreen> {
                   );
                 },
               ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.auto_awesome),
-              title: const Text('Neue Übung mit KI generieren'),
-              subtitle: const Text('Passend zu Spieleranzahl und Trainingsart'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _generateAndAdd();
-              },
-            ),
+            if (canAi) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.auto_awesome),
+                title: const Text('Neue Übung mit KI generieren'),
+                subtitle: const Text(
+                  'Passend zu Spieleranzahl und Trainingsart',
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _generateAndAdd();
+                },
+              ),
+            ],
           ],
         ),
       ),

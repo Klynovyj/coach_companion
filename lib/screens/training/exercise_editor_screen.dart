@@ -438,11 +438,12 @@ class _ExerciseEditorScreenState extends State<ExerciseEditorScreen> {
       appBar: AppBar(
         title: Text(widget.initial == null ? 'Neue Übung' : 'Übung bearbeiten'),
         actions: [
-          IconButton(
-            tooltip: 'KI-Co-Trainer',
-            icon: const Icon(Icons.auto_awesome),
-            onPressed: _kiSheet,
-          ),
+          if (context.watch<AppState>().canAiCoach)
+            IconButton(
+              tooltip: 'KI-Co-Trainer',
+              icon: const Icon(Icons.auto_awesome),
+              onPressed: _kiSheet,
+            ),
           TextButton(
             onPressed: _saving ? null : _save,
             child: const Text(

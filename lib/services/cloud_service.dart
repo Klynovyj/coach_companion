@@ -75,7 +75,7 @@ class CloudService {
     final rows = await _c
         .from('team_members')
         .select(
-          'role, can_ticker, teams(id, name, short_name, invite_code, created_by, fupa_url, logo, material_duty)',
+          'role, can_ticker, ai_image_enabled, ai_coach_enabled, teams(id, name, short_name, invite_code, created_by, fupa_url, logo, material_duty)',
         )
         .eq('user_id', user!.id);
     return [
@@ -83,6 +83,8 @@ class CloudService {
         {
           'role': r['role'],
           'can_ticker': r['can_ticker'],
+          'ai_image_enabled': r['ai_image_enabled'],
+          'ai_coach_enabled': r['ai_coach_enabled'],
           ...(r['teams'] as Map<String, dynamic>),
         },
     ];
@@ -280,6 +282,18 @@ class CloudService {
         'set_ticker',
         params: {'t': teamId, 'target': userId, 'value': value},
       );
+
+  /// KI-Recht eines Mitglieds setzen (nur Admin/Ersteller). [kind] = 'image'
+  /// (Gemini/Grafik) oder 'coach' (Claude/Co-Trainer).
+  static Future<void> setAiPermission(
+    String teamId,
+    String userId,
+    String kind,
+    bool value,
+  ) => _c.rpc(
+    'set_ai_permission',
+    params: {'t': teamId, 'target': userId, 'kind': kind, 'value': value},
+  );
 
   // ----------------------------------------------- Konto ↔ Spieler (n:m)
   // Ein Konto kann mit einem oder mehreren Spielerprofilen verknüpft sein

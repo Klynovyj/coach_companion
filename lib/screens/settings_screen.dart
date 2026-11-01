@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/note_category.dart';
 import '../models/team.dart';
 import '../state/app_state.dart';
+import 'ai_permissions_screen.dart';
 import 'cloud_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -47,6 +48,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: Text(state.ownTeam!.name),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _renameTeam(context, state.ownTeam!),
+              ),
+            ),
+          ],
+          // Nur der Admin (Team-Ersteller) steuert, wer die KI nutzen darf.
+          if (state.isAdminHere && state.activeCloudTeamId != null) ...[
+            _sectionTitle(context, 'KI'),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.auto_awesome),
+                title: const Text('KI-Berechtigungen'),
+                subtitle: const Text(
+                  'Festlegen, wer Gemini (Grafik) & Claude (Co-Trainer) nutzen darf',
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => AiPermissionsScreen(
+                      teamId: state.activeCloudTeamId!,
+                      teamName: state.ownTeam?.name ?? 'Team',
+                    ),
+                  ),
+                ),
               ),
             ),
           ],

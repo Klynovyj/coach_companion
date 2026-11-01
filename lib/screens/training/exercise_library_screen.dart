@@ -391,7 +391,10 @@ class _ExerciseLibraryScreenState extends State<ExerciseLibraryScreen> {
                         padding: const EdgeInsets.only(top: 4),
                         child: _fitBadge(fits, reason),
                       ),
-                    if (widget.pickMode && widget.forPlayers != null && !fits)
+                    if (widget.pickMode &&
+                        widget.forPlayers != null &&
+                        !fits &&
+                        state.canAiCoach)
                       Align(
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(

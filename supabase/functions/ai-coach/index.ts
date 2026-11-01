@@ -247,6 +247,16 @@ Deno.serve(async (req) => {
       return new Response("unauthorized", { status: 401 });
     }
 
+    // Serverseitige Freigabe (Admin steuert pro Benutzer). Gesperrte Nutzer
+    // koennen keine Kosten ausloesen.
+    const { data: aiOk } = await asUser.rpc("has_ai_access", { kind: "coach" });
+    if (aiOk !== true) {
+      return new Response(
+        "KI-Co-Trainer ist für dich nicht freigeschaltet",
+        { status: 403 },
+      );
+    }
+
     const body = (await req.json()) as Record<string, unknown>;
     const messages = buildMessages(body);
 

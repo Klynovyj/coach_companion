@@ -319,14 +319,16 @@ class _ExerciseDetailScreenState extends State<ExerciseDetailScreen> {
               ],
             ),
           ),
-        const SizedBox(height: 12),
-        Center(
-          child: FilledButton.icon(
-            onPressed: _aiAnimate,
-            icon: const Icon(Icons.auto_awesome),
-            label: Text(hasAnim ? 'Neu generieren (KI)' : 'Mit KI erstellen'),
+        if (context.watch<AppState>().canAiCoach) ...[
+          const SizedBox(height: 12),
+          Center(
+            child: FilledButton.icon(
+              onPressed: _aiAnimate,
+              icon: const Icon(Icons.auto_awesome),
+              label: Text(hasAnim ? 'Neu generieren (KI)' : 'Mit KI erstellen'),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }

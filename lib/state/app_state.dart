@@ -457,6 +457,19 @@ class AppState extends ChangeNotifier {
   bool _isTrainerHere = true;
   bool get isTrainerHere => _isTrainerHere;
 
+  /// Bin ich Admin (Ersteller) des aktiven Cloud-Teams? Nur dann darf ich
+  /// KI-Rechte vergeben. Ohne aktives Cloud-Team (rein lokal) false.
+  bool _isAdminHere = false;
+  bool get isAdminHere => _isAdminHere;
+
+  /// Darf ich die KI-Funktionen nutzen (vom Admin freigeschaltet)?
+  /// canAiImage = Gemini/Grafik, canAiCoach = Claude/Co-Trainer. Lokal/offline
+  /// immer true (alle an).
+  bool _canAiImage = true;
+  bool get canAiImage => _canAiImage;
+  bool _canAiCoach = true;
+  bool get canAiCoach => _canAiCoach;
+
   /// Die mit dem eigenen Konto verknüpften Spieler-IDs im aktiven Cloud-Team
   /// (für die Spieler-Sicht, z.B. eigene Gespräche). Leer bei Trainer/lokal.
   List<String> _myPlayerIds = const [];
@@ -465,10 +478,18 @@ class AppState extends ChangeNotifier {
   Future<void> refreshLiveRole() async {
     final teamId = _activeCloudTeamId;
     if (teamId == null || !CloudService.ready || !CloudService.signedIn) {
-      if (!_canLiveEdit || !_isTrainerHere || _myPlayerIds.isNotEmpty) {
+      if (!_canLiveEdit ||
+          !_isTrainerHere ||
+          _myPlayerIds.isNotEmpty ||
+          _isAdminHere ||
+          !_canAiImage ||
+          !_canAiCoach) {
         _canLiveEdit = true;
         _isTrainerHere = true;
         _myPlayerIds = const [];
+        _isAdminHere = false;
+        _canAiImage = true;
+        _canAiCoach = true;
         notifyListeners();
       }
       return;
@@ -482,6 +503,9 @@ class AppState extends ChangeNotifier {
       final isAdmin = mine['created_by'] == CloudService.user?.id;
       final isTrainer = mine['role'] == 'trainer' || isAdmin;
       final canEdit = isTrainer || mine['can_ticker'] == true;
+      // KI-Freigaben: Default an (Spalte fehlt/null -> erlaubt).
+      final canAiImage = mine['ai_image_enabled'] != false;
+      final canAiCoach = mine['ai_coach_enabled'] != false;
       // Eigene Spieler-Zuordnung nur für Spieler laden (Trainer sehen alles).
       List<String> myPlayers = const [];
       if (!isTrainer) {
@@ -492,9 +516,15 @@ class AppState extends ChangeNotifier {
       final changed =
           canEdit != _canLiveEdit ||
           isTrainer != _isTrainerHere ||
+          isAdmin != _isAdminHere ||
+          canAiImage != _canAiImage ||
+          canAiCoach != _canAiCoach ||
           !_sameIds(myPlayers, _myPlayerIds);
       _canLiveEdit = canEdit;
       _isTrainerHere = isTrainer;
+      _isAdminHere = isAdmin;
+      _canAiImage = canAiImage;
+      _canAiCoach = canAiCoach;
       _myPlayerIds = myPlayers;
       if (changed) notifyListeners();
     } catch (_) {

@@ -3,10 +3,12 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/drill_diagram.dart';
 import '../../services/cloud_service.dart';
+import '../../state/app_state.dart';
 import '../../widgets/drill_diagram_view.dart';
 import '../../widgets/zone_overlays.dart';
 
@@ -983,25 +985,26 @@ class _DrillDiagramEditorState extends State<DrillDiagramEditor> {
             icon: const Icon(Icons.redo),
             onPressed: _canRedo ? _redo : null,
           ),
-          PopupMenuButton<String>(
-            tooltip: 'KI-Skizze',
-            icon: Icon(
-              Icons.auto_awesome,
-              color: Theme.of(context).colorScheme.primary,
+          if (context.watch<AppState>().canAiCoach)
+            PopupMenuButton<String>(
+              tooltip: 'KI-Skizze',
+              icon: Icon(
+                Icons.auto_awesome,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              onSelected: (v) {
+                if (v == 'animate') {
+                  _aiAnimate();
+                } else {
+                  _aiDiagram(create: v == 'create');
+                }
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'improve', child: Text('Skizze aufräumen')),
+                PopupMenuItem(value: 'create', child: Text('Neue Skizze (KI)')),
+                PopupMenuItem(value: 'animate', child: Text('Animation (KI)')),
+              ],
             ),
-            onSelected: (v) {
-              if (v == 'animate') {
-                _aiAnimate();
-              } else {
-                _aiDiagram(create: v == 'create');
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'improve', child: Text('Skizze aufräumen')),
-              PopupMenuItem(value: 'create', child: Text('Neue Skizze (KI)')),
-              PopupMenuItem(value: 'animate', child: Text('Animation (KI)')),
-            ],
-          ),
           DropdownButton<String>(
             value: _field,
             items: const [
