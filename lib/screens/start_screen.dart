@@ -69,6 +69,7 @@ class StartScreen extends StatelessWidget {
             _nextCard(context, next, team?.logoPath)
           else if (live == null)
             _emptyCard(context),
+          _seasonSection(context, matches),
           _offenePunkte(context, state),
           const SizedBox(height: 8),
           _shortcuts(context, state),
@@ -151,6 +152,38 @@ class StartScreen extends StatelessWidget {
                     'Nächstes Spiel',
                     style: TextStyle(fontWeight: FontWeight.bold),
                   ),
+                  if (m.kickoff != null) ...[
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: scheme.primaryContainer,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.timer_outlined,
+                            size: 14,
+                            color: scheme.onPrimaryContainer,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            _countdown(m.kickoff!.toLocal()),
+                            style: TextStyle(
+                              color: scheme.onPrimaryContainer,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
               const SizedBox(height: 12),
@@ -206,6 +239,226 @@ class StartScreen extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  /// Verbleibende Zeit bis zum Anstoß, grob gerundet.
+  String _countdown(DateTime kickoff) {
+    final diff = kickoff.difference(DateTime.now());
+    if (diff.isNegative) return 'gleich';
+    if (diff.inDays >= 1) return 'in ${diff.inDays} Tag${diff.inDays == 1 ? '' : 'en'}';
+    if (diff.inHours >= 1) return 'in ${diff.inHours} Std';
+    if (diff.inMinutes >= 1) return 'in ${diff.inMinutes} Min';
+    return 'gleich';
+  }
+
+  /// Abschnitt „Form & Bilanz": Form-Streifen der letzten 5 + Kennzahl-Kacheln.
+  /// Ganz aus den beendeten Spielen berechnet (keine Extra-Daten nötig).
+  Widget _seasonSection(BuildContext context, List<GameMatch> matches) {
+    final finished =
+        matches.where((m) => m.status == MatchStatus.finished).toList()
+          ..sort(
+            (a, b) =>
+                (a.kickoff ?? a.createdAt).compareTo(b.kickoff ?? b.createdAt),
+          );
+    if (finished.isEmpty) return const SizedBox.shrink();
+
+    var w = 0, d = 0, l = 0, gf = 0, ga = 0;
+    var hw = 0, hd = 0, hl = 0, aw = 0, ad = 0, al = 0;
+    for (final m in finished) {
+      gf += m.ownScore;
+      ga += m.opponentScore;
+      final r = m.ownScore.compareTo(m.opponentScore);
+      final home = m.venue == Venue.home;
+      if (r > 0) {
+        w++;
+        home ? hw++ : aw++;
+      } else if (r == 0) {
+        d++;
+        home ? hd++ : ad++;
+      } else {
+        l++;
+        home ? hl++ : al++;
+      }
+    }
+    final diff = gf - ga;
+    final last5 = finished.length <= 5
+        ? finished
+        : finished.sublist(finished.length - 5);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 8),
+        _sectionTitle(context, Icons.trending_up, 'Form & Bilanz'),
+        _formCard(context, last5),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _statTile(
+                context,
+                Icons.emoji_events_outlined,
+                'Bilanz',
+                '$w–$d–$l',
+                sub: 'S · U · N',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _statTile(
+                context,
+                Icons.sports_soccer,
+                'Tore',
+                '$gf : $ga',
+                sub: 'Differenz ${diff >= 0 ? '+' : ''}$diff',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: _statTile(
+                context,
+                Icons.home_outlined,
+                'Heim',
+                '$hw–$hd–$hl',
+                sub: 'S · U · N',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _statTile(
+                context,
+                Icons.directions_bus_outlined,
+                'Auswärts',
+                '$aw–$ad–$al',
+                sub: 'S · U · N',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, IconData icon, String label) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 4, 8),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: scheme.primary),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Form-Streifen: je Spiel ein farbiger Punkt S/U/N (älter → neuer).
+  Widget _formCard(BuildContext context, List<GameMatch> last5) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Text(
+              'Form',
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const Spacer(),
+            for (final m in last5) ...[
+              _formDot(context, m),
+              const SizedBox(width: 6),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _formDot(BuildContext context, GameMatch m) {
+    final r = m.ownScore.compareTo(m.opponentScore);
+    final (color, letter) = r > 0
+        ? (const Color(0xFF2E7D32), 'S')
+        : r == 0
+        ? (const Color(0xFF9E9E9E), 'U')
+        : (const Color(0xFFC62828), 'N');
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => MatchCenterScreen(matchId: m.id)),
+      ),
+      child: Container(
+        width: 30,
+        height: 30,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+        child: Text(
+          letter,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: 14,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _statTile(
+    BuildContext context,
+    IconData icon,
+    String label,
+    String value, {
+    String? sub,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: scheme.primary),
+              const SizedBox(width: 6),
+              Text(label, style: Theme.of(context).textTheme.labelMedium),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          if (sub != null) ...[
+            const SizedBox(height: 2),
+            Text(
+              sub,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
