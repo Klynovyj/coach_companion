@@ -62,6 +62,17 @@ class AnnouncementData {
   bool get isCup => (competition ?? '').toLowerCase().contains('pokal');
 }
 
+/// Platzierung eines hinzugefügten Fotos in der Grafik.
+enum _PhotoPlace { background, band }
+
+/// Ein zur Grafik hinzugefügtes Foto (Data-URL) mit seiner Platzierung.
+/// Transient (nicht gespeichert), gilt für alle Grafiktypen.
+class _GraphicPhoto {
+  _GraphicPhoto(this.dataUrl, this.place);
+  String dataUrl;
+  _PhotoPlace place;
+}
+
 /// Erzeugt die teilbare Startelf-Grafik im Instagram-Format (Story 9:16 oder
 /// Post 1:1). Titel, Logo und Hintergrund sind über ein „Grafik anpassen"-Panel
 /// einstellbar (teamweit, cloud-synchron). Sponsoren kommen aus der
@@ -116,10 +127,25 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   bool _loading = true;
   bool _sharing = false;
   bool _aiBusy = false;
-  // Nur Ergebnis-Grafik: optionales Foto oben (Data-URL, nicht gespeichert).
-  String? _resultPhoto;
-  // FULL-TIME-Foto: verschieben & zoomen (Pinch/Drag), nicht gespeichert.
+  // Hinzugefügte Fotos (für alle Grafiktypen), transient. Hintergrund ODER
+  // Foto-Bereich oben; mehrere möglich.
+  final List<_GraphicPhoto> _photos = [];
+  // Einzelnes Band-Foto: verschieben & zoomen (Pinch/Drag).
   final TransformationController _photoCtrl = TransformationController();
+
+  /// Wirksames Hintergrund-Foto (erstes mit Platzierung „Hintergrund").
+  String? get _photoBg {
+    for (final p in _photos) {
+      if (p.place == _PhotoPlace.background) return p.dataUrl;
+    }
+    return null;
+  }
+
+  /// Fotos im Foto-Bereich oben (in Reihenfolge).
+  List<String> get _bandPhotos => [
+    for (final p in _photos)
+      if (p.place == _PhotoPlace.band) p.dataUrl,
+  ];
 
   // Logische Zeichengrößen (× pixelRatio 3 = 1080×1920 bzw. 1080×1080).
   static const double _storyW = 360, _storyH = 640;
@@ -205,68 +231,154 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
-  /// Foto oben für die Ergebnis-Grafik: aufnehmen / aus Galerie / entfernen.
-  Future<void> _pickResultPhoto() async {
-    final choice = await showModalBottomSheet<String>(
+  /// Fotos verwalten (für alle Grafiktypen): hinzufügen (Kamera/Galerie),
+  /// Platzierung (Hintergrund/Bereich), bearbeiten, entfernen. Mehrere möglich.
+  Future<void> _managePhotos() async {
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera),
-              title: const Text('Foto aufnehmen'),
-              onTap: () => Navigator.pop(ctx, 'camera'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Aus Galerie'),
-              onTap: () => Navigator.pop(ctx, 'gallery'),
-            ),
-            if (_resultPhoto != null)
-              ListTile(
-                leading: const Icon(Icons.tune),
-                title: const Text('Foto bearbeiten'),
-                subtitle: const Text('Zuschneiden, Helligkeit, Kontrast'),
-                onTap: () => Navigator.pop(ctx, 'edit'),
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Fotos / Bilder',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
               ),
-            if (_resultPhoto != null)
               ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Foto entfernen'),
-                onTap: () => Navigator.pop(ctx, 'remove'),
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Foto aufnehmen'),
+                onTap: () async {
+                  await _addPhoto(ImageSource.camera);
+                  setSheet(() {});
+                },
               ),
-            const SizedBox(height: 8),
-          ],
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Aus Galerie'),
+                onTap: () async {
+                  await _addPhoto(ImageSource.gallery);
+                  setSheet(() {});
+                },
+              ),
+              if (_photos.isNotEmpty) const Divider(),
+              for (final p in List<_GraphicPhoto>.from(_photos))
+                ListTile(
+                  leading: _photoThumb(p.dataUrl),
+                  title: Text(
+                    p.place == _PhotoPlace.background
+                        ? 'Hintergrund'
+                        : 'Foto-Bereich',
+                  ),
+                  subtitle: const Text('Platzierung tippen zum Wechseln'),
+                  onTap: () => setSheet(() {
+                    p.place = p.place == _PhotoPlace.background
+                        ? _PhotoPlace.band
+                        : _PhotoPlace.background;
+                    setState(() {});
+                  }),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        tooltip: 'Bearbeiten',
+                        icon: const Icon(Icons.tune),
+                        onPressed: () async {
+                          await _editPhoto(p);
+                          setSheet(() {});
+                        },
+                      ),
+                      IconButton(
+                        tooltip: 'Entfernen',
+                        icon: const Icon(Icons.delete_outline),
+                        onPressed: () => setSheet(() {
+                          _photos.remove(p);
+                          setState(() {});
+                        }),
+                      ),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
-    if (choice == null || !mounted) return;
-    if (choice == 'remove') {
-      setState(() => _resultPhoto = null);
-      return;
-    }
-    if (choice == 'edit') {
-      await _editCurrentResultPhoto();
-      return;
-    }
-    final url = await _pickImage(
-      asBackground: true,
-      source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
-      edit: true,
-    );
-    if (url != null && mounted) {
-      setState(() {
-        _resultPhoto = url;
-        _photoCtrl.value = Matrix4.identity(); // Zoom/Position zurücksetzen
-      });
-    }
   }
 
-  /// Das bereits gewählte FULL-TIME-Foto nachträglich im Editor bearbeiten
-  /// (zuschneiden/drehen/Helligkeit/Kontrast).
-  Future<void> _editCurrentResultPhoto() async {
-    final bytes = TeamLogo.decode(_resultPhoto);
+  Widget _photoThumb(String dataUrl) {
+    final bytes = TeamLogo.decode(dataUrl);
+    return SizedBox(
+      width: 40,
+      height: 40,
+      child: bytes == null
+          ? const Icon(Icons.image)
+          : ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: Image.memory(bytes, fit: BoxFit.cover),
+            ),
+    );
+  }
+
+  /// Neues Foto wählen (mit Editor) und Platzierung abfragen.
+  Future<void> _addPhoto(ImageSource source) async {
+    final url = await _pickImage(asBackground: true, source: source, edit: true);
+    if (url == null || !mounted) return;
+    final place = await _askPlacement();
+    if (place == null) return;
+    setState(() {
+      _photos.add(_GraphicPhoto(url, place));
+      _photoCtrl.value = Matrix4.identity();
+    });
+  }
+
+  /// Platzierung für ein Foto abfragen (Hintergrund / Foto-Bereich).
+  Future<_PhotoPlace?> _askPlacement() => showModalBottomSheet<_PhotoPlace>(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Wohin mit dem Foto?',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.wallpaper),
+            title: const Text('Als Hintergrund'),
+            subtitle: const Text('Füllt die ganze Grafik hinter Logos/Texten'),
+            onTap: () => Navigator.pop(ctx, _PhotoPlace.background),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_size_select_large),
+            title: const Text('Als Foto-Bereich oben'),
+            subtitle: const Text('Eigener Foto-Streifen (mehrere = Collage)'),
+            onTap: () => Navigator.pop(ctx, _PhotoPlace.band),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+
+  /// Ein vorhandenes Foto nachträglich im Editor bearbeiten.
+  Future<void> _editPhoto(_GraphicPhoto p) async {
+    final bytes = TeamLogo.decode(p.dataUrl);
     if (bytes == null) return;
     final edited = await Navigator.push<Uint8List?>(
       context,
@@ -274,8 +386,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     );
     if (edited == null || !mounted) return;
     setState(() {
-      _resultPhoto = 'data:image/jpeg;base64,${base64Encode(edited)}';
-      _photoCtrl.value = Matrix4.identity(); // Zoom/Position zurücksetzen
+      p.dataUrl = 'data:image/jpeg;base64,${base64Encode(edited)}';
+      _photoCtrl.value = Matrix4.identity();
     });
   }
 
@@ -774,16 +886,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               : 'Startelf-Grafik',
         ),
         actions: [
-          if (widget.isResult)
-            IconButton(
-              tooltip: 'Foto oben (aufnehmen/Galerie)',
-              icon: Icon(
-                _resultPhoto != null
-                    ? Icons.add_a_photo
-                    : Icons.add_a_photo_outlined,
-              ),
-              onPressed: _pickResultPhoto,
+          IconButton(
+            tooltip: 'Fotos / Bilder',
+            icon: Icon(
+              _photos.isNotEmpty
+                  ? Icons.add_a_photo
+                  : Icons.add_a_photo_outlined,
             ),
+            onPressed: _managePhotos,
+          ),
           IconButton(
             tooltip: 'Grafik anpassen',
             icon: const Icon(Icons.tune),
@@ -836,7 +947,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         compact: !_story,
                         result: widget.result,
                         announcement: widget.announcement,
-                        resultPhoto: _resultPhoto,
+                        photoBg: _photoBg,
+                        bandPhotos: _bandPhotos,
                         showPhotos: _settings.showPhotos,
                         bgPreset: _settings.bgPreset,
                         photoController: _photoCtrl,
@@ -847,7 +959,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               ),
             ),
           ),
-          if (_resultPhoto != null)
+          if (_bandPhotos.length == 1)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
               child: Row(
@@ -1094,7 +1206,8 @@ class _StartelfGraphic extends StatelessWidget {
     required this.compact,
     this.result,
     this.announcement,
-    this.resultPhoto,
+    this.photoBg,
+    this.bandPhotos = const [],
     this.showPhotos = false,
     this.bgPreset,
     this.photoController,
@@ -1117,15 +1230,76 @@ class _StartelfGraphic extends StatelessWidget {
   final bool compact;
   final ResultData? result; // gesetzt → Ergebnis statt Startelf
   final AnnouncementData? announcement; // gesetzt → Spielankündigung
-  final String? resultPhoto; // Ergebnis-Grafik: Foto oben (Data-URL)
+  final String? photoBg; // Foto als Hintergrund (Data-URL), alle Typen
+  final List<String> bandPhotos; // Fotos im Foto-Bereich oben (Data-URLs)
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
   final String? bgPreset; // eingebautes Hintergrund-Design ('stripes')
-  final TransformationController? photoController; // FULL-TIME-Foto zoom/pan
+  final TransformationController? photoController; // einzelnes Band-Foto zoom/pan
 
   @override
   Widget build(BuildContext context) {
-    if (announcement != null) return _announcementLayout();
-    if (result != null && resultPhoto != null) return _photoResultLayout();
+    final content = announcement != null
+        ? _announcementLayout()
+        : _standardLayout();
+    final band = [
+      for (final p in bandPhotos) TeamLogo.decode(p),
+    ].whereType<Uint8List>().toList();
+    if (band.isEmpty) return content;
+    return _withPhotoBand(band, content);
+  }
+
+  /// Foto-Bereich oben + darunter der eigentliche Inhalt (für alle Typen).
+  Widget _withPhotoBand(List<Uint8List> photos, Widget content) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 46,
+          child: ColoredBox(color: gradTop, child: _photoBand(photos)),
+        ),
+        Expanded(flex: 54, child: content),
+      ],
+    );
+  }
+
+  /// 1 Foto = verschieb-/zoombar; mehrere = Collage-Reihe (BoxFit.cover).
+  Widget _photoBand(List<Uint8List> photos) {
+    if (photos.length == 1) {
+      return ClipRect(
+        child: InteractiveViewer(
+          transformationController: photoController,
+          minScale: 0.4,
+          maxScale: 4,
+          boundaryMargin: const EdgeInsets.all(double.infinity),
+          clipBehavior: Clip.none,
+          child: Image.memory(
+            photos.first,
+            fit: BoxFit.cover,
+            gaplessPlayback: true,
+          ),
+        ),
+      );
+    }
+    return Row(
+      children: [
+        for (var i = 0; i < photos.length; i++) ...[
+          if (i > 0) const SizedBox(width: 2),
+          Expanded(
+            child: ClipRect(
+              child: Image.memory(
+                photos[i],
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Standard-Layout (Startelf bzw. Ergebnis ohne eigenen Foto-Bereich).
+  Widget _standardLayout() {
     final pad = compact ? 16.0 : 20.0;
     return Stack(
       fit: StackFit.expand,
@@ -1180,7 +1354,8 @@ class _StartelfGraphic extends StatelessWidget {
   /// Hintergrund-Basis: Verlauf + (eigenes Bild mit Tönung) ODER eingebautes
   /// Design (Streifen). Wird von allen Layouts genutzt.
   Widget _bgBase() {
-    final bgBytes = TeamLogo.decode(bgImage);
+    // Hinzugefügtes Hintergrund-Foto hat Vorrang vor dem eingestellten Bild.
+    final bgBytes = TeamLogo.decode(photoBg) ?? TeamLogo.decode(bgImage);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1433,113 +1608,6 @@ class _StartelfGraphic extends StatelessWidget {
             ],
           ),
         ],
-      ],
-    );
-  }
-
-  /// Ergebnis-Grafik mit Foto oben: Foto (≈52 %) + dunkles Panel mit
-  /// „FULL TIME" + Spielstand/Torschützen/Karten + Sponsoren.
-  Widget _photoResultLayout() {
-    final photoBytes = TeamLogo.decode(resultPhoto);
-    final pad = compact ? 14.0 : 18.0;
-    final r = result!;
-    final hasList = r.ownGoals.isNotEmpty ||
-        r.oppGoals.isNotEmpty ||
-        r.ownCards.isNotEmpty ||
-        r.oppCards.isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Expanded(
-          flex: 52,
-          child: ColoredBox(
-            color: gradTop,
-            // Foto per Finger verschieben UND zoomen (auch kleiner ziehen);
-            // der aktuelle Zustand wird so in die exportierte Grafik gerendert.
-            child: photoBytes != null
-                ? ClipRect(
-                    child: InteractiveViewer(
-                      transformationController: photoController,
-                      minScale: 0.4,
-                      maxScale: 4,
-                      boundaryMargin: const EdgeInsets.all(double.infinity),
-                      clipBehavior: Clip.none,
-                      child: Image.memory(
-                        photoBytes,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                      ),
-                    ),
-                  )
-                : null,
-          ),
-        ),
-        Expanded(
-          flex: 48,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [gradTop, gradBottom],
-              ),
-            ),
-            padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 14, pad, pad),
-            child: Column(
-              children: [
-                // Oberes Band: Sponsor + FULL TIME + Spielstand. Eigene FittedBox
-                // → der Score bleibt groß, UNABHÄNGIG von der Torschützenzahl.
-                Expanded(
-                  flex: 5,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.center,
-                    child: SizedBox(
-                      width: 320,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (mainSponsor != null) ...[
-                            _presentedBy(mainSponsor!),
-                            const SizedBox(height: 10),
-                          ],
-                          const Text(
-                            'FULL TIME',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1.5,
-                              height: 1.0,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          _scoreRow(),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                // Unteres Band: Torschützen/Karten. Skaliert in seinem eigenen
-                // Bereich – drückt den Score nicht klein.
-                if (hasList)
-                  Expanded(
-                    flex: 4,
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.topCenter,
-                      child: _scorersCardsBlock(),
-                    ),
-                  ),
-                if (barSponsors.isNotEmpty) ...[
-                  SizedBox(height: compact ? 6 : 10),
-                  _sponsorBar(),
-                ],
-              ],
-            ),
-          ),
-        ),
       ],
     );
   }
