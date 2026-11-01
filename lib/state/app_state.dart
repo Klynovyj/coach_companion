@@ -3485,11 +3485,37 @@ class AppState extends ChangeNotifier {
     return name.isEmpty ? id : '$name-$id';
   }
 
-  /// Lädt die FuPa-Karrierestatistik eines Kaderspielers neu (über den Profil-
-  /// Slug vorname-nachname-id) und cached sie lokal. Null ohne FuPa-ID.
+  /// Lädt die FuPa-Karrierestatistik eines Kaderspielers neu und cached sie
+  /// lokal. Der echte Profil-Slug kommt zuverlässig aus der Team-Roster
+  /// (per FuPa-ID gematcht); nur als Fallback aus dem Namen. Null ohne FuPa-ID.
   Future<Map<String, dynamic>?> refreshPlayerCareer(Player p) async {
-    final slug = fupaPlayerSlug(p);
-    if (slug == null) return null;
+    final id = p.externalId?.trim();
+    if (id == null || id.isEmpty) return null;
+    var slug = await _repo.getSetting('fupa_slug_${p.id}');
+    if (slug == null || slug.isEmpty) {
+      // Echten Slug aus der Team-Roster holen (zuverlässig) und cachen.
+      final team = await _repo.getTeam(p.teamId);
+      final teamUrl = team?.fupaUrl;
+      if (teamUrl != null && teamUrl.isNotEmpty) {
+        try {
+          final roster = await _importer.importTeamPlayers(teamUrl);
+          for (final r in roster) {
+            if (r.externalId == id && (r.slug ?? '').isNotEmpty) {
+              slug = r.slug;
+              break;
+            }
+          }
+        } catch (_) {
+          // Roster nicht erreichbar → Fallback unten.
+        }
+      }
+      if (slug != null && slug.isNotEmpty) {
+        await _repo.setSetting('fupa_slug_${p.id}', slug);
+      } else {
+        slug = fupaPlayerSlug(p); // Fallback aus dem Namen (nicht cachen)
+      }
+    }
+    if (slug == null || slug.isEmpty) return null;
     final career = await _importer.importPlayerCareer(slug);
     final json = jsonEncode(fupaCareerToMap(career));
     await _repo.setSetting('career_stats_${p.id}', json);
