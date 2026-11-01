@@ -114,7 +114,11 @@ Deno.serve(async (req) => {
       });
     }
     const prompt = String(body.prompt ?? "").trim();
-    if (imgs.length === 0) return new Response("kein Bild", { status: 400 });
+    // Hintergrund-Modus darf OHNE Referenzbild laufen (reine Text-zu-Bild-
+    // Gestaltung – keine Logos noetig). Andere Modi brauchen ein Bild.
+    if (imgs.length === 0 && mode !== "background") {
+      return new Response("kein Bild", { status: 400 });
+    }
     if (!prompt) return new Response("kein Wunsch", { status: 400 });
 
     const text = guardText(mode, aspect, imgs.map((i) => i.role)) + prompt;

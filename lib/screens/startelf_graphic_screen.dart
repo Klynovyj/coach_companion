@@ -222,7 +222,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       (_settings.title != null && _settings.title!.trim().isNotEmpty)
       ? _settings.title!.trim()
       : widget.teamName;
-  String? get _logo => _settings.logo ?? widget.teamLogo;
 
   Sponsor? get _mainSponsor {
     for (final s in _sponsors) {
@@ -826,101 +825,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     return m?.group(1) ?? 'image/png';
   }
 
-  /// Bausteine für die KI einsammeln (Logos, Sponsoren, Fotos – je mit Rolle).
-  /// [includeBase] → zusätzlich das aktuell gerenderte Grafik-PNG (für 'compose').
-  Future<List<Map<String, String>>> _collectAiImages({
-    required bool includeBase,
-  }) async {
-    final out = <Map<String, String>>[];
-    void add(String? dataUrl, String role) {
-      if (dataUrl == null || !dataUrl.contains('base64,')) return;
-      out.add({'mime': _dataUrlMime(dataUrl), 'data': dataUrl, 'role': role});
-    }
+  /// Referenzbilder für die KI im Hintergrund-Modus: NUR vom Nutzer hinzugefügte
+  /// Fotos – KEINE Logos/Sponsoren (die soll die KI nicht in den Hintergrund
+  /// bauen). Darf leer sein → reine Text-zu-Bild-Gestaltung.
+  List<Map<String, String>> _bgReferenceImages() => [
+    for (final p in _photos)
+      if (p.dataUrl.contains('base64,'))
+        {'mime': _dataUrlMime(p.dataUrl), 'data': p.dataUrl, 'role': 'photo'},
+  ];
 
-    if (includeBase) {
-      final base = await _captureGraphicPng();
-      if (base != null) {
-        out.add({
-          'mime': 'image/png',
-          'data': 'data:image/png;base64,${base64Encode(base)}',
-          'role': 'base',
-        });
-      }
-    }
-    add(_logo, 'home_logo');
-    if (_settings.showOpponentLogo) add(widget.opponentLogo, 'away_logo');
-    add(_mainSponsor?.logo, 'sponsor');
-    for (final s in _barSponsors) {
-      add(s.logo, 'sponsor');
-    }
-    for (final p in _photos) {
-      add(p.dataUrl, 'photo');
-    }
-    return out;
-  }
-
-  /// Strukturierte Daten der Grafik als Text (für die KI zusätzlich zum Bild).
-  String _aiSpec() {
-    final b = StringBuffer();
-    b.writeln('Grafik-Typ: $_kind.');
-    final opp = widget.opponentName.trim();
-    b.writeln(
-      'Teams: $_title${opp.isEmpty ? '' : ' vs $opp'} '
-      '(${widget.isHome ? 'Heim' : 'Auswärts'}).',
-    );
-    final d = widget.matchDate;
-    if (d != null) {
-      final dd = d.toLocal();
-      b.writeln(
-        'Datum/Zeit: ${dd.day.toString().padLeft(2, '0')}.'
-        '${dd.month.toString().padLeft(2, '0')}.${dd.year} '
-        '${dd.hour.toString().padLeft(2, '0')}:'
-        '${dd.minute.toString().padLeft(2, '0')} Uhr.',
-      );
-    }
-    final a = widget.announcement;
-    if (a != null) {
-      if ((a.matchday ?? '').isNotEmpty) b.writeln('Spieltag/Wettbewerb: ${a.matchday}.');
-      if ((a.venue ?? '').isNotEmpty) b.writeln('Spielstätte: ${a.venue}.');
-      if ((a.address ?? '').isNotEmpty) b.writeln('Adresse: ${a.address}.');
-    }
-    final r = widget.result;
-    if (r != null) {
-      b.writeln('Endstand: $_title ${r.ownScore} : ${r.oppScore} $opp.');
-      if (r.ownGoals.isNotEmpty) {
-        b.writeln(
-          'Tore $_title: '
-          '${r.ownGoals.map((g) => "${g.name} ${g.minute}'").join(', ')}.',
-        );
-      }
-      if (r.oppGoals.isNotEmpty) {
-        b.writeln(
-          'Tore $opp: '
-          '${r.oppGoals.map((g) => "${g.name} ${g.minute}'").join(', ')}.',
-        );
-      }
-    }
-    if (widget.result == null && widget.announcement == null) {
-      final names = widget.starters.map((p) => p.name).toList();
-      if (names.isNotEmpty) b.writeln('Startelf: ${names.join(', ')}.');
-      if (widget.benchNames.isNotEmpty) {
-        b.writeln('Bank: ${widget.benchNames.join(', ')}.');
-      }
-    }
-    if (_mainSponsor != null || _barSponsors.isNotEmpty) {
-      final sp = [
-        if (_mainSponsor != null) '${_mainSponsor!.name} (Hauptsponsor)',
-        for (final s in _barSponsors) s.name,
-      ];
-      b.writeln('Sponsoren: ${sp.join(', ')}.');
-    }
-    return b.toString().trim();
-  }
-
-  /// „Mit KI bearbeiten": Wunsch + Modus abfragen, Bausteine sammeln, an die
-  /// Edge-Function „ai-image" (Gemini). Modus 'background' → Ergebnis als
-  /// Hintergrund setzen (Inhalt bleibt scharf); 'compose' → flaches Bild in der
-  /// Vorschau (teilen/verwerfen).
+  /// „Mit KI gestalten": Wunsch abfragen → die KI erzeugt NUR einen Hintergrund
+  /// (keine Logos/Texte); die App setzt ihn als Hintergrund und legt die echten
+  /// Logos/Namen/Sponsoren scharf darüber.
   Future<void> _aiEdit() async {
     if (_aiBusy) return;
     final wish = await _askAiWish();
@@ -928,9 +844,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     setState(() => _aiBusy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final images = await _collectAiImages(includeBase: wish.mode == 'compose');
-      if (images.isEmpty) return;
-      final fullPrompt = '${_aiSpec()}\n\n${wish.prompt.trim()}';
+      final images = _bgReferenceImages();
+      final colors =
+          'Vereinsfarben als Orientierung: ${_settings.gradTop}, '
+          '${_settings.gradBottom}. Erzeuge NUR einen Hintergrund – KEINE Logos, '
+          'Wappen, Namen, Zahlen oder Texte.';
+      final fullPrompt = '$colors\n\nWunsch: ${wish.prompt.trim()}';
       final out = await CloudService.aiImage(
         images: images,
         prompt: fullPrompt,
