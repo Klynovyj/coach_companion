@@ -466,7 +466,12 @@ class _SquadListViewState extends State<SquadListView> {
   }
 
   Future<_SquadData> _load(AppState state) async {
-    final players = await state.playersOf(widget.teamId);
+    var players = await state.playersOf(widget.teamId);
+    // Eigenen Kader fürs Display entdoppeln (FuPa-loser Klon derselben Person,
+    // z.B. aus dem Cloud-Sync) – zwei echte Gleichnamige bleiben beide stehen.
+    if (!widget.isOpponent) {
+      players = dedupeOwnPlayersForDisplay(players);
+    }
     final cards = await state.cardCountsForTeam(widget.teamId);
     final ratings = await state.ratingAveragesForTeam(widget.teamId);
     // Scouting-Daten nur für den Gegner laden.

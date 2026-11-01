@@ -290,6 +290,7 @@ class AppState extends ChangeNotifier {
   Timer? _fupaTimer;
   Timer? _fullTimer;
   Timer? _liveTimer;
+  Timer? _ownDedupTimer; // entprellt das Entdoppeln nach Cloud-Spieler-Updates
   // true, wenn aktuell ein Spiel live ist → schnellerer Abgleich-Takt.
   bool _liveActive = false;
   bool _autoRefreshing = false;
@@ -550,6 +551,8 @@ class AppState extends ChangeNotifier {
     _fullTimer = null;
     _liveTimer?.cancel();
     _liveTimer = null;
+    _ownDedupTimer?.cancel();
+    _ownDedupTimer = null;
     if (chs.isNotEmpty) CloudService.removeChannels(chs);
   }
 
@@ -660,6 +663,10 @@ class AppState extends ChangeNotifier {
         switch (table) {
           case 'players':
             await _applyCloudPlayer(record, teamId, now);
+            // Ein aus der Cloud gezogener Klon (z.B. FuPa-lose Zweitzeile
+            // derselben Person) wird entprellt bereinigt – sonst erscheint der
+            // Spieler nach dem Sync wieder doppelt.
+            _scheduleOwnDedup();
           case 'matches':
             // Cloud = geteilte Wahrheit: Status (live/beendet), Ergebnis und
             // „zurückgesetzt" anderer Trainer immer übernehmen, damit ein
@@ -992,6 +999,15 @@ class AppState extends ChangeNotifier {
     }
     if (removed > 0) notifyListeners();
     return removed;
+  }
+
+  /// Entprellt das Entdoppeln der eigenen Spieler (nach Cloud-Updates). Wird bei
+  /// jedem gezogenen players-Datensatz aufgerufen; läuft gebündelt kurz danach.
+  void _scheduleOwnDedup() {
+    _ownDedupTimer?.cancel();
+    _ownDedupTimer = Timer(const Duration(milliseconds: 1500), () {
+      unawaited(cleanupDuplicateOwnPlayers());
+    });
   }
 
   /// Lädt geteilte Gegner-Teams + -Kader aus der Cloud in den lokalen Cache.
@@ -1788,6 +1804,17 @@ class AppState extends ChangeNotifier {
     await _repo.upsertPlayer(player);
     await _enforceCaptainUniqueness(player);
     notifyListeners();
+    // Neu angelegten Spieler sofort in die Cloud spiegeln (wie updatePlayer),
+    // damit andere Trainer ihn sehen. Nur fürs eigene aktive Cloud-Team.
+    final cloudTeam = _activeCloudTeamId;
+    if (cloudTeam != null &&
+        player.teamId == cloudTeam &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.uploadRoster(cloudTeam, [_playerCloudMap(player)]);
+      } catch (_) {}
+    }
   }
 
   Future<void> updatePlayer(Player player) async {

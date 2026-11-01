@@ -318,6 +318,47 @@ List<Player> dedupePlayersByName(List<Player> players) {
   return [for (final k in order) byKey[k]!];
 }
 
+/// Entdoppelt den EIGENEN Kader nur fürs Display: Namens-Dubletten werden zu
+/// einer Zeile zusammengefasst, aber nur wenn mindestens eine davon eine
+/// FuPa-ID (externalId) hat – dann ist es sicher dieselbe Person (z.B. eine
+/// FuPa-Zeile + ein FuPa-loser Klon aus der Cloud). Zwei echte Gleichnamige
+/// ohne FuPa-ID bleiben beide stehen. Reihenfolge bleibt erhalten.
+List<Player> dedupeOwnPlayersForDisplay(List<Player> players) {
+  final groups = <String, List<Player>>{};
+  final order = <String>[];
+  for (final p in players) {
+    final k = p.dedupKey;
+    final g = groups[k];
+    if (g == null) {
+      groups[k] = [p];
+      order.add(k);
+    } else {
+      g.add(p);
+    }
+  }
+  final out = <Player>[];
+  for (final k in order) {
+    final g = groups[k]!;
+    if (g.length == 1) {
+      out.add(g.first);
+      continue;
+    }
+    final hasExt = g.any(
+      (p) => p.externalId != null && p.externalId!.isNotEmpty,
+    );
+    if (!hasExt) {
+      out.addAll(g); // mehrdeutig (keiner mit FuPa-ID) → alle behalten
+      continue;
+    }
+    var best = g.first;
+    for (final p in g.skip(1)) {
+      if (playerIsRicher(p, best)) best = p;
+    }
+    out.add(best);
+  }
+  return out;
+}
+
 /// Welche von zwei Zeilen desselben Spielers ist „reicher" (beim Entdoppeln zu
 /// behalten): die mit FuPa-ID (externalId), sonst die mit mehr Infos
 /// (Nummer/Position). Gleichstand → [a].
