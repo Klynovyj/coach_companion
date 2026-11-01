@@ -67,36 +67,50 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
   void _onCropped(CropResult result) {
     switch (result) {
       case CropSuccess(:final croppedImage):
-        Uint8List out = croppedImage;
-        try {
-          var im = img.decodeImage(croppedImage);
-          if (im != null) {
-            if (_brightness != 0 || _contrast != 0) {
-              im = img.adjustColor(
-                im,
-                brightness: 1 + (_brightness / 100) * 0.6,
-                contrast: 1 + (_contrast / 100) * 0.6,
-              );
-            }
-            final longer = im.width >= im.height ? im.width : im.height;
-            if (longer > widget.maxSize) {
-              im = im.width >= im.height
-                  ? img.copyResize(im, width: widget.maxSize)
-                  : img.copyResize(im, height: widget.maxSize);
-            }
-            out = Uint8List.fromList(img.encodeJpg(im, quality: 85));
-          }
-        } catch (_) {
-          // Nachbearbeitung fehlgeschlagen → zugeschnittenes Bild unverändert.
-        }
-        if (mounted) Navigator.pop(context, out);
+        _finishWith(croppedImage, cropped: true);
       case CropFailure():
-        if (!mounted) return;
-        setState(() => _busy = false);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Zuschnitt fehlgeschlagen.')),
-        );
+        // Der Zuschnitt im Paket kann bei manchen Bildern fehlschlagen. Statt
+        // den Nutzer mit „Zuschnitt fehlgeschlagen" stehen zu lassen, nehmen wir
+        // das ganze (angepasste) Bild – „Übernehmen" liefert also immer etwas.
+        _finishWith(_bytes, cropped: false);
     }
+  }
+
+  /// Wendet Helligkeit/Kontrast an, begrenzt die Größe und gibt das Bild zurück.
+  /// [cropped]=false (Fallback) → kurzer Hinweis, dass nicht zugeschnitten wurde.
+  void _finishWith(Uint8List bytes, {required bool cropped}) {
+    Uint8List out = bytes;
+    try {
+      var im = img.decodeImage(bytes);
+      if (im != null) {
+        if (_brightness != 0 || _contrast != 0) {
+          im = img.adjustColor(
+            im,
+            brightness: 1 + (_brightness / 100) * 0.6,
+            contrast: 1 + (_contrast / 100) * 0.6,
+          );
+        }
+        final longer = im.width >= im.height ? im.width : im.height;
+        if (longer > widget.maxSize) {
+          im = im.width >= im.height
+              ? img.copyResize(im, width: widget.maxSize)
+              : img.copyResize(im, height: widget.maxSize);
+        }
+        out = Uint8List.fromList(img.encodeJpg(im, quality: 85));
+      }
+    } catch (_) {
+      // Nachbearbeitung fehlgeschlagen → Bild unverändert übernehmen.
+    }
+    if (!mounted) return;
+    if (!cropped) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Zuschnitt nicht möglich – ganzes Bild übernommen.'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+    Navigator.pop(context, out);
   }
 
   Widget _sliderRow(
