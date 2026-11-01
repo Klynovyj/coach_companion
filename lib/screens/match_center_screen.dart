@@ -537,9 +537,12 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     if (mode == 'graphic') {
       final state = context.read<AppState>();
       final share = await state.matchShareInfo(widget.matchId);
+      // Ort automatisch vorbelegen: Heimspiel → unsere Heim-Adresse,
+      // Auswärts → bereits erfasste Adresse (falls vorhanden).
+      final loc = await state.graphicLocationFor(match);
       if (!mounted) return;
-      final venueCtrl = TextEditingController(text: share['venue'] ?? '');
-      final addrCtrl = TextEditingController(text: share['address'] ?? '');
+      final venueCtrl = TextEditingController(text: loc['venue'] ?? '');
+      final addrCtrl = TextEditingController(text: loc['address'] ?? '');
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(

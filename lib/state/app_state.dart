@@ -2240,6 +2240,24 @@ class AppState extends ChangeNotifier {
     await _repo.setSetting('share_info_$matchId', jsonEncode(info));
   }
 
+  /// Vorbelegung für den Grafik-Ort (Spielstätte + Adresse):
+  /// 1) bereits für dieses Spiel erfasst, 2) Heimspiel → hinterlegte
+  /// Heim-Spielstätte (Einstellungen), 3) Auswärts → eine bereits in der
+  /// Ankündigung erfasste Adresse, falls vorhanden; sonst leer.
+  Future<Map<String, String>> graphicLocationFor(GameMatch match) async {
+    String clean(String? v) => (v ?? '').trim();
+    final share = await matchShareInfo(match.id);
+    final sv = clean(share['venue']);
+    final sa = clean(share['address']);
+    if (sv.isNotEmpty || sa.isNotEmpty) return {'venue': sv, 'address': sa};
+    if (match.venue == Venue.home) {
+      final home = await homeVenueInfo();
+      return {'venue': clean(home['venue']), 'address': clean(home['address'])};
+    }
+    final ann = await matchAnnouncement(match.id);
+    return {'venue': clean(ann['venue']), 'address': clean(ann['address'])};
+  }
+
   /// Abweichende Rückennummern für genau ein Spiel (Spieler-ID → Nummer).
   /// Fehlt ein Eintrag, gilt die Standard-Nummer des Spielers.
   Future<Map<String, int>> matchNumbers(String matchId) async {
