@@ -3468,13 +3468,29 @@ class AppState extends ChangeNotifier {
     return s == null ? null : DateTime.tryParse(s);
   }
 
-  /// Lädt die FuPa-Karrierestatistik eines Kaderspielers neu (die numerische
-  /// FuPa-ID [externalId] leitet auf die Profilseite um) und cached sie lokal.
-  /// Null ohne FuPa-ID.
+  /// FuPa-Profil-Slug eines Kaderspielers (vorname-nachname-id), da FuPa die
+  /// Profilseite NICHT über die bloße ID findet. Umlaute/ß werden umgeschrieben.
+  String? fupaPlayerSlug(Player p) {
+    final id = p.externalId?.trim();
+    if (id == null || id.isEmpty) return null;
+    final name =
+        '${p.firstName} ${p.lastName}'
+            .toLowerCase()
+            .replaceAll('ä', 'ae')
+            .replaceAll('ö', 'oe')
+            .replaceAll('ü', 'ue')
+            .replaceAll('ß', 'ss')
+            .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+            .replaceAll(RegExp(r'(^-+)|(-+$)'), '');
+    return name.isEmpty ? id : '$name-$id';
+  }
+
+  /// Lädt die FuPa-Karrierestatistik eines Kaderspielers neu (über den Profil-
+  /// Slug vorname-nachname-id) und cached sie lokal. Null ohne FuPa-ID.
   Future<Map<String, dynamic>?> refreshPlayerCareer(Player p) async {
-    final id = p.externalId;
-    if (id == null || id.trim().isEmpty) return null;
-    final career = await _importer.importPlayerCareer(id.trim());
+    final slug = fupaPlayerSlug(p);
+    if (slug == null) return null;
+    final career = await _importer.importPlayerCareer(slug);
     final json = jsonEncode(fupaCareerToMap(career));
     await _repo.setSetting('career_stats_${p.id}', json);
     await _repo.setSetting(
