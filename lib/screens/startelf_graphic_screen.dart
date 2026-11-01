@@ -2151,26 +2151,28 @@ class _StartelfGraphic extends StatelessWidget {
 
   /// Spielankündigungs-Grafik: Titel (POKALSPIEL/SPIELTAG) + große Logos „VS" +
   /// Datum/Uhrzeit/Spielstätte/Adresse mit Icons.
-  /// Pille „HEIMSPIEL" / „AUSWÄRTSSPIEL" mit Icon (Akzentfarbe).
+  /// Pille „HEIMSPIEL" / „AUSWÄRTSSPIEL": deckende Akzentfläche mit dunkler
+  /// Schrift – überdeckt den Hintergrund (z.B. Streifen) sauber.
   Widget _homeAwayBadge() {
     final label = isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL';
-    final icon = isHome ? Icons.home_rounded : Icons.flight_takeoff_rounded;
+    final icon = isHome ? Icons.home_rounded : Icons.directions_bus_rounded;
+    // Dunkle Schrift auf der hellen Akzentfläche (lesbar auf Gold/Weiß/Silber).
+    const dark = Color(0xFF14110A);
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _accent.withValues(alpha: 0.9), width: 1.5),
-        color: _accent.withValues(alpha: 0.12),
+        color: _accent,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: _accent, size: 17),
+          Icon(icon, color: dark, size: 17),
           const SizedBox(width: 8),
           Text(
             label,
-            style: TextStyle(
-              color: _accent,
+            style: const TextStyle(
+              color: dark,
               fontSize: 15,
               fontWeight: FontWeight.w900,
               letterSpacing: 1.5,
