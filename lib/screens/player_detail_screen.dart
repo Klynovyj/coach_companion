@@ -57,6 +57,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
   /// Bewertungen im Kopf (Gesamt + Monat) – ein-/ausklappbar per Tipp aufs Foto.
   bool _ratingsExpanded = false;
 
+  /// FuPa-Karrierestatistik (lokal gecacht): Future + Lade-Flag.
+  bool _careerBusy = false;
+  Future<Map<String, dynamic>?>? _careerFuture;
+
   @override
   void initState() {
     super.initState();
@@ -273,6 +277,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                   // Statistik & Historie zusammengefasst.
                   _tabList([
                     _fupaStatCard(context, state),
+                    _careerStatCard(context, state, isTrainer),
                     _goalsCard(context, state, df),
                     _cardsCard(context, state, df),
                     _fupaCardsCard(context, state),
@@ -1311,6 +1316,245 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     } finally {
       entry.remove();
     }
+  }
+
+  // ----------------------------------------- FuPa-Karriere (getrennte Karte)
+  Future<void> _refreshCareer(AppState state) async {
+    setState(() => _careerBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final map = await state.refreshPlayerCareer(_player);
+      if (!mounted) return;
+      setState(() => _careerFuture = Future.value(map));
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('FuPa-Statistik konnte nicht geladen werden: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _careerBusy = false);
+    }
+  }
+
+  /// Komplette FuPa-Karrierestatistik (Spiele/Tore/Vorlagen gesamt, Karten,
+  /// Top-Elf, Stationen) – getrennt von der aktuellen Saison-Karte, lokal
+  /// gecacht und per „Aktualisieren" nachladbar.
+  Widget _careerStatCard(BuildContext context, AppState state, bool isTrainer) {
+    _careerFuture ??= state.playerCareer(_player.id);
+    final hasFupa = (_player.externalId ?? '').trim().isNotEmpty;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 8, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'FuPa-Karriere',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
+                ),
+                if (hasFupa && isTrainer)
+                  TextButton.icon(
+                    onPressed: _careerBusy ? null : () => _refreshCareer(state),
+                    icon: _careerBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh, size: 18),
+                    label: const Text('Aktualisieren'),
+                  ),
+              ],
+            ),
+            if (!hasFupa)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(2, 4, 8, 4),
+                child: Text(
+                  'Kein FuPa-Profil verknüpft.',
+                  style: TextStyle(color: Colors.grey),
+                ),
+              )
+            else
+              FutureBuilder<Map<String, dynamic>?>(
+                future: _careerFuture,
+                builder: (context, snap) {
+                  final stats = snap.data;
+                  if (stats == null) {
+                    return const Padding(
+                      padding: EdgeInsets.fromLTRB(2, 4, 8, 4),
+                      child: Text(
+                        'Noch nicht geladen. Tippe auf „Aktualisieren".',
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    );
+                  }
+                  return _careerBody(context, state, stats);
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _careerBody(
+    BuildContext context,
+    AppState state,
+    Map<String, dynamic> stats,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final stations = (stats['stations'] as List?) ?? const [];
+    Widget big(String label, Object? v) => Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '${v ?? 0}',
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+            ),
+            Text(label, style: Theme.of(context).textTheme.bodySmall),
+          ],
+        ),
+      ),
+    );
+    Widget mini(String label, Object? v, Color c) => Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${v ?? 0}', style: TextStyle(color: c, fontWeight: FontWeight.w800)),
+          const SizedBox(width: 5),
+          Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ],
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            big('Spiele', stats['totalMatches']),
+            const SizedBox(width: 8),
+            big('Tore', stats['totalGoals']),
+            const SizedBox(width: 8),
+            big('Vorlagen', stats['totalAssists']),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            mini('Gelb', stats['totalYellow'], const Color(0xFFF9A825)),
+            mini('Gelb-Rot', stats['totalYellowRed'], const Color(0xFFEF6C00)),
+            mini('Rot', stats['totalRed'], const Color(0xFFC62828)),
+            mini('Top-Elf', stats['totalTopEleven'], scheme.primary),
+          ],
+        ),
+        if (stations.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Stationen',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              _careerNumHead('Sp'),
+              _careerNumHead('T'),
+              _careerNumHead('V'),
+            ],
+          ),
+          const Divider(height: 10),
+          for (var i = 0; i < stations.length; i++) ...[
+            _careerStationRow(context, stations[i] as Map),
+            if (i < stations.length - 1)
+              Divider(height: 1, color: Theme.of(context).dividerColor),
+          ],
+        ],
+        FutureBuilder<DateTime?>(
+          future: state.playerCareerUpdatedAt(_player.id),
+          builder: (context, snap) {
+            final dt = snap.data;
+            if (dt == null) return const SizedBox.shrink();
+            return Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                'Stand: ${DateFormat('dd.MM.yyyy HH:mm', 'de_DE').format(dt)}',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Theme.of(context).hintColor,
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _careerNumHead(String t) => SizedBox(
+    width: 34,
+    child: Text(
+      t,
+      textAlign: TextAlign.center,
+      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12),
+    ),
+  );
+
+  Widget _careerStationRow(BuildContext context, Map s) {
+    Widget num(Object? v) => SizedBox(
+      width: 34,
+      child: Text(
+        '${v ?? 0}',
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontWeight: FontWeight.w700),
+      ),
+    );
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${s['club'] ?? ''}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  '${s['competition'] ?? ''}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          num(s['matches']),
+          num(s['goals']),
+          num(s['assists']),
+        ],
+      ),
+    );
   }
 
   Widget _fupaStatCard(BuildContext context, AppState state) {

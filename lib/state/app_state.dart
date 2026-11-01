@@ -3450,6 +3450,41 @@ class AppState extends ChangeNotifier {
     return updated;
   }
 
+  // ----------------------------------------- FuPa-Karriere je Kaderspieler
+  /// Lokal gecachte FuPa-Karrierestatistik eines Kaderspielers (getrennt von der
+  /// synchronisierten Saison-Statistik). null = noch nichts geladen.
+  Future<Map<String, dynamic>?> playerCareer(String playerId) async {
+    final s = await _repo.getSetting('career_stats_$playerId');
+    if (s == null || s.isEmpty) return null;
+    try {
+      return jsonDecode(s) as Map<String, dynamic>;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<DateTime?> playerCareerUpdatedAt(String playerId) async {
+    final s = await _repo.getSetting('career_stats_at_$playerId');
+    return s == null ? null : DateTime.tryParse(s);
+  }
+
+  /// Lädt die FuPa-Karrierestatistik eines Kaderspielers neu (die numerische
+  /// FuPa-ID [externalId] leitet auf die Profilseite um) und cached sie lokal.
+  /// Null ohne FuPa-ID.
+  Future<Map<String, dynamic>?> refreshPlayerCareer(Player p) async {
+    final id = p.externalId;
+    if (id == null || id.trim().isEmpty) return null;
+    final career = await _importer.importPlayerCareer(id.trim());
+    final json = jsonEncode(fupaCareerToMap(career));
+    await _repo.setSetting('career_stats_${p.id}', json);
+    await _repo.setSetting(
+      'career_stats_at_${p.id}',
+      DateTime.now().toIso8601String(),
+    );
+    notifyListeners();
+    return jsonDecode(json) as Map<String, dynamic>;
+  }
+
   /// Setzt einen neuen Status (mit Datum): legt einen Verlaufseintrag an und
   /// aktualisiert den aktuellen Status am Spieler.
   Future<void> setScoutStatus(
