@@ -136,13 +136,13 @@ Deno.serve(async (req) => {
       return new Response("Gemini-Fehler: " + t, { status: 502 });
     }
     const json = await resp.json();
-    const parts =
+    const outParts =
       (json?.candidates?.[0]?.content?.parts ?? []) as Array<
         Record<string, unknown>
       >;
     let outData = "";
     let outMime = "image/png";
-    for (const p of parts) {
+    for (const p of outParts) {
       const inline = (p.inline_data ?? p.inlineData) as
         | Record<string, unknown>
         | undefined;
