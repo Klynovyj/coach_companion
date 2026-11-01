@@ -642,11 +642,48 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       );
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('KI-Bearbeitung fehlgeschlagen: $e')),
+        SnackBar(
+          content: Text(_aiErrorMessage(e)),
+          duration: const Duration(seconds: 6),
+        ),
       );
     } finally {
       if (mounted) setState(() => _aiBusy = false);
     }
+  }
+
+  /// Übersetzt die (oft sehr langen) Gemini-/Function-Fehler in eine kurze,
+  /// verständliche Meldung für den Trainer.
+  String _aiErrorMessage(Object e) {
+    final s = e.toString();
+    final low = s.toLowerCase();
+    if (low.contains('resource_exhausted') ||
+        low.contains('prepayment credits') ||
+        low.contains('quota') ||
+        low.contains('"code": 402') ||
+        low.contains('code: 402')) {
+      return 'Gemini-Guthaben aufgebraucht – im Google AI Studio Guthaben aufladen.';
+    }
+    if (low.contains('api_key_invalid') ||
+        low.contains('api key not valid') ||
+        low.contains('unauthorized') ||
+        low.contains('permission_denied')) {
+      return 'Gemini-Zugang abgelehnt – API-Key im Supabase-Secret prüfen.';
+    }
+    if (low.contains('gemini_api_key fehlt') ||
+        low.contains('secret setzen')) {
+      return 'Gemini ist noch nicht eingerichtet (Secret fehlt).';
+    }
+    if (low.contains('kein bild von der ki')) {
+      return 'Die KI hat kein Bild zurückgegeben – anderen Wunsch probieren.';
+    }
+    if (low.contains('socketexception') ||
+        low.contains('failed host lookup') ||
+        low.contains('timeout') ||
+        low.contains('clientexception')) {
+      return 'Keine Verbindung zur KI – Internet prüfen und erneut versuchen.';
+    }
+    return 'KI-Bearbeitung fehlgeschlagen. Bitte später erneut versuchen.';
   }
 
   /// Dialog für den KI-Wunsch (Freitext + Vorschlags-Chips).
@@ -662,44 +699,48 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     return showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true,
         title: const Text('Mit KI bearbeiten'),
-        content: StatefulBuilder(
-          builder: (ctx, setLocal) => Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Wünsche zu Bild & Design:'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ctrl,
-                maxLines: 3,
-                autofocus: true,
-                textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  hintText: 'z.B. heller, dramatischer, Konfetti …',
-                  border: OutlineInputBorder(),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: StatefulBuilder(
+            builder: (ctx, setLocal) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Wünsche zu Bild & Design:'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: ctrl,
+                  maxLines: 3,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    hintText: 'z.B. heller, dramatischer, Konfetti …',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final s in ideas)
-                    ActionChip(
-                      label: Text(s),
-                      onPressed: () => setLocal(() {
-                        ctrl.text = ctrl.text.trim().isEmpty
-                            ? s
-                            : '${ctrl.text.trim()}, $s';
-                        ctrl.selection = TextSelection.collapsed(
-                          offset: ctrl.text.length,
-                        );
-                      }),
-                    ),
-                ],
-              ),
-            ],
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (final s in ideas)
+                      ActionChip(
+                        label: Text(s),
+                        onPressed: () => setLocal(() {
+                          ctrl.text = ctrl.text.trim().isEmpty
+                              ? s
+                              : '${ctrl.text.trim()}, $s';
+                          ctrl.selection = TextSelection.collapsed(
+                            offset: ctrl.text.length,
+                          );
+                        }),
+                      ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
         actions: [
