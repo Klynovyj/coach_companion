@@ -2206,7 +2206,9 @@ class _StartelfGraphic extends StatelessWidget {
             letterSpacing: 1,
           ),
         ),
-        if (opponentName.isNotEmpty) ...[
+        // „vs GEGNER" nur bei Startelf/Spieltag – in der Ergebnis-Grafik steht
+        // der Gegner ohnehin groß mit Logo + Spielstand darunter.
+        if (result == null && opponentName.isNotEmpty) ...[
           const SizedBox(height: 4),
           Row(
             children: [
@@ -2321,51 +2323,28 @@ class _StartelfGraphic extends StatelessWidget {
     final oppLogo = TeamLogo.decode(opponentLogo);
     final logoH = compact ? 60.0 : 78.0;
 
-    Widget side(Uint8List? bytes, String name) => Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (bytes != null)
-          _logoChip(bytes, height: logoH, circle: logoCircle)
-        else
-          SizedBox(height: logoH),
-        const SizedBox(height: 8),
-        SizedBox(
-          width: 130,
-          child: Text(
-            name.toUpperCase(),
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              height: 1.1,
-            ),
-          ),
-        ),
-      ],
-    );
+    // Nur noch das Logo (Vereinsname entfällt – das Logo genügt), zentriert.
+    Widget side(Uint8List? bytes) => bytes != null
+        ? _logoChip(bytes, height: logoH, circle: logoCircle)
+        : SizedBox(height: logoH);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(child: side(ownLogo, title)),
+        Expanded(child: Center(child: side(ownLogo))),
         Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           child: Text(
             '${r.ownScore} : ${r.oppScore}',
             style: TextStyle(
               color: _accent,
-              fontSize: compact ? 48 : 64,
+              fontSize: compact ? 52 : 68,
               fontWeight: FontWeight.w900,
               height: 1.0,
             ),
           ),
         ),
-        Expanded(
-          child: side(oppLogo, opponentName.isEmpty ? 'Gegner' : opponentName),
-        ),
+        Expanded(child: Center(child: side(oppLogo))),
       ],
     );
   }
