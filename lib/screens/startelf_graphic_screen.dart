@@ -236,10 +236,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   List<Sponsor> get _barSponsors =>
       _sponsors.where((s) => !s.isMain && s.logo != null).toList();
 
+  /// Seitenverhältnis des finalen Fotobereichs (für WYSIWYG-Zuschnitt): Band =
+  /// volle Breite × 46 % Höhe; Hintergrund = volle Grafik. Nach aktuellem Format.
+  double _photoAspect(_PhotoPlace place) {
+    final w = _story ? _storyW : _postW;
+    final h = _story ? _storyH : _postH;
+    return place == _PhotoPlace.band ? w / (h * 0.46) : w / h;
+  }
+
   Future<String?> _pickImage({
     required bool asBackground,
     ImageSource source = ImageSource.gallery,
     bool edit = false,
+    double? aspectRatio,
   }) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -256,7 +265,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         final edited = await Navigator.push<Uint8List?>(
           context,
           MaterialPageRoute(
-            builder: (_) => PhotoEditorScreen(imageBytes: bytes),
+            builder: (_) =>
+                PhotoEditorScreen(imageBytes: bytes, aspectRatio: aspectRatio),
           ),
         );
         if (edited == null) return null; // Abbruch im Editor
@@ -372,10 +382,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
 
   /// Neues Foto wählen (mit Editor) und Platzierung abfragen.
   Future<void> _addPhoto(ImageSource source) async {
-    final url = await _pickImage(asBackground: true, source: source, edit: true);
-    if (url == null || !mounted) return;
+    // Zuerst Platzierung wählen, damit der Editor im richtigen (finalen)
+    // Seitenverhältnis zuschneidet → WYSIWYG.
     final place = await _askPlacement();
-    if (place == null) return;
+    if (place == null || !mounted) return;
+    final url = await _pickImage(
+      asBackground: true, // Fotos immer hochauflösend laden
+      source: source,
+      edit: true,
+      aspectRatio: _photoAspect(place),
+    );
+    if (url == null || !mounted) return;
     setState(() {
       _photos.add(_GraphicPhoto(url, place));
       _photoCtrl.value = Matrix4.identity();
@@ -423,7 +440,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     if (bytes == null) return;
     final edited = await Navigator.push<Uint8List?>(
       context,
-      MaterialPageRoute(builder: (_) => PhotoEditorScreen(imageBytes: bytes)),
+      MaterialPageRoute(
+        builder: (_) =>
+            PhotoEditorScreen(imageBytes: bytes, aspectRatio: _photoAspect(p.place)),
+      ),
     );
     if (edited == null || !mounted) return;
     setState(() {
@@ -659,6 +679,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                       final url = await _pickImage(
                         asBackground: true,
                         edit: true,
+                        aspectRatio: _photoAspect(_PhotoPlace.background),
                       );
                       if (url != null) apply(_settings.copyWith(bgImage: url));
                     },
