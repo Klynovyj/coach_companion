@@ -34,6 +34,10 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
   double _brightness = 0; // -100..100
   double _contrast = 0; // -100..100
   bool _busy = false;
+  // Zuschneider erst bereit, wenn das Bild dekodiert/angelegt ist. Vorher
+  // schlägt ein crop() fehl („Zuschnitt fehlgeschlagen") – daher „Übernehmen"
+  // bis dahin sperren.
+  bool _ready = false;
 
   /// Farbmatrix für die Live-Vorschau (Helligkeit = Offset, Kontrast = Skalierung
   /// um 128). Entspricht ungefähr dem späteren Einrechnen.
@@ -52,6 +56,7 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
         final rotated = img.copyRotate(decoded, angle: 90);
         _bytes = Uint8List.fromList(img.encodeJpg(rotated, quality: 92));
         _rotation++;
+        _ready = false; // neuer Crop-Key → wieder warten, bis bereit
       }
     } catch (_) {
       // Drehen fehlgeschlagen – Bild bleibt wie es war.
@@ -146,14 +151,23 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: FilledButton.icon(
-              onPressed: _busy
+              onPressed: (_busy || !_ready)
                   ? null
                   : () {
                       setState(() => _busy = true);
                       _controller.crop();
                     },
-              icon: const Icon(Icons.check, size: 18),
-              label: const Text('Übernehmen'),
+              icon: _busy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.check, size: 18),
+              label: Text(_ready ? 'Übernehmen' : 'Lädt …'),
             ),
           ),
         ],
@@ -182,6 +196,12 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
                 }),
                 baseColor: Colors.black,
                 maskColor: Colors.black.withValues(alpha: 0.6),
+                onStatusChanged: (status) {
+                  final ready = status == CropStatus.ready;
+                  if (ready != _ready && mounted) {
+                    setState(() => _ready = ready);
+                  }
+                },
                 onCropped: _onCropped,
               ),
             ),

@@ -577,6 +577,34 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         apply(_settings.copyWith(overlayOpacity: v.round())),
                   ),
                   const SizedBox(height: 8),
+                  // Hintergrundbild: Deckkraft (Transparenz) + Mischmodus ---
+                  Text('Bild-Deckkraft: ${_settings.bgOpacity}%'),
+                  Slider(
+                    value: _settings.bgOpacity.toDouble(),
+                    min: 0,
+                    max: 100,
+                    divisions: 20,
+                    label: '${_settings.bgOpacity}%',
+                    onChanged: (v) =>
+                        apply(_settings.copyWith(bgOpacity: v.round())),
+                  ),
+                  const SizedBox(height: 4),
+                  const Text('Mischmodus (Bild ↔ Hintergrund)'),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      for (final b in _blendOptions)
+                        ChoiceChip(
+                          label: Text(b.$2),
+                          selected: _settings.bgBlend == b.$1,
+                          onSelected: (_) =>
+                              apply(_settings.copyWith(bgBlend: b.$1)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
                   // Verlaufsfarben --------------------------------------
                   const Text('Verlaufsfarbe oben'),
                   const SizedBox(height: 6),
@@ -1108,6 +1136,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         accent: _settings.accent == null
                             ? null
                             : _hex(_settings.accent!),
+                        bgOpacity: _settings.bgOpacity / 100,
+                        bgBlend: _blendModeOf(_settings.bgBlend),
                         infoPos: Offset(_settings.infoX, _settings.infoY),
                         onInfoMove: (p) => setState(
                           () => _settings = _settings.copyWith(
@@ -1275,6 +1305,24 @@ Color _hex(String h) {
   return Color(int.tryParse(s, radix: 16) ?? 0xFF0E3325);
 }
 
+// Mischmodi für das Hintergrundbild (Schlüssel, Anzeigename). „Ineinander-
+// kopieren" ist der deutsche Photoshop-Name für Overlay.
+const _blendOptions = <(String, String)>[
+  ('normal', 'Normal'),
+  ('overlay', 'Ineinanderkopieren'),
+  ('multiply', 'Multiplizieren'),
+  ('screen', 'Negativ multipl.'),
+  ('softlight', 'Weiches Licht'),
+];
+
+BlendMode _blendModeOf(String s) => switch (s) {
+  'overlay' => BlendMode.overlay,
+  'multiply' => BlendMode.multiply,
+  'screen' => BlendMode.screen,
+  'softlight' => BlendMode.softLight,
+  _ => BlendMode.srcOver,
+};
+
 /// Vorschau der KI-bearbeiteten Grafik: Bild (zoombar) + Teilen / Nochmal
 /// bearbeiten / Verwerfen.
 class _AiResultPreview extends StatelessWidget {
@@ -1356,6 +1404,63 @@ class _AiResultPreview extends StatelessWidget {
   }
 }
 
+/// Legt sein Kind mit Deckkraft + Mischmodus über das, was darunter gemalt
+/// wurde (z.B. der Verlauf im Hintergrund). So „verschmilzt" ein Foto mit dem
+/// Design (Ineinanderkopieren = BlendMode.overlay usw.).
+class _BlendLayer extends SingleChildRenderObjectWidget {
+  const _BlendLayer({
+    required this.opacity,
+    required this.mode,
+    required Widget super.child,
+  });
+
+  final double opacity;
+  final BlendMode mode;
+
+  @override
+  _BlendRender createRenderObject(BuildContext context) =>
+      _BlendRender(opacity, mode);
+
+  @override
+  void updateRenderObject(BuildContext context, _BlendRender ro) {
+    ro
+      ..opacity = opacity
+      ..mode = mode;
+  }
+}
+
+class _BlendRender extends RenderProxyBox {
+  _BlendRender(this._opacity, this._mode);
+  double _opacity;
+  BlendMode _mode;
+
+  set opacity(double v) {
+    if (v != _opacity) {
+      _opacity = v;
+      markNeedsPaint();
+    }
+  }
+
+  set mode(BlendMode v) {
+    if (v != _mode) {
+      _mode = v;
+      markNeedsPaint();
+    }
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final c = child;
+    if (c == null) return;
+    final paint = Paint()
+      ..blendMode = _mode
+      ..color = Color.fromRGBO(0, 0, 0, _opacity.clamp(0.0, 1.0));
+    context.canvas.saveLayer(offset & size, paint);
+    context.paintChild(c, offset);
+    context.canvas.restore();
+  }
+}
+
 /// Die eigentliche Grafik in fester logischer Größe (wird per RepaintBoundary
 /// in ein PNG exportiert).
 class _StartelfGraphic extends StatelessWidget {
@@ -1386,6 +1491,8 @@ class _StartelfGraphic extends StatelessWidget {
     this.onInfoMove,
     this.onInfoMoveEnd,
     this.accent,
+    this.bgOpacity = 1.0,
+    this.bgBlend = BlendMode.srcOver,
   });
 
   final String title;
@@ -1414,6 +1521,8 @@ class _StartelfGraphic extends StatelessWidget {
   final void Function(Offset pos)? onInfoMove; // Live-Verschieben
   final VoidCallback? onInfoMoveEnd; // Speichern nach dem Verschieben
   final Color? accent; // Akzentfarbe (Gold etc.); null = Weiß wie bisher
+  final double bgOpacity; // Deckkraft des Hintergrundbilds (0..1)
+  final BlendMode bgBlend; // Mischmodus des Hintergrundbilds mit dem Verlauf
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
@@ -1660,7 +1769,18 @@ class _StartelfGraphic extends StatelessWidget {
           ),
         ),
         if (bgBytes != null) ...[
-          Image.memory(bgBytes, fit: BoxFit.cover, gaplessPlayback: true),
+          if (bgOpacity < 1.0 || bgBlend != BlendMode.srcOver)
+            _BlendLayer(
+              opacity: bgOpacity,
+              mode: bgBlend,
+              child: Image.memory(
+                bgBytes,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              ),
+            )
+          else
+            Image.memory(bgBytes, fit: BoxFit.cover, gaplessPlayback: true),
           Container(
             decoration: BoxDecoration(
               gradient: LinearGradient(

@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 60;
+  static const _dbVersion = 61;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -512,6 +512,13 @@ class AppDatabase {
     if (oldV < 60) {
       await db.execute('ALTER TABLE graphic_settings ADD COLUMN accent TEXT');
     }
+    // v60 -> v61: Deckkraft + Mischmodus des Hintergrundbilds.
+    if (oldV < 61) {
+      await db.execute(
+        'ALTER TABLE graphic_settings ADD COLUMN bg_opacity INTEGER',
+      );
+      await db.execute('ALTER TABLE graphic_settings ADD COLUMN bg_blend TEXT');
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -820,7 +827,9 @@ class AppDatabase {
         design_mode INTEGER,
         info_x REAL,
         info_y REAL,
-        accent TEXT
+        accent TEXT,
+        bg_opacity INTEGER,
+        bg_blend TEXT
       )
   ''';
 

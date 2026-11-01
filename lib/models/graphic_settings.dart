@@ -41,6 +41,14 @@ class GraphicSettings {
   /// Datum/Uhrzeit, Rubrik-Label). null = Weiß wie bisher.
   final String? accent;
 
+  /// Deckkraft des Hintergrundbilds (0–100). Darunter scheint der Verlauf durch.
+  final int bgOpacity;
+
+  /// Mischmodus des Hintergrundbilds mit dem Verlauf darunter:
+  /// 'normal' | 'overlay' (Ineinanderkopieren) | 'multiply' | 'screen' |
+  /// 'softlight'.
+  final String bgBlend;
+
   static const defaultGradTop = '#0E3325';
   static const defaultGradBottom = '#15603F';
   static const defaultOverlay = 85;
@@ -61,6 +69,8 @@ class GraphicSettings {
     this.infoX = 0.5,
     this.infoY = 0.72,
     this.accent,
+    this.bgOpacity = 100,
+    this.bgBlend = 'normal',
   });
 
   GraphicSettings copyWith({
@@ -85,6 +95,8 @@ class GraphicSettings {
     double? infoY,
     String? accent,
     bool clearAccent = false,
+    int? bgOpacity,
+    String? bgBlend,
   }) => GraphicSettings(
     id: id ?? this.id,
     title: clearTitle ? null : (title ?? this.title),
@@ -101,6 +113,8 @@ class GraphicSettings {
     infoX: infoX ?? this.infoX,
     infoY: infoY ?? this.infoY,
     accent: clearAccent ? null : (accent ?? this.accent),
+    bgOpacity: bgOpacity ?? this.bgOpacity,
+    bgBlend: bgBlend ?? this.bgBlend,
   );
 
   Map<String, Object?> toMap() => {
@@ -119,6 +133,8 @@ class GraphicSettings {
     'info_x': infoX,
     'info_y': infoY,
     'accent': accent,
+    'bg_opacity': bgOpacity,
+    'bg_blend': bgBlend,
   };
 
   factory GraphicSettings.fromMap(Map<String, Object?> m) => GraphicSettings(
@@ -146,5 +162,9 @@ class GraphicSettings {
     accent: (m['accent'] as String?)?.trim().isEmpty == true
         ? null
         : m['accent'] as String?,
+    bgOpacity: (m['bg_opacity'] as num?)?.toInt() ?? 100,
+    bgBlend: (m['bg_blend'] as String?)?.trim().isNotEmpty == true
+        ? m['bg_blend'] as String
+        : 'normal',
   );
 }
