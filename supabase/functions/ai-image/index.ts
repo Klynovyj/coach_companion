@@ -21,12 +21,36 @@ const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 // Feste Leitplanke: die Grafik soll als Ganzes bearbeitet werden, aber die
 // Kern-Infos (Spielstand, Namen, Logos) moeglichst erhalten bleiben.
-const GUARD =
-  "Du bearbeitest eine fertige Fussball-Sportgrafik (Social-Media-Post). " +
-  "Setze den folgenden Wunsch des Nutzers zu Bild und Design um und gib das " +
-  "bearbeitete Bild im selben Seitenverhaeltnis zurueck. Erhalte dabei den " +
-  "Spielstand, die Teamnamen, Zahlen und Logos moeglichst originalgetreu und " +
-  "gut lesbar; veraendere sie nicht inhaltlich. Wunsch: ";
+// Data-URL-Prefix (data:image/...;base64,) abschneiden; liefert mime + data.
+function stripDataUrl(s: string): { mime: string; data: string } {
+  const m = s.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/s);
+  if (m) return { mime: m[1], data: m[2] };
+  return { mime: "image/png", data: s };
+}
+
+// Leitplanken-Text je Modus. 'background' = nur kreativer Hintergrund (ohne
+// Logos/Text), 'compose' = ganze Grafik aus den mitgeschickten Bausteinen.
+function guardText(mode: string, aspect: string, roles: string[]): string {
+  if (mode === "background") {
+    return (
+      "Erzeuge NUR ein kreatives, hochwertiges Hintergrund-/Designbild fuer " +
+      "eine Fussball-Sportgrafik im Seitenverhaeltnis " + aspect + ". KEINE " +
+      "Logos, KEINE Texte, KEINE Zahlen, KEINE Wappen einfuegen. Lasse ruhige, " +
+      "gleichmaessige Flaechen, damit spaeter Logos und Texte gut lesbar " +
+      "darueber passen. Die beiliegenden Bilder dienen NUR als Farb- und Stil-" +
+      "Inspiration (Vereinsfarben, Stimmung). Wunsch des Nutzers: "
+    );
+  }
+  return (
+    "Du gestaltest eine Fussball-Sportgrafik (Social-Media-Post) im " +
+    "Seitenverhaeltnis " + aspect + ". Dir liegen mehrere Bilder bei; ihre " +
+    "Rollen in Reihenfolge: " + roles.join(", ") + ". Baue daraus eine " +
+    "ansprechende, kreative Grafik. Nutze die echten Logos (home_logo/" +
+    "away_logo) und Sponsoren-Logos unveraendert und gut sichtbar. Halte " +
+    "Teamnamen, Spielstand, Datum und Zahlen exakt und gut lesbar. Wunsch " +
+    "des Nutzers: "
+  );
+}
 
 Deno.serve(async (req) => {
   try {
@@ -55,17 +79,43 @@ Deno.serve(async (req) => {
     }
 
     const body = (await req.json()) as Record<string, unknown>;
-    let data = String(body.image ?? "");
-    // Falls doch eine data:-URL kommt: Prefix abschneiden.
-    const m = data.match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/s);
-    let mime = String(body.mime ?? "image/png");
-    if (m) {
-      mime = m[1];
-      data = m[2];
+    const mode = String(body.mode ?? "compose");
+    const aspect = String(body.aspect ?? "9:16");
+
+    // Bilder sammeln: images[] (mehrere Bausteine) bevorzugt, sonst Einzelbild.
+    type Img = { mime: string; data: string; role: string };
+    const imgs: Img[] = [];
+    const rawImages = Array.isArray(body.images) ? body.images : [];
+    for (const it of rawImages) {
+      const o = it as Record<string, unknown>;
+      const raw = String(o.data ?? "");
+      if (!raw) continue;
+      const s = stripDataUrl(raw);
+      imgs.push({
+        mime: o.mime ? String(o.mime) : s.mime,
+        data: s.data,
+        role: String(o.role ?? "image"),
+      });
+    }
+    if (imgs.length === 0 && body.image) {
+      const s = stripDataUrl(String(body.image));
+      imgs.push({
+        mime: body.mime ? String(body.mime) : s.mime,
+        data: s.data,
+        role: "base",
+      });
     }
     const prompt = String(body.prompt ?? "").trim();
-    if (!data) return new Response("kein Bild", { status: 400 });
+    if (imgs.length === 0) return new Response("kein Bild", { status: 400 });
     if (!prompt) return new Response("kein Wunsch", { status: 400 });
+
+    const text = guardText(mode, aspect, imgs.map((i) => i.role)) + prompt;
+    const parts = [
+      ...imgs.map((i) => ({
+        inline_data: { mime_type: i.mime, data: i.data },
+      })),
+      { text },
+    ];
 
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}` +
@@ -74,15 +124,7 @@ Deno.serve(async (req) => {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [
-              { inline_data: { mime_type: mime, data } },
-              { text: GUARD + prompt },
-            ],
-          },
-        ],
+        contents: [{ role: "user", parts }],
       }),
     });
     if (!resp.ok) {

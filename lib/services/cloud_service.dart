@@ -163,16 +163,24 @@ class CloudService {
   }
 
   /// KI-Bildbearbeitung: ruft die Edge-Function „ai-image" (Gemini) auf und
-  /// liefert das bearbeitete Bild als Bytes. Wirft bei Fehlern (kein Key/Netz/
-  /// Modell) – der Aufrufer zeigt eine Meldung.
+  /// liefert das Ergebnis-Bild als Bytes. [images] sind die Bausteine
+  /// ({mime, data, role}; role z.B. base/home_logo/away_logo/sponsor/photo).
+  /// [mode] = 'compose' (ganze Grafik) oder 'background' (nur Hintergrund).
+  /// Wirft bei Fehlern (kein Key/Netz/Modell) – der Aufrufer zeigt eine Meldung.
   static Future<Uint8List?> aiImage({
-    required String imageB64,
-    required String mime,
+    required List<Map<String, String>> images,
     required String prompt,
+    String mode = 'compose',
+    String aspect = '9:16',
   }) async {
     final res = await _c.functions.invoke(
       'ai-image',
-      body: {'image': imageB64, 'mime': mime, 'prompt': prompt},
+      body: {
+        'images': images,
+        'prompt': prompt,
+        'mode': mode,
+        'aspect': aspect,
+      },
     );
     final data = res.data;
     if (data is Map && data['image'] is String) {

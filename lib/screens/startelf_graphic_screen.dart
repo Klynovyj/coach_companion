@@ -718,34 +718,156 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
-  /// „Mit KI bearbeiten": Wunsch abfragen → aktuelle Grafik als PNG an die
-  /// Edge-Function „ai-image" (Gemini) → Ergebnis als Vorschau (teilen/verwerfen).
+  /// Mime-Typ aus einer data:-URL lesen (Default image/png).
+  String _dataUrlMime(String dataUrl) {
+    final m = RegExp(r'^data:([^;]+);').firstMatch(dataUrl);
+    return m?.group(1) ?? 'image/png';
+  }
+
+  /// Bausteine für die KI einsammeln (Logos, Sponsoren, Fotos – je mit Rolle).
+  /// [includeBase] → zusätzlich das aktuell gerenderte Grafik-PNG (für 'compose').
+  Future<List<Map<String, String>>> _collectAiImages({
+    required bool includeBase,
+  }) async {
+    final out = <Map<String, String>>[];
+    void add(String? dataUrl, String role) {
+      if (dataUrl == null || !dataUrl.contains('base64,')) return;
+      out.add({'mime': _dataUrlMime(dataUrl), 'data': dataUrl, 'role': role});
+    }
+
+    if (includeBase) {
+      final base = await _captureGraphicPng();
+      if (base != null) {
+        out.add({
+          'mime': 'image/png',
+          'data': 'data:image/png;base64,${base64Encode(base)}',
+          'role': 'base',
+        });
+      }
+    }
+    add(_logo, 'home_logo');
+    if (_settings.showOpponentLogo) add(widget.opponentLogo, 'away_logo');
+    add(_mainSponsor?.logo, 'sponsor');
+    for (final s in _barSponsors) {
+      add(s.logo, 'sponsor');
+    }
+    for (final p in _photos) {
+      add(p.dataUrl, 'photo');
+    }
+    return out;
+  }
+
+  /// Strukturierte Daten der Grafik als Text (für die KI zusätzlich zum Bild).
+  String _aiSpec() {
+    final b = StringBuffer();
+    b.writeln('Grafik-Typ: $_kind.');
+    final opp = widget.opponentName.trim();
+    b.writeln(
+      'Teams: $_title${opp.isEmpty ? '' : ' vs $opp'} '
+      '(${widget.isHome ? 'Heim' : 'Auswärts'}).',
+    );
+    final d = widget.matchDate;
+    if (d != null) {
+      final dd = d.toLocal();
+      b.writeln(
+        'Datum/Zeit: ${dd.day.toString().padLeft(2, '0')}.'
+        '${dd.month.toString().padLeft(2, '0')}.${dd.year} '
+        '${dd.hour.toString().padLeft(2, '0')}:'
+        '${dd.minute.toString().padLeft(2, '0')} Uhr.',
+      );
+    }
+    final a = widget.announcement;
+    if (a != null) {
+      if ((a.matchday ?? '').isNotEmpty) b.writeln('Spieltag/Wettbewerb: ${a.matchday}.');
+      if ((a.venue ?? '').isNotEmpty) b.writeln('Spielstätte: ${a.venue}.');
+      if ((a.address ?? '').isNotEmpty) b.writeln('Adresse: ${a.address}.');
+    }
+    final r = widget.result;
+    if (r != null) {
+      b.writeln('Endstand: $_title ${r.ownScore} : ${r.oppScore} $opp.');
+      if (r.ownGoals.isNotEmpty) {
+        b.writeln(
+          'Tore $_title: '
+          '${r.ownGoals.map((g) => "${g.name} ${g.minute}'").join(', ')}.',
+        );
+      }
+      if (r.oppGoals.isNotEmpty) {
+        b.writeln(
+          'Tore $opp: '
+          '${r.oppGoals.map((g) => "${g.name} ${g.minute}'").join(', ')}.',
+        );
+      }
+    }
+    if (widget.result == null && widget.announcement == null) {
+      final names = widget.starters.map((p) => p.name).toList();
+      if (names.isNotEmpty) b.writeln('Startelf: ${names.join(', ')}.');
+      if (widget.benchNames.isNotEmpty) {
+        b.writeln('Bank: ${widget.benchNames.join(', ')}.');
+      }
+    }
+    if (_mainSponsor != null || _barSponsors.isNotEmpty) {
+      final sp = [
+        if (_mainSponsor != null) '${_mainSponsor!.name} (Hauptsponsor)',
+        for (final s in _barSponsors) s.name,
+      ];
+      b.writeln('Sponsoren: ${sp.join(', ')}.');
+    }
+    return b.toString().trim();
+  }
+
+  /// „Mit KI bearbeiten": Wunsch + Modus abfragen, Bausteine sammeln, an die
+  /// Edge-Function „ai-image" (Gemini). Modus 'background' → Ergebnis als
+  /// Hintergrund setzen (Inhalt bleibt scharf); 'compose' → flaches Bild in der
+  /// Vorschau (teilen/verwerfen).
   Future<void> _aiEdit() async {
     if (_aiBusy) return;
-    final prompt = await _askAiWish();
-    if (prompt == null || prompt.trim().isEmpty || !mounted) return;
+    final wish = await _askAiWish();
+    if (wish == null || wish.prompt.trim().isEmpty || !mounted) return;
     setState(() => _aiBusy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final bytes = await _captureGraphicPng();
-      if (bytes == null) return;
-      final edited = await CloudService.aiImage(
-        imageB64: base64Encode(bytes),
-        mime: 'image/png',
-        prompt: prompt.trim(),
+      final images = await _collectAiImages(includeBase: wish.mode == 'compose');
+      if (images.isEmpty) return;
+      final fullPrompt = '${_aiSpec()}\n\n${wish.prompt.trim()}';
+      final out = await CloudService.aiImage(
+        images: images,
+        prompt: fullPrompt,
+        mode: wish.mode,
+        aspect: _story ? '9:16' : '1:1',
       );
-      if (edited == null) {
+      if (out == null) {
         messenger.showSnackBar(
           const SnackBar(content: Text('Die KI hat kein Bild zurückgegeben.')),
         );
         return;
       }
       if (!mounted) return;
+      if (wish.mode == 'background') {
+        setState(() {
+          _photos.removeWhere((p) => p.place == _PhotoPlace.background);
+          _photos.add(
+            _GraphicPhoto(
+              'data:image/png;base64,${base64Encode(out)}',
+              _PhotoPlace.background,
+            ),
+          );
+        });
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'KI-Hintergrund gesetzt – teile die Grafik wie gewohnt. '
+              '(Entfernen über das Foto-Menü.)',
+            ),
+            duration: Duration(seconds: 5),
+          ),
+        );
+        return;
+      }
       await Navigator.push(
         context,
         MaterialPageRoute(
           builder: (_) => _AiResultPreview(
-            bytes: edited,
+            bytes: out,
             name: '${_kind}_KI_$_title',
             shareText: '$_kind – $_title',
             onRetry: _aiEdit,
@@ -798,21 +920,23 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     return 'KI-Bearbeitung fehlgeschlagen. Bitte später erneut versuchen.';
   }
 
-  /// Dialog für den KI-Wunsch (Freitext + Vorschlags-Chips).
-  Future<String?> _askAiWish() async {
+  /// Dialog für den KI-Wunsch: Modus (Design-Hintergrund / Komplett neu) +
+  /// Freitext + Vorschlags-Chips. Gibt Wunsch und Modus zurück.
+  Future<({String prompt, String mode})?> _askAiWish() async {
     final ctrl = TextEditingController();
+    var mode = 'background'; // Standard: Inhalt bleibt scharf
     const ideas = <String>[
       'Heller & kräftiger',
       'Dramatischer Look',
       'Konfetti & Feier',
-      'Stadion-Hintergrund',
+      'Stadion-Stimmung',
       'Mehr Vereinsfarben',
     ];
-    return showDialog<String>(
+    return showDialog<({String prompt, String mode})>(
       context: context,
       builder: (ctx) => AlertDialog(
         scrollable: true,
-        title: const Text('Mit KI bearbeiten'),
+        title: const Text('Mit KI gestalten'),
         content: SizedBox(
           width: double.maxFinite,
           child: StatefulBuilder(
@@ -820,6 +944,33 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'background',
+                      label: Text('Design-Hintergrund'),
+                      icon: Icon(Icons.wallpaper),
+                    ),
+                    ButtonSegment(
+                      value: 'compose',
+                      label: Text('Komplett neu'),
+                      icon: Icon(Icons.auto_awesome),
+                    ),
+                  ],
+                  selected: {mode},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (s) => setLocal(() => mode = s.first),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  mode == 'background'
+                      ? 'KI gestaltet nur den Hintergrund – Logos, Namen & Score '
+                            'bleiben scharf.'
+                      : 'KI baut die ganze Grafik neu – maximal kreativ, Texte/'
+                            'Logos können leicht abweichen.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 12),
                 const Text('Wünsche zu Bild & Design:'),
                 const SizedBox(height: 8),
                 TextField(
@@ -861,7 +1012,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             child: const Text('Abbrechen'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            onPressed: () =>
+                Navigator.pop(ctx, (prompt: ctrl.text.trim(), mode: mode)),
             child: const Text('Erstellen'),
           ),
         ],
@@ -1005,7 +1157,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                               )
                             : const Icon(Icons.auto_awesome),
                         label: Text(
-                          _aiBusy ? 'KI bearbeitet …' : 'Mit KI bearbeiten',
+                          _aiBusy ? 'KI gestaltet …' : 'Mit KI gestalten',
                         ),
                       ),
                     ),
