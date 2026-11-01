@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 
 import '../models/graphic_settings.dart';
@@ -718,6 +719,37 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
+  /// Nur speichern (ohne Teilen): PNG in den Downloads-Ordner (Desktop) bzw.
+  /// app-eigenen Ordner (mobil) sichern und zur Kontrolle öffnen.
+  Future<void> _saveImage() async {
+    if (_sharing || _aiBusy) return;
+    setState(() => _sharing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await _captureGraphicPng();
+      if (bytes == null) return;
+      final path = await saveImage(bytes, '${_kind}_$_title');
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Gespeichert:\n$path'),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      try {
+        await OpenFilex.open(path);
+      } catch (_) {
+        // Öffnen optional – die Datei ist gespeichert.
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Speichern fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
   /// Mime-Typ aus einer data:-URL lesen (Default image/png).
   String _dataUrlMime(String dataUrl) {
     final m = RegExp(r'^data:([^;]+);').firstMatch(dataUrl);
@@ -1171,6 +1203,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     ),
                     const SizedBox(height: 8),
                   ],
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: (_sharing || _aiBusy) ? null : _saveImage,
+                      icon: const Icon(Icons.download),
+                      label: const Text('Bild speichern'),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(

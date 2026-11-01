@@ -61,6 +61,21 @@ Future<String?> shareOrSaveImage(
   return file.path;
 }
 
+/// Speichert ein Bild dauerhaft als PNG und gibt den Dateipfad zurück. Desktop:
+/// Downloads-Ordner. Mobil (Android/iOS): app-eigener Dokumente-Ordner (von dort
+/// über den Datei-Viewer weiter speichern/teilen). Teilt NICHTS – reines Sichern.
+Future<String> saveImage(Uint8List bytes, String baseName) async {
+  final safe = baseName.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+  final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
+  final Directory dir = (Platform.isAndroid || Platform.isIOS)
+      ? await getApplicationDocumentsDirectory()
+      : (await getDownloadsDirectory() ??
+            await getApplicationDocumentsDirectory());
+  final file = File('${dir.path}/${safe}_$stamp.png');
+  await file.writeAsBytes(bytes);
+  return file.path;
+}
+
 /// Baut den Spielbericht-Text: Kopf (Ergebnis/Infos) + VOLLSTÄNDIGER Ticker –
 /// alle Ereignisse chronologisch, so wie sie in der App stehen (Tore, Karten,
 /// Wechsel, Ecken/Freistöße/Elfmeter/Fouls, Kommentare und die Spielphasen).
