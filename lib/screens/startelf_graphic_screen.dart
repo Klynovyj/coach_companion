@@ -2370,120 +2370,112 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Torschützen + Karten (je Seite). Skaliert bei vielen Einträgen kleiner.
+  /// Torschützen (NUR Tore – keine Karten): je Seite „Minute' Name" + optional
+  /// Spielerfoto. Lesbar auf dunklem Scrim; der FittedBox im Layout skaliert bei
+  /// vielen Einträgen herunter, bei wenigen bleibt es groß.
   Widget _scorersCardsBlock() {
     final r = result!;
-    String mark(String k) => k == 'rot'
-        ? '🟥'
-        : (k == 'gelbrot' ? '🟧' : '🟨');
-    final ownGoals = [
-      for (final g in r.ownGoals)
-        (text: "${g.minute}' ${g.name}", photo: g.photo),
-    ];
-    final oppGoals = [
-      for (final g in r.oppGoals)
-        (text: "${g.minute}' ${g.name}", photo: g.photo),
-    ];
-    final ownCards = [
-      for (final c in r.ownCards)
-        (text: "${mark(c.kind)} ${c.minute}' ${c.name}", photo: c.photo),
-    ];
-    final oppCards = [
-      for (final c in r.oppCards)
-        (text: "${mark(c.kind)} ${c.minute}' ${c.name}", photo: c.photo),
-    ];
+    final ownGoals = r.ownGoals;
+    final oppGoals = r.oppGoals;
+    if (ownGoals.isEmpty && oppGoals.isEmpty) return const SizedBox.shrink();
 
     Widget avatar(String? photo) {
       final bytes = TeamLogo.decode(photo);
       if (bytes == null) return const SizedBox.shrink();
       return Container(
-        width: 20,
-        height: 20,
-        decoration: const BoxDecoration(shape: BoxShape.circle),
+        width: 30,
+        height: 30,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.85),
+            width: 1.5,
+          ),
+        ),
         clipBehavior: Clip.antiAlias,
         child: Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true),
       );
     }
 
-    Widget section(
-      String heading,
-      List<({String text, String? photo})> left,
-      List<({String text, String? photo})> right,
-    ) {
-      if (left.isEmpty && right.isEmpty) return const SizedBox.shrink();
-      Widget line(({String text, String? photo}) e, {required bool end}) {
-        final txt = Flexible(
+    Widget line(
+      ({int minute, String name, String? photo}) g, {
+      required bool end,
+    }) {
+      final showPhoto = showPhotos && TeamLogo.decode(g.photo) != null;
+      final children = <Widget>[
+        if (showPhoto) ...[avatar(g.photo), const SizedBox(width: 8)],
+        Flexible(
           child: Text(
-            e.text,
+            "${g.minute}'  ${g.name}",
             textAlign: end ? TextAlign.right : TextAlign.left,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Colors.white,
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
+              fontSize: 19,
+              fontWeight: FontWeight.w700,
             ),
           ),
-        );
-        final children = <Widget>[
-          if (showPhotos && e.photo != null) ...[
-            avatar(e.photo),
-            const SizedBox(width: 6),
-          ],
-          txt,
-        ];
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: end
-                ? MainAxisAlignment.end
-                : MainAxisAlignment.start,
-            children: end ? children.reversed.toList() : children,
-          ),
-        );
-      }
-
-      Widget col(List<({String text, String? photo})> lines,
-              {required bool end}) =>
-          Column(
-            crossAxisAlignment: end
-                ? CrossAxisAlignment.end
-                : CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [for (final e in lines) line(e, end: end)],
-          );
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(height: 16),
-          Text(
-            heading,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.7),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.5,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: col(left, end: false)),
-              const SizedBox(width: 12),
-              Expanded(child: col(right, end: true)),
-            ],
-          ),
-        ],
+        ),
+      ];
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: end
+              ? MainAxisAlignment.end
+              : MainAxisAlignment.start,
+          children: end ? children.reversed.toList() : children,
+        ),
       );
     }
 
-    return SizedBox(
-      width: 320,
+    Widget col(
+      List<({int minute, String name, String? photo})> goals, {
+      required bool end,
+    }) => Column(
+      crossAxisAlignment: end
+          ? CrossAxisAlignment.end
+          : CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [for (final g in goals) line(g, end: end)],
+    );
+
+    return Container(
+      constraints: const BoxConstraints(maxWidth: 360),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          section('TORE', ownGoals, oppGoals),
-          section('KARTEN', ownCards, oppCards),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.sports_soccer, size: 16, color: _accent),
+              const SizedBox(width: 6),
+              Text(
+                'TORE',
+                style: TextStyle(
+                  color: _accent,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: col(ownGoals, end: false)),
+              const SizedBox(width: 16),
+              Expanded(child: col(oppGoals, end: true)),
+            ],
+          ),
         ],
       ),
     );
