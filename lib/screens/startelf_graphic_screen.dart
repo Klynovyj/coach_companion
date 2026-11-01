@@ -2030,17 +2030,13 @@ class _StartelfGraphic extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // „Präsentiert von …" (Hauptsponsor) ganz oben.
-              if (mainSponsor != null) ...[
-                _presentedBy(mainSponsor!),
-                SizedBox(height: compact ? 10 : 14),
-              ],
+              // Kompakte Kopfleiste (Logo + Titel + Sponsor in EINER Zeile).
               _header(),
-              SizedBox(height: compact ? 8 : 10),
+              SizedBox(height: compact ? 6 : 12),
               if (announcement == null) _matchInfo(),
-              SizedBox(height: compact ? 12 : 18),
+              SizedBox(height: compact ? 7 : 18),
               _divider(),
-              SizedBox(height: compact ? 12 : 16),
+              SizedBox(height: compact ? 7 : 16),
               if (result != null) ...[
                 // Spielstand groß & fix (der Blickfang) …
                 _scoreRow(),
@@ -2137,22 +2133,30 @@ class _StartelfGraphic extends StatelessWidget {
     ),
   );
 
+  /// Kombinierte Kopfleiste: links Vereinslogo + „VEREIN / STARTELF", rechts
+  /// „präsentiert von [Sponsor]". Spart Höhe → mehr Platz für den Kader.
   Widget _header() {
-    // Logo immer auf hellem Chip → bleibt auf jedem Hintergrund (auch Schwarz)
-    // klar sichtbar, egal welche Logo-Variante gesetzt ist.
     final logoBytes = TeamLogo.decode(logo);
+    final sponsorLogo = mainSponsor == null
+        ? null
+        : TeamLogo.decode(mainSponsor!.logo);
+    final rubric = announcement != null
+        ? 'SPIELTAG'
+        : (result != null ? 'ERGEBNIS' : 'STARTELF');
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         if (logoBytes != null) ...[
-          _logoChip(logoBytes, height: compact ? 58 : 72, circle: logoCircle),
+          _logoChip(logoBytes, height: compact ? 52 : 66, circle: logoCircle),
           const SizedBox(width: 12),
         ] else if (logo != null) ...[
-          TeamLogo(logoPath: logo, size: compact ? 58 : 72),
+          TeamLogo(logoPath: logo, size: compact ? 52 : 66),
           const SizedBox(width: 12),
         ],
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
               Text(
                 title.toUpperCase(),
@@ -2160,18 +2164,17 @@ class _StartelfGraphic extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.9),
-                  fontSize: compact ? 13 : 15,
+                  fontSize: compact ? 12 : 15,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5,
                 ),
               ),
               Text(
-                announcement != null
-                    ? 'SPIELTAG'
-                    : (result != null ? 'ERGEBNIS' : 'STARTELF'),
+                rubric,
+                maxLines: 1,
                 style: TextStyle(
                   color: _accent,
-                  fontSize: 30,
+                  fontSize: compact ? 26 : 32,
                   fontWeight: FontWeight.w900,
                   letterSpacing: 1.5,
                   height: 1.0,
@@ -2180,6 +2183,41 @@ class _StartelfGraphic extends StatelessWidget {
             ],
           ),
         ),
+        // „präsentiert von [Sponsor]" rechts in derselben Leiste.
+        if (mainSponsor != null) ...[
+          const SizedBox(width: 10),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                'PRÄSENTIERT VON',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  fontSize: compact ? 7 : 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.5,
+                ),
+              ),
+              SizedBox(height: compact ? 3 : 4),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: compact ? 118 : 150),
+                child: sponsorLogo != null
+                    ? _logoChip(sponsorLogo, height: compact ? 30 : 40)
+                    : Text(
+                        mainSponsor!.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: compact ? 14 : 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
@@ -2197,14 +2235,14 @@ class _StartelfGraphic extends StatelessWidget {
           textAlign: TextAlign.center,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.8),
-            fontSize: compact ? 10 : 11,
+            fontSize: compact ? 9 : 11,
             fontWeight: FontWeight.w700,
             letterSpacing: 2,
           ),
         ),
-        SizedBox(height: compact ? 5 : 7),
+        SizedBox(height: compact ? 3 : 7),
         if (logoBytes != null)
-          _logoChip(logoBytes, height: compact ? 38 : 50)
+          _logoChip(logoBytes, height: compact ? 34 : 50)
         else
           Text(
             s.name,
@@ -2355,7 +2393,10 @@ class _StartelfGraphic extends StatelessWidget {
     );
     // Dunkler Scrim, damit der Kader auf Fotos/Verlauf klar im Fokus steht.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 14 : 18,
+        vertical: compact ? 10 : 16,
+      ),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.32),
         borderRadius: BorderRadius.circular(18),
