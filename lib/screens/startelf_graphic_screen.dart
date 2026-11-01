@@ -523,36 +523,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     clearLabel: 'Entfernen',
                   ),
                   const SizedBox(height: 8),
-                  // Hintergrund-Design (Vorlage) -------------------------
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Design-Vorlage (ohne eigenes Hintergrundbild)',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(ctx).hintColor,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      ChoiceChip(
-                        label: const Text('Kein Design'),
-                        selected: _settings.bgPreset == null,
-                        onSelected: (_) =>
-                            apply(_settings.copyWith(clearBgPreset: true)),
-                      ),
-                      ChoiceChip(
-                        label: const Text('Streifen'),
-                        selected: _settings.bgPreset == 'stripes',
-                        onSelected: (_) =>
-                            apply(_settings.copyWith(bgPreset: 'stripes')),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
                   // Design-Modus ----------------------------------------
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -1133,7 +1103,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         photoBg: _photoBg,
                         bandPhotos: _bandPhotos,
                         showPhotos: _settings.showPhotos,
-                        bgPreset: _settings.bgPreset,
                         photoController: _photoCtrl,
                         designMode: _settings.designMode,
                         accent: _settings.accent == null
@@ -1387,44 +1356,6 @@ class _AiResultPreview extends StatelessWidget {
   }
 }
 
-/// Eingebautes Hintergrund-Design „Streifen": diagonale, halbtransparente helle
-/// Streifen im oberen Bereich (Farbe folgt dem gewählten Verlauf).
-class _StripesPainter extends CustomPainter {
-  _StripesPainter(this.base);
-  final Color base;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width, h = size.height;
-    final band = h * 0.34;
-    canvas.save();
-    canvas.clipRect(Rect.fromLTWH(0, 0, w, band));
-    final light = Color.lerp(base, Colors.white, 0.7) ?? Colors.white;
-    final a = Paint()..color = Colors.white.withValues(alpha: 0.10);
-    final b = Paint()..color = light.withValues(alpha: 0.16);
-    final stripeW = w * 0.05;
-    final skew = band; // ~45°
-    var x = -skew;
-    var i = 0;
-    while (x < w + skew) {
-      final p = (i % 2 == 0) ? a : b;
-      final path = Path()
-        ..moveTo(x, band)
-        ..lineTo(x + stripeW, band)
-        ..lineTo(x + stripeW + skew, 0)
-        ..lineTo(x + skew, 0)
-        ..close();
-      canvas.drawPath(path, p);
-      x += stripeW * 1.6;
-      i++;
-    }
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _StripesPainter old) => old.base != base;
-}
-
 /// Die eigentliche Grafik in fester logischer Größe (wird per RepaintBoundary
 /// in ein PNG exportiert).
 class _StartelfGraphic extends StatelessWidget {
@@ -1449,7 +1380,6 @@ class _StartelfGraphic extends StatelessWidget {
     this.photoBg,
     this.bandPhotos = const [],
     this.showPhotos = false,
-    this.bgPreset,
     this.photoController,
     this.designMode = false,
     this.infoPos = const Offset(0.5, 0.72),
@@ -1478,7 +1408,6 @@ class _StartelfGraphic extends StatelessWidget {
   final String? photoBg; // Foto als Hintergrund (Data-URL), alle Typen
   final List<String> bandPhotos; // Fotos im Foto-Bereich oben (Data-URLs)
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
-  final String? bgPreset; // eingebautes Hintergrund-Design ('stripes')
   final TransformationController? photoController; // einzelnes Band-Foto zoom/pan
   final bool designMode; // eigenes Branding-Design, nur Spiel-Infos drüber
   final Offset infoPos; // Position des Info-Blocks (0..1)
@@ -1713,8 +1642,8 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Hintergrund-Basis: Verlauf + (eigenes Bild mit Tönung) ODER eingebautes
-  /// Design (Streifen). Wird von allen Layouts genutzt.
+  /// Hintergrund-Basis: Verlauf, optional mit eigenem Hintergrundbild + Tönung.
+  /// Wird von allen Layouts genutzt.
   Widget _bgBase() {
     // Hinzugefügtes Hintergrund-Foto hat Vorrang vor dem eingestellten Bild.
     final bgBytes = TeamLogo.decode(photoBg) ?? TeamLogo.decode(bgImage);
@@ -1744,8 +1673,7 @@ class _StartelfGraphic extends StatelessWidget {
               ),
             ),
           ),
-        ] else if (bgPreset == 'stripes')
-          CustomPaint(painter: _StripesPainter(gradTop)),
+        ],
       ],
     );
   }
@@ -1765,9 +1693,15 @@ class _StartelfGraphic extends StatelessWidget {
   );
 
   Widget _header() {
+    // Logo immer auf hellem Chip → bleibt auf jedem Hintergrund (auch Schwarz)
+    // klar sichtbar, egal welche Logo-Variante gesetzt ist.
+    final logoBytes = TeamLogo.decode(logo);
     return Row(
       children: [
-        if (logo != null) ...[
+        if (logoBytes != null) ...[
+          _logoChip(logoBytes, height: compact ? 34 : 44),
+          const SizedBox(width: 10),
+        ] else if (logo != null) ...[
           TeamLogo(logoPath: logo, size: compact ? 34 : 44),
           const SizedBox(width: 10),
         ],
@@ -2151,38 +2085,6 @@ class _StartelfGraphic extends StatelessWidget {
 
   /// Spielankündigungs-Grafik: Titel (POKALSPIEL/SPIELTAG) + große Logos „VS" +
   /// Datum/Uhrzeit/Spielstätte/Adresse mit Icons.
-  /// Pille „HEIMSPIEL" / „AUSWÄRTSSPIEL": deckende Akzentfläche mit dunkler
-  /// Schrift – überdeckt den Hintergrund (z.B. Streifen) sauber.
-  Widget _homeAwayBadge() {
-    final label = isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL';
-    final icon = isHome ? Icons.home_rounded : Icons.directions_bus_rounded;
-    // Dunkle Schrift auf der hellen Akzentfläche (lesbar auf Gold/Weiß/Silber).
-    const dark = Color(0xFF14110A);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        color: _accent,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: dark, size: 17),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: dark,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _announcementLayout() {
     final a = announcement!;
     final ownLogo = TeamLogo.decode(logo);
@@ -2258,7 +2160,12 @@ class _StartelfGraphic extends StatelessWidget {
       rows.add(infoRow(Icons.map_outlined, a.address!.trim()));
     }
 
-    final titleWord = a.isCup ? 'POKALSPIEL' : 'SPIELTAG';
+    // Großer Titel = Heim/Auswärts; Pokal bzw. Spieltag-Nummer als Untertitel.
+    final titleWord = isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL';
+    final md = (a.matchday ?? '').trim();
+    final subtitle = a.isCup
+        ? 'POKALSPIEL'
+        : (md.isNotEmpty ? '$md. SPIELTAG' : null);
 
     // Zentraler Inhalt (Sponsor → Titel → Logos → Namen → Info). Liegt in einer
     // FittedBox mit fester Breite, damit er immer in die Grafik passt und die
@@ -2273,24 +2180,27 @@ class _StartelfGraphic extends StatelessWidget {
             _presentedBy(mainSponsor!),
             SizedBox(height: compact ? 14 : 18),
           ],
-          Text(
-            titleWord,
-            maxLines: 1,
-            softWrap: false,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _accent,
-              fontSize: 52,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-              height: 1.0,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              titleWord,
+              maxLines: 1,
+              softWrap: false,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _accent,
+                fontSize: 52,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+                height: 1.0,
+              ),
             ),
           ),
-          if ((a.matchday ?? '').trim().isNotEmpty)
+          if (subtitle != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Text(
-                '${a.matchday!.trim()}. SPIELTAG',
+                subtitle,
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.85),
                   fontSize: 13,
@@ -2299,9 +2209,7 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               ),
             ),
-          SizedBox(height: compact ? 12 : 16),
-          _homeAwayBadge(),
-          SizedBox(height: compact ? 16 : 22),
+          SizedBox(height: compact ? 20 : 30),
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
@@ -2396,7 +2304,20 @@ class _StartelfGraphic extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(5),
+        borderRadius: BorderRadius.circular(6),
+        // Leichter 3D-/Erhebungs-Effekt: Schlagschatten unten + heller
+        // Glanzrand oben.
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.55),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.9),
+          width: 0.5,
+        ),
       ),
       child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
     );
