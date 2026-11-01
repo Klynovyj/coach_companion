@@ -125,6 +125,7 @@ class StartelfGraphicScreen extends StatefulWidget {
 
 class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   final GlobalKey _boundaryKey = GlobalKey();
+  final GlobalKey _bgBoundaryKey = GlobalKey(); // nur die Hintergrund-Ebene
   bool _story = true; // true = Story 9:16, false = Post 1:1
   List<Sponsor> _sponsors = [];
   GraphicSettings _settings = const GraphicSettings(id: 'local');
@@ -981,10 +982,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   }
 
   /// Die aktuell angezeigte Grafik als PNG-Bytes aufnehmen (1080 px breit).
-  Future<Uint8List?> _captureGraphicPng() async {
+  Future<Uint8List?> _captureGraphicPng() => _capturePng(_boundaryKey);
+
+  /// Nur die Hintergrund-Ebene (ohne Logos/Text/Sponsoren) als PNG.
+  Future<Uint8List?> _captureBackgroundPng() => _capturePng(_bgBoundaryKey);
+
+  Future<Uint8List?> _capturePng(GlobalKey key) async {
     final boundary =
-        _boundaryKey.currentContext?.findRenderObject()
-            as RenderRepaintBoundary?;
+        key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) return null;
     final logicalWidth = _story ? _storyW : _postW;
     final image = await boundary.toImage(pixelRatio: 1080 / logicalWidth);
@@ -1040,6 +1045,37 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       messenger.showSnackBar(
         SnackBar(
           content: Text('Gespeichert:\n$path'),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      try {
+        await OpenFilex.open(path);
+      } catch (_) {
+        // Öffnen optional – die Datei ist gespeichert.
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Speichern fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  /// Nur die Hintergrund-Ebene (ohne Logos/Text/Sponsoren) als Bild speichern –
+  /// z.B. um den gestalteten Hintergrund weiterzuverwenden.
+  Future<void> _saveBackground() async {
+    if (_sharing || _aiBusy) return;
+    setState(() => _sharing = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await _captureBackgroundPng();
+      if (bytes == null) return;
+      final path = await saveImage(bytes, 'Hintergrund_$_title');
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Hintergrund gespeichert:\n$path'),
           duration: const Duration(seconds: 6),
         ),
       );
@@ -1270,6 +1306,46 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     );
   }
 
+  /// Baut die Grafik mit allen aktuellen Einstellungen. [backgroundOnly] rendert
+  /// nur die Hintergrund-Ebene (für „Nur Hintergrund speichern").
+  Widget _graphic({bool backgroundOnly = false}) => _StartelfGraphic(
+    title: _title,
+    logo: _effectiveLogo,
+    starters: widget.starters,
+    benchNames: widget.benchNames,
+    mainSponsor: _mainSponsor,
+    barSponsors: _barSponsors,
+    bgImage: _settings.bgImage,
+    gradTop: _hex(_settings.gradTop),
+    gradBottom: _hex(_settings.gradBottom),
+    overlayOpacity: _settings.overlayOpacity / 100,
+    matchDate: widget.matchDate,
+    isHome: widget.isHome,
+    opponentName: widget.opponentName,
+    opponentLogo: (_settings.showOpponentLogo || _settings.designMode)
+        ? widget.opponentLogo
+        : null,
+    compact: !_story,
+    result: widget.result,
+    announcement: widget.announcement,
+    photoBg: _photoBg,
+    bandPhotos: _bandPhotos,
+    showPhotos: _settings.showPhotos,
+    photoController: _photoCtrl,
+    designMode: _settings.designMode,
+    accent: _settings.accent == null ? null : _hex(_settings.accent!),
+    bgOpacity: _settings.bgOpacity / 100,
+    bgBlend: _blendModeOf(_settings.bgBlend),
+    logoCircle: _settings.logoShape == 'circle',
+    backgroundOnly: backgroundOnly,
+    infoPos: Offset(_settings.infoX, _settings.infoY),
+    onInfoMove: (p) => setState(
+      () => _settings = _settings.copyWith(infoX: p.dx, infoY: p.dy),
+    ),
+    onInfoMoveEnd: () =>
+        context.read<AppState>().saveGraphicSettings(_settings),
+  );
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -1323,55 +1399,23 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 padding: const EdgeInsets.all(12),
                 child: FittedBox(
                   fit: BoxFit.contain,
-                  child: RepaintBoundary(
-                    key: _boundaryKey,
-                    child: SizedBox(
-                      width: w,
-                      height: h,
-                      child: _StartelfGraphic(
-                        title: _title,
-                        logo: _effectiveLogo,
-                        starters: widget.starters,
-                        benchNames: widget.benchNames,
-                        mainSponsor: _mainSponsor,
-                        barSponsors: _barSponsors,
-                        bgImage: _settings.bgImage,
-                        gradTop: _hex(_settings.gradTop),
-                        gradBottom: _hex(_settings.gradBottom),
-                        overlayOpacity: _settings.overlayOpacity / 100,
-                        matchDate: widget.matchDate,
-                        isHome: widget.isHome,
-                        opponentName: widget.opponentName,
-                        opponentLogo:
-                            (_settings.showOpponentLogo || _settings.designMode)
-                            ? widget.opponentLogo
-                            : null,
-                        compact: !_story,
-                        result: widget.result,
-                        announcement: widget.announcement,
-                        photoBg: _photoBg,
-                        bandPhotos: _bandPhotos,
-                        showPhotos: _settings.showPhotos,
-                        photoController: _photoCtrl,
-                        designMode: _settings.designMode,
-                        accent: _settings.accent == null
-                            ? null
-                            : _hex(_settings.accent!),
-                        bgOpacity: _settings.bgOpacity / 100,
-                        bgBlend: _blendModeOf(_settings.bgBlend),
-                        logoCircle: _settings.logoShape == 'circle',
-                        infoPos: Offset(_settings.infoX, _settings.infoY),
-                        onInfoMove: (p) => setState(
-                          () => _settings = _settings.copyWith(
-                            infoX: p.dx,
-                            infoY: p.dy,
-                          ),
+                  child: SizedBox(
+                    width: w,
+                    height: h,
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        // Verdeckte Hintergrund-Ebene (nur Verlauf/Foto) für
+                        // „Nur Hintergrund speichern".
+                        RepaintBoundary(
+                          key: _bgBoundaryKey,
+                          child: _graphic(backgroundOnly: true),
                         ),
-                        onInfoMoveEnd: () =>
-                            context.read<AppState>().saveGraphicSettings(
-                              _settings,
-                            ),
-                      ),
+                        RepaintBoundary(
+                          key: _boundaryKey,
+                          child: _graphic(),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1452,13 +1496,26 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     ),
                     const SizedBox(height: 8),
                   ],
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: (_sharing || _aiBusy) ? null : _saveImage,
-                      icon: const Icon(Icons.download),
-                      label: const Text('Bild speichern'),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: (_sharing || _aiBusy) ? null : _saveImage,
+                          icon: const Icon(Icons.download),
+                          label: const Text('Bild speichern'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: (_sharing || _aiBusy)
+                              ? null
+                              : _saveBackground,
+                          icon: const Icon(Icons.wallpaper_outlined),
+                          label: const Text('Nur Hintergrund'),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 8),
                   SizedBox(
@@ -1716,6 +1773,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.logoCircle = false,
     this.bgOpacity = 1.0,
     this.bgBlend = BlendMode.srcOver,
+    this.backgroundOnly = false,
   });
 
   final String title;
@@ -1747,12 +1805,14 @@ class _StartelfGraphic extends StatelessWidget {
   final bool logoCircle; // Vereins-/Gegner-Logos auf rundem Feld (statt eckig)
   final double bgOpacity; // Deckkraft des Hintergrundbilds (0..1)
   final BlendMode bgBlend; // Mischmodus des Hintergrundbilds mit dem Verlauf
+  final bool backgroundOnly; // nur die Hintergrund-Ebene (für Export)
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
 
   @override
   Widget build(BuildContext context) {
+    if (backgroundOnly) return _bgBase(); // nur Verlauf/Foto, ohne Inhalt
     if (designMode) return _designLayout();
     final content = announcement != null
         ? _announcementLayout()
