@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/enums.dart';
 import '../models/match.dart';
@@ -120,6 +121,7 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
                 match: matches[i],
                 df: df,
                 onTap: () => _open(context, matches[i]),
+                onNavigate: () => _navigate(context, matches[i]),
               ),
             ),
     );
@@ -131,6 +133,35 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       context,
       MaterialPageRoute(builder: (_) => MatchCenterScreen(matchId: match.id)),
     );
+  }
+
+  /// Öffnet Google Maps mit Route zum Spielort (gratis, ohne API-Key). Ziel wird
+  /// aus AppState bestimmt (erfasste Adresse → Heim-Setting → Gegnername).
+  Future<void> _navigate(BuildContext context, GameMatch match) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final dest = await context.read<AppState>().mapsDestinationForMatch(match);
+    if (dest == null || dest.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Keine Adresse hinterlegt – Heim-Spielstätte in den Einstellungen '
+            'eintragen.',
+          ),
+        ),
+      );
+      return;
+    }
+    final uri = Uri.parse(
+      'https://www.google.com/maps/dir/?api=1&destination='
+      '${Uri.encodeComponent(dest)}',
+    );
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Karten-App konnte nicht geöffnet werden.')),
+      );
+    }
   }
 
   Future<void> _addMatch(BuildContext context) async {
@@ -160,10 +191,12 @@ class _MatchCard extends StatelessWidget {
     required this.match,
     required this.df,
     required this.onTap,
+    required this.onNavigate,
   });
   final GameMatch match;
   final DateFormat df;
   final VoidCallback onTap;
+  final VoidCallback onNavigate;
 
   @override
   Widget build(BuildContext context) {
@@ -262,6 +295,12 @@ class _MatchCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               trailing,
+              IconButton(
+                tooltip: 'Navigieren',
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.directions_outlined),
+                onPressed: onNavigate,
+              ),
             ],
           ),
         ),

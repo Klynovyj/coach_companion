@@ -15,6 +15,8 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
+  Map<String, String> _homeVenue = {};
+
   @override
   void initState() {
     super.initState();
@@ -25,6 +27,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<AppState>().refreshLiveRole();
     });
+    _loadHomeVenue();
+  }
+
+  Future<void> _loadHomeVenue() async {
+    final v = await context.read<AppState>().homeVenueInfo();
+    if (mounted) setState(() => _homeVenue = v);
   }
 
   @override
@@ -60,6 +68,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 subtitle: Text(state.ownTeam!.name),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => _renameTeam(context, state.ownTeam!),
+              ),
+            ),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.place_outlined),
+                title: const Text('Heim-Spielstätte'),
+                subtitle: Text(
+                  _homeVenueSubtitle(),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: _editHomeVenue,
               ),
             ),
           ],
@@ -142,6 +163,69 @@ class _SettingsScreenState extends State<SettingsScreen> {
         shortName: shortCtrl.text.trim().isEmpty ? null : shortCtrl.text.trim(),
       );
     }
+  }
+
+  String _homeVenueSubtitle() {
+    final venue = (_homeVenue['venue'] ?? '').trim();
+    final addr = (_homeVenue['address'] ?? '').trim();
+    final parts = [
+      if (venue.isNotEmpty) venue,
+      if (addr.isNotEmpty) addr,
+    ];
+    return parts.isEmpty
+        ? 'Noch nicht hinterlegt – für die Navigation bei Heimspielen'
+        : parts.join(' · ');
+  }
+
+  Future<void> _editHomeVenue() async {
+    final venueCtrl = TextEditingController(text: _homeVenue['venue'] ?? '');
+    final addrCtrl = TextEditingController(text: _homeVenue['address'] ?? '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Heim-Spielstätte'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: venueCtrl,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Spielstätte',
+                hintText: 'z.B. Sportplatz Garath',
+              ),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: addrCtrl,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Adresse',
+                hintText: 'z.B. Carl-Friedrich-Gauß-Str., 40595 Düsseldorf',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final info = {
+      'venue': venueCtrl.text.trim(),
+      'address': addrCtrl.text.trim(),
+    };
+    await context.read<AppState>().saveHomeVenueInfo(info);
+    if (mounted) setState(() => _homeVenue = info);
   }
 
   Widget _sectionTitle(BuildContext context, String text) => Padding(

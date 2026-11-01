@@ -2293,6 +2293,48 @@ class AppState extends ChangeNotifier {
     await _repo.setSetting('announce_$matchId', jsonEncode(info));
   }
 
+  // --------------------------------------------------------- Heim-Spielstätte
+  /// Heim-Spielstätte (Name + Adresse) – einmal in den Einstellungen hinterlegt,
+  /// gilt für alle Heimspiele (Navigation). Global als JSON im Setting.
+  Future<Map<String, String>> homeVenueInfo() async {
+    final s = await _repo.getSetting('home_venue_info');
+    if (s == null || s.isEmpty) return {};
+    try {
+      final m = jsonDecode(s) as Map<String, Object?>;
+      return m.map((k, v) => MapEntry(k, (v ?? '').toString()));
+    } catch (_) {
+      return {};
+    }
+  }
+
+  Future<void> saveHomeVenueInfo(Map<String, String> info) async {
+    await _repo.setSetting('home_venue_info', jsonEncode(info));
+    notifyListeners();
+  }
+
+  /// Bestes Navigationsziel für ein Spiel (Google-Maps-Suchtext/Adresse):
+  /// 1) bereits erfasste Adresse zum Spiel (Ankündigung bzw. Kadernachricht),
+  /// 2) Heimspiel → hinterlegte Heim-Adresse (sonst Spielstätten-Name),
+  /// 3) Auswärts → Gegnername als Suchbegriff. Null, wenn nichts Brauchbares da.
+  Future<String?> mapsDestinationForMatch(GameMatch match) async {
+    String clean(String? v) => (v ?? '').trim();
+    // 1) Am Spiel erfasste Adresse (Ankündigung zuerst, dann Kadernachricht).
+    final ann = await matchAnnouncement(match.id);
+    if (clean(ann['address']).isNotEmpty) return clean(ann['address']);
+    final share = await matchShareInfo(match.id);
+    if (clean(share['address']).isNotEmpty) return clean(share['address']);
+    // 2) Heimspiel → hinterlegte Heim-Spielstätte.
+    if (match.venue == Venue.home) {
+      final home = await homeVenueInfo();
+      if (clean(home['address']).isNotEmpty) return clean(home['address']);
+      if (clean(home['venue']).isNotEmpty) return clean(home['venue']);
+      return null;
+    }
+    // 3) Auswärts → Gegnername als Maps-Suche.
+    final opp = clean(match.opponentName);
+    return opp.isEmpty ? null : opp;
+  }
+
   // ------------------------------------------------------------- Nominations
   /// Status je Spieler für ein Spiel (Spieler ohne Datensatz = offen).
   Future<Map<String, NominationStatus>> nominationsOf(String matchId) async {
