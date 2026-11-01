@@ -21,6 +21,9 @@ class GraphicSettings {
   /// Spielerfotos in der Ergebnis-Grafik (Torschützen/Karten), Default aus.
   final bool showPhotos;
 
+  /// Torschützen-Block („Ticker") in der Ergebnis-Grafik anzeigen, Default an.
+  final bool showScorers;
+
   /// Eingebautes Hintergrund-Design (z.B. 'stripes'); null = Verlauf.
   /// Ein eigenes Hintergrundbild [bgImage] hat Vorrang.
   final String? bgPreset;
@@ -67,6 +70,7 @@ class GraphicSettings {
     this.overlayOpacity = defaultOverlay,
     this.showOpponentLogo = false,
     this.showPhotos = false,
+    this.showScorers = true,
     this.bgPreset,
     this.logoDark,
     this.designMode = false,
@@ -91,6 +95,7 @@ class GraphicSettings {
     int? overlayOpacity,
     bool? showOpponentLogo,
     bool? showPhotos,
+    bool? showScorers,
     String? bgPreset,
     bool clearBgPreset = false,
     String? logoDark,
@@ -113,6 +118,7 @@ class GraphicSettings {
     overlayOpacity: overlayOpacity ?? this.overlayOpacity,
     showOpponentLogo: showOpponentLogo ?? this.showOpponentLogo,
     showPhotos: showPhotos ?? this.showPhotos,
+    showScorers: showScorers ?? this.showScorers,
     bgPreset: clearBgPreset ? null : (bgPreset ?? this.bgPreset),
     logoDark: clearLogoDark ? null : (logoDark ?? this.logoDark),
     designMode: designMode ?? this.designMode,
@@ -134,6 +140,7 @@ class GraphicSettings {
     'overlay_opacity': overlayOpacity,
     'show_opponent_logo': showOpponentLogo ? 1 : 0,
     'show_photos': showPhotos ? 1 : 0,
+    'show_scorers': showScorers ? 1 : 0,
     'bg_preset': bgPreset,
     'logo_dark': logoDark,
     'design_mode': designMode ? 1 : 0,
@@ -158,6 +165,8 @@ class GraphicSettings {
     showOpponentLogo:
         m['show_opponent_logo'] == true || m['show_opponent_logo'] == 1,
     showPhotos: m['show_photos'] == true || m['show_photos'] == 1,
+    // Default an: nur ausschalten, wenn ausdrücklich 0/false gespeichert.
+    showScorers: !(m['show_scorers'] == 0 || m['show_scorers'] == false),
     bgPreset: (m['bg_preset'] as String?)?.trim().isEmpty == true
         ? null
         : m['bg_preset'] as String?,

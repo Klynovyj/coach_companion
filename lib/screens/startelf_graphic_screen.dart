@@ -716,12 +716,22 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         ? null
                         : (v) => apply(_settings.copyWith(showOpponentLogo: v)),
                   ),
+                  // Torschützen-Block (nur Ergebnis-Grafik) --------------
+                  if (widget.isResult)
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Torschützen anzeigen'),
+                      subtitle: const Text('Liste der Tore (Spieler & Minute)'),
+                      value: _settings.showScorers,
+                      onChanged: (v) =>
+                          apply(_settings.copyWith(showScorers: v)),
+                    ),
                   // Spielerfotos (nur Ergebnis-Grafik) -------------------
                   if (widget.isResult)
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
                       title: const Text('Spielerfotos anzeigen'),
-                      subtitle: const Text('Fotos bei Torschützen & Karten'),
+                      subtitle: const Text('Fotos bei den Torschützen'),
                       value: _settings.showPhotos,
                       onChanged: (v) =>
                           apply(_settings.copyWith(showPhotos: v)),
@@ -1359,6 +1369,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     bgBlend: _blendModeOf(_settings.bgBlend),
     logoCircle: _settings.logoShape == 'circle',
     backgroundOnly: backgroundOnly,
+    showScorers: _settings.showScorers,
     infoPos: Offset(_settings.infoX, _settings.infoY),
     onInfoMove: (p) => setState(
       () => _settings = _settings.copyWith(infoX: p.dx, infoY: p.dy),
@@ -1795,6 +1806,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.bgOpacity = 1.0,
     this.bgBlend = BlendMode.srcOver,
     this.backgroundOnly = false,
+    this.showScorers = true,
   });
 
   final String title;
@@ -1827,6 +1839,7 @@ class _StartelfGraphic extends StatelessWidget {
   final double bgOpacity; // Deckkraft des Hintergrundbilds (0..1)
   final BlendMode bgBlend; // Mischmodus des Hintergrundbilds mit dem Verlauf
   final bool backgroundOnly; // nur die Hintergrund-Ebene (für Export)
+  final bool showScorers; // Torschützen-Block in der Ergebnis-Grafik zeigen
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
@@ -2031,13 +2044,15 @@ class _StartelfGraphic extends StatelessWidget {
                 // Spielstand groß & fix (der Blickfang) …
                 _scoreRow(),
                 SizedBox(height: compact ? 10 : 14),
-                // … darunter skalieren nur Torschützen/Karten mit.
+                // … darunter die Torschützen (nur wenn aktiviert).
                 Expanded(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.topCenter,
-                    child: _scorersCardsBlock(),
-                  ),
+                  child: showScorers
+                      ? FittedBox(
+                          fit: BoxFit.scaleDown,
+                          alignment: Alignment.topCenter,
+                          child: _scorersCardsBlock(),
+                        )
+                      : const SizedBox.shrink(),
                 ),
               ] else
                 Expanded(

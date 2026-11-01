@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 63;
+  static const _dbVersion = 64;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -529,6 +529,12 @@ class AppDatabase {
         'ALTER TABLE graphic_settings ADD COLUMN logo_shape TEXT',
       );
     }
+    // v63 -> v64: Torschützen-Block („Ticker") ein-/ausblendbar.
+    if (oldV < 64) {
+      await db.execute(
+        'ALTER TABLE graphic_settings ADD COLUMN show_scorers INTEGER',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -832,6 +838,7 @@ class AppDatabase {
         overlay_opacity INTEGER,
         show_opponent_logo INTEGER,
         show_photos INTEGER,
+        show_scorers INTEGER,
         bg_preset TEXT,
         logo_dark TEXT,
         design_mode INTEGER,
