@@ -3914,8 +3914,10 @@ class _StartelfGraphic extends StatelessWidget {
                     onPosterItemMove?.call(
                       sel,
                       Offset(
-                        (cur.dx + d.delta.dx / w).clamp(-0.05, 1.05),
-                        (cur.dy + d.delta.dy / h).clamp(-0.05, 1.05),
+                        // Weit über den Rand erlaubt (Elemente dürfen teils aus
+                        // dem Bild ragen) – kein enges Limit mehr.
+                        (cur.dx + d.delta.dx / w).clamp(-0.6, 1.6),
+                        (cur.dy + d.delta.dy / h).clamp(-0.6, 1.6),
                       ),
                     );
                   },
