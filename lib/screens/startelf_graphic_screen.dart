@@ -2042,7 +2042,34 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             }),
           ),
           ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
+            // Element direkt auswählen (auch dünne/überlappende wie „Datum").
+            Row(
+              children: [
+                const Text('Element:', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    isDense: true,
+                    value: _posterOrder.contains(_posterSel) ? _posterSel : null,
+                    hint: const Text(
+                      'wählen (dann ziehen/skalieren) …',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    items: [
+                      for (final id in _posterOrder)
+                        DropdownMenuItem(
+                          value: id,
+                          child: Text(_posterItemLabel(id)),
+                        ),
+                    ],
+                    onChanged: (v) => setState(() => _posterSel = v),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
@@ -3873,7 +3900,7 @@ class _StartelfGraphic extends StatelessWidget {
                 behavior: HitTestBehavior.opaque,
                 onTapDown: (_) => onPosterSelect?.call(id),
                 child: Container(
-                  padding: const EdgeInsets.all(2),
+                  padding: const EdgeInsets.all(6),
                   decoration: selected
                       ? BoxDecoration(
                           border: Border.all(
