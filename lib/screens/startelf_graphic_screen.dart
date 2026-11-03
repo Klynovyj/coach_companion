@@ -2772,6 +2772,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _posterRot[id] = _gRot0 + d.rotation;
     }),
     onPosterLongPress: _showElementProperties,
+    onBackgroundLongPress: _showBackgroundMenu,
+    onBackgroundTap: () => setState(() => _posterSel = null),
     onPosterSelect: (id) => setState(() => _posterSel = id),
     posterFont: _posterFont,
     showMainSponsor: _showMainSponsor,
@@ -2996,6 +2998,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         ),
                         onChanged: (v) => apply(() => _textContent[id] = v),
                       ),
+                      if (id == 'info')
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.restore, size: 16),
+                            label: const Text('Automatisches Datum'),
+                            onPressed: () => apply(() {
+                              _textContent.remove('info');
+                              _textFont.remove('info');
+                              _textColor.remove('info');
+                              _editorSeq++; // Feld mit Auto-Zeile neu aufbauen
+                            }),
+                          ),
+                        ),
                       const SizedBox(height: 6),
                       Row(
                         children: [
@@ -3254,482 +3270,278 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             const SizedBox(height: 6),
             SizedBox(
               width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.person, size: 18),
-                label: Text(
-                  _posterMain == null ? 'Spielerbild' : 'Spielerbild ✓',
-                ),
-                onPressed: _addPosterMain,
+              child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.add, size: 20),
+                label: const Text('Hinzufügen & Hintergrund'),
+                onPressed: _showBackgroundMenu,
               ),
             ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.add_photo_alternate, size: 18),
-                    label: const Text('Bild/Grafik'),
-                    onPressed: _addPosterOverlay,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.text_fields, size: 18),
-                    label: const Text('Text'),
-                    onPressed: _addPosterText,
-                  ),
-                ),
-              ],
+            const Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: Text(
+                'Objekt antippen = wählen · lange drücken = Optionen · '
+                'Hintergrund lange drücken = hinzufügen',
+                style: TextStyle(fontSize: 10.5, color: Colors.grey),
+                textAlign: TextAlign.center,
+              ),
             ),
-            const SizedBox(height: 6),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: _aiBusy
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.auto_fix_high, size: 18),
-                    label: Text(_aiBusy ? 'KI …' : 'Freistellen (KI)'),
-                    onPressed: (_selectedImageDataUrl() == null || _aiBusy)
-                        ? null
-                        : _cutoutSelected,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: _bgBusy
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.format_color_reset, size: 18),
-                    label: Text(_bgBusy ? 'Entferne …' : 'Hintergrund weg'),
-                    onPressed: (_selectedImageDataUrl() == null || _bgBusy)
-                        ? null
-                        : _removeBgSelected,
-                  ),
-                ),
-              ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Zentrale Hintergrund-/Kopf-Eigenschaften (Überschrift, Schrift, Sponsoren,
+  /// Logos, Schatten) – im Hintergrund-Menü. [refresh] aktualisiert das Sheet
+  /// live (zusätzlich zum setState der Grafik dahinter).
+  Widget _headlineSponsorControls(void Function(VoidCallback) refresh) {
+    void upd(VoidCallback fn) {
+      setState(fn);
+      refresh(() {});
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Wrap(
+          spacing: 6,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          children: [
+            const Text('Überschrift:', style: TextStyle(fontSize: 12)),
+            ChoiceChip(
+              label: const Text('SPIELTAG'),
+              selected: _annHeadMode == 'spieltag',
+              onSelected: (_) => upd(() => _annHeadMode = 'spieltag'),
             ),
-            const SizedBox(height: 4),
-            Theme(
-              data: Theme.of(
-                context,
-              ).copyWith(dividerColor: Colors.transparent),
-              child: ExpansionTile(
-                title: const Text(
-                  'Überschrift, Schrift, Sponsoren & Schatten',
-                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ChoiceChip(
+              label: const Text('Heim/Auswärts'),
+              selected: _annHeadMode == 'auto',
+              onSelected: (_) => upd(() => _annHeadMode = 'auto'),
+            ),
+            ChoiceChip(
+              label: const Text('Eigener'),
+              selected: _annHeadMode == 'custom',
+              onSelected: (_) => upd(() => _annHeadMode = 'custom'),
+            ),
+          ],
+        ),
+        if (_annHeadMode == 'custom')
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: TextFormField(
+              initialValue: _annHeadText,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                hintText: 'z. B. DERBY, TOPSPIEL',
+              ),
+              onChanged: (v) => upd(() => _annHeadText = v),
+            ),
+          ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            const Text('Schrift:', style: TextStyle(fontSize: 12)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: DropdownButton<String>(
+                isExpanded: true,
+                isDense: true,
+                value: _posterFont,
+                items: [
+                  for (final e in _kPosterFonts.entries)
+                    DropdownMenuItem(value: e.key, child: Text(e.value)),
+                ],
+                onChanged: (v) => upd(() => _posterFont = v ?? 'standard'),
+              ),
+            ),
+          ],
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Hauptsponsor anzeigen',
+            style: TextStyle(fontSize: 13),
+          ),
+          value: _showMainSponsor,
+          onChanged: (v) => upd(() => _showMainSponsor = v),
+        ),
+        if (_showMainSponsor)
+          Row(
+            children: [
+              const Text('Hauptsponsor:', style: TextStyle(fontSize: 12)),
+              const SizedBox(width: 8),
+              ChoiceChip(
+                label: const Text('Logo'),
+                selected: _mainSponsorMode == 'logo',
+                onSelected: (_) => upd(() => _mainSponsorMode = 'logo'),
+              ),
+              const SizedBox(width: 6),
+              ChoiceChip(
+                label: const Text('Text'),
+                selected: _mainSponsorMode == 'text',
+                onSelected: (_) => upd(() => _mainSponsorMode = 'text'),
+              ),
+            ],
+          ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Weitere Sponsoren anzeigen',
+            style: TextStyle(fontSize: 13),
+          ),
+          value: _showOtherSponsors,
+          onChanged: (v) => upd(() => _showOtherSponsors = v),
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Logos auf hellem Kreis',
+            style: TextStyle(fontSize: 13),
+          ),
+          value: _posterLogoDisc,
+          onChanged: (v) => upd(() => _posterLogoDisc = v),
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Schatten (alle Bilder)',
+            style: TextStyle(fontSize: 13),
+          ),
+          subtitle: const Text(
+            'Gilt für Spieler und alle Overlays; am besten freigestellt',
+            style: TextStyle(fontSize: 10.5),
+          ),
+          value: _posterShadow,
+          onChanged: (v) => upd(() => _posterShadow = v),
+        ),
+        if (_posterShadow) ...[
+          Row(
+            children: [
+              const SizedBox(
+                width: 52,
+                child: Text('Stärke', style: TextStyle(fontSize: 12)),
+              ),
+              Expanded(
+                child: Slider(
+                  value: _posterShadowStrength,
+                  min: 0,
+                  max: 100,
+                  onChanged: (v) => upd(() => _posterShadowStrength = v),
                 ),
-                tilePadding: EdgeInsets.zero,
-                childrenPadding: const EdgeInsets.only(bottom: 6),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              const SizedBox(
+                width: 52,
+                child: Text('Winkel', style: TextStyle(fontSize: 12)),
+              ),
+              Expanded(
+                child: Slider(
+                  value: _posterShadowAngle,
+                  min: 0,
+                  max: 360,
+                  divisions: 72,
+                  label: '${_posterShadowAngle.round()}°',
+                  onChanged: (v) => upd(() => _posterShadowAngle = v),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Langdruck auf den leeren Hintergrund → Objekte hinzufügen + zentrale
+  /// Hintergrund-Eigenschaften (wie moderne Design-Apps).
+  void _showBackgroundMenu() {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              16,
+              0,
+              16,
+              16 + MediaQuery.of(ctx).viewInsets.bottom,
+            ),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Wrap(
-                    spacing: 6,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+                  const Text(
+                    'Hinzufügen',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.person, size: 18),
+                    label: const Text('Spielerbild'),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _addPosterMain();
+                    },
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
                     children: [
-                      const Text(
-                        'Überschrift:',
-                        style: TextStyle(fontSize: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.add_photo_alternate, size: 18),
+                          label: const Text('Bild/Grafik'),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _addPosterOverlay();
+                          },
+                        ),
                       ),
-                      ChoiceChip(
-                        label: const Text('SPIELTAG'),
-                        selected: _annHeadMode == 'spieltag',
-                        onSelected: (_) =>
-                            setState(() => _annHeadMode = 'spieltag'),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.text_fields, size: 18),
+                          label: const Text('Text'),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _addPosterText();
+                          },
+                        ),
                       ),
-                ChoiceChip(
-                  label: const Text('Heim/Auswärts'),
-                  selected: _annHeadMode == 'auto',
-                  onSelected: (_) => setState(() => _annHeadMode = 'auto'),
-                ),
-                ChoiceChip(
-                  label: const Text('Eigener'),
-                  selected: _annHeadMode == 'custom',
-                  onSelected: (_) => setState(() => _annHeadMode = 'custom'),
-                ),
-              ],
-            ),
-            if (_annHeadMode == 'custom')
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: TextFormField(
-                  initialValue: _annHeadText,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    hintText: 'z. B. DERBY, TOPSPIEL',
-                  ),
-                  onChanged: (v) => setState(() => _annHeadText = v),
-                ),
-              ),
-            const SizedBox(height: 2),
-            Row(
-              children: [
-                const Text('Schrift:', style: TextStyle(fontSize: 12)),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    isDense: true,
-                    value: _posterFont,
-                    items: [
-                      for (final e in _kPosterFonts.entries)
-                        DropdownMenuItem(value: e.key, child: Text(e.value)),
                     ],
-                    onChanged: (v) =>
-                        setState(() => _posterFont = v ?? 'standard'),
                   ),
-                ),
-              ],
-            ),
-            SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Hauptsponsor anzeigen',
-                style: TextStyle(fontSize: 13),
-              ),
-              value: _showMainSponsor,
-              onChanged: (v) => setState(() => _showMainSponsor = v),
-            ),
-            if (_showMainSponsor)
-              Row(
-                children: [
-                  const Text('Hauptsponsor:', style: TextStyle(fontSize: 12)),
-                  const SizedBox(width: 8),
-                  ChoiceChip(
-                    label: const Text('Logo'),
-                    selected: _mainSponsorMode == 'logo',
-                    onSelected: (_) =>
-                        setState(() => _mainSponsorMode = 'logo'),
+                  const Divider(height: 24),
+                  const Text(
+                    'Hintergrund & zentrale Einstellungen',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                  const SizedBox(width: 6),
-                  ChoiceChip(
-                    label: const Text('Text'),
-                    selected: _mainSponsorMode == 'text',
-                    onSelected: (_) =>
-                        setState(() => _mainSponsorMode = 'text'),
-                  ),
-                ],
-              ),
-            SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Weitere Sponsoren anzeigen',
-                style: TextStyle(fontSize: 13),
-              ),
-              value: _showOtherSponsors,
-              onChanged: (v) => setState(() => _showOtherSponsors = v),
-            ),
-            SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Logos auf hellem Kreis',
-                style: TextStyle(fontSize: 13),
-              ),
-              value: _posterLogoDisc,
-              onChanged: (v) => setState(() => _posterLogoDisc = v),
-            ),
-            SwitchListTile(
-              dense: true,
-              contentPadding: EdgeInsets.zero,
-              title: const Text(
-                'Schatten (alle Bilder)',
-                style: TextStyle(fontSize: 13),
-              ),
-              subtitle: const Text(
-                'Gilt für Spieler und alle Overlays; am besten freigestellt',
-                style: TextStyle(fontSize: 10.5),
-              ),
-              value: _posterShadow,
-              onChanged: (v) => setState(() => _posterShadow = v),
-            ),
-            if (_posterShadow) ...[
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 52,
-                    child: Text('Stärke', style: TextStyle(fontSize: 12)),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _posterShadowStrength,
-                      min: 0,
-                      max: 100,
-                      onChanged: (v) =>
-                          setState(() => _posterShadowStrength = v),
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 52,
-                    child: Text('Winkel', style: TextStyle(fontSize: 12)),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _posterShadowAngle,
-                      min: 0,
-                      max: 360,
-                      divisions: 72,
-                      label: '${_posterShadowAngle.round()}°',
-                      onChanged: (v) =>
-                          setState(() => _posterShadowAngle = v),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-                ],
-              ),
-            ),
-            if (_posterSel != null)
-              Row(
-                children: [
-                  SizedBox(
-                    width: 52,
-                    child: Text(
-                      _posterItemLabel(_posterSel!),
-                      style: const TextStyle(fontSize: 12),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _posterScale[_posterSel!] ?? 1.0,
-                      min: 0.4,
-                      max: 3.0,
-                      onChanged: (v) =>
-                          setState(() => _posterScale[_posterSel!] = v),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Eine Ebene nach hinten',
-                    icon: const Icon(Icons.flip_to_back, size: 18),
-                    onPressed: () => _reorderPoster(_posterSel!, -1),
-                  ),
-                  IconButton(
-                    tooltip: 'Eine Ebene nach vorne',
-                    icon: const Icon(Icons.flip_to_front, size: 18),
-                    onPressed: () => _reorderPoster(_posterSel!, 1),
-                  ),
-                  if (_posterSel!.startsWith('overlay_') ||
-                      _posterSel!.startsWith('text_'))
-                    IconButton(
-                      tooltip: 'Entfernen',
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        size: 18,
-                        color: Colors.red,
-                      ),
-                      onPressed: () => _removePosterItem(_posterSel!),
-                    ),
-                  IconButton(
-                    tooltip: 'Auswahl aufheben',
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () => setState(() => _posterSel = null),
-                  ),
-                ],
-              ),
-            // Drehung des gewählten Elements (am Handy auch per Zwei-Finger).
-            if (_posterSel != null)
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 52,
-                    child: Text('Drehen', style: TextStyle(fontSize: 12)),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: ((_posterRot[_posterSel!] ?? 0) * 180 / math.pi)
-                          .clamp(-180.0, 180.0),
-                      min: -180,
-                      max: 180,
-                      onChanged: (v) => setState(
-                        () => _posterRot[_posterSel!] = v * math.pi / 180,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: 'Drehung zurücksetzen',
-                    icon: const Icon(Icons.restart_alt, size: 18),
-                    onPressed: () =>
-                        setState(() => _posterRot[_posterSel!] = 0),
-                  ),
-                ],
-              ),
-            // Weiche Kanten – nur für Bild-Elemente (Spieler/Overlay).
-            if (_posterSel != null &&
-                (_posterSel! == 'player' ||
-                    _posterSel!.startsWith('overlay_'))) ...[
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 110,
-                    child: Text(
-                      'Weiche Kanten',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _imgFeather[_posterSel!] ?? 0,
-                      min: 0,
-                      max: 100,
-                      onChanged: _featherBusy
-                          ? null
-                          : (v) =>
-                                setState(() => _imgFeather[_posterSel!] = v),
-                      onChangeEnd: _featherBusy
-                          ? null
-                          : (v) => _applyImageFx(_posterSel!),
-                    ),
-                  ),
-                ],
-              ),
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 110,
-                    child: Text(
-                      'Innerer Schatten',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _imgInner[_posterSel!] ?? 0,
-                      min: 0,
-                      max: 100,
-                      onChanged: _featherBusy
-                          ? null
-                          : (v) => setState(() => _imgInner[_posterSel!] = v),
-                      onChangeEnd: _featherBusy
-                          ? null
-                          : (v) => _applyImageFx(_posterSel!),
-                    ),
-                  ),
-                  if (_featherBusy)
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                ],
-              ),
-            ],
-            // Editor für Datum ODER ein eigenes Textfeld (Inhalt mehrzeilig,
-            // Schriftart, Farbe). Datum ist mit der Automatik-Zeile vorbelegt.
-            if (_posterSel != null &&
-                (_posterSel!.startsWith('text_') ||
-                    _posterSel! == 'info')) ...[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      key: ValueKey('txt_${_posterSel!}_$_editorSeq'),
-                      initialValue: _posterSel! == 'info'
-                          ? (_textContent['info'] ?? _autoInfoLine)
-                          : (_textContent[_posterSel!] ?? ''),
-                      maxLines: null,
-                      keyboardType: TextInputType.multiline,
-                      textInputAction: TextInputAction.newline,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                        hintText: 'Text (Enter = neue Zeile)',
-                      ),
-                      onChanged: (v) =>
-                          setState(() => _textContent[_posterSel!] = v),
-                    ),
-                  ),
-                  if (_posterSel! == 'info')
-                    IconButton(
-                      tooltip: 'Automatisches Datum',
-                      icon: const Icon(Icons.restore, size: 18),
-                      onPressed: () => setState(() {
-                        _textContent.remove('info');
-                        _textFont.remove('info');
-                        _textColor.remove('info');
-                        _editorSeq++; // Feld mit Auto-Zeile neu aufbauen
-                      }),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Text('Schrift:', style: TextStyle(fontSize: 12)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: DropdownButton<String>(
-                      isExpanded: true,
-                      isDense: true,
-                      value: _textFont[_posterSel!] ?? 'standard',
-                      items: [
-                        for (final e in _kPosterFonts.entries)
-                          DropdownMenuItem(value: e.key, child: Text(e.value)),
-                      ],
-                      onChanged: (v) => setState(
-                        () => _textFont[_posterSel!] = v ?? 'standard',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              Wrap(
-                spacing: 6,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                children: [
-                  const Text('Farbe:', style: TextStyle(fontSize: 12)),
-                  for (final e in _kTextColors.entries)
-                    ChoiceChip(
-                      label: Text(e.value),
-                      selected:
-                          (_textColor[_posterSel!] ??
-                              (_posterSel! == 'info' ? 'accent' : 'white')) ==
-                          e.key,
-                      onSelected: (_) =>
-                          setState(() => _textColor[_posterSel!] = e.key),
-                    ),
-                  ActionChip(
-                    avatar: Container(
-                      width: 16,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: _hex(_textColorHex(_posterSel!)),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.black26),
-                      ),
-                    ),
-                    label: const Text('frei'),
-                    onPressed: () async {
-                      final hex = await _pickColor(_textColorHex(_posterSel!));
-                      if (hex != null) {
-                        setState(() => _textColor[_posterSel!] = hex);
-                      }
+                  const SizedBox(height: 4),
+                  _headlineSponsorControls(setSheet),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.tune, size: 18),
+                    label: const Text('Hintergrund & Farben'),
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      _openCustomize();
                     },
                   ),
                 ],
               ),
-            ],
-          ],
-        ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -4272,6 +4084,8 @@ class _StartelfGraphic extends StatelessWidget {
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
     this.onPosterLongPress,
+    this.onBackgroundLongPress,
+    this.onBackgroundTap,
     this.onPosterSelect,
     this.posterFont = 'standard',
     this.showMainSponsor = true,
@@ -4331,6 +4145,8 @@ class _StartelfGraphic extends StatelessWidget {
   final void Function(String id, ScaleUpdateDetails details, double w, double h)?
       onPosterGestureUpdate;
   final void Function(String id)? onPosterLongPress; // Langdruck → Eigenschaften
+  final VoidCallback? onBackgroundLongPress; // Langdruck leere Fläche → hinzufügen
+  final VoidCallback? onBackgroundTap; // Tippen leere Fläche → Auswahl aufheben
   final void Function(String id)? onPosterSelect;
   final String posterFont; // Schriftart der Poster-Texte
   final bool showMainSponsor; // Hauptsponsor-Element anzeigen
@@ -5353,6 +5169,16 @@ class _StartelfGraphic extends StatelessWidget {
         return Stack(
           fit: StackFit.expand,
           children: [
+            // Hintergrund-Gesten (unterste Ebene): Tippen auf leere Fläche =
+            // Auswahl aufheben, Langdruck = hinzufügen/Hintergrund-Menü. Elemente
+            // liegen darüber (opaque) und fangen ihre eigenen Gesten ab.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: onBackgroundTap,
+                onLongPress: onBackgroundLongPress,
+              ),
+            ),
             _bgBase(radial: true),
             // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar.
             Align(
