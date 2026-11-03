@@ -3842,6 +3842,9 @@ class _StartelfGraphic extends StatelessWidget {
           // d.delta ist im skalierten Koordinatensystem → * scale = Bildschirm-
           // Pixel (gleichbleibende Zieh-Geschwindigkeit).
           return Align(
+            // Key behält die Widget-Identität, wenn das gewählte Element in der
+            // Ebenen-Liste nach oben wandert → laufende Zieh-Geste bricht NICHT ab.
+            key: ValueKey('posterEl_$id'),
             alignment: Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
             child: Transform.scale(
               scale: scale,
