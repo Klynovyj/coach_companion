@@ -2799,15 +2799,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 ),
               ],
             ),
-            const Padding(
-              padding: EdgeInsets.only(top: 2),
-              child: Text(
-                'Freistellen/Hintergrund wirkt auf das GEWÄHLTE Bild (Spieler '
-                'oder Overlay – antippen). „Hintergrund weg" geht ohne KI '
-                '(Studio-/weißer Grund); fertig freigestelltes PNG geht auch.',
-                style: TextStyle(fontSize: 10.5, color: Colors.grey),
-              ),
-            ),
             const SizedBox(height: 4),
             Theme(
               data: Theme.of(
@@ -3191,12 +3182,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 ],
               ),
             ],
-            const Text(
-              'Tipp: Element (oder „Datum") wählen = bearbeiten, ziehen = '
-              'verschieben, Größe-Regler = skalieren. Datum/Text: Enter = neue '
-              'Zeile. Story 9:16 und Post 1:1 werden getrennt eingestellt.',
-              style: TextStyle(fontSize: 10.5, color: Colors.grey),
-            ),
           ],
         ],
       ),
@@ -3259,8 +3244,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       ),
       body: Column(
         children: [
+          // Canvas nimmt den gesamten Rest → so groß wie möglich.
           Expanded(
-            flex: 3,
             child: Align(
               alignment: Alignment.topCenter,
               child: Padding(
@@ -3272,8 +3257,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               ),
             ),
           ),
-          Expanded(
-            flex: 2,
+          // Werkzeuge in einer kompakten, scrollbaren Leiste unten.
+          SizedBox(
+            height: MediaQuery.of(context).size.height * 0.34,
             child: DecoratedBox(
               decoration: BoxDecoration(
                 border: Border(
