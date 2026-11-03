@@ -3921,31 +3921,29 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Hauptsponsor: „PRÄSENTIERT VON" + Logo (weißer Chip) falls vorhanden,
-  /// sonst als Text.
+  /// Hauptsponsor: „Präsentiert von" + Logo NEBENEINANDER (inline, weißer Chip)
+  /// falls Logo vorhanden, sonst als Text.
   Widget _presentedBy(Sponsor s) {
     final logoBytes = TeamLogo.decode(s.logo);
     if (logoBytes == null) return _presentedByText(s.name);
-    return Column(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Text(
-          'PRÄSENTIERT VON',
-          textAlign: TextAlign.center,
+          'Präsentiert von ',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.85),
-            fontSize: compact ? 8 : 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.5,
+            fontSize: compact ? 12 : 15,
+            fontWeight: FontWeight.w500,
           ),
         ),
-        SizedBox(height: compact ? 3 : 5),
+        const SizedBox(width: 6),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(5),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.3),
@@ -3956,7 +3954,7 @@ class _StartelfGraphic extends StatelessWidget {
           ),
           child: Image.memory(
             logoBytes,
-            height: compact ? 26 : 34,
+            height: compact ? 22 : 28,
             fit: BoxFit.contain,
             gaplessPlayback: true,
           ),
