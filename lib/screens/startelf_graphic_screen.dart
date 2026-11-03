@@ -300,6 +300,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   final Map<String, Map<String, String>> _textColorF = {};
   int _posterOverlaySeq = 0; // eindeutige Overlay-IDs (global)
   int _textSeq = 0; // eindeutige Text-IDs (global)
+  int _editorSeq = 0; // erzwingt Editor-Neuaufbau (z.B. „Datum auf Auto")
   String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
   Map<String, Offset> get _posterPos =>
       _posterPosF.putIfAbsent(_designKey, () => {});
@@ -370,6 +371,28 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       default:
         return 'SPIELTAG';
     }
+  }
+
+  /// Automatische Datum/Ort-Zeile (Vorbelegung für den editierbaren Datum-Text).
+  String get _autoInfoLine {
+    final a = widget.announcement;
+    final parts = <String>[];
+    final d = widget.matchDate;
+    if (d != null) {
+      final local = d.toLocal();
+      parts.add(DateFormat('EEE', 'de_DE').format(local));
+      parts.add(DateFormat('dd. MMM', 'de_DE').format(local));
+      if (local.hour != 0 || local.minute != 0) {
+        parts.add(DateFormat('HH:mm', 'de_DE').format(local));
+      }
+    }
+    final venue = (a?.venue ?? '').trim();
+    final address = (a?.address ?? '').trim();
+    if (venue.isNotEmpty) parts.add(venue.toUpperCase());
+    if (address.isNotEmpty && address.toLowerCase() != venue.toLowerCase()) {
+      parts.add(address.toUpperCase());
+    }
+    return parts.join(' | ');
   }
 
   // Ist der wirksame Hintergrund dunkel? → steuert die Auto-Logo-Variante.
@@ -1924,6 +1947,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           font: _textFont[id] ?? 'standard',
           color: _textColor[id] ?? 'white',
         ),
+      // Datum („info") als editierbarer Override, falls gesetzt.
+      if (_textContent.containsKey('info'))
+        'info': (
+          text: _textContent['info'] ?? '',
+          font: _textFont['info'] ?? 'standard',
+          color: _textColor['info'] ?? 'accent',
+        ),
     },
   );
 
@@ -2371,19 +2401,45 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                 ],
               ),
-            // Editor für ein eigenes Textfeld (Inhalt/Schriftart/Farbe).
-            if (_posterSel != null && _posterSel!.startsWith('text_')) ...[
-              TextFormField(
-                key: ValueKey('txt_${_posterSel!}'),
-                initialValue: _textContent[_posterSel!] ?? '',
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  border: OutlineInputBorder(),
-                  hintText: 'Text eingeben',
-                ),
-                onChanged: (v) =>
-                    setState(() => _textContent[_posterSel!] = v),
+            // Editor für Datum ODER ein eigenes Textfeld (Inhalt mehrzeilig,
+            // Schriftart, Farbe). Datum ist mit der Automatik-Zeile vorbelegt.
+            if (_posterSel != null &&
+                (_posterSel!.startsWith('text_') ||
+                    _posterSel! == 'info')) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      key: ValueKey('txt_${_posterSel!}_$_editorSeq'),
+                      initialValue: _posterSel! == 'info'
+                          ? (_textContent['info'] ?? _autoInfoLine)
+                          : (_textContent[_posterSel!] ?? ''),
+                      maxLines: null,
+                      keyboardType: TextInputType.multiline,
+                      textInputAction: TextInputAction.newline,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: const InputDecoration(
+                        isDense: true,
+                        border: OutlineInputBorder(),
+                        hintText: 'Text (Enter = neue Zeile)',
+                      ),
+                      onChanged: (v) =>
+                          setState(() => _textContent[_posterSel!] = v),
+                    ),
+                  ),
+                  if (_posterSel! == 'info')
+                    IconButton(
+                      tooltip: 'Automatisches Datum',
+                      icon: const Icon(Icons.restore, size: 18),
+                      onPressed: () => setState(() {
+                        _textContent.remove('info');
+                        _textFont.remove('info');
+                        _textColor.remove('info');
+                        _editorSeq++; // Feld mit Auto-Zeile neu aufbauen
+                      }),
+                    ),
+                ],
               ),
               const SizedBox(height: 4),
               Row(
@@ -2414,7 +2470,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   for (final e in _kTextColors.entries)
                     ChoiceChip(
                       label: Text(e.value),
-                      selected: (_textColor[_posterSel!] ?? 'white') == e.key,
+                      selected:
+                          (_textColor[_posterSel!] ??
+                              (_posterSel! == 'info' ? 'accent' : 'white')) ==
+                          e.key,
                       onSelected: (_) =>
                           setState(() => _textColor[_posterSel!] = e.key),
                     ),
@@ -2422,10 +2481,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               ),
             ],
             const Text(
-              'Tipp: Element antippen = auswählen, ziehen = verschieben, '
-              'Größe-Regler = skalieren, Vorne/Hinten = Ebene tauschen. '
-              '„Bild/Grafik" und „Text" legen eigene Elemente dazu. Story 9:16 '
-              'und Post 1:1 werden getrennt eingestellt.',
+              'Tipp: Element (oder „Datum") wählen = bearbeiten, ziehen = '
+              'verschieben, Größe-Regler = skalieren. Datum/Text: Enter = neue '
+              'Zeile. Story 9:16 und Post 1:1 werden getrennt eingestellt.',
               style: TextStyle(fontSize: 10.5, color: Colors.grey),
             ),
           ],
@@ -3767,24 +3825,31 @@ class _StartelfGraphic extends StatelessWidget {
         ),
       ),
     );
-    final Widget? infoW = infoLine.isEmpty
-        ? null
-        : Text(
-            infoLine,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.visible,
-            textAlign: TextAlign.center,
-            style: posterFontStyle(
-              posterFont,
-              TextStyle(
-                color: _accent,
-                fontSize: compact ? 12 : 14,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.3,
-              ),
-            ),
-          );
+    // Datum: eigener editierbarer Text (Override) ODER automatische Zeile;
+    // mehrzeilig (Zeilenumbrüche via \n).
+    final Widget? infoW = () {
+      final o = posterTexts['info'];
+      final text = (o != null && o.text.trim().isNotEmpty) ? o.text : infoLine;
+      if (text.trim().isEmpty) return null;
+      final col = o == null
+          ? _accent
+          : (o.color == 'white'
+                ? Colors.white
+                : (o.color == 'black' ? Colors.black : _accent));
+      return Text(
+        text,
+        textAlign: TextAlign.center,
+        style: posterFontStyle(
+          o?.font ?? posterFont,
+          TextStyle(
+            color: col,
+            fontSize: compact ? 12 : 14,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.3,
+          ),
+        ),
+      );
+    }();
     return LayoutBuilder(
       builder: (ctx, c) {
         final w = c.maxWidth, h = c.maxHeight;
