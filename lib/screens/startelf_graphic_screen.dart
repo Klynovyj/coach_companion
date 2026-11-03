@@ -3862,14 +3862,9 @@ class _StartelfGraphic extends StatelessWidget {
               const Offset(0.5, 0.5);
           final scale = posterItemScale[id] ?? 1.0;
           final selected = posterSelected == id;
-          // GestureDetector liegt INNERHALB von Transform.scale, damit die
-          // Trefferfläche mit der sichtbaren (skalierten) Größe übereinstimmt –
-          // sonst ließe sich ein vergrößertes Element außerhalb nicht greifen.
-          // d.delta ist im skalierten Koordinatensystem → * scale = Bildschirm-
-          // Pixel (gleichbleibende Zieh-Geschwindigkeit).
+          // Antippen = auswählen. Das VERSCHIEBEN übernimmt eine Zieh-Ebene über
+          // allem (unten), damit die Geste stabil bleibt – egal welche Größe/Ebene.
           return Align(
-            // Key behält die Widget-Identität, wenn das gewählte Element in der
-            // Ebenen-Liste nach oben wandert → laufende Zieh-Geste bricht NICHT ab.
             key: ValueKey('posterEl_$id'),
             alignment: Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
             child: Transform.scale(
@@ -3877,16 +3872,6 @@ class _StartelfGraphic extends StatelessWidget {
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapDown: (_) => onPosterSelect?.call(id),
-                onPanStart: (_) => onPosterSelect?.call(id),
-                onPanUpdate: (d) {
-                  onPosterItemMove?.call(
-                    id,
-                    Offset(
-                      (pos.dx + d.delta.dx * scale / w).clamp(-0.05, 1.05),
-                      (pos.dy + d.delta.dy * scale / h).clamp(-0.05, 1.05),
-                    ),
-                  );
-                },
                 child: Container(
                   padding: const EdgeInsets.all(2),
                   decoration: selected
@@ -3904,20 +3889,38 @@ class _StartelfGraphic extends StatelessWidget {
           );
         }
 
-        // Ebenen in Reihenfolge (hinten → vorne); fehlende Inhalte überspringen.
-        // Das AKTUELL gewählte Element kommt zuletzt (oben) → immer greifbar.
+        // Ebenen in echter Reihenfolge (hinten → vorne).
         final layers = <Widget>[];
-        Widget? selectedLayer;
         for (final id in posterOrder) {
           final child = content(id);
-          if (child == null) continue;
-          if (posterSelected == id) {
-            selectedLayer = el(id, child);
-          } else {
-            layers.add(el(id, child));
-          }
+          if (child != null) layers.add(el(id, child));
         }
-        if (selectedLayer != null) layers.add(selectedLayer);
+
+        // Zieh-Ebene ganz oben: bewegt das aktuell gewählte Element. Translucent →
+        // Tippen geht zu den Elementen durch (Auswahl), Ziehen bewegt das Gewählte.
+        final sel = posterSelected;
+        final Widget? dragLayer = sel == null
+            ? null
+            : Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onPanUpdate: (d) {
+                    final cur =
+                        posterItemPos[sel] ??
+                        (posterStyle
+                            ? _kPosterItemDefaults
+                            : _kCenteredItemDefaults)[sel] ??
+                        const Offset(0.5, 0.5);
+                    onPosterItemMove?.call(
+                      sel,
+                      Offset(
+                        (cur.dx + d.delta.dx / w).clamp(-0.05, 1.05),
+                        (cur.dy + d.delta.dy / h).clamp(-0.05, 1.05),
+                      ),
+                    );
+                  },
+                ),
+              );
 
         return Stack(
           fit: StackFit.expand,
@@ -3944,6 +3947,7 @@ class _StartelfGraphic extends StatelessWidget {
               ),
             ),
             ...layers,
+            ?dragLayer,
           ],
         );
       },
