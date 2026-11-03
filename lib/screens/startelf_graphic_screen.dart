@@ -3670,42 +3670,38 @@ class _StartelfGraphic extends StatelessWidget {
         side(oppLogo),
       ],
     );
-    final Widget headlineW = FittedBox(
-      fit: BoxFit.scaleDown,
-      child: Text(
-        posterHeadline,
-        maxLines: 1,
-        softWrap: false,
-        textAlign: TextAlign.center,
-        style: posterFontStyle(
-          posterFont,
-          const TextStyle(
-            color: Colors.white,
-            fontSize: 58,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2,
-            height: 1.0,
-          ),
+    final Widget headlineW = Text(
+      posterHeadline,
+      maxLines: 1,
+      softWrap: false,
+      overflow: TextOverflow.visible,
+      textAlign: TextAlign.center,
+      style: posterFontStyle(
+        posterFont,
+        const TextStyle(
+          color: Colors.white,
+          fontSize: 58,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 2,
+          height: 1.0,
         ),
       ),
     );
     final Widget? infoW = infoLine.isEmpty
         ? null
-        : FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              infoLine,
-              maxLines: 1,
-              softWrap: false,
-              textAlign: TextAlign.center,
-              style: posterFontStyle(
-                posterFont,
-                TextStyle(
-                  color: _accent,
-                  fontSize: compact ? 12 : 14,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.3,
-                ),
+        : Text(
+            infoLine,
+            maxLines: 1,
+            softWrap: false,
+            overflow: TextOverflow.visible,
+            textAlign: TextAlign.center,
+            style: posterFontStyle(
+              posterFont,
+              TextStyle(
+                color: _accent,
+                fontSize: compact ? 12 : 14,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
               ),
             ),
           );
@@ -3836,8 +3832,7 @@ class _StartelfGraphic extends StatelessWidget {
                   );
                 },
                 child: Container(
-                  constraints: BoxConstraints(maxWidth: w - 2 * pad),
-                  padding: const EdgeInsets.all(3),
+                  padding: const EdgeInsets.all(2),
                   decoration: selected
                       ? BoxDecoration(
                           border: Border.all(
@@ -3854,11 +3849,19 @@ class _StartelfGraphic extends StatelessWidget {
         }
 
         // Ebenen in Reihenfolge (hinten → vorne); fehlende Inhalte überspringen.
+        // Das AKTUELL gewählte Element kommt zuletzt (oben) → immer greifbar.
         final layers = <Widget>[];
+        Widget? selectedLayer;
         for (final id in posterOrder) {
           final child = content(id);
-          if (child != null) layers.add(el(id, child));
+          if (child == null) continue;
+          if (posterSelected == id) {
+            selectedLayer = el(id, child);
+          } else {
+            layers.add(el(id, child));
+          }
         }
+        if (selectedLayer != null) layers.add(selectedLayer);
 
         return Stack(
           fit: StackFit.expand,
