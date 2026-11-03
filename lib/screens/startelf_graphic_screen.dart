@@ -3359,9 +3359,16 @@ class _StartelfGraphic extends StatelessWidget {
     final infoLine = parts.join('   |   ');
 
     // Spielerbild (contain = nichts abgeschnitten), skalierbar + zoombar.
+    // Der Schatten liegt im GLEICHEN Zoom-/Verschiebe-Bereich wie der Spieler,
+    // damit er beim Ziehen/Zoomen/Skalieren immer mitgeht.
     Widget? playerLayer;
-    Widget? shadowLayer;
     if (mainBytes != null) {
+      final playerImg = Image.memory(
+        mainBytes,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+      );
+      final dist = 6 + 22 * (posterShadowStrength / 100);
       playerLayer = Align(
         alignment: Alignment.bottomCenter,
         child: Transform.scale(
@@ -3377,56 +3384,40 @@ class _StartelfGraphic extends StatelessWidget {
                 maxScale: 4,
                 boundaryMargin: const EdgeInsets.all(double.infinity),
                 clipBehavior: Clip.none,
-                child: Image.memory(
-                  mainBytes,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (posterShadow)
+                      Transform.translate(
+                        offset: Offset(
+                          math.cos(posterShadowAngle * math.pi / 180) * dist,
+                          math.sin(posterShadowAngle * math.pi / 180) * dist,
+                        ),
+                        child: ImageFiltered(
+                          imageFilter: ui.ImageFilter.blur(
+                            sigmaX: 6 + 14 * (posterShadowStrength / 100),
+                            sigmaY: 6 + 14 * (posterShadowStrength / 100),
+                          ),
+                          child: Opacity(
+                            opacity: 0.2 + 0.55 * (posterShadowStrength / 100),
+                            child: ColorFiltered(
+                              colorFilter: const ColorFilter.mode(
+                                Colors.black,
+                                BlendMode.srcIn,
+                              ),
+                              child: playerImg,
+                            ),
+                          ),
+                        ),
+                      ),
+                    playerImg,
+                  ],
                 ),
               ),
             ),
           ),
         ),
       );
-      if (posterShadow) {
-        final dist = 6 + 22 * (posterShadowStrength / 100);
-        shadowLayer = Align(
-          alignment: Alignment.bottomCenter,
-          child: Transform.scale(
-            scale: posterPlayerScale,
-            alignment: Alignment.bottomCenter,
-            child: FractionallySizedBox(
-              widthFactor: 1,
-              heightFactor: _kPosterMainHeightFactor,
-              child: Transform.translate(
-                offset: Offset(
-                  math.cos(posterShadowAngle * math.pi / 180) * dist,
-                  math.sin(posterShadowAngle * math.pi / 180) * dist,
-                ),
-                child: ImageFiltered(
-                  imageFilter: ui.ImageFilter.blur(
-                    sigmaX: 6 + 14 * (posterShadowStrength / 100),
-                    sigmaY: 6 + 14 * (posterShadowStrength / 100),
-                  ),
-                  child: Opacity(
-                    opacity: 0.2 + 0.55 * (posterShadowStrength / 100),
-                    child: ColorFiltered(
-                      colorFilter: const ColorFilter.mode(
-                        Colors.black,
-                        BlendMode.srcIn,
-                      ),
-                      child: Image.memory(
-                        mainBytes,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      }
     }
 
     // Verschiebbarer Textblock (Sponsor-Text, Logos, Überschrift, Datum/Ort).
@@ -3501,7 +3492,6 @@ class _StartelfGraphic extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             _bgBase(radial: true),
-            ?shadowLayer,
             ?playerLayer,
             // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar.
             Align(
