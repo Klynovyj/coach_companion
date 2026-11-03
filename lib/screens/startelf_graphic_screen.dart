@@ -3651,94 +3651,96 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               ),
             ),
           ),
-          if (_settings.designMode)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.open_with,
-                    size: 15,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Info-Block ziehen zum Platzieren',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          if (_bandPhotos.length == 1 && !_settings.designMode)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.open_with,
-                    size: 15,
-                    color: Theme.of(context).colorScheme.outline,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Foto ziehen & zoomen (Finger)',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Theme.of(context).colorScheme.outline,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          // Bedienung UNTER der Vorschau in einem scrollbaren Panel fester
-          // Höhe → die Vorschau oben bleibt groß und sichtbar.
-          if (widget.isAnnouncement)
-            DecoratedBox(
+          // Einstellungen in einem SCROLLBAREN Bereich (flex:2) → die Vorschau
+          // oben bleibt immer sichtbar, auch wenn „Profi-Finish" aufgeklappt ist.
+          Expanded(
+            flex: 2,
+            child: DecoratedBox(
               decoration: BoxDecoration(
                 border: Border(
                   top: BorderSide(color: Theme.of(context).dividerColor),
                 ),
               ),
-              child: _announcementControls(),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_settings.designMode)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.open_with,
+                            size: 15,
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Info-Block ziehen zum Platzieren',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (_bandPhotos.length == 1 && !_settings.designMode)
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.open_with,
+                            size: 15,
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Foto ziehen & zoomen (Finger)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Theme.of(context).colorScheme.outline,
+                            ),
+                          ),
+                        ],
+                      ),
+                    if (widget.isAnnouncement) _announcementControls(),
+                    // Profi-Finish (globale Bildkorrektur) – alle Grafiktypen.
+                    _gradeControls(),
+                    const SizedBox(height: 8),
+                    // KI-Bearbeitung nur, wenn die Grafik-KI (Gemini) frei ist.
+                    if (context.watch<AppState>().canAiImage)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: (_sharing || _aiBusy) ? null : _aiEdit,
+                          icon: _aiBusy
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Icon(Icons.auto_awesome),
+                          label: Text(
+                            _aiBusy ? 'KI gestaltet …' : 'Mit KI gestalten',
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
+          ),
+          // Hauptaktionen bleiben unten IMMER sichtbar (angepinnt).
           SafeArea(
             top: false,
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Profi-Finish (globale Bildkorrektur) – für alle Grafiktypen.
-                  _gradeControls(),
-                  const SizedBox(height: 8),
-                  // KI-Bearbeitung nur, wenn der Admin die Grafik-KI (Gemini)
-                  // für diesen Nutzer freigeschaltet hat.
-                  if (context.watch<AppState>().canAiImage) ...[
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: (_sharing || _aiBusy) ? null : _aiEdit,
-                        icon: _aiBusy
-                            ? const SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : const Icon(Icons.auto_awesome),
-                        label: Text(
-                          _aiBusy ? 'KI gestaltet …' : 'Mit KI gestalten',
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
                   Row(
                     children: [
                       Expanded(
