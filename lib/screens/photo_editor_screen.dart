@@ -13,6 +13,7 @@ class PhotoEditorScreen extends StatefulWidget {
     required this.imageBytes,
     this.aspectRatio,
     this.maxSize = 1600,
+    this.keepAlpha = false,
   });
 
   final Uint8List imageBytes;
@@ -22,6 +23,10 @@ class PhotoEditorScreen extends StatefulWidget {
 
   /// Längste Kante im Ergebnis (zum Begrenzen der Dateigröße).
   final int maxSize;
+
+  /// Transparenz erhalten → Ergebnis als PNG (statt JPEG). Für freigestellte
+  /// Spielerbilder, damit der Hintergrund dahinter durchscheint.
+  final bool keepAlpha;
 
   @override
   State<PhotoEditorScreen> createState() => _PhotoEditorScreenState();
@@ -54,7 +59,11 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
       final decoded = img.decodeImage(_bytes);
       if (decoded != null) {
         final rotated = img.copyRotate(decoded, angle: 90);
-        _bytes = Uint8List.fromList(img.encodeJpg(rotated, quality: 92));
+        _bytes = Uint8List.fromList(
+          widget.keepAlpha
+              ? img.encodePng(rotated)
+              : img.encodeJpg(rotated, quality: 92),
+        );
         _rotation++;
         _ready = false; // neuer Crop-Key → wieder warten, bis bereit
       }
@@ -96,7 +105,9 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
               ? img.copyResize(im, width: widget.maxSize)
               : img.copyResize(im, height: widget.maxSize);
         }
-        out = Uint8List.fromList(img.encodeJpg(im, quality: 85));
+        out = Uint8List.fromList(
+          widget.keepAlpha ? img.encodePng(im) : img.encodeJpg(im, quality: 85),
+        );
       }
     } catch (_) {
       // Nachbearbeitung fehlgeschlagen → Bild unverändert übernehmen.

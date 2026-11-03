@@ -31,6 +31,17 @@ function stripDataUrl(s: string): { mime: string; data: string } {
 // Leitplanken-Text je Modus. 'background' = nur kreativer Hintergrund (ohne
 // Logos/Text), 'compose' = ganze Grafik aus den mitgeschickten Bausteinen.
 function guardText(mode: string, aspect: string, roles: string[]): string {
+  if (mode === "cutout") {
+    return (
+      "Stelle die auf dem beiliegenden Bild gezeigte Person (Fussballspieler) " +
+      "exakt frei: entferne den KOMPLETTEN Hintergrund vollstaendig und gib " +
+      "NUR die Person als Bild mit transparentem Hintergrund (Alpha-Kanal, " +
+      "PNG) zurueck. Fuege KEINEN neuen Hintergrund, KEINE Farbflaeche, KEINE " +
+      "Schatten und KEINE zusaetzlichen Elemente hinzu. Lasse die Person " +
+      "unveraendert (gleiche Haltung, Kleidung, Farben, Gesicht); schneide nur " +
+      "sauber an den Raendern frei. Zusatz des Nutzers: "
+    );
+  }
   if (mode === "background") {
     return (
       "Erzeuge NUR ein kreatives, hochwertiges Hintergrund-/Designbild fuer " +

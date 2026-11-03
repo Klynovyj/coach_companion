@@ -307,14 +307,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     ImageSource source = ImageSource.gallery,
     bool edit = false,
     double? aspectRatio,
+    bool keepAlpha = false,
   }) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
+      // keepAlpha: ohne maxWidth/-Height/Quality laden, sonst re-encodiert der
+      // Picker nach JPEG → Transparenz ginge verloren.
       final file = await ImagePicker().pickImage(
         source: source,
-        maxWidth: asBackground ? 1600 : 600,
-        maxHeight: asBackground ? 2400 : 600,
-        imageQuality: asBackground ? 85 : 90,
+        maxWidth: keepAlpha ? null : (asBackground ? 1600 : 600),
+        maxHeight: keepAlpha ? null : (asBackground ? 2400 : 600),
+        imageQuality: keepAlpha ? null : (asBackground ? 85 : 90),
       );
       if (file == null) return null;
       var bytes = await file.readAsBytes();
@@ -323,14 +326,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         final edited = await Navigator.push<Uint8List?>(
           context,
           MaterialPageRoute(
-            builder: (_) =>
-                PhotoEditorScreen(imageBytes: bytes, aspectRatio: aspectRatio),
+            builder: (_) => PhotoEditorScreen(
+              imageBytes: bytes,
+              aspectRatio: aspectRatio,
+              keepAlpha: keepAlpha,
+            ),
           ),
         );
         if (edited == null) return null; // Abbruch im Editor
         bytes = edited;
       }
-      final mime = asBackground ? 'image/jpeg' : 'image/png';
+      final mime = keepAlpha
+          ? 'image/png'
+          : (asBackground ? 'image/jpeg' : 'image/png');
       return 'data:$mime;base64,${base64Encode(bytes)}';
     } catch (e) {
       messenger.showSnackBar(
@@ -470,6 +478,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             source: src == 'camera' ? ImageSource.camera : ImageSource.gallery,
             edit: true,
             aspectRatio: aspect,
+            keepAlpha: true, // transparente Freisteller-PNGs erhalten
           );
     if (url == null || !mounted) return;
     setState(() {
@@ -554,12 +563,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       );
       return null;
     }
-    // Im Editor auf das Zielformat zuschneiden (WYSIWYG).
+    // Im Editor auf das Zielformat zuschneiden (WYSIWYG), Transparenz erhalten.
     final edited = await Navigator.push<Uint8List?>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            PhotoEditorScreen(imageBytes: bytes, aspectRatio: aspect),
+        builder: (_) => PhotoEditorScreen(
+          imageBytes: bytes,
+          aspectRatio: aspect,
+          keepAlpha: true,
+        ),
       ),
     );
     if (edited == null) return null;
@@ -1380,6 +1392,68 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
+  /// KI-Freisteller: entfernt den Foto-Hintergrund des großen Spielerbilds,
+  /// damit der gewählte Poster-Hintergrund dahinter erscheint. Ersetzt das Bild.
+  Future<void> _cutoutPosterMain() async {
+    if (_aiBusy) return;
+    final main = _posterMain;
+    if (main == null || !main.contains('base64,')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erst ein großes Spielerbild wählen.')),
+      );
+      return;
+    }
+    setState(() => _aiBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final out = await CloudService.aiImage(
+        images: [
+          {'mime': _dataUrlMime(main), 'data': main, 'role': 'photo'},
+        ],
+        prompt:
+            'Stelle die Person/den Spieler sauber frei und gib sie auf '
+            'transparentem Hintergrund (PNG mit Alpha) zurück.',
+        mode: 'cutout',
+        aspect: _story ? '9:16' : '1:1',
+      );
+      if (out == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Die KI hat kein Bild zurückgegeben.')),
+        );
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _photos.removeWhere((p) => p.place == _PhotoPlace.posterMain);
+        _photos.add(
+          _GraphicPhoto(
+            'data:image/png;base64,${base64Encode(out)}',
+            _PhotoPlace.posterMain,
+          ),
+        );
+        _photoCtrl.value = Matrix4.identity();
+      });
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Spieler freigestellt. Falls noch Reste bleiben: eigenes '
+            'transparentes PNG hochladen.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(_aiErrorMessage(e)),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _aiBusy = false);
+    }
+  }
+
   /// Übersetzt die (oft sehr langen) Gemini-/Function-Fehler in eine kurze,
   /// verständliche Meldung für den Trainer.
   String _aiErrorMessage(Object e) {
@@ -1596,6 +1670,33 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: _aiBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.auto_fix_high, size: 18),
+                label: Text(
+                  _aiBusy ? 'KI stellt frei …' : 'Spieler freistellen (KI)',
+                ),
+                onPressed: (_posterMain == null || _aiBusy)
+                    ? null
+                    : _cutoutPosterMain,
+              ),
+            ),
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text(
+                'Freisteller entfernt den Foto-Hintergrund → dein Hintergrund '
+                'erscheint dahinter. Tipp: fertig freigestelltes PNG geht auch.',
+                style: TextStyle(fontSize: 10.5, color: Colors.grey),
+              ),
             ),
             const SizedBox(height: 8),
             Wrap(
@@ -3001,12 +3102,30 @@ class _StartelfGraphic extends StatelessWidget {
     final mainBytes = TeamLogo.decode(posterMain);
     final badgeBytes = TeamLogo.decode(posterBadge);
     final pad = compact ? 16.0 : 22.0;
-    final logoH = compact ? 40.0 : 52.0;
+    final logoH = compact ? 46.0 : 60.0;
     final badgeSize = compact ? 84.0 : 112.0;
 
-    Widget side(Uint8List? bytes) => bytes != null
-        ? _logoChip(bytes, height: logoH, circle: logoCircle)
-        : SizedBox(height: logoH, width: logoH);
+    // Logos wie im Vorbild: ohne weißen Kasten, direkt auf dem Hintergrund
+    // (dezenter Schatten für Lesbarkeit auf unruhigem Grund).
+    Widget side(Uint8List? bytes) => bytes == null
+        ? SizedBox(height: logoH, width: logoH)
+        : DecoratedBox(
+            decoration: BoxDecoration(
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Image.memory(
+              bytes,
+              height: logoH,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+            ),
+          );
 
     // Datum/Ort-Zeile „Fr. | 30. Okt. | 19:00 Uhr | ORT".
     final parts = <String>[];
