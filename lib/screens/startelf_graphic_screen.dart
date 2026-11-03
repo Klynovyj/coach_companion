@@ -428,9 +428,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Basiswerte beim Start einer Pinch-/Dreh-Geste (kumulativ zum Start rechnen).
   double _gScale0 = 1.0;
   double _gRot0 = 0.0;
+  // Ankündigung: strukturelle Standard-Elemente vorbelegt. Ergebnis/Startelf:
+  // leer → nur selbst hinzugefügte Elemente liegen über dem festen Layout.
   List<String> get _posterOrder => _posterOrderF.putIfAbsent(
     _designKey,
-    () => List<String>.from(_kPosterBaseOrder),
+    () => widget.isAnnouncement
+        ? List<String>.from(_kPosterBaseOrder)
+        : <String>[],
   );
   List<({String id, String dataUrl})> get _posterOverlays =>
       _posterOverlaysF.putIfAbsent(_designKey, () => []);
@@ -457,6 +461,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   _Grade get _grade => _gradeF.putIfAbsent(_designKey, () => _Grade());
   bool _gradeBusy = false; // KI-Analyse läuft
   bool _fullEdit = false; // Vollbild-Editor (großes Canvas) offen?
+  // Freier Editor für ALLE Grafiktypen (Ankündigung/Ergebnis/Startelf); im
+  // reinen Branding-Design-Modus deaktiviert (eigenes Layout).
+  bool get _editable => !_settings.designMode;
+  // Speicher-ID je Spiel UND Grafiktyp (sonst würden sich Ankündigung/Ergebnis/
+  // Startelf desselben Spiels überschreiben). match_id-Spalte bleibt die Spiel-ID.
+  String get _designStorageId => '${widget.matchId}:$_kind';
   // Speichern des Ankündigungs-Designs je Spiel (lokal + Cloud).
   Timer? _saveTimer; // debounced Autosave
   bool _designLoaded = false; // erst nach dem Laden speichern (nichts überschr.)
@@ -630,9 +640,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   void _flushSave() {
     _saveTimer?.cancel();
     final id = widget.matchId;
-    if (id == null || !widget.isAnnouncement || !_designLoaded) return;
+    if (id == null || !_editable || !_designLoaded) return;
     try {
-      _appStateRef?.saveAnnouncementDesign(id, jsonEncode(_designToJson()));
+      _appStateRef?.saveAnnouncementDesign(
+        _designStorageId,
+        id,
+        jsonEncode(_designToJson()),
+      );
     } catch (_) {
       // Speichern fehlgeschlagen – nächste Änderung versucht es erneut.
     }
@@ -655,9 +669,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     // Gespeichertes Ankündigungs-Design dieses Spiels laden (erst Cloud→lokal
     // frisch ziehen, dann lokal lesen). Danach ist Autosave scharf.
     final mid = widget.matchId;
-    if (widget.isAnnouncement && mid != null) {
-      await state.refreshAnnouncementDesign(mid);
-      final json = await state.loadAnnouncementDesign(mid);
+    if (_editable && mid != null) {
+      final sid = _designStorageId;
+      await state.refreshAnnouncementDesign(sid);
+      final json = await state.loadAnnouncementDesign(sid);
       if (!mounted) return;
       if (json != null && json.isNotEmpty) {
         try {
@@ -3522,13 +3537,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     ],
                   ),
                   const Divider(height: 24),
-                  const Text(
-                    'Hintergrund & zentrale Einstellungen',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 4),
-                  _headlineSponsorControls(setSheet),
-                  const SizedBox(height: 6),
+                  if (widget.isAnnouncement) ...[
+                    const Text(
+                      'Überschrift, Schrift & Sponsoren',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    _headlineSponsorControls(setSheet),
+                    const SizedBox(height: 6),
+                  ],
                   OutlinedButton.icon(
                     icon: const Icon(Icons.tune, size: 18),
                     label: const Text('Hintergrund & Farben'),
@@ -3557,9 +3577,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       key: _boundaryKey,
       child: _gradeWrap(_graphic()),
     );
-    // Nur die Ankündigung hat den freien Element-Editor; andere Grafiktypen
-    // behalten ihre eigenen Gesten (z.B. Band-Foto zoomen).
-    final lockForTap = widget.isAnnouncement && !interactive;
+    // Alle editierbaren Grafiktypen öffnen beim Tippen den Vollbild-Editor;
+    // der Band-Foto-Zoom lebt dann im Editor (interactive).
+    final lockForTap = _editable && !interactive;
     final stack = SizedBox(
       width: w,
       height: h,
@@ -3639,10 +3659,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     // Jede Änderung (rebuild) stößt debounced das Speichern an – so bleibt immer
     // der letzte Stand je Spiel erhalten.
-    if (widget.isAnnouncement && widget.matchId != null && _designLoaded) {
+    if (_editable && widget.matchId != null && _designLoaded) {
       _scheduleSave();
     }
-    if (widget.isAnnouncement && _fullEdit) return _buildEditor();
+    if (_editable && _fullEdit) return _buildEditor();
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -3749,7 +3769,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           ),
                         ],
                       ),
-                    if (widget.isAnnouncement) _announcementControls(),
+                    if (_editable) _announcementControls(),
                     // Profi-Finish (globale Bildkorrektur) – alle Grafiktypen.
                     _gradeControls(),
                     const SizedBox(height: 8),
@@ -4188,12 +4208,161 @@ class _StartelfGraphic extends StatelessWidget {
       // Auf den Grafik-Bereich beschneiden – nichts ragt nach außen.
       return ClipRect(child: _announcementPosterLayout());
     }
+    // Ergebnis-/Startelf-Grafik: festes Layout + freie Nutzer-Elemente darüber.
     final content = _standardLayout();
     final band = [
       for (final p in bandPhotos) TeamLogo.decode(p),
     ].whereType<Uint8List>().toList();
-    if (band.isEmpty) return content;
-    return _withPhotoBand(band, content);
+    final base = band.isEmpty ? content : _withPhotoBand(band, content);
+    return ClipRect(child: _freeOverlayWrap(base));
+  }
+
+  /// Bild mit optionalem Schlagschatten (gilt für Spieler UND Overlays).
+  Widget _imageWithShadow(Uint8List bytes, {double? width, double? height}) {
+    Widget mk() => SizedBox(
+      width: width,
+      height: height,
+      child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+    );
+    if (!posterShadow) return mk();
+    final dist = 6 + 22 * (posterShadowStrength / 100);
+    return Stack(
+      children: [
+        Transform.translate(
+          offset: Offset(
+            math.cos(posterShadowAngle * math.pi / 180) * dist,
+            math.sin(posterShadowAngle * math.pi / 180) * dist,
+          ),
+          child: ImageFiltered(
+            imageFilter: ui.ImageFilter.blur(
+              sigmaX: 6 + 14 * (posterShadowStrength / 100),
+              sigmaY: 6 + 14 * (posterShadowStrength / 100),
+            ),
+            child: Opacity(
+              opacity: 0.2 + 0.55 * (posterShadowStrength / 100),
+              child: ColorFiltered(
+                colorFilter: const ColorFilter.mode(
+                  Colors.black,
+                  BlendMode.srcIn,
+                ),
+                child: mk(),
+              ),
+            ),
+          ),
+        ),
+        mk(),
+      ],
+    );
+  }
+
+  /// Legt die frei platzierbaren Nutzer-Elemente (Spielerbild, Bild-Overlays,
+  /// Text) samt Gesten über ein FESTES Layout [base] (Ergebnis/Startelf). Das
+  /// feste, datengetriebene Layout bleibt unverändert darunter.
+  Widget _freeOverlayWrap(Widget base) {
+    final mainBytes = TeamLogo.decode(posterMain);
+    return LayoutBuilder(
+      builder: (ctx, c) {
+        final w = c.maxWidth, h = c.maxHeight;
+        Widget? content(String id) {
+          if (id == 'player') {
+            if (mainBytes == null) return null;
+            return _imageWithShadow(mainBytes, width: w * 0.6, height: h * 0.6);
+          }
+          if (id.startsWith('text_')) {
+            final t = posterTexts[id];
+            if (t == null || t.text.trim().isEmpty) return null;
+            return Text(
+              t.text,
+              textAlign: TextAlign.center,
+              style: posterFontStyle(
+                t.font,
+                TextStyle(
+                  color: _resolveTextColor(t.color),
+                  fontSize: 34,
+                  fontWeight: FontWeight.w900,
+                  height: 1.0,
+                ),
+              ),
+            );
+          }
+          final url = posterOverlays[id];
+          if (url == null) return null;
+          final bytes = TeamLogo.decode(url);
+          if (bytes == null) return null;
+          return _imageWithShadow(bytes, width: w * 0.4);
+        }
+
+        Widget el(String id, Widget child) {
+          final pos =
+              posterItemPos[id] ??
+              _kCenteredItemDefaults[id] ??
+              const Offset(0.5, 0.5);
+          final scale = posterItemScale[id] ?? 1.0;
+          final rot = posterItemRot[id] ?? 0.0;
+          final selected = posterSelected == id;
+          return Align(
+            key: ValueKey('ovlEl_$id'),
+            alignment: Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
+            child: Transform.rotate(
+              angle: rot,
+              child: Transform.scale(
+                scale: scale,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTapDown: (_) => onPosterSelect?.call(id),
+                  onLongPress: () => onPosterLongPress?.call(id),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: selected
+                        ? BoxDecoration(
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.9),
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          )
+                        : null,
+                    child: child,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }
+
+        final layers = <Widget>[];
+        for (final id in posterOrder) {
+          final child = content(id);
+          if (child != null) layers.add(el(id, child));
+        }
+        final sel = posterSelected;
+        final Widget? dragLayer = sel == null
+            ? null
+            : Positioned.fill(
+                child: GestureDetector(
+                  behavior: HitTestBehavior.translucent,
+                  onScaleStart: (_) => onPosterGestureStart?.call(sel),
+                  onScaleUpdate: (d) =>
+                      onPosterGestureUpdate?.call(sel, d, w, h),
+                ),
+              );
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            base,
+            // Hintergrund-Gesten: Tippen = Auswahl weg, Langdruck = hinzufügen.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: onBackgroundTap,
+                onLongPress: onBackgroundLongPress,
+              ),
+            ),
+            ...layers,
+            ?dragLayer,
+          ],
+        );
+      },
+    );
   }
 
   /// Design-Modus: nur Hintergrund-Design + verschiebbarer Info-Block

@@ -269,19 +269,22 @@ class AppState extends ChangeNotifier {
     if (changed) notifyListeners();
   }
 
-  /// Speichert das Design einer Spielankündigung (lokal + Cloud). [matchId] ist
-  /// zugleich die Zeilen-id (ein Design pro Spiel).
-  Future<void> saveAnnouncementDesign(String matchId, String data) =>
-      _repo.saveAnnouncementDesign(matchId, matchId, data);
+  /// Speichert ein Grafik-Design (lokal + Cloud). [id] ist die Zeilen-id (je
+  /// Spiel UND Grafiktyp eindeutig), [matchId] die Spiel-ID (Spalte match_id).
+  Future<void> saveAnnouncementDesign(
+    String id,
+    String matchId,
+    String data,
+  ) => _repo.saveAnnouncementDesign(id, matchId, data);
 
-  /// Lädt das gespeicherte Design-JSON einer Spielankündigung (lokal), oder null.
-  Future<String?> loadAnnouncementDesign(String matchId) =>
-      _repo.getAnnouncementDesign(matchId);
+  /// Lädt das gespeicherte Design-JSON (lokal) zur [id], oder null.
+  Future<String?> loadAnnouncementDesign(String id) =>
+      _repo.getAnnouncementDesign(id);
 
-  /// Holt das Design eines Spiels frisch aus der Cloud in den lokalen Cache,
-  /// damit die letzte Version anderer Geräte sofort erscheint. No-op ohne
-  /// aktives Cloud-Team / fehlende Tabelle (dann bleibt der lokale Stand).
-  Future<void> refreshAnnouncementDesign(String matchId) async {
+  /// Holt das Design [id] frisch aus der Cloud in den lokalen Cache, damit die
+  /// letzte Version anderer Geräte sofort erscheint. No-op ohne aktives
+  /// Cloud-Team / fehlende Tabelle (dann bleibt der lokale Stand).
+  Future<void> refreshAnnouncementDesign(String id) async {
     final teamId = _activeCloudTeamId;
     if (teamId == null || !CloudService.ready || !CloudService.signedIn) return;
     try {
@@ -290,7 +293,7 @@ class AppState extends ChangeNotifier {
         teamId,
       );
       for (final r in rows) {
-        if (r['id'] != matchId) continue;
+        if (r['id'] != id) continue;
         final map = Map<String, Object?>.from(r)..remove('team_id');
         try {
           await _repo.upsertRawById('announcement_designs', map);

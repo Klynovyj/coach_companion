@@ -2287,6 +2287,8 @@ class _LiveMatchScreenState extends State<LiveMatchScreen> {
         builder: (_) => StartelfGraphicScreen(
           teamName: team?.name ?? 'Heim',
           teamLogo: team?.logoPath,
+          teamId: team?.id,
+          matchId: match.id,
           starters: const [],
           benchNames: const [],
           matchDate: match.kickoff,

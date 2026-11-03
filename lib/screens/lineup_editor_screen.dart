@@ -444,6 +444,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           teamName: team?.name ?? widget.teamName,
           teamLogo: team?.logoPath,
           teamId: team?.id,
+          matchId: match?.id,
           starters: starters,
           benchNames: bench,
           matchDate: match?.kickoff,
