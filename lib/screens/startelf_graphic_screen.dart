@@ -405,6 +405,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       '${_story ? 's' : 'p'}_${_annStyle == _AnnStyle.poster ? 'po' : 'ze'}';
   final Map<String, Map<String, Offset>> _posterPosF = {};
   final Map<String, Map<String, double>> _posterScaleF = {};
+  final Map<String, Map<String, double>> _posterRotF = {}; // Drehung (rad) je Elem.
   final Map<String, List<String>> _posterOrderF = {};
   final Map<String, String?> _posterMainF = {};
   final Map<String, List<({String id, String dataUrl})>> _posterOverlaysF = {};
@@ -420,6 +421,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _posterPosF.putIfAbsent(_designKey, () => {});
   Map<String, double> get _posterScale =>
       _posterScaleF.putIfAbsent(_designKey, () => {});
+  Map<String, double> get _posterRot =>
+      _posterRotF.putIfAbsent(_designKey, () => {});
+  // Basiswerte beim Start einer Pinch-/Dreh-Geste (kumulativ zum Start rechnen).
+  double _gScale0 = 1.0;
+  double _gRot0 = 0.0;
   List<String> get _posterOrder => _posterOrderF.putIfAbsent(
     _designKey,
     () => List<String>.from(_kPosterBaseOrder),
@@ -2494,8 +2500,29 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     posterOverlays: {for (final o in _posterOverlays) o.id: o.dataUrl},
     posterItemPos: _posterPos,
     posterItemScale: _posterScale,
+    posterItemRot: _posterRot,
     posterSelected: _posterSel,
     onPosterItemMove: (id, p) => setState(() => _posterPos[id] = p),
+    onPosterGestureStart: (id) {
+      _gScale0 = _posterScale[id] ?? 1.0;
+      _gRot0 = _posterRot[id] ?? 0.0;
+    },
+    onPosterGestureUpdate: (id, d, w, h) => setState(() {
+      final cur =
+          _posterPos[id] ??
+          (_annStyle == _AnnStyle.poster
+              ? _kPosterItemDefaults
+              : _kCenteredItemDefaults)[id] ??
+          const Offset(0.5, 0.5);
+      // Ein Finger = verschieben; zwei Finger = zusätzlich skalieren + drehen.
+      _posterPos[id] = Offset(
+        cur.dx + d.focalPointDelta.dx / w,
+        cur.dy + d.focalPointDelta.dy / h,
+      );
+      _posterScale[id] = (_gScale0 * d.scale).clamp(0.2, 6.0).toDouble();
+      _posterRot[id] = _gRot0 + d.rotation;
+    }),
+    onPosterLongPress: _showElementProperties,
     onPosterSelect: (id) => setState(() => _posterSel = id),
     posterFont: _posterFont,
     showMainSponsor: _showMainSponsor,
@@ -2540,6 +2567,270 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       ni = ((i + dir) % ids.length + ids.length) % ids.length;
     }
     setState(() => _posterSel = ids[ni]);
+  }
+
+  /// Langdruck auf ein Element → Eigenschaften-Sheet (Größe, Drehung, Ebene,
+  /// Löschen; für Bilder Freistellen/Weiche Kanten, für Text Inhalt/Schrift/Farbe).
+  void _showElementProperties(String id) {
+    setState(() => _posterSel = id);
+    final isImage = id == 'player' || id.startsWith('overlay_');
+    final isText = id.startsWith('text_') || id == 'info';
+    final removable = id.startsWith('overlay_') || id.startsWith('text_');
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void apply(VoidCallback fn) {
+            setState(fn);
+            setSheet(() {});
+          }
+
+          Widget labeledSlider(
+            String label,
+            double value,
+            double min,
+            double max,
+            ValueChanged<double> onCh, {
+            ValueChanged<double>? onEnd,
+          }) {
+            return Row(
+              children: [
+                SizedBox(
+                  width: 92,
+                  child: Text(label, style: const TextStyle(fontSize: 13)),
+                ),
+                Expanded(
+                  child: Slider(
+                    value: value.clamp(min, max),
+                    min: min,
+                    max: max,
+                    onChanged: onCh,
+                    onChangeEnd: onEnd,
+                  ),
+                ),
+              ],
+            );
+          }
+
+          final rotDeg =
+              ((_posterRot[id] ?? 0) * 180 / math.pi).clamp(-180.0, 180.0);
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                16 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text(
+                      _posterItemLabel(id),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    labeledSlider(
+                      'Größe',
+                      _posterScale[id] ?? 1.0,
+                      0.4,
+                      3.0,
+                      (v) => apply(() => _posterScale[id] = v),
+                    ),
+                    labeledSlider(
+                      'Drehung',
+                      rotDeg,
+                      -180,
+                      180,
+                      (v) => apply(() => _posterRot[id] = v * math.pi / 180),
+                    ),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.flip_to_back, size: 18),
+                            label: const Text('Nach hinten'),
+                            onPressed: () {
+                              _reorderPoster(id, -1);
+                              setSheet(() {});
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.flip_to_front, size: 18),
+                            label: const Text('Nach vorne'),
+                            onPressed: () {
+                              _reorderPoster(id, 1);
+                              setSheet(() {});
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (isImage) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.auto_fix_high, size: 18),
+                              label: const Text('Freistellen (KI)'),
+                              onPressed: _aiBusy
+                                  ? null
+                                  : () {
+                                      Navigator.pop(ctx);
+                                      _cutoutSelected();
+                                    },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(
+                                Icons.format_color_reset,
+                                size: 18,
+                              ),
+                              label: const Text('Hintergrund weg'),
+                              onPressed: _bgBusy
+                                  ? null
+                                  : () {
+                                      Navigator.pop(ctx);
+                                      _removeBgSelected();
+                                    },
+                            ),
+                          ),
+                        ],
+                      ),
+                      labeledSlider(
+                        'Weiche Kanten',
+                        _imgFeather[id] ?? 0,
+                        0,
+                        100,
+                        _featherBusy
+                            ? (_) {}
+                            : (v) => apply(() => _imgFeather[id] = v),
+                        onEnd: _featherBusy ? null : (_) => _applyImageFx(id),
+                      ),
+                      labeledSlider(
+                        'Innerer Schatten',
+                        _imgInner[id] ?? 0,
+                        0,
+                        100,
+                        _featherBusy
+                            ? (_) {}
+                            : (v) => apply(() => _imgInner[id] = v),
+                        onEnd: _featherBusy ? null : (_) => _applyImageFx(id),
+                      ),
+                    ],
+                    if (isText) ...[
+                      const SizedBox(height: 4),
+                      TextFormField(
+                        key: ValueKey('sheettxt_${id}_$_editorSeq'),
+                        initialValue: id == 'info'
+                            ? (_textContent['info'] ?? _autoInfoLine)
+                            : (_textContent[id] ?? ''),
+                        maxLines: null,
+                        keyboardType: TextInputType.multiline,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                          labelText: 'Text (Enter = neue Zeile)',
+                        ),
+                        onChanged: (v) => apply(() => _textContent[id] = v),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Text('Schrift:', style: TextStyle(fontSize: 12)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              isDense: true,
+                              value: _textFont[id] ?? 'standard',
+                              items: [
+                                for (final e in _kPosterFonts.entries)
+                                  DropdownMenuItem(
+                                    value: e.key,
+                                    child: Text(e.value),
+                                  ),
+                              ],
+                              onChanged: (v) =>
+                                  apply(() => _textFont[id] = v ?? 'standard'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      Wrap(
+                        spacing: 6,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          const Text('Farbe:', style: TextStyle(fontSize: 12)),
+                          for (final e in _kTextColors.entries)
+                            ChoiceChip(
+                              label: Text(e.value),
+                              selected:
+                                  (_textColor[id] ??
+                                      (id == 'info' ? 'accent' : 'white')) ==
+                                  e.key,
+                              onSelected: (_) =>
+                                  apply(() => _textColor[id] = e.key),
+                            ),
+                          ActionChip(
+                            avatar: Container(
+                              width: 16,
+                              height: 16,
+                              decoration: BoxDecoration(
+                                color: _hex(_textColorHex(id)),
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.black26),
+                              ),
+                            ),
+                            label: const Text('frei'),
+                            onPressed: () async {
+                              final hex = await _pickColor(_textColorHex(id));
+                              if (hex != null) {
+                                apply(() => _textColor[id] = hex);
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                    if (removable) ...[
+                      const SizedBox(height: 4),
+                      TextButton.icon(
+                        icon: const Icon(
+                          Icons.delete_outline,
+                          color: Colors.red,
+                        ),
+                        label: const Text(
+                          'Element löschen',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _removePosterItem(id);
+                        },
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 
   /// Anzeigename eines Poster-Elements (für den Größe-Regler).
@@ -3022,6 +3313,33 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     tooltip: 'Auswahl aufheben',
                     icon: const Icon(Icons.close, size: 18),
                     onPressed: () => setState(() => _posterSel = null),
+                  ),
+                ],
+              ),
+            // Drehung des gewählten Elements (am Handy auch per Zwei-Finger).
+            if (_posterSel != null)
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 52,
+                    child: Text('Drehen', style: TextStyle(fontSize: 12)),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: ((_posterRot[_posterSel!] ?? 0) * 180 / math.pi)
+                          .clamp(-180.0, 180.0),
+                      min: -180,
+                      max: 180,
+                      onChanged: (v) => setState(
+                        () => _posterRot[_posterSel!] = v * math.pi / 180,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Drehung zurücksetzen',
+                    icon: const Icon(Icons.restart_alt, size: 18),
+                    onPressed: () =>
+                        setState(() => _posterRot[_posterSel!] = 0),
                   ),
                 ],
               ),
@@ -3713,8 +4031,12 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterOverlays = const {},
     this.posterItemPos = const {},
     this.posterItemScale = const {},
+    this.posterItemRot = const {},
     this.posterSelected,
     this.onPosterItemMove,
+    this.onPosterGestureStart,
+    this.onPosterGestureUpdate,
+    this.onPosterLongPress,
     this.onPosterSelect,
     this.posterFont = 'standard',
     this.showMainSponsor = true,
@@ -3766,8 +4088,14 @@ class _StartelfGraphic extends StatelessWidget {
   final Map<String, String> posterOverlays; // id → Data-URL der Overlays
   final Map<String, Offset> posterItemPos; // Position je Element (0..1)
   final Map<String, double> posterItemScale; // Größe je Element
+  final Map<String, double> posterItemRot; // Drehung je Element (Radiant)
   final String? posterSelected; // aktuell gewähltes Element
   final void Function(String id, Offset pos)? onPosterItemMove;
+  // Pinch/Drehen/Ziehen (zwei Finger): Start merkt Basiswerte, Update rechnet.
+  final void Function(String id)? onPosterGestureStart;
+  final void Function(String id, ScaleUpdateDetails details, double w, double h)?
+      onPosterGestureUpdate;
+  final void Function(String id)? onPosterLongPress; // Langdruck → Eigenschaften
   final void Function(String id)? onPosterSelect;
   final String posterFont; // Schriftart der Poster-Texte
   final bool showMainSponsor; // Hauptsponsor-Element anzeigen
@@ -4730,17 +5058,22 @@ class _StartelfGraphic extends StatelessWidget {
               (posterStyle ? _kPosterItemDefaults : _kCenteredItemDefaults)[id] ??
               const Offset(0.5, 0.5);
           final scale = posterItemScale[id] ?? 1.0;
+          final rot = posterItemRot[id] ?? 0.0;
           final selected = posterSelected == id;
-          // Antippen = auswählen. Das VERSCHIEBEN übernimmt eine Zieh-Ebene über
-          // allem (unten), damit die Geste stabil bleibt – egal welche Größe/Ebene.
+          // Antippen = auswählen, Langdruck = Eigenschaften. Das VERSCHIEBEN/
+          // SKALIEREN/DREHEN übernimmt eine Zieh-Ebene über allem (unten),
+          // damit die Geste stabil bleibt – egal welche Größe/Ebene.
           return Align(
             key: ValueKey('posterEl_$id'),
             alignment: Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
-            child: Transform.scale(
+            child: Transform.rotate(
+              angle: rot,
+              child: Transform.scale(
               scale: scale,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTapDown: (_) => onPosterSelect?.call(id),
+                onLongPress: () => onPosterLongPress?.call(id),
                 child: Container(
                   padding: const EdgeInsets.all(6),
                   decoration: selected
@@ -4753,6 +5086,7 @@ class _StartelfGraphic extends StatelessWidget {
                       : null,
                   child: child,
                 ),
+              ),
               ),
             ),
           );
@@ -4773,20 +5107,11 @@ class _StartelfGraphic extends StatelessWidget {
             : Positioned.fill(
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onPanUpdate: (d) {
-                    final cur =
-                        posterItemPos[sel] ??
-                        (posterStyle
-                            ? _kPosterItemDefaults
-                            : _kCenteredItemDefaults)[sel] ??
-                        const Offset(0.5, 0.5);
-                    // KEINE Grenze – frei platzierbar, auch ganz außerhalb.
-                    // (Solange ausgewählt, kann man es wieder zurückziehen.)
-                    onPosterItemMove?.call(
-                      sel,
-                      Offset(cur.dx + d.delta.dx / w, cur.dy + d.delta.dy / h),
-                    );
-                  },
+                  // Ein Finger = verschieben; zwei Finger = zusätzlich pinchen
+                  // (skalieren) und drehen – wie gewohnt. KEINE Grenze.
+                  onScaleStart: (_) => onPosterGestureStart?.call(sel),
+                  onScaleUpdate: (d) =>
+                      onPosterGestureUpdate?.call(sel, d, w, h),
                 ),
               );
 
