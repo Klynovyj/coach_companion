@@ -127,6 +127,54 @@ const Map<String, String> _kPosterFonts = {
 /// Entfernt einen einfarbigen Hintergrund (Studio/Einfarb) per Flood-Fill von
 /// den Bildrändern: Pixel, die der Eckfarbe ähneln, werden transparent. Läuft in
 /// einem Isolate (`compute`), damit die UI nicht hängt. Gibt PNG mit Alpha zurück.
+/// Weiche Kanten für ein (freigestelltes) Bild: zieht die Kante leicht nach
+/// innen (schneidet den Freistell-Saum weg) und blendet sie weich aus. Arbeitet
+/// nur auf dem Alpha-Kanal, läuft im Isolate. [args] = {data: Uint8List,
+/// amount: 0..100}.
+Uint8List featherImageEdges(Map<String, dynamic> args) {
+  final input = args['data'] as Uint8List;
+  final amount = (args['amount'] as num).toDouble();
+  if (amount <= 0) return input;
+  final src = img.decodeImage(input);
+  if (src == null) return input;
+  final im = src.convert(numChannels: 4);
+  final w = im.width, h = im.height;
+  if (w < 2 || h < 2) return input;
+  // Alpha-Kanal in ein 1-Kanal-Bild kopieren und weichzeichnen.
+  final aImg = img.Image(width: w, height: h, numChannels: 1);
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      aImg.setPixelR(x, y, im.getPixel(x, y).a);
+    }
+  }
+  final radius = (1 + amount / 100 * 8).round();
+  final blurred = img.gaussianBlur(aImg, radius: radius);
+  // Remap: lo>0.5 zieht die Kante nach innen (Saum weg), Rampe = weiche Kante.
+  final lo = 0.18 + amount / 100 * 0.22;
+  final hi = lo + 0.28;
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      final bn = blurred.getPixel(x, y).r / 255.0;
+      var t = (bn - lo) / (hi - lo);
+      if (t < 0) {
+        t = 0;
+      } else if (t > 1) {
+        t = 1;
+      }
+      final p = im.getPixel(x, y);
+      im.setPixelRgba(
+        x,
+        y,
+        p.r.toInt(),
+        p.g.toInt(),
+        p.b.toInt(),
+        (t * 255).round(),
+      );
+    }
+  }
+  return Uint8List.fromList(img.encodePng(im));
+}
+
 Uint8List removeUniformBackground(Uint8List input) {
   final src = img.decodeImage(input);
   if (src == null) return input;
@@ -319,6 +367,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _textFontF.putIfAbsent(_designKey, () => {});
   Map<String, String> get _textColor =>
       _textColorF.putIfAbsent(_designKey, () => {});
+  // Weiche Kanten je Bild-Element: Original-Bild + Stärke (0..100), je Layout.
+  final Map<String, Map<String, String>> _imgOrigF = {};
+  final Map<String, Map<String, double>> _imgFeatherF = {};
+  Map<String, String> get _imgOrig =>
+      _imgOrigF.putIfAbsent(_designKey, () => {});
+  Map<String, double> get _imgFeather =>
+      _imgFeatherF.putIfAbsent(_designKey, () => {});
+  bool _featherBusy = false;
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   String _mainSponsorMode = 'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
@@ -679,7 +735,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     final src = await _askPosterSource(hasExisting: _posterMain != null);
     if (src == null || !mounted) return;
     if (src == 'remove') {
-      setState(() => _posterMainF[_designKey] = null);
+      setState(() {
+        _posterMainF[_designKey] = null;
+        _imgOrig.remove('player');
+        _imgFeather.remove('player');
+      });
       return;
     }
     const place = _PhotoPlace.posterMain;
@@ -695,7 +755,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             maxSize: 2000, // höhere Auflösung fürs große Spielerbild
           );
     if (url == null || !mounted) return;
-    setState(() => _posterMainF[_designKey] = url);
+    setState(() {
+      _posterMainF[_designKey] = url;
+      _imgOrig['player'] = url;
+      _imgFeather['player'] = 0;
+    });
   }
 
   /// Quelle für ein Poster-Foto abfragen: Kader / Galerie / Kamera (oder, wenn
@@ -1657,6 +1721,50 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     } else if (sel.startsWith('overlay_')) {
       final i = _posterOverlays.indexWhere((o) => o.id == sel);
       if (i >= 0) _posterOverlays[i] = (id: sel, dataUrl: url);
+    } else {
+      return;
+    }
+    // Neues Original für weiche Kanten; Feather zurücksetzen.
+    _imgOrig[sel] = url;
+    _imgFeather[sel] = 0;
+  }
+
+  /// Setzt nur das ANGEZEIGTE Bild eines Elements (ohne Original zu ändern).
+  void _setImageById(String id, String url) {
+    if (id == 'player') {
+      _posterMainF[_designKey] = url;
+    } else if (id.startsWith('overlay_')) {
+      final i = _posterOverlays.indexWhere((o) => o.id == id);
+      if (i >= 0) _posterOverlays[i] = (id: id, dataUrl: url);
+    }
+  }
+
+  /// Weiche Kanten auf das Element [id] anwenden (immer aus dem Original neu →
+  /// kein Verschlechtern). amount 0 = Originalkante.
+  Future<void> _applyFeather(String id) async {
+    final orig = _imgOrig[id];
+    if (orig == null) return;
+    final amount = _imgFeather[id] ?? 0;
+    if (amount <= 0) {
+      setState(() => _setImageById(id, orig));
+      return;
+    }
+    final bytes = TeamLogo.decode(orig);
+    if (bytes == null) return;
+    setState(() => _featherBusy = true);
+    try {
+      final out = await compute(featherImageEdges, {
+        'data': bytes,
+        'amount': amount,
+      });
+      if (!mounted) return;
+      setState(
+        () => _setImageById(id, 'data:image/png;base64,${base64Encode(out)}'),
+      );
+    } catch (_) {
+      // Weiche Kanten fehlgeschlagen – Bild bleibt wie es war.
+    } finally {
+      if (mounted) setState(() => _featherBusy = false);
     }
   }
 
@@ -2011,6 +2119,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _posterOverlays.add((id: id, dataUrl: url)); // nur aktuelles Format
       _posterOrder.add(id);
       _posterPos[id] = const Offset(0.5, 0.5);
+      _imgOrig[id] = url;
+      _imgFeather[id] = 0;
       _posterSel = id;
     });
   }
@@ -2040,6 +2150,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _posterOrder.remove(id);
       _posterPos.remove(id);
       _posterScale.remove(id);
+      _imgOrig.remove(id);
+      _imgFeather.remove(id);
       if (_posterSel == id) _posterSel = null;
     });
   }
@@ -2399,6 +2511,41 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     icon: const Icon(Icons.close, size: 18),
                     onPressed: () => setState(() => _posterSel = null),
                   ),
+                ],
+              ),
+            // Weiche Kanten – nur für Bild-Elemente (Spieler/Overlay).
+            if (_posterSel != null &&
+                (_posterSel! == 'player' ||
+                    _posterSel!.startsWith('overlay_')))
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 92,
+                    child: Text(
+                      'Weiche Kanten',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _imgFeather[_posterSel!] ?? 0,
+                      min: 0,
+                      max: 100,
+                      onChanged: _featherBusy
+                          ? null
+                          : (v) =>
+                                setState(() => _imgFeather[_posterSel!] = v),
+                      onChangeEnd: _featherBusy
+                          ? null
+                          : (v) => _applyFeather(_posterSel!),
+                    ),
+                  ),
+                  if (_featherBusy)
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
                 ],
               ),
             // Editor für Datum ODER ein eigenes Textfeld (Inhalt mehrzeilig,
