@@ -1358,6 +1358,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   _swatches(
                     selected: _settings.accent ?? '#FFFFFF',
                     palette: _accentPalette,
+                    allowFree: true,
                     onPick: (hex) => apply(
                       hex == '#FFFFFF'
                           ? _settings.copyWith(clearAccent: true)
@@ -1429,6 +1430,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     required String selected,
     required void Function(String) onPick,
     List<String>? palette,
+    bool allowFree = false,
   }) {
     return Wrap(
       spacing: 8,
@@ -1452,7 +1454,118 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               ),
             ),
           ),
+        if (allowFree)
+          GestureDetector(
+            onTap: () async {
+              final hex = await _pickColor(selected);
+              if (hex != null) onPick(hex);
+            },
+            child: Container(
+              width: 34,
+              height: 34,
+              decoration: BoxDecoration(
+                gradient: const SweepGradient(
+                  colors: [
+                    Colors.red,
+                    Colors.yellow,
+                    Colors.green,
+                    Colors.cyan,
+                    Colors.blue,
+                    Colors.purple,
+                    Colors.red,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.black26),
+              ),
+              child: const Icon(Icons.colorize, size: 16, color: Colors.white),
+            ),
+          ),
       ],
+    );
+  }
+
+  /// Ein Slider-Zeile für den Farbwähler.
+  Widget _hsvSlider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) => Row(
+    children: [
+      SizedBox(
+        width: 80,
+        child: Text(label, style: const TextStyle(fontSize: 12)),
+      ),
+      Expanded(child: Slider(value: value, min: min, max: max, onChanged: onChanged)),
+    ],
+  );
+
+  /// Freier Farbwähler (HSV) → gibt Hex „#RRGGBB" zurück oder null (Abbruch).
+  Future<String?> _pickColor(String initialHex) async {
+    var hsv = HSVColor.fromColor(_hex(initialHex));
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          final color = hsv.toColor();
+          final hex =
+              '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+          return AlertDialog(
+            title: const Text('Farbe wählen'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.black26),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  _hsvSlider(
+                    'Farbton',
+                    hsv.hue,
+                    0,
+                    360,
+                    (v) => setLocal(() => hsv = hsv.withHue(v)),
+                  ),
+                  _hsvSlider(
+                    'Sättigung',
+                    hsv.saturation,
+                    0,
+                    1,
+                    (v) => setLocal(() => hsv = hsv.withSaturation(v)),
+                  ),
+                  _hsvSlider(
+                    'Helligkeit',
+                    hsv.value,
+                    0,
+                    1,
+                    (v) => setLocal(() => hsv = hsv.withValue(v)),
+                  ),
+                  Text(hex, style: const TextStyle(fontSize: 12)),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Abbrechen'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, hex),
+                child: const Text('Übernehmen'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 
@@ -2065,6 +2178,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     },
   );
 
+  /// Aktuelle Textfarbe eines Elements als Hex (Schlüssel aufgelöst).
+  String _textColorHex(String id) {
+    final c = _textColor[id] ?? (id == 'info' ? 'accent' : 'white');
+    if (c == 'white') return '#FFFFFF';
+    if (c == 'black') return '#000000';
+    if (c == 'accent') return _settings.accent ?? '#FFFFFF';
+    return c;
+  }
+
   /// Anzeigename eines Poster-Elements (für den Größe-Regler).
   String _posterItemLabel(String id) {
     switch (id) {
@@ -2624,6 +2746,24 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                       onSelected: (_) =>
                           setState(() => _textColor[_posterSel!] = e.key),
                     ),
+                  ActionChip(
+                    avatar: Container(
+                      width: 16,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: _hex(_textColorHex(_posterSel!)),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black26),
+                      ),
+                    ),
+                    label: const Text('frei'),
+                    onPressed: () async {
+                      final hex = await _pickColor(_textColorHex(_posterSel!));
+                      if (hex != null) {
+                        setState(() => _textColor[_posterSel!] = hex);
+                      }
+                    },
+                  ),
                 ],
               ),
             ],
@@ -2687,9 +2827,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             ),
           ),
           Expanded(
-            child: Center(
+            flex: 3,
+            child: Align(
+              alignment: Alignment.topCenter,
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(8),
                 child: FittedBox(
                   fit: BoxFit.contain,
                   child: SizedBox(
@@ -2762,15 +2904,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           // Bedienung UNTER der Vorschau in einem scrollbaren Panel fester
           // Höhe → die Vorschau oben bleibt groß und sichtbar.
           if (widget.isAnnouncement)
-            DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: Theme.of(context).dividerColor),
-                ),
-              ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxHeight: MediaQuery.of(context).size.height * 0.42,
+            Expanded(
+              flex: 2,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: Theme.of(context).dividerColor),
+                  ),
                 ),
                 child: SingleChildScrollView(child: _announcementControls()),
               ),
@@ -2880,6 +3020,7 @@ const _presets = <(String, String, String, String?)>[
 // Akzentfarben für Highlights (erste = Weiß = „kein Akzent").
 const _accentPalette = <String>[
   '#FFFFFF', // kein Akzent (Weiß wie bisher)
+  '#000000', // Schwarz
   '#D4AF37', // Gold
   '#E9C46A', // Hellgold
   '#C0A062', // Altgold
@@ -3161,6 +3302,25 @@ class _StartelfGraphic extends StatelessWidget {
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
+
+  /// Text-Farbe aus Schlüssel: weiß/schwarz/accent oder Hex (#RRGGBB).
+  Color _resolveTextColor(String key) {
+    switch (key) {
+      case 'white':
+        return Colors.white;
+      case 'black':
+        return Colors.black;
+      case 'accent':
+        return _accent;
+      default:
+        final s = key.replaceAll('#', '').trim();
+        if (s.length == 6) {
+          final v = int.tryParse(s, radix: 16);
+          if (v != null) return Color(0xFF000000 | v);
+        }
+        return Colors.white;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -3978,11 +4138,7 @@ class _StartelfGraphic extends StatelessWidget {
       final o = posterTexts['info'];
       final text = (o != null && o.text.trim().isNotEmpty) ? o.text : infoLine;
       if (text.trim().isEmpty) return null;
-      final col = o == null
-          ? _accent
-          : (o.color == 'white'
-                ? Colors.white
-                : (o.color == 'black' ? Colors.black : _accent));
+      final col = o == null ? _accent : _resolveTextColor(o.color);
       return Text(
         text,
         textAlign: TextAlign.center,
@@ -4068,9 +4224,7 @@ class _StartelfGraphic extends StatelessWidget {
               if (id.startsWith('text_')) {
                 final t = posterTexts[id];
                 if (t == null || t.text.trim().isEmpty) return null;
-                final col = t.color == 'accent'
-                    ? _accent
-                    : (t.color == 'black' ? Colors.black : Colors.white);
+                final col = _resolveTextColor(t.color);
                 return Text(
                   t.text,
                   textAlign: TextAlign.center,
