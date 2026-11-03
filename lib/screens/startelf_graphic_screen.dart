@@ -155,17 +155,29 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
     final blurred = img.gaussianBlur(aImg, radius: radius);
     final lo = 0.18 + feather / 100 * 0.22;
     final hi = lo + 0.28;
+    // Bildrand-Ring NICHT ausblenden – sonst würde der Rechteck-Rand (bzw. ein
+    // am Rand anliegender Spieler) weich statt nur der echte, freigestellte Umriss.
+    final border = radius + 1;
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
-        final bn = blurred.getPixel(x, y).r / 255.0;
-        var t = (bn - lo) / (hi - lo);
-        if (t < 0) {
-          t = 0;
-        } else if (t > 1) {
-          t = 1;
-        }
-        final na = (t * 255).round();
         final p = im.getPixel(x, y);
+        final origA = p.a.toInt();
+        int na;
+        if (x < border ||
+            y < border ||
+            x >= w - border ||
+            y >= h - border) {
+          na = origA;
+        } else {
+          final bn = blurred.getPixel(x, y).r / 255.0;
+          var t = (bn - lo) / (hi - lo);
+          if (t < 0) {
+            t = 0;
+          } else if (t > 1) {
+            t = 1;
+          }
+          na = (t * 255).round();
+        }
         im.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), na);
         aImg.setPixelR(x, y, na);
       }
@@ -181,8 +193,10 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
       for (var x = 0; x < w; x++) {
         final a0 = aImg.getPixel(x, y).r.toInt();
         final sx = x + dx, sy = y + dy;
+        // Außerhalb des Bildes = wie der eigene Alpha-Wert (Replikat) → KEIN
+        // künstliches Band am Rechteck-Rand, nur echte (interne) Umriss-Kanten.
         final a1 = (sx < 0 || sy < 0 || sx >= w || sy >= h)
-            ? 0
+            ? a0
             : aImg.getPixel(sx, sy).r.toInt();
         final b = a0 - a1;
         bandImg.setPixelR(x, y, b < 0 ? 0 : b);
