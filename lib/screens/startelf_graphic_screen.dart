@@ -701,12 +701,38 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       final json = await state.loadAnnouncementDesign(sid);
       if (!mounted) return;
       if (json != null && json.isNotEmpty) {
-        try {
-          _applyDesignJson(jsonDecode(json) as Map<String, dynamic>);
-          setState(() {});
-        } catch (_) {
-          // Beschädigtes/altes JSON → ignorieren, mit leerem Design starten.
+        // Es gibt ein gespeichertes Design → fragen: weiterbearbeiten oder neu.
+        final keep = await showDialog<bool>(
+          context: context,
+          barrierDismissible: false,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Gespeichertes Design'),
+            content: const Text(
+              'Für dieses Spiel gibt es bereits ein Design. Möchtest du es '
+              'weiterbearbeiten oder neu beginnen?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Neu beginnen'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Weiterbearbeiten'),
+              ),
+            ],
+          ),
+        );
+        if (!mounted) return;
+        if (keep == true) {
+          try {
+            _applyDesignJson(jsonDecode(json) as Map<String, dynamic>);
+            setState(() {});
+          } catch (_) {
+            // Beschädigtes/altes JSON → ignorieren, mit leerem Design starten.
+          }
         }
+        // „Neu beginnen" → nichts anwenden; mit dem Standard-Layout starten.
       }
     }
     _designLoaded = true;
