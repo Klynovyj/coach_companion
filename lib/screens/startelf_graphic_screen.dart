@@ -95,10 +95,15 @@ const Map<String, Offset> _kPosterItemDefaults = {
 const Map<String, String> _kPosterFonts = {
   'standard': 'Standard',
   'anton': 'Anton',
+  'antonio': 'Antonio',
+  'staat': 'Staatliches',
+  'fjalla': 'Fjalla One',
   'oswald': 'Oswald',
+  'barlow': 'Barlow Condensed',
   'archivo': 'Archivo',
   'bebas': 'Bebas Neue',
   'teko': 'Teko',
+  'russo': 'Russo One',
 };
 
 /// Entfernt einen einfarbigen Hintergrund (Studio/Einfarb) per Flood-Fill von
@@ -166,14 +171,24 @@ TextStyle posterFontStyle(String font, TextStyle base) {
   switch (font) {
     case 'anton':
       return GoogleFonts.anton(textStyle: base);
+    case 'antonio':
+      return GoogleFonts.antonio(textStyle: base);
+    case 'staat':
+      return GoogleFonts.staatliches(textStyle: base);
+    case 'fjalla':
+      return GoogleFonts.fjallaOne(textStyle: base);
     case 'oswald':
       return GoogleFonts.oswald(textStyle: base);
+    case 'barlow':
+      return GoogleFonts.barlowCondensed(textStyle: base);
     case 'archivo':
       return GoogleFonts.archivoBlack(textStyle: base);
     case 'bebas':
       return GoogleFonts.bebasNeue(textStyle: base);
     case 'teko':
       return GoogleFonts.teko(textStyle: base);
+    case 'russo':
+      return GoogleFonts.russoOne(textStyle: base);
     default:
       return base;
   }
@@ -1365,6 +1380,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       await GoogleFonts.pendingFonts();
       await WidgetsBinding.instance.endOfFrame;
     } catch (_) {}
+    // Kurz warten, damit (neu) dekodierte Bilder – Spieler/Overlays – sicher
+    // gezeichnet sind, bevor die Grafik aufgenommen wird.
+    await Future<void>.delayed(const Duration(milliseconds: 150));
+    await WidgetsBinding.instance.endOfFrame;
     final boundary =
         key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) return null;
@@ -2098,11 +2117,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               dense: true,
               contentPadding: EdgeInsets.zero,
               title: const Text(
-                'Schatten am Spieler',
+                'Schatten (alle Bilder)',
                 style: TextStyle(fontSize: 13),
               ),
               subtitle: const Text(
-                'Wirkt am besten beim freigestellten Spieler',
+                'Gilt für Spieler und alle Overlays; am besten freigestellt',
                 style: TextStyle(fontSize: 10.5),
               ),
               value: _posterShadow,
@@ -2711,7 +2730,10 @@ class _StartelfGraphic extends StatelessWidget {
       return _bgBase(radial: posterStyle); // nur Verlauf/Foto, ohne Inhalt
     }
     if (designMode) return _designLayout();
-    if (announcement != null && posterStyle) return _announcementPosterLayout();
+    if (announcement != null && posterStyle) {
+      // Auf den Grafik-Bereich beschneiden – nichts ragt nach außen.
+      return ClipRect(child: _announcementPosterLayout());
+    }
     final content = announcement != null
         ? _announcementLayout()
         : _standardLayout();
@@ -3744,49 +3766,58 @@ class _StartelfGraphic extends StatelessWidget {
       builder: (ctx, c) {
         final w = c.maxWidth, h = c.maxHeight;
 
+        // Bild mit optionalem Schlagschatten – gilt automatisch für JEDES Bild
+        // (Spieler UND Overlays). Schatten-Silhouette (schwarz) hinter dem Bild.
+        Widget imageWithShadow(Uint8List bytes, {double? width, double? height}) {
+          Widget mk() => SizedBox(
+            width: width,
+            height: height,
+            child: Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              gaplessPlayback: true,
+            ),
+          );
+          if (!posterShadow) return mk();
+          final dist = 6 + 22 * (posterShadowStrength / 100);
+          return Stack(
+            children: [
+              Transform.translate(
+                offset: Offset(
+                  math.cos(posterShadowAngle * math.pi / 180) * dist,
+                  math.sin(posterShadowAngle * math.pi / 180) * dist,
+                ),
+                child: ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(
+                    sigmaX: 6 + 14 * (posterShadowStrength / 100),
+                    sigmaY: 6 + 14 * (posterShadowStrength / 100),
+                  ),
+                  child: Opacity(
+                    opacity: 0.2 + 0.55 * (posterShadowStrength / 100),
+                    child: ColorFiltered(
+                      colorFilter: const ColorFilter.mode(
+                        Colors.black,
+                        BlendMode.srcIn,
+                      ),
+                      child: mk(),
+                    ),
+                  ),
+                ),
+              ),
+              mk(),
+            ],
+          );
+        }
+
         // Inhalt je Element-ID (null = nicht vorhanden → wird übersprungen).
         Widget? content(String id) {
           switch (id) {
             case 'player':
               if (mainBytes == null) return null;
-              final playerImg = Image.memory(
+              return imageWithShadow(
                 mainBytes,
-                fit: BoxFit.contain,
-                gaplessPlayback: true,
-              );
-              final dist = 6 + 22 * (posterShadowStrength / 100);
-              return SizedBox(
                 width: w - 2 * pad,
                 height: h * 0.6,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (posterShadow)
-                      Transform.translate(
-                        offset: Offset(
-                          math.cos(posterShadowAngle * math.pi / 180) * dist,
-                          math.sin(posterShadowAngle * math.pi / 180) * dist,
-                        ),
-                        child: ImageFiltered(
-                          imageFilter: ui.ImageFilter.blur(
-                            sigmaX: 6 + 14 * (posterShadowStrength / 100),
-                            sigmaY: 6 + 14 * (posterShadowStrength / 100),
-                          ),
-                          child: Opacity(
-                            opacity: 0.2 + 0.55 * (posterShadowStrength / 100),
-                            child: ColorFiltered(
-                              colorFilter: const ColorFilter.mode(
-                                Colors.black,
-                                BlendMode.srcIn,
-                              ),
-                              child: playerImg,
-                            ),
-                          ),
-                        ),
-                      ),
-                    playerImg,
-                  ],
-                ),
               );
             case 'sponsor':
               return sponsorW;
@@ -3803,14 +3834,7 @@ class _StartelfGraphic extends StatelessWidget {
               if (url == null) return null;
               final bytes = TeamLogo.decode(url);
               if (bytes == null) return null;
-              return SizedBox(
-                width: w * 0.4,
-                child: Image.memory(
-                  bytes,
-                  fit: BoxFit.contain,
-                  gaplessPlayback: true,
-                ),
-              );
+              return imageWithShadow(bytes, width: w * 0.4);
           }
         }
 
@@ -3822,23 +3846,28 @@ class _StartelfGraphic extends StatelessWidget {
               const Offset(0.5, 0.5);
           final scale = posterItemScale[id] ?? 1.0;
           final selected = posterSelected == id;
+          // GestureDetector liegt INNERHALB von Transform.scale, damit die
+          // Trefferfläche mit der sichtbaren (skalierten) Größe übereinstimmt –
+          // sonst ließe sich ein vergrößertes Element außerhalb nicht greifen.
+          // d.delta ist im skalierten Koordinatensystem → * scale = Bildschirm-
+          // Pixel (gleichbleibende Zieh-Geschwindigkeit).
           return Align(
             alignment: Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTapDown: (_) => onPosterSelect?.call(id),
-              onPanStart: (_) => onPosterSelect?.call(id),
-              onPanUpdate: (d) {
-                onPosterItemMove?.call(
-                  id,
-                  Offset(
-                    (pos.dx + d.delta.dx / w).clamp(-0.05, 1.05),
-                    (pos.dy + d.delta.dy / h).clamp(-0.05, 1.05),
-                  ),
-                );
-              },
-              child: Transform.scale(
-                scale: scale,
+            child: Transform.scale(
+              scale: scale,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTapDown: (_) => onPosterSelect?.call(id),
+                onPanStart: (_) => onPosterSelect?.call(id),
+                onPanUpdate: (d) {
+                  onPosterItemMove?.call(
+                    id,
+                    Offset(
+                      (pos.dx + d.delta.dx * scale / w).clamp(-0.05, 1.05),
+                      (pos.dy + d.delta.dy * scale / h).clamp(-0.05, 1.05),
+                    ),
+                  );
+                },
                 child: Container(
                   constraints: BoxConstraints(maxWidth: w - 2 * pad),
                   padding: const EdgeInsets.all(3),
