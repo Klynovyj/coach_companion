@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -179,6 +180,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   bool _posterLogoDisc = true; // heller Kreis hinter den Logos (Sichtbarkeit)
   bool _posterShadow = false; // Schlagschatten beim freigestellten Spieler
   double _posterShadowStrength = 45; // 0..100
+  double _posterShadowAngle = 45; // Richtung in Grad (0=rechts, 90=unten)
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
   List<Sponsor> _sponsors = [];
   GraphicSettings _settings = const GraphicSettings(id: 'local');
@@ -1686,6 +1688,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     posterLogoDisc: _posterLogoDisc,
     posterShadow: _posterShadow,
     posterShadowStrength: _posterShadowStrength,
+    posterShadowAngle: _posterShadowAngle,
     posterFont: _posterFont,
   );
 
@@ -1845,10 +1848,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               value: _posterShadow,
               onChanged: (v) => setState(() => _posterShadow = v),
             ),
-            if (_posterShadow)
+            if (_posterShadow) ...[
               Row(
                 children: [
-                  const Text('Stärke', style: TextStyle(fontSize: 12)),
+                  const SizedBox(
+                    width: 52,
+                    child: Text('Stärke', style: TextStyle(fontSize: 12)),
+                  ),
                   Expanded(
                     child: Slider(
                       value: _posterShadowStrength,
@@ -1860,6 +1866,26 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                 ],
               ),
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 52,
+                    child: Text('Winkel', style: TextStyle(fontSize: 12)),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _posterShadowAngle,
+                      min: 0,
+                      max: 360,
+                      divisions: 72,
+                      label: '${_posterShadowAngle.round()}°',
+                      onChanged: (v) =>
+                          setState(() => _posterShadowAngle = v),
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         ],
       ),
@@ -2303,6 +2329,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterLogoDisc = true,
     this.posterShadow = false,
     this.posterShadowStrength = 45,
+    this.posterShadowAngle = 45,
     this.posterFont = 'standard',
   });
 
@@ -2344,6 +2371,7 @@ class _StartelfGraphic extends StatelessWidget {
   final bool posterLogoDisc; // heller Kreis hinter den Poster-Logos
   final bool posterShadow; // Schlagschatten beim freigestellten Spieler
   final double posterShadowStrength; // 0..100
+  final double posterShadowAngle; // Richtung in Grad (0=rechts, 90=unten)
   final String posterFont; // Schriftart der Poster-Texte
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
@@ -3309,8 +3337,10 @@ class _StartelfGraphic extends StatelessWidget {
               heightFactor: _kPosterMainHeightFactor,
               child: Transform.translate(
                 offset: Offset(
-                  2 + 8 * (posterShadowStrength / 100),
-                  4 + 12 * (posterShadowStrength / 100),
+                  math.cos(posterShadowAngle * math.pi / 180) *
+                      (6 + 22 * (posterShadowStrength / 100)),
+                  math.sin(posterShadowAngle * math.pi / 180) *
+                      (6 + 22 * (posterShadowStrength / 100)),
                 ),
                 child: ImageFiltered(
                   imageFilter: ui.ImageFilter.blur(
