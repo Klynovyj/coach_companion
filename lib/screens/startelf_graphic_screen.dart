@@ -2946,7 +2946,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       rotDeg,
                       -180,
                       180,
-                      (v) => apply(() => _posterRot[id] = v * math.pi / 180),
+                      (v) {
+                        // Magnetisch bei 0° (Mitte) und ±90°/±180° einrasten,
+                        // damit sich das Objekt leicht gerade ausrichten lässt.
+                        var d = v;
+                        for (final s in const [-180.0, -90.0, 0.0, 90.0, 180.0]) {
+                          if ((v - s).abs() <= 6) {
+                            d = s;
+                            break;
+                          }
+                        }
+                        apply(() => _posterRot[id] = d * math.pi / 180);
+                      },
                     ),
                     Row(
                       children: [
