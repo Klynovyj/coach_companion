@@ -81,6 +81,15 @@ enum _AnnStyle { zentriert, poster }
 /// Steuert zugleich das Zuschnitt-Seitenverhältnis (WYSIWYG).
 const double _kPosterMainHeightFactor = 0.68;
 
+/// Standard-Positionen (normiert 0..1) der frei verschiebbaren Poster-Elemente.
+const Map<String, Offset> _kPosterItemDefaults = {
+  'sponsor': Offset(0.5, 0.08),
+  'logos': Offset(0.5, 0.18),
+  'headline': Offset(0.5, 0.30),
+  'info': Offset(0.5, 0.38),
+  'badge': Offset(0.17, 0.88),
+};
+
 /// Auswählbare Schriftarten für die Poster-Texte (key → Anzeigename).
 const Map<String, String> _kPosterFonts = {
   'standard': 'Standard',
@@ -182,7 +191,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   double _posterShadowStrength = 45; // 0..100
   double _posterShadowAngle = 45; // Richtung in Grad (0=rechts, 90=unten)
   double _posterPlayerScale = 1.0; // Größe des Spielerbilds (0.5..2.5)
-  Offset _posterTextPos = const Offset(0.5, 0.17); // Position des Textblocks 0..1
+  // Freies Positionieren/Skalieren je Element (sponsor/logos/headline/info/badge).
+  final Map<String, Offset> _posterPos = {}; // Position 0..1 (leer = Default)
+  final Map<String, double> _posterScale = {}; // Größe je Element (leer = 1.0)
+  String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
   List<Sponsor> _sponsors = [];
   GraphicSettings _settings = const GraphicSettings(id: 'local');
@@ -1258,6 +1270,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Future<Uint8List?> _captureBackgroundPng() => _capturePng(_bgBoundaryKey);
 
   Future<Uint8List?> _capturePng(GlobalKey key) async {
+    // Auswahl-Rahmen eines Poster-Elements nicht mit exportieren.
+    final hadSel = _posterSel;
+    if (hadSel != null && mounted) {
+      setState(() => _posterSel = null);
+      await WidgetsBinding.instance.endOfFrame;
+    }
     // Gewählte Schriftart sicher geladen haben, bevor exportiert wird.
     try {
       await GoogleFonts.pendingFonts();
@@ -1692,10 +1710,31 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     posterShadowStrength: _posterShadowStrength,
     posterShadowAngle: _posterShadowAngle,
     posterPlayerScale: _posterPlayerScale,
-    posterTextPos: _posterTextPos,
-    onPosterTextMove: (p) => setState(() => _posterTextPos = p),
+    posterItemPos: _posterPos,
+    posterItemScale: _posterScale,
+    posterSelected: _posterSel,
+    onPosterItemMove: (id, p) => setState(() => _posterPos[id] = p),
+    onPosterSelect: (id) => setState(() => _posterSel = id),
     posterFont: _posterFont,
   );
+
+  /// Anzeigename eines Poster-Elements (für den Größe-Regler).
+  String _posterItemLabel(String id) {
+    switch (id) {
+      case 'sponsor':
+        return 'Sponsor';
+      case 'logos':
+        return 'Logos';
+      case 'headline':
+        return 'Titel';
+      case 'info':
+        return 'Datum';
+      case 'badge':
+        return 'Foto';
+      default:
+        return id;
+    }
+  }
 
   /// Steuerleiste für die Spielankündigung: Stil-Umschalter und – im Poster-Stil –
   /// Bilder-Buttons plus Überschrift-Auswahl.
@@ -1895,8 +1934,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               Row(
                 children: [
                   const SizedBox(
-                    width: 52,
-                    child: Text('Größe', style: TextStyle(fontSize: 12)),
+                    width: 64,
+                    child: Text('Spieler', style: TextStyle(fontSize: 12)),
                   ),
                   Expanded(
                     child: Slider(
@@ -1909,9 +1948,37 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                 ],
               ),
+            if (_posterSel != null)
+              Row(
+                children: [
+                  SizedBox(
+                    width: 64,
+                    child: Text(
+                      _posterItemLabel(_posterSel!),
+                      style: const TextStyle(fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _posterScale[_posterSel!] ?? 1.0,
+                      min: 0.4,
+                      max: 3.0,
+                      onChanged: (v) =>
+                          setState(() => _posterScale[_posterSel!] = v),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Auswahl aufheben',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () => setState(() => _posterSel = null),
+                  ),
+                ],
+              ),
             const Text(
-              'Tipp: Spieler mit „Größe" skalieren und per Ziehen verschieben; '
-              'Texte lassen sich direkt in der Vorschau ziehen.',
+              'Tipp: Spieler per „Spieler"-Regler skalieren. Jedes andere Element '
+              '(Sponsor, Logos, Überschrift, Datum) antippen zum Auswählen, dann '
+              'ziehen zum Verschieben und mit dem Größe-Regler skalieren.',
               style: TextStyle(fontSize: 10.5, color: Colors.grey),
             ),
           ],
@@ -2359,8 +2426,11 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterShadowStrength = 45,
     this.posterShadowAngle = 45,
     this.posterPlayerScale = 1.0,
-    this.posterTextPos = const Offset(0.5, 0.17),
-    this.onPosterTextMove,
+    this.posterItemPos = const {},
+    this.posterItemScale = const {},
+    this.posterSelected,
+    this.onPosterItemMove,
+    this.onPosterSelect,
     this.posterFont = 'standard',
   });
 
@@ -2404,8 +2474,11 @@ class _StartelfGraphic extends StatelessWidget {
   final double posterShadowStrength; // 0..100
   final double posterShadowAngle; // Richtung in Grad (0=rechts, 90=unten)
   final double posterPlayerScale; // Größe des Spielerbilds
-  final Offset posterTextPos; // Position des Textblocks (0..1)
-  final void Function(Offset pos)? onPosterTextMove; // Textblock verschieben
+  final Map<String, Offset> posterItemPos; // Position je Element (0..1)
+  final Map<String, double> posterItemScale; // Größe je Element
+  final String? posterSelected; // aktuell gewähltes Element
+  final void Function(String id, Offset pos)? onPosterItemMove;
+  final void Function(String id)? onPosterSelect;
   final String posterFont; // Schriftart der Poster-Texte
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
@@ -3420,54 +3493,48 @@ class _StartelfGraphic extends StatelessWidget {
       );
     }
 
-    // Verschiebbarer Textblock (Sponsor-Text, Logos, Überschrift, Datum/Ort).
-    final textBlock = Column(
+    // Einzelne, frei verschieb- und skalierbare Elemente.
+    final Widget? sponsorW = mainSponsor == null
+        ? null
+        : _presentedByText(mainSponsor!.name);
+    final Widget logosW = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        if (mainSponsor != null) ...[
-          _presentedByText(mainSponsor!.name),
-          SizedBox(height: compact ? 10 : 14),
-        ],
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            side(ownLogo),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              child: Container(
-                width: 1.5,
-                height: logoH * 0.7,
-                color: Colors.white.withValues(alpha: 0.5),
-              ),
-            ),
-            side(oppLogo),
-          ],
-        ),
-        SizedBox(height: compact ? 8 : 12),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Text(
-            posterHeadline,
-            maxLines: 1,
-            softWrap: false,
-            textAlign: TextAlign.center,
-            style: posterFontStyle(
-              posterFont,
-              const TextStyle(
-                color: Colors.white,
-                fontSize: 58,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
-                height: 1.0,
-              ),
-            ),
+        side(ownLogo),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          child: Container(
+            width: 1.5,
+            height: logoH * 0.7,
+            color: Colors.white.withValues(alpha: 0.5),
           ),
         ),
-        if (infoLine.isNotEmpty) ...[
-          SizedBox(height: compact ? 4 : 6),
-          Text(
+        side(oppLogo),
+      ],
+    );
+    final Widget headlineW = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        posterHeadline,
+        maxLines: 1,
+        softWrap: false,
+        textAlign: TextAlign.center,
+        style: posterFontStyle(
+          posterFont,
+          const TextStyle(
+            color: Colors.white,
+            fontSize: 58,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+            height: 1.0,
+          ),
+        ),
+      ),
+    );
+    final Widget? infoW = infoLine.isEmpty
+        ? null
+        : Text(
             infoLine,
             maxLines: 2,
             textAlign: TextAlign.center,
@@ -3480,14 +3547,75 @@ class _StartelfGraphic extends StatelessWidget {
                 letterSpacing: 0.5,
               ),
             ),
-          ),
-        ],
-      ],
-    );
+          );
+    final Widget? badgeW = badgeBytes == null
+        ? null
+        : Container(
+            width: badgeSize,
+            height: badgeSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: Image.memory(
+                badgeBytes,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              ),
+            ),
+          );
 
     return LayoutBuilder(
       builder: (ctx, c) {
         final w = c.maxWidth, h = c.maxHeight;
+        // Ein frei verschieb- und skalierbares Element (tippen = auswählen).
+        Widget el(String id, Widget child) {
+          final pos = posterItemPos[id] ?? _kPosterItemDefaults[id]!;
+          final scale = posterItemScale[id] ?? 1.0;
+          final selected = posterSelected == id;
+          return Align(
+            alignment: Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (_) => onPosterSelect?.call(id),
+              onPanStart: (_) => onPosterSelect?.call(id),
+              onPanUpdate: (d) {
+                onPosterItemMove?.call(
+                  id,
+                  Offset(
+                    (pos.dx + d.delta.dx / w).clamp(0.03, 0.97),
+                    (pos.dy + d.delta.dy / h).clamp(0.02, 0.98),
+                  ),
+                );
+              },
+              child: Transform.scale(
+                scale: scale,
+                child: Container(
+                  constraints: BoxConstraints(maxWidth: w - 2 * pad),
+                  padding: const EdgeInsets.all(3),
+                  decoration: selected
+                      ? BoxDecoration(
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                          borderRadius: BorderRadius.circular(4),
+                        )
+                      : null,
+                  child: child,
+                ),
+              ),
+            ),
+          );
+        }
+
         return Stack(
           fit: StackFit.expand,
           children: [
@@ -3513,58 +3641,12 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               ),
             ),
-            // Rundes Zweit-Foto (Badge) unten links.
-            if (badgeBytes != null)
-              Padding(
-                padding: EdgeInsets.only(bottom: pad, left: pad),
-                child: Align(
-                  alignment: Alignment.bottomLeft,
-                  child: Container(
-                    width: badgeSize,
-                    height: badgeSize,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white, width: 3),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.35),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
-                    ),
-                    child: ClipOval(
-                      child: Image.memory(
-                        badgeBytes,
-                        fit: BoxFit.cover,
-                        gaplessPlayback: true,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            // Textblock – frei verschiebbar (Ziehen zum Positionieren).
-            Align(
-              alignment: Alignment(
-                posterTextPos.dx * 2 - 1,
-                posterTextPos.dy * 2 - 1,
-              ),
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onPanUpdate: (d) {
-                  final nx = (posterTextPos.dx + d.delta.dx / w).clamp(
-                    0.12,
-                    0.88,
-                  );
-                  final ny = (posterTextPos.dy + d.delta.dy / h).clamp(
-                    0.06,
-                    0.94,
-                  );
-                  onPosterTextMove?.call(Offset(nx, ny));
-                },
-                child: SizedBox(width: w - 2 * pad, child: textBlock),
-              ),
-            ),
+            // Frei verschieb-/skalierbare Elemente (tippen = auswählen, ziehen).
+            if (sponsorW != null) el('sponsor', sponsorW),
+            el('logos', logosW),
+            el('headline', headlineW),
+            if (infoW != null) el('info', infoW),
+            if (badgeW != null) el('badge', badgeW),
           ],
         );
       },
