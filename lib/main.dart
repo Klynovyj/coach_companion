@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -20,6 +22,15 @@ import 'theme.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initializeDateFormatting('de_DE');
+
+  // Android: modernen System-Foto-Picker nutzen – zeigt Google Fotos als
+  // Cloud-Quelle direkt im Bild-Picker (ohne eigenes Google-Login).
+  if (Platform.isAndroid) {
+    final picker = ImagePickerPlatform.instance;
+    if (picker is ImagePickerAndroid) {
+      picker.useAndroidPhotoPicker = true;
+    }
+  }
 
   // Fenster auf Windows: Schließen minimiert in den Tray, damit die Live-Uhr
   // im Hintergrund weiterläuft.

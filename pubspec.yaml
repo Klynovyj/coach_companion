@@ -38,6 +38,9 @@ dependencies:
 
   # Spielerfoto wählen (Galerie/Datei; am Handy auch Kamera)
   image_picker: ^1.1.2
+  # Android: modernen System-Foto-Picker aktivieren (Google Fotos als Quelle).
+  image_picker_android: ^0.8.13
+  image_picker_platform_interface: ^2.11.0
   flutter_foreground_task: ^10.0.0
   flutter_local_notifications: ^22.3.2
   # Zeitzone für geplante Geburtstags-Benachrichtigungen (zonedSchedule).

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -11,6 +12,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/graphic_preset.dart';
@@ -787,9 +789,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   /// Kader-Profilfoto (wenn [widget.teamId] vorhanden) oder Upload/Kamera.
   /// Großes Spielerbild für das AKTUELLE Format setzen/entfernen.
   Future<void> _addPosterMain() async {
-    final src = await _askPosterSource(hasExisting: _posterMain != null);
-    if (src == null || !mounted) return;
-    if (src == 'remove') {
+    final src0 = await _askPosterSource(hasExisting: _posterMain != null);
+    if (src0 == null || !mounted) return;
+    if (src0 == 'remove') {
       setState(() {
         _posterMainF[_designKey] = null;
         _imgOrig.remove('player');
@@ -798,6 +800,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       });
       return;
     }
+    final src = await _resolveGoogleSource(src0);
+    if (src == null || !mounted) return;
     const place = _PhotoPlace.posterMain;
     final aspect = _photoAspect(place);
     final String? url = src == 'kader'
@@ -853,6 +857,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 onTap: () => Navigator.pop(ctx, 'gallery'),
               ),
               ListTile(
+                leading: const Icon(Icons.photo),
+                title: const Text('Google Fotos'),
+                subtitle: Text(
+                  Platform.isAndroid
+                      ? 'Im Foto-Picker auf Google Fotos wechseln'
+                      : 'Oeffnet Google Fotos im Browser zum Herunterladen',
+                ),
+                onTap: () => Navigator.pop(ctx, 'google'),
+              ),
+              ListTile(
                 leading: const Icon(Icons.photo_camera),
                 title: const Text('Foto aufnehmen'),
                 onTap: () => Navigator.pop(ctx, 'camera'),
@@ -873,6 +887,30 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           ),
         ),
       );
+
+  /// Behandelt die Quelle 'google'. Auf Android identisch zu 'gallery' – der
+  /// System-Foto-Picker zeigt Google Fotos als Cloud-Quelle. Auf Desktop gibt
+  /// es keinen System-Zugriff → Google Fotos im Browser öffnen, Hinweis zeigen
+  /// und null liefern (Nutzer lädt herunter und wählt dann „Aus Galerie").
+  /// Alle anderen Quellen werden unverändert durchgereicht.
+  Future<String?> _resolveGoogleSource(String src) async {
+    if (src != 'google') return src;
+    if (Platform.isAndroid) return 'gallery';
+    final messenger = ScaffoldMessenger.of(context);
+    await launchUrl(
+      Uri.parse('https://photos.google.com'),
+      mode: LaunchMode.externalApplication,
+    );
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Bild in Google Fotos herunterladen, dann über „Aus Galerie" wählen.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
+    return null;
+  }
 
   /// Kader-Spieler auswählen und dessen Profilfoto (zugeschnitten) liefern.
   Future<String?> _pickKaderPhoto(double aspect) async {
@@ -2287,8 +2325,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   /// Eigenes Bild/Grafik als Overlay hinzufügen (Galerie/Kamera, Transparenz
   /// bleibt erhalten). Neues Overlay kommt nach vorne und wird ausgewählt.
   Future<void> _addPosterOverlay() async {
-    final src = await _askPosterSource(allowKader: false);
-    if (src == null || src == 'remove' || !mounted) return;
+    final src0 = await _askPosterSource(allowKader: false);
+    if (src0 == null || src0 == 'remove' || !mounted) return;
+    final src = await _resolveGoogleSource(src0);
+    if (src == null || !mounted) return;
     final url = await _pickImage(
       asBackground: true,
       source: src == 'camera' ? ImageSource.camera : ImageSource.gallery,
