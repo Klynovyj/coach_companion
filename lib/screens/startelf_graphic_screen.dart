@@ -4811,15 +4811,22 @@ class _StartelfGraphic extends StatelessWidget {
                   letterSpacing: 0.5,
                 ),
               ),
-              Text(
-                rubric,
-                maxLines: 1,
-                style: TextStyle(
-                  color: _accent,
-                  fontSize: compact ? 26 : 32,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                  height: 1.0,
+              // Überschrift automatisch verkleinern, falls sie nicht in die
+              // Breite passt → wird NIE abgeschnitten (z.B. „ERGEBNIS").
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  rubric,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: _accent,
+                    fontSize: compact ? 26 : 32,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.2,
+                    height: 1.0,
+                  ),
                 ),
               ),
             ],
@@ -4835,24 +4842,24 @@ class _StartelfGraphic extends StatelessWidget {
               Text(
                 'PRÄSENTIERT VON',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8),
-                  fontSize: compact ? 7 : 9,
-                  fontWeight: FontWeight.w700,
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: compact ? 8 : 10,
+                  fontWeight: FontWeight.w800,
                   letterSpacing: 1.5,
                 ),
               ),
-              SizedBox(height: compact ? 3 : 4),
+              SizedBox(height: compact ? 4 : 5),
               ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: compact ? 118 : 150),
+                constraints: BoxConstraints(maxWidth: compact ? 130 : 168),
                 child: sponsorLogo != null
-                    ? _logoChip(sponsorLogo, height: compact ? 30 : 40)
+                    ? _logoChip(sponsorLogo, height: compact ? 38 : 50)
                     : Text(
                         mainSponsor!.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: compact ? 14 : 18,
+                          fontSize: compact ? 16 : 21,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
