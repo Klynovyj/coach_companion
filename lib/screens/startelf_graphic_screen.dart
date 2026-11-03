@@ -88,7 +88,7 @@ const Map<String, Offset> _kPosterItemDefaults = {
   'logos': Offset(0.5, 0.18),
   'headline': Offset(0.5, 0.30),
   'info': Offset(0.5, 0.38),
-  'badge': Offset(0.17, 0.88),
+  'sponsorbar': Offset(0.5, 0.93),
 };
 
 /// Auswählbare Schriftarten für die Poster-Texte (key → Anzeigename).
@@ -279,6 +279,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
   final List<({String id, String dataUrl})> _posterOverlays = []; // Overlays
   int _posterOverlaySeq = 0; // eindeutige Overlay-IDs
+  bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
+  bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
   List<Sponsor> _sponsors = [];
   GraphicSettings _settings = const GraphicSettings(id: 'local');
@@ -382,7 +384,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     'logos',
     'headline',
     'info',
-    'badge',
+    'sponsorbar',
   ];
 
   @override
@@ -1579,14 +1581,42 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
-  /// KI-Freisteller: entfernt den Foto-Hintergrund des großen Spielerbilds,
-  /// damit der gewählte Poster-Hintergrund dahinter erscheint. Ersetzt das Bild.
-  Future<void> _cutoutPosterMain() async {
+  /// Data-URL des aktuell gewählten Bild-Elements (Spieler oder Overlay), sonst
+  /// null (Text/Logos/Sponsor sind keine ersetzbaren Bilder).
+  String? _selectedImageDataUrl() {
+    final sel = _posterSel;
+    if (sel == null) return null;
+    if (sel == 'player') return _posterMain;
+    if (sel.startsWith('overlay_')) {
+      for (final o in _posterOverlays) {
+        if (o.id == sel) return o.dataUrl;
+      }
+    }
+    return null;
+  }
+
+  /// Ersetzt das Bild des aktuell gewählten Elements durch [url].
+  void _setSelectedImageDataUrl(String url) {
+    final sel = _posterSel;
+    if (sel == null) return;
+    if (sel == 'player') {
+      _photos.removeWhere((p) => p.place == _PhotoPlace.posterMain);
+      _photos.add(_GraphicPhoto(url, _PhotoPlace.posterMain));
+      _photoCtrl.value = Matrix4.identity();
+    } else if (sel.startsWith('overlay_')) {
+      final i = _posterOverlays.indexWhere((o) => o.id == sel);
+      if (i >= 0) _posterOverlays[i] = (id: sel, dataUrl: url);
+    }
+  }
+
+  /// KI-Freisteller für das GEWÄHLTE Bild (Spieler oder Overlay): entfernt den
+  /// Foto-Hintergrund, damit der Hintergrund dahinter erscheint.
+  Future<void> _cutoutSelected() async {
     if (_aiBusy) return;
-    final main = _posterMain;
-    if (main == null || !main.contains('base64,')) {
+    final src = _selectedImageDataUrl();
+    if (src == null || !src.contains('base64,')) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erst ein großes Spielerbild wählen.')),
+        const SnackBar(content: Text('Erst ein Bild auswählen (antippen).')),
       );
       return;
     }
@@ -1595,10 +1625,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     try {
       final out = await CloudService.aiImage(
         images: [
-          {'mime': _dataUrlMime(main), 'data': main, 'role': 'photo'},
+          {'mime': _dataUrlMime(src), 'data': src, 'role': 'photo'},
         ],
         prompt:
-            'Stelle die Person/den Spieler sauber frei und gib sie auf '
+            'Stelle die Person/das Motiv sauber frei und gib es auf '
             'transparentem Hintergrund (PNG mit Alpha) zurück.',
         mode: 'cutout',
         aspect: _story ? '9:16' : '1:1',
@@ -1610,21 +1640,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         return;
       }
       if (!mounted) return;
-      setState(() {
-        _photos.removeWhere((p) => p.place == _PhotoPlace.posterMain);
-        _photos.add(
-          _GraphicPhoto(
-            'data:image/png;base64,${base64Encode(out)}',
-            _PhotoPlace.posterMain,
-          ),
-        );
-        _photoCtrl.value = Matrix4.identity();
-      });
+      setState(
+        () => _setSelectedImageDataUrl(
+          'data:image/png;base64,${base64Encode(out)}',
+        ),
+      );
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
-            'Spieler freigestellt. Falls noch Reste bleiben: eigenes '
-            'transparentes PNG hochladen.',
+            'Freigestellt. Falls noch Reste bleiben: eigenes transparentes PNG '
+            'nutzen.',
           ),
           duration: Duration(seconds: 5),
         ),
@@ -1641,34 +1666,29 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
-  /// Einfarbigen Hintergrund des großen Spielerbilds clientseitig entfernen
-  /// (ohne KI). Nutzt [removeUniformBackground] in einem Isolate.
-  Future<void> _removePosterMainBg() async {
+  /// Einfarbigen Hintergrund des GEWÄHLTEN Bildes clientseitig entfernen (ohne
+  /// KI). Nutzt [removeUniformBackground] in einem Isolate.
+  Future<void> _removeBgSelected() async {
     if (_bgBusy) return;
-    final main = _posterMain;
-    if (main == null) {
+    final src = _selectedImageDataUrl();
+    if (src == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erst ein Spielerbild wählen.')),
+        const SnackBar(content: Text('Erst ein Bild auswählen (antippen).')),
       );
       return;
     }
-    final bytes = TeamLogo.decode(main);
+    final bytes = TeamLogo.decode(src);
     if (bytes == null) return;
     setState(() => _bgBusy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
       final out = await compute(removeUniformBackground, bytes);
       if (!mounted) return;
-      setState(() {
-        _photos.removeWhere((p) => p.place == _PhotoPlace.posterMain);
-        _photos.add(
-          _GraphicPhoto(
-            'data:image/png;base64,${base64Encode(out)}',
-            _PhotoPlace.posterMain,
-          ),
-        );
-        _photoCtrl.value = Matrix4.identity();
-      });
+      setState(
+        () => _setSelectedImageDataUrl(
+          'data:image/png;base64,${base64Encode(out)}',
+        ),
+      );
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
@@ -1866,6 +1886,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     onPosterItemMove: (id, p) => setState(() => _posterPos[id] = p),
     onPosterSelect: (id) => setState(() => _posterSel = id),
     posterFont: _posterFont,
+    showMainSponsor: _showMainSponsor,
+    showOtherSponsors: _showOtherSponsors,
   );
 
   /// Anzeigename eines Poster-Elements (für den Größe-Regler).
@@ -1875,14 +1897,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         return 'Spieler';
       case 'sponsor':
         return 'Sponsor';
+      case 'sponsorbar':
+        return 'Sponsoren';
       case 'logos':
         return 'Logos';
       case 'headline':
         return 'Titel';
       case 'info':
         return 'Datum';
-      case 'badge':
-        return 'Foto';
       default:
         return id.startsWith('overlay_') ? 'Bild' : id;
     }
@@ -1965,76 +1987,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           ),
           if (poster) ...[
             const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.person, size: 18),
-                    label: Text(
-                      _posterMain == null ? 'Spielerbild' : 'Spielerbild ✓',
-                    ),
-                    onPressed: () => _addPosterPhoto(_PhotoPlace.posterMain),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    icon: const Icon(Icons.account_circle, size: 18),
-                    label: Text(
-                      _posterBadge == null ? 'Rundes Foto' : 'Rundes Foto ✓',
-                    ),
-                    onPressed: () => _addPosterPhoto(_PhotoPlace.posterBadge),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                icon: _aiBusy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.auto_fix_high, size: 18),
+                icon: const Icon(Icons.person, size: 18),
                 label: Text(
-                  _aiBusy ? 'KI stellt frei …' : 'Spieler freistellen (KI)',
+                  _posterMain == null ? 'Spielerbild' : 'Spielerbild ✓',
                 ),
-                onPressed: (_posterMain == null || _aiBusy)
-                    ? null
-                    : _cutoutPosterMain,
-              ),
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: _bgBusy
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.format_color_reset, size: 18),
-                label: Text(
-                  _bgBusy
-                      ? 'Entferne …'
-                      : 'Hintergrund entfernen (einfarbig, ohne KI)',
-                ),
-                onPressed: (_posterMain == null || _bgBusy)
-                    ? null
-                    : _removePosterMainBg,
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.only(top: 2),
-              child: Text(
-                'Freisteller entfernt den Foto-Hintergrund → dein Hintergrund '
-                'erscheint dahinter. „Einfarbig" geht ohne KI (Studio-/weißer '
-                'Grund); Tipp: fertig freigestelltes PNG geht auch.',
-                style: TextStyle(fontSize: 10.5, color: Colors.grey),
+                onPressed: () => _addPosterPhoto(_PhotoPlace.posterMain),
               ),
             ),
             const SizedBox(height: 6),
@@ -2044,6 +2004,51 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 icon: const Icon(Icons.add_photo_alternate, size: 18),
                 label: const Text('Bild/Grafik hinzufügen'),
                 onPressed: _addPosterOverlay,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: _aiBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.auto_fix_high, size: 18),
+                    label: Text(_aiBusy ? 'KI …' : 'Freistellen (KI)'),
+                    onPressed: (_selectedImageDataUrl() == null || _aiBusy)
+                        ? null
+                        : _cutoutSelected,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: _bgBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.format_color_reset, size: 18),
+                    label: Text(_bgBusy ? 'Entferne …' : 'Hintergrund weg'),
+                    onPressed: (_selectedImageDataUrl() == null || _bgBusy)
+                        ? null
+                        : _removeBgSelected,
+                  ),
+                ),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.only(top: 2),
+              child: Text(
+                'Freistellen/Hintergrund wirkt auf das GEWÄHLTE Bild (Spieler '
+                'oder Overlay – antippen). „Hintergrund weg" geht ohne KI '
+                '(Studio-/weißer Grund); fertig freigestelltes PNG geht auch.',
+                style: TextStyle(fontSize: 10.5, color: Colors.grey),
               ),
             ),
             const SizedBox(height: 8),
@@ -2102,6 +2107,26 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                 ),
               ],
+            ),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Hauptsponsor anzeigen',
+                style: TextStyle(fontSize: 13),
+              ),
+              value: _showMainSponsor,
+              onChanged: (v) => setState(() => _showMainSponsor = v),
+            ),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Weitere Sponsoren anzeigen',
+                style: TextStyle(fontSize: 13),
+              ),
+              value: _showOtherSponsors,
+              onChanged: (v) => setState(() => _showOtherSponsors = v),
             ),
             SwitchListTile(
               dense: true,
@@ -2671,6 +2696,8 @@ class _StartelfGraphic extends StatelessWidget {
     this.onPosterItemMove,
     this.onPosterSelect,
     this.posterFont = 'standard',
+    this.showMainSponsor = true,
+    this.showOtherSponsors = true,
   });
 
   final String title;
@@ -2720,6 +2747,8 @@ class _StartelfGraphic extends StatelessWidget {
   final void Function(String id, Offset pos)? onPosterItemMove;
   final void Function(String id)? onPosterSelect;
   final String posterFont; // Schriftart der Poster-Texte
+  final bool showMainSponsor; // Hauptsponsor-Element anzeigen
+  final bool showOtherSponsors; // weitere Sponsoren (Logo-Reihe) anzeigen
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
@@ -3620,10 +3649,8 @@ class _StartelfGraphic extends StatelessWidget {
     final ownLogo = TeamLogo.decode(logo);
     final oppLogo = TeamLogo.decode(opponentLogo);
     final mainBytes = TeamLogo.decode(posterMain);
-    final badgeBytes = TeamLogo.decode(posterBadge);
     final pad = compact ? 16.0 : 22.0;
     final logoH = compact ? 46.0 : 60.0;
-    final badgeSize = compact ? 84.0 : 112.0;
 
     // Logo entweder auf hellem Kreis (immer gut sichtbar) oder frei auf dem
     // Hintergrund wie im Vorbild (für helle/weiße Logo-Varianten).
@@ -3682,6 +3709,31 @@ class _StartelfGraphic extends StatelessWidget {
     final Widget? sponsorW = mainSponsor == null
         ? null
         : _presentedByText(mainSponsor!.name);
+    final Widget? sponsorbarW = barSponsors.isEmpty
+        ? null
+        : Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final s in barSponsors)
+                if (TeamLogo.decode(s.logo) case final b?)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4),
+                    child: Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Image.memory(
+                        b,
+                        height: compact ? 22 : 28,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+            ],
+          );
     final Widget logosW = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -3737,31 +3789,6 @@ class _StartelfGraphic extends StatelessWidget {
               ),
             ),
           );
-    final Widget? badgeW = badgeBytes == null
-        ? null
-        : Container(
-            width: badgeSize,
-            height: badgeSize,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ],
-            ),
-            child: ClipOval(
-              child: Image.memory(
-                badgeBytes,
-                fit: BoxFit.cover,
-                gaplessPlayback: true,
-              ),
-            ),
-          );
-
     return LayoutBuilder(
       builder: (ctx, c) {
         final w = c.maxWidth, h = c.maxHeight;
@@ -3820,15 +3847,15 @@ class _StartelfGraphic extends StatelessWidget {
                 height: h * 0.6,
               );
             case 'sponsor':
-              return sponsorW;
+              return showMainSponsor ? sponsorW : null;
+            case 'sponsorbar':
+              return showOtherSponsors ? sponsorbarW : null;
             case 'logos':
               return logosW;
             case 'headline':
               return headlineW;
             case 'info':
               return infoW;
-            case 'badge':
-              return badgeW;
             default:
               final url = posterOverlays[id];
               if (url == null) return null;
