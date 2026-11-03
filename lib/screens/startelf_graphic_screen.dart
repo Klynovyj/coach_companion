@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
@@ -79,6 +80,34 @@ enum _AnnStyle { zentriert, poster }
 /// Steuert zugleich das Zuschnitt-Seitenverhältnis (WYSIWYG).
 const double _kPosterMainHeightFactor = 0.68;
 
+/// Auswählbare Schriftarten für die Poster-Texte (key → Anzeigename).
+const Map<String, String> _kPosterFonts = {
+  'standard': 'Standard',
+  'anton': 'Anton',
+  'oswald': 'Oswald',
+  'archivo': 'Archivo',
+  'bebas': 'Bebas Neue',
+  'teko': 'Teko',
+};
+
+/// Wendet die gewählte Schriftart auf einen TextStyle an (null = Standard).
+TextStyle posterFontStyle(String font, TextStyle base) {
+  switch (font) {
+    case 'anton':
+      return GoogleFonts.anton(textStyle: base);
+    case 'oswald':
+      return GoogleFonts.oswald(textStyle: base);
+    case 'archivo':
+      return GoogleFonts.archivoBlack(textStyle: base);
+    case 'bebas':
+      return GoogleFonts.bebasNeue(textStyle: base);
+    case 'teko':
+      return GoogleFonts.teko(textStyle: base);
+    default:
+      return base;
+  }
+}
+
 /// Ein zur Grafik hinzugefügtes Foto (Data-URL) mit seiner Platzierung.
 /// Transient (nicht gespeichert), gilt für alle Grafiktypen.
 class _GraphicPhoto {
@@ -147,6 +176,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   _AnnStyle _annStyle = _AnnStyle.zentriert;
   String _annHeadMode = 'spieltag'; // 'spieltag' | 'auto' | 'custom'
   String _annHeadText = 'SPIELTAG';
+  bool _posterLogoDisc = true; // heller Kreis hinter den Logos (Sichtbarkeit)
+  bool _posterShadow = false; // Schlagschatten beim freigestellten Spieler
+  double _posterShadowStrength = 45; // 0..100
+  String _posterFont = 'standard'; // Schriftart der Poster-Texte
   List<Sponsor> _sponsors = [];
   GraphicSettings _settings = const GraphicSettings(id: 'local');
   bool _loading = true;
@@ -308,6 +341,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     bool edit = false,
     double? aspectRatio,
     bool keepAlpha = false,
+    int maxSize = 1600,
   }) async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -330,6 +364,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               imageBytes: bytes,
               aspectRatio: aspectRatio,
               keepAlpha: keepAlpha,
+              maxSize: maxSize,
             ),
           ),
         );
@@ -448,15 +483,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
 
   /// Neues Foto wählen (mit Editor) und Platzierung abfragen.
   Future<void> _addPhoto(ImageSource source) async {
-    // Zuerst Platzierung wählen, damit der Editor im richtigen (finalen)
-    // Seitenverhältnis zuschneidet → WYSIWYG.
     final place = await _askPlacement();
     if (place == null || !mounted) return;
+    // Hintergrund = fester Grafik-Zuschnitt (WYSIWYG). Foto-Bereich oben =
+    // FREIER Zuschnitt (null) → das ganze Bild bleibt erhalten, Anzeige
+    // „contain" schneidet nichts ab (Kopf etc. bleibt dran).
     final url = await _pickImage(
       asBackground: true, // Fotos immer hochauflösend laden
       source: source,
       edit: true,
-      aspectRatio: _photoAspect(place),
+      aspectRatio: place == _PhotoPlace.band ? null : _photoAspect(place),
     );
     if (url == null || !mounted) return;
     setState(() {
@@ -468,8 +504,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   /// Großes Spielerbild bzw. rundes Badge im Poster setzen. Quelle wählbar:
   /// Kader-Profilfoto (wenn [widget.teamId] vorhanden) oder Upload/Kamera.
   Future<void> _addPosterPhoto(_PhotoPlace place) async {
-    final src = await _askPosterSource();
+    final hasExisting = _photos.any((p) => p.place == place);
+    final src = await _askPosterSource(hasExisting: hasExisting);
     if (src == null || !mounted) return;
+    if (src == 'remove') {
+      setState(() => _photos.removeWhere((p) => p.place == place));
+      return;
+    }
     final aspect = _photoAspect(place);
     final String? url = src == 'kader'
         ? await _pickKaderPhoto(aspect)
@@ -479,6 +520,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             edit: true,
             aspectRatio: aspect,
             keepAlpha: true, // transparente Freisteller-PNGs erhalten
+            maxSize: 2000, // höhere Auflösung fürs große Spielerbild
           );
     if (url == null || !mounted) return;
     setState(() {
@@ -488,45 +530,58 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     });
   }
 
-  /// Quelle für ein Poster-Foto abfragen: Kader / Galerie / Kamera.
-  Future<String?> _askPosterSource() => showModalBottomSheet<String>(
-    context: context,
-    builder: (ctx) => SafeArea(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                'Bildquelle',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+  /// Quelle für ein Poster-Foto abfragen: Kader / Galerie / Kamera (oder, wenn
+  /// schon eins gesetzt ist, Entfernen).
+  Future<String?> _askPosterSource({bool hasExisting = false}) =>
+      showModalBottomSheet<String>(
+        context: context,
+        builder: (ctx) => SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Padding(
+                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Bildquelle',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                ),
               ),
-            ),
+              if (widget.teamId != null)
+                ListTile(
+                  leading: const Icon(Icons.groups),
+                  title: const Text('Kader-Spieler wählen'),
+                  subtitle: const Text('Nimmt das gespeicherte Profilfoto'),
+                  onTap: () => Navigator.pop(ctx, 'kader'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Aus Galerie'),
+                onTap: () => Navigator.pop(ctx, 'gallery'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_camera),
+                title: const Text('Foto aufnehmen'),
+                onTap: () => Navigator.pop(ctx, 'camera'),
+              ),
+              if (hasExisting) ...[
+                const Divider(),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text(
+                    'Entfernen',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                  onTap: () => Navigator.pop(ctx, 'remove'),
+                ),
+              ],
+              const SizedBox(height: 8),
+            ],
           ),
-          if (widget.teamId != null)
-            ListTile(
-              leading: const Icon(Icons.groups),
-              title: const Text('Kader-Spieler wählen'),
-              subtitle: const Text('Nimmt das gespeicherte Profilfoto'),
-              onTap: () => Navigator.pop(ctx, 'kader'),
-            ),
-          ListTile(
-            leading: const Icon(Icons.photo_library),
-            title: const Text('Aus Galerie'),
-            onTap: () => Navigator.pop(ctx, 'gallery'),
-          ),
-          ListTile(
-            leading: const Icon(Icons.photo_camera),
-            title: const Text('Foto aufnehmen'),
-            onTap: () => Navigator.pop(ctx, 'camera'),
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 
   /// Kader-Spieler auswählen und dessen Profilfoto (zugeschnitten) liefern.
   Future<String?> _pickKaderPhoto(double aspect) async {
@@ -571,6 +626,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           imageBytes: bytes,
           aspectRatio: aspect,
           keepAlpha: true,
+          maxSize: 2000,
         ),
       ),
     );
@@ -1198,11 +1254,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Future<Uint8List?> _captureBackgroundPng() => _capturePng(_bgBoundaryKey);
 
   Future<Uint8List?> _capturePng(GlobalKey key) async {
+    // Gewählte Schriftart sicher geladen haben, bevor exportiert wird.
+    try {
+      await GoogleFonts.pendingFonts();
+      await WidgetsBinding.instance.endOfFrame;
+    } catch (_) {}
     final boundary =
         key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) return null;
     final logicalWidth = _story ? _storyW : _postW;
-    final image = await boundary.toImage(pixelRatio: 1080 / logicalWidth);
+    // Höhere Export-Auflösung (1440 px Breite → 1440×2560 bzw. 1440×1440).
+    final image = await boundary.toImage(pixelRatio: 1440 / logicalWidth);
     final data = await image.toByteData(format: ui.ImageByteFormat.png);
     return data?.buffer.asUint8List();
   }
@@ -1621,6 +1683,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     posterHeadline: _posterHeadline,
     posterMain: _posterMain,
     posterBadge: _posterBadge,
+    posterLogoDisc: _posterLogoDisc,
+    posterShadow: _posterShadow,
+    posterShadowStrength: _posterShadowStrength,
+    posterFont: _posterFont,
   );
 
   /// Steuerleiste für die Spielankündigung: Stil-Umschalter und – im Poster-Stil –
@@ -1734,6 +1800,65 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                   onChanged: (v) => setState(() => _annHeadText = v),
                 ),
+              ),
+            const SizedBox(height: 2),
+            Row(
+              children: [
+                const Text('Schrift:', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: DropdownButton<String>(
+                    isExpanded: true,
+                    isDense: true,
+                    value: _posterFont,
+                    items: [
+                      for (final e in _kPosterFonts.entries)
+                        DropdownMenuItem(value: e.key, child: Text(e.value)),
+                    ],
+                    onChanged: (v) =>
+                        setState(() => _posterFont = v ?? 'standard'),
+                  ),
+                ),
+              ],
+            ),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Logos auf hellem Kreis',
+                style: TextStyle(fontSize: 13),
+              ),
+              value: _posterLogoDisc,
+              onChanged: (v) => setState(() => _posterLogoDisc = v),
+            ),
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text(
+                'Schatten am Spieler',
+                style: TextStyle(fontSize: 13),
+              ),
+              subtitle: const Text(
+                'Wirkt am besten beim freigestellten Spieler',
+                style: TextStyle(fontSize: 10.5),
+              ),
+              value: _posterShadow,
+              onChanged: (v) => setState(() => _posterShadow = v),
+            ),
+            if (_posterShadow)
+              Row(
+                children: [
+                  const Text('Stärke', style: TextStyle(fontSize: 12)),
+                  Expanded(
+                    child: Slider(
+                      value: _posterShadowStrength,
+                      min: 0,
+                      max: 100,
+                      onChanged: (v) =>
+                          setState(() => _posterShadowStrength = v),
+                    ),
+                  ),
+                ],
               ),
           ],
         ],
@@ -2175,6 +2300,10 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterHeadline = 'SPIELTAG',
     this.posterMain,
     this.posterBadge,
+    this.posterLogoDisc = true,
+    this.posterShadow = false,
+    this.posterShadowStrength = 45,
+    this.posterFont = 'standard',
   });
 
   final String title;
@@ -2212,13 +2341,19 @@ class _StartelfGraphic extends StatelessWidget {
   final String posterHeadline; // Poster-Überschrift (SPIELTAG / HEIMSPIEL / …)
   final String? posterMain; // großes Spielerbild (Data-URL)
   final String? posterBadge; // rundes Zweit-Foto (Data-URL)
+  final bool posterLogoDisc; // heller Kreis hinter den Poster-Logos
+  final bool posterShadow; // Schlagschatten beim freigestellten Spieler
+  final double posterShadowStrength; // 0..100
+  final String posterFont; // Schriftart der Poster-Texte
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
 
   @override
   Widget build(BuildContext context) {
-    if (backgroundOnly) return _bgBase(); // nur Verlauf/Foto, ohne Inhalt
+    if (backgroundOnly) {
+      return _bgBase(radial: posterStyle); // nur Verlauf/Foto, ohne Inhalt
+    }
     if (designMode) return _designLayout();
     if (announcement != null && posterStyle) return _announcementPosterLayout();
     final content = announcement != null
@@ -2358,6 +2493,8 @@ class _StartelfGraphic extends StatelessWidget {
   /// 1 Foto = verschieb-/zoombar; mehrere = Collage-Reihe (BoxFit.cover).
   Widget _photoBand(List<Uint8List> photos) {
     if (photos.length == 1) {
+      // „contain" → das ganze Foto bleibt sichtbar (nichts abgeschnitten).
+      // Zum Formatfüllen kann der Nutzer per Pinch/Drag zoomen.
       return ClipRect(
         child: InteractiveViewer(
           transformationController: photoController,
@@ -2367,7 +2504,7 @@ class _StartelfGraphic extends StatelessWidget {
           clipBehavior: Clip.none,
           child: Image.memory(
             photos.first,
-            fit: BoxFit.cover,
+            fit: BoxFit.contain,
             gaplessPlayback: true,
           ),
         ),
@@ -2447,21 +2584,26 @@ class _StartelfGraphic extends StatelessWidget {
 
   /// Hintergrund-Basis: Verlauf, optional mit eigenem Hintergrundbild + Tönung.
   /// Wird von allen Layouts genutzt.
-  Widget _bgBase() {
+  Widget _bgBase({bool radial = false}) {
     // Hinzugefügtes Hintergrund-Foto hat Vorrang vor dem eingestellten Bild.
     final bgBytes = TeamLogo.decode(photoBg) ?? TeamLogo.decode(bgImage);
+    // radial = Strahl/Vignette (heller Punkt oben-mitte → dunkel zu den Rändern),
+    // wie beim Spieler-Poster; sonst klassischer Verlauf oben→unten.
+    final Gradient baseGradient = radial
+        ? RadialGradient(
+            center: const Alignment(0, -0.35),
+            radius: 1.2,
+            colors: [gradTop, gradBottom],
+          )
+        : LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [gradTop, gradBottom],
+          );
     return Stack(
       fit: StackFit.expand,
       children: [
-        Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [gradTop, gradBottom],
-            ),
-          ),
-        ),
+        Container(decoration: BoxDecoration(gradient: baseGradient)),
         if (bgBytes != null) ...[
           if (bgOpacity < 1.0 || bgBlend != BlendMode.srcOver)
             _BlendLayer(
@@ -3105,27 +3247,40 @@ class _StartelfGraphic extends StatelessWidget {
     final logoH = compact ? 46.0 : 60.0;
     final badgeSize = compact ? 84.0 : 112.0;
 
-    // Logos wie im Vorbild: ohne weißen Kasten, direkt auf dem Hintergrund
-    // (dezenter Schatten für Lesbarkeit auf unruhigem Grund).
-    Widget side(Uint8List? bytes) => bytes == null
-        ? SizedBox(height: logoH, width: logoH)
-        : DecoratedBox(
-            decoration: BoxDecoration(
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.35),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Image.memory(
-              bytes,
-              height: logoH,
-              fit: BoxFit.contain,
-              gaplessPlayback: true,
-            ),
-          );
+    // Logo entweder auf hellem Kreis (immer gut sichtbar) oder frei auf dem
+    // Hintergrund wie im Vorbild (für helle/weiße Logo-Varianten).
+    final logoShadow = BoxShadow(
+      color: Colors.black.withValues(alpha: 0.35),
+      blurRadius: 8,
+      offset: const Offset(0, 2),
+    );
+    Widget side(Uint8List? bytes) {
+      if (bytes == null) return SizedBox(height: logoH, width: logoH);
+      final logoImg = Image.memory(
+        bytes,
+        height: logoH,
+        fit: BoxFit.contain,
+        gaplessPlayback: true,
+      );
+      if (!posterLogoDisc) {
+        return DecoratedBox(
+          decoration: BoxDecoration(boxShadow: [logoShadow]),
+          child: logoImg,
+        );
+      }
+      final d = logoH * 1.26;
+      return Container(
+        width: d,
+        height: d,
+        padding: EdgeInsets.all(d * 0.1),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          boxShadow: [logoShadow],
+        ),
+        child: Center(child: logoImg),
+      );
+    }
 
     // Datum/Ort-Zeile „Fr. | 30. Okt. | 19:00 Uhr | ORT".
     final parts = <String>[];
@@ -3144,8 +3299,43 @@ class _StartelfGraphic extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        _bgBase(),
-        // Großes Spielerbild unten, randabfallend (verschieb-/zoombar).
+        _bgBase(radial: true),
+        // Schlagschatten des (freigestellten) Spielers – optional, einstellbar.
+        if (mainBytes != null && posterShadow)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: FractionallySizedBox(
+              widthFactor: 1,
+              heightFactor: _kPosterMainHeightFactor,
+              child: Transform.translate(
+                offset: Offset(
+                  2 + 8 * (posterShadowStrength / 100),
+                  4 + 12 * (posterShadowStrength / 100),
+                ),
+                child: ImageFiltered(
+                  imageFilter: ui.ImageFilter.blur(
+                    sigmaX: 6 + 14 * (posterShadowStrength / 100),
+                    sigmaY: 6 + 14 * (posterShadowStrength / 100),
+                  ),
+                  child: Opacity(
+                    opacity: 0.2 + 0.55 * (posterShadowStrength / 100),
+                    child: ColorFiltered(
+                      colorFilter: const ColorFilter.mode(
+                        Colors.black,
+                        BlendMode.srcIn,
+                      ),
+                      child: Image.memory(
+                        mainBytes,
+                        fit: BoxFit.contain,
+                        gaplessPlayback: true,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // Großes Spielerbild unten (contain = nichts abgeschnitten; zoombar).
         if (mainBytes != null)
           Align(
             alignment: Alignment.bottomCenter,
@@ -3161,7 +3351,7 @@ class _StartelfGraphic extends StatelessWidget {
                   clipBehavior: Clip.none,
                   child: Image.memory(
                     mainBytes,
-                    fit: BoxFit.cover,
+                    fit: BoxFit.contain,
                     gaplessPlayback: true,
                   ),
                 ),
@@ -3253,12 +3443,15 @@ class _StartelfGraphic extends StatelessWidget {
                   maxLines: 1,
                   softWrap: false,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 58,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 2,
-                    height: 1.0,
+                  style: posterFontStyle(
+                    posterFont,
+                    const TextStyle(
+                      color: Colors.white,
+                      fontSize: 58,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                      height: 1.0,
+                    ),
                   ),
                 ),
               ),
@@ -3268,11 +3461,14 @@ class _StartelfGraphic extends StatelessWidget {
                   infoLine,
                   maxLines: 2,
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: _accent,
-                    fontSize: compact ? 12 : 14,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5,
+                  style: posterFontStyle(
+                    posterFont,
+                    TextStyle(
+                      color: _accent,
+                      fontSize: compact ? 12 : 14,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                    ),
                   ),
                 ),
               ],
@@ -3298,11 +3494,14 @@ class _StartelfGraphic extends StatelessWidget {
           ),
           TextSpan(
             text: name.toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.5,
+            style: posterFontStyle(
+              posterFont,
+              const TextStyle(
+                color: Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
             ),
           ),
         ],
