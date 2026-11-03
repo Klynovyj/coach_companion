@@ -25,6 +25,18 @@ import '../widgets/player_picker_page.dart';
 import '../widgets/team_logo.dart';
 import 'photo_editor_screen.dart';
 
+/// Globale Bildkorrektur („Profi-Finish") über der fertigen Grafik: wirkt nur
+/// auf das Gesamtbild (Ton/Tiefe), verändert KEINE Elemente/Positionen/Inhalte.
+/// Werte brightness/contrast/saturation/warmth −100..100, vignette 0..100.
+class _Grade {
+  bool on = false;
+  double brightness = 0;
+  double contrast = 0;
+  double saturation = 0;
+  double warmth = 0;
+  double vignette = 0;
+}
+
 /// Ein Spieler in der Startelf-Grafik (Nummer + Anzeigename, optional eine
 /// Positionsangabe – z.B. „Torwart").
 class StartelfPlayer {
@@ -432,6 +444,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Map<String, double> get _imgInner =>
       _imgInnerF.putIfAbsent(_designKey, () => {});
   bool _featherBusy = false;
+  // Profi-Finish (globale Bildkorrektur) je Design; wirkt nur aufs Gesamtbild.
+  final Map<String, _Grade> _gradeF = {};
+  _Grade get _grade => _gradeF.putIfAbsent(_designKey, () => _Grade());
+  bool _gradeBusy = false; // KI-Analyse läuft
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   String _mainSponsorMode = 'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
@@ -1690,6 +1706,73 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   }
 
   /// Die aktuell angezeigte Grafik als PNG-Bytes aufnehmen (1080 px breit).
+  /// Ton-Matrix: Helligkeit (Offset), Kontrast (Skalierung um 128), Wärme
+  /// (R leicht hoch, B leicht runter). Muster wie `_previewMatrix` im Editor.
+  List<double> _toneMatrix(_Grade g) {
+    final c = 1 + (g.contrast / 100) * 0.9; // 0.1 .. 1.9
+    final b = (g.brightness / 100) * 70; // Offset in 0..255
+    final t = 128 * (1 - c) + b;
+    final wr = (g.warmth / 100) * 22; // wärmer: R hoch, B runter
+    final wb = -(g.warmth / 100) * 22;
+    return [
+      c, 0, 0, 0, t + wr,
+      0, c, 0, 0, t,
+      0, 0, c, 0, t + wb,
+      0, 0, 0, 1, 0,
+    ];
+  }
+
+  /// Sättigungs-Matrix (luminanzbasiert). s=1 neutral.
+  List<double> _satMatrix(_Grade g) {
+    final s = (1 + (g.saturation / 100) * 0.9).clamp(0.0, 2.0);
+    const lr = 0.2126, lg = 0.7152, lb = 0.0722;
+    final sr = (1 - s) * lr, sg = (1 - s) * lg, sb = (1 - s) * lb;
+    return [
+      sr + s, sg, sb, 0, 0,
+      sr, sg + s, sb, 0, 0,
+      sr, sg, sb + s, 0, 0,
+      0, 0, 0, 1, 0,
+    ];
+  }
+
+  /// Legt das Profi-Finish (globale Korrektur) um die fertige Grafik. Wirkt nur
+  /// aufs Gesamtbild – Elemente/Positionen/Inhalte bleiben unverändert. Liegt in
+  /// der RepaintBoundary → live sichtbar UND im Export enthalten.
+  Widget _gradeWrap(Widget child) {
+    final g = _grade;
+    if (!g.on) return child;
+    Widget out = ColorFiltered(
+      colorFilter: ColorFilter.matrix(_satMatrix(g)),
+      child: ColorFiltered(
+        colorFilter: ColorFilter.matrix(_toneMatrix(g)),
+        child: child,
+      ),
+    );
+    if (g.vignette > 0) {
+      out = Stack(
+        fit: StackFit.expand,
+        children: [
+          out,
+          IgnorePointer(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: RadialGradient(
+                  radius: 0.95,
+                  colors: [
+                    Colors.transparent,
+                    Colors.black.withValues(alpha: (g.vignette / 100) * 0.6),
+                  ],
+                  stops: const [0.55, 1.0],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return out;
+  }
+
   Future<Uint8List?> _captureGraphicPng() => _capturePng(_boundaryKey);
 
   /// Nur die Hintergrund-Ebene (ohne Logos/Text/Sponsoren) als PNG.
@@ -1904,6 +1987,163 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     } finally {
       if (mounted) setState(() => _aiBusy = false);
     }
+  }
+
+  /// Verkleinert ein PNG auf höchstens [maxW] px Breite und gibt es als
+  /// JPEG-Data-URL zurück (spart Tokens für die KI-Analyse).
+  static String _downscaleToDataUrl(Uint8List png, {int maxW = 768}) {
+    final im = img.decodeImage(png);
+    if (im == null) return 'data:image/png;base64,${base64Encode(png)}';
+    final small = im.width > maxW ? img.copyResize(im, width: maxW) : im;
+    final jpg = img.encodeJpg(small, quality: 85);
+    return 'data:image/jpeg;base64,${base64Encode(jpg)}';
+  }
+
+  /// „Mit KI optimieren": nimmt die fertige Grafik, lässt die Vision-KI globale
+  /// Korrekturwerte (Helligkeit/Kontrast/Sättigung/Wärme/Tiefe) schätzen und
+  /// wendet sie als Profi-Finish an. Verändert KEINE Inhalte, nur das Gesamtbild.
+  Future<void> _aiFinish() async {
+    if (_gradeBusy || _aiBusy) return;
+    setState(() => _gradeBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final png = await _captureGraphicPng();
+      if (png == null || !mounted) return;
+      final dataUrl = await compute(_downscaleToDataUrl, png);
+      final vals = await CloudService.aiGrade(dataUrl);
+      if (vals == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Die KI hat keine Werte zurückgegeben.')),
+        );
+        return;
+      }
+      if (!mounted) return;
+      double num0(String k) {
+        final v = vals[k];
+        if (v is num) return v.toDouble();
+        if (v is String) return double.tryParse(v) ?? 0;
+        return 0;
+      }
+      setState(() {
+        final g = _grade;
+        g.brightness = num0('brightness').clamp(-100, 100).toDouble();
+        g.contrast = num0('contrast').clamp(-100, 100).toDouble();
+        g.saturation = num0('saturation').clamp(-100, 100).toDouble();
+        g.warmth = num0('warmth').clamp(-100, 100).toDouble();
+        g.vignette = num0('vignette').clamp(0, 100).toDouble();
+        g.on = true;
+      });
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('KI-Finish angewendet – mit den Reglern nachjustierbar.'),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(_aiErrorMessage(e)),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _gradeBusy = false);
+    }
+  }
+
+  /// Bedien-Panel „Profi-Finish": An/Aus, KI-Optimierung (falls freigeschaltet)
+  /// und Regler für die globale Bildkorrektur. Für alle Grafiktypen.
+  Widget _gradeControls() {
+    final g = _grade;
+    final canAi = context.watch<AppState>().canAiCoach;
+    Widget slider(
+      String label,
+      double value,
+      double min,
+      double max,
+      ValueChanged<double> onCh,
+    ) {
+      return Row(
+        children: [
+          SizedBox(
+            width: 96,
+            child: Text(label, style: const TextStyle(fontSize: 13)),
+          ),
+          Expanded(
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              onChanged: g.on ? onCh : null,
+            ),
+          ),
+          SizedBox(
+            width: 34,
+            child: Text(
+              value.round().toString(),
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return ExpansionTile(
+      leading: const Icon(Icons.auto_fix_high),
+      title: const Text('Profi-Finish (Gesamtbild)'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      children: [
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Finish anwenden'),
+          subtitle: const Text(
+            'Wirkt nur aufs Gesamtbild – Inhalte bleiben unverändert',
+          ),
+          value: g.on,
+          onChanged: (v) => setState(() => g.on = v),
+        ),
+        if (canAi)
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.tonalIcon(
+              onPressed: _gradeBusy ? null : _aiFinish,
+              icon: _gradeBusy
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.auto_awesome),
+              label: Text(_gradeBusy ? 'KI analysiert …' : 'Mit KI optimieren'),
+            ),
+          ),
+        const SizedBox(height: 4),
+        slider('Helligkeit', g.brightness, -100, 100,
+            (v) => setState(() => g.brightness = v)),
+        slider('Kontrast', g.contrast, -100, 100,
+            (v) => setState(() => g.contrast = v)),
+        slider('Sättigung', g.saturation, -100, 100,
+            (v) => setState(() => g.saturation = v)),
+        slider('Wärme', g.warmth, -100, 100,
+            (v) => setState(() => g.warmth = v)),
+        slider('Tiefe (Vignette)', g.vignette, 0, 100,
+            (v) => setState(() => g.vignette = v)),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton(
+            onPressed: () => setState(() {
+              g.brightness = 0;
+              g.contrast = 0;
+              g.saturation = 0;
+              g.warmth = 0;
+              g.vignette = 0;
+            }),
+            child: const Text('Zurücksetzen'),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Data-URL des aktuell gewählten Bild-Elements (Spieler oder Overlay), sonst
@@ -2976,7 +3216,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                         ),
                         RepaintBoundary(
                           key: _boundaryKey,
-                          child: _graphic(),
+                          child: _gradeWrap(_graphic()),
                         ),
                       ],
                     ),
@@ -3050,6 +3290,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  // Profi-Finish (globale Bildkorrektur) – für alle Grafiktypen.
+                  _gradeControls(),
+                  const SizedBox(height: 8),
                   // KI-Bearbeitung nur, wenn der Admin die Grafik-KI (Gemini)
                   // für diesen Nutzer freigeschaltet hat.
                   if (context.watch<AppState>().canAiImage) ...[

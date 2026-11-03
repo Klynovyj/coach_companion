@@ -81,6 +81,27 @@ SKIZZE (diagram) uebersichtlich halten:
 
 Antworte AUSSCHLIESSLICH mit dem JSON-Objekt.`;
 
+// Eigenes System-Prompt für den Bild-Finish (Modus `grade`): KEINE Übung,
+// sondern globale Tonwert-Empfehlungen für eine fertige Grafik.
+const GRADE_SYSTEM = `Du bist ein professioneller Bild-Retuscheur/Colorist.
+Du bekommst das fertig gestaltete Bild einer Fussball-Grafik (Spieltag/
+Aufstellung/Ergebnis). Beurteile NUR die globale Bildwirkung und empfiehl letzte
+Korrekturen, damit es professionell und knackig wie ein Profi-Poster aussieht.
+
+WICHTIG:
+- Du veraenderst NICHTS am Inhalt (keine Logos/Texte/Positionen) – die App legt
+  deine Werte nur als globalen Filter ueber das GESAMTE Bild.
+- Gib AUSSCHLIESSLICH dieses JSON zurueck (keine Erklaerung, kein Markdown):
+  { "brightness": number, "contrast": number, "saturation": number,
+    "warmth": number, "vignette": number }
+- Wertebereiche: brightness/contrast/saturation/warmth jeweils -100..100,
+  vignette 0..100 (Abdunkeln der Ecken = Tiefe/Fokus).
+- Ziel ist ein KRAEFTIGER, plakativer Poster-Look: tendenziell mehr Kontrast,
+  spuerbar mehr Tiefe (Vignette) und etwas mehr Saettigung – aber Hauttoene,
+  helle Logos und Text duerfen NICHT ausbrennen oder absaufen.
+- Ist das Bild schon sehr dunkel/flau/uebersaettigt, korrigiere entsprechend
+  gegen (Werte duerfen auch negativ sein).`;
+
 function textContent(s: string) {
   return [{ type: "text", text: s }];
 }
@@ -209,6 +230,30 @@ function buildMessages(body: Record<string, unknown>) {
       },
     ];
   }
+  if (mode === "grade") {
+    const dataUrl = String(body.image ?? "");
+    const m = dataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/s);
+    const mediaType = m ? m[1] : "image/jpeg";
+    const data = m ? m[2] : dataUrl;
+    return [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mediaType, data },
+          },
+          {
+            type: "text",
+            text:
+              `Dies ist die fertige Grafik. Beurteile die globale Bildwirkung ` +
+              `und gib die Korrekturwerte als JSON zurueck (brightness, ` +
+              `contrast, saturation, warmth, vignette).`,
+          },
+        ],
+      },
+    ];
+  }
   // generate
   return [
     {
@@ -258,7 +303,9 @@ Deno.serve(async (req) => {
     }
 
     const body = (await req.json()) as Record<string, unknown>;
+    const mode = String(body.mode ?? "generate");
     const messages = buildMessages(body);
+    const system = mode === "grade" ? GRADE_SYSTEM : SYSTEM;
 
     const headers: Record<string, string> = {
       "x-api-key": ANTHROPIC_API_KEY,
@@ -272,8 +319,8 @@ Deno.serve(async (req) => {
       headers,
       body: JSON.stringify({
         model: MODEL,
-        max_tokens: 4000,
-        system: SYSTEM,
+        max_tokens: mode === "grade" ? 300 : 4000,
+        system,
         messages,
       }),
     });
@@ -287,6 +334,10 @@ Deno.serve(async (req) => {
       .filter((p) => p.type === "text")
       .map((p) => p.text ?? "")
       .join("\n");
+    // Bild-Finish: nur die Korrekturwerte zurueckgeben (keine Uebung).
+    if (mode === "grade") {
+      return Response.json({ grade: extractJson(text) });
+    }
     const draft = extractJson(text);
     // KI-Skizzen immer auf neutrales "box"-Feld; grosse Tore -> Minitore.
     if (draft && typeof draft === "object") {

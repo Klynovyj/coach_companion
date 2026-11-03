@@ -162,6 +162,22 @@ class CloudService {
     return null;
   }
 
+  /// Profi-Finish: schickt die fertige Grafik (Data-URL) an „ai-coach" (Claude
+  /// Vision, Modus `grade`) und liefert NUR globale Korrekturwerte als Map
+  /// ({brightness, contrast, saturation, warmth, vignette}). Kein neues Bild –
+  /// der Inhalt bleibt unverändert. Wirft bei Fehlern (kein Key/Netz/Freigabe).
+  static Future<Map<String, dynamic>?> aiGrade(String imageDataUrl) async {
+    final res = await _c.functions.invoke(
+      'ai-coach',
+      body: {'mode': 'grade', 'image': imageDataUrl},
+    );
+    final data = res.data;
+    if (data is Map && data['grade'] is Map) {
+      return Map<String, dynamic>.from(data['grade'] as Map);
+    }
+    return null;
+  }
+
   /// KI-Bildbearbeitung: ruft die Edge-Function „ai-image" (Gemini) auf und
   /// liefert das Ergebnis-Bild als Bytes. [images] sind die Bausteine
   /// ({mime, data, role}; role z.B. base/home_logo/away_logo/sponsor/photo).
