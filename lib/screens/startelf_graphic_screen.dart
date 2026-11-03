@@ -295,14 +295,25 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Map<String, double> get _posterScale => _posterScaleF[_story]!;
   List<String> get _posterOrder => _posterOrderF[_story]!;
   String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
-  final List<({String id, String dataUrl})> _posterOverlays = []; // Overlays
-  int _posterOverlaySeq = 0; // eindeutige Overlay-IDs
-  // Eigene Textfelder (Inhalt/Font/Farbe je Text; Position je Format wie Overlays).
-  final List<String> _textIds = [];
-  final Map<String, String> _textContent = {};
-  final Map<String, String> _textFont = {};
-  final Map<String, String> _textColor = {}; // 'white' | 'accent' | 'black'
-  int _textSeq = 0;
+  // Komplett getrennte Designs je Format (Key _story): Spielerbild, Overlays und
+  // Textfelder – so können Story 9:16 und Post 1:1 andere Bilder/Texte haben.
+  final Map<bool, String?> _posterMainF = {true: null, false: null};
+  final Map<bool, List<({String id, String dataUrl})>> _posterOverlaysF = {
+    true: [],
+    false: [],
+  };
+  final Map<bool, List<String>> _textIdsF = {true: [], false: []};
+  final Map<bool, Map<String, String>> _textContentF = {true: {}, false: {}};
+  final Map<bool, Map<String, String>> _textFontF = {true: {}, false: {}};
+  final Map<bool, Map<String, String>> _textColorF = {true: {}, false: {}};
+  int _posterOverlaySeq = 0; // eindeutige Overlay-IDs (global)
+  int _textSeq = 0; // eindeutige Text-IDs (global)
+  List<({String id, String dataUrl})> get _posterOverlays =>
+      _posterOverlaysF[_story]!;
+  List<String> get _textIds => _textIdsF[_story]!;
+  Map<String, String> get _textContent => _textContentF[_story]!;
+  Map<String, String> get _textFont => _textFontF[_story]!;
+  Map<String, String> get _textColor => _textColorF[_story]!;
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
@@ -332,13 +343,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       if (p.place == _PhotoPlace.band) p.dataUrl,
   ];
 
-  /// Großes Spielerbild im Poster (erstes mit Platzierung „posterMain").
-  String? get _posterMain {
-    for (final p in _photos) {
-      if (p.place == _PhotoPlace.posterMain) return p.dataUrl;
-    }
-    return null;
-  }
+  /// Großes Spielerbild im Poster, je Format getrennt.
+  String? get _posterMain => _posterMainF[_story];
 
   /// Rundes Zweit-Foto (Badge) im Poster (erstes mit Platzierung „posterBadge").
   String? get _posterBadge {
@@ -642,14 +648,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
 
   /// Großes Spielerbild bzw. rundes Badge im Poster setzen. Quelle wählbar:
   /// Kader-Profilfoto (wenn [widget.teamId] vorhanden) oder Upload/Kamera.
-  Future<void> _addPosterPhoto(_PhotoPlace place) async {
-    final hasExisting = _photos.any((p) => p.place == place);
-    final src = await _askPosterSource(hasExisting: hasExisting);
+  /// Großes Spielerbild für das AKTUELLE Format setzen/entfernen.
+  Future<void> _addPosterMain() async {
+    final src = await _askPosterSource(hasExisting: _posterMain != null);
     if (src == null || !mounted) return;
     if (src == 'remove') {
-      setState(() => _photos.removeWhere((p) => p.place == place));
+      setState(() => _posterMainF[_story] = null);
       return;
     }
+    const place = _PhotoPlace.posterMain;
     final aspect = _photoAspect(place);
     final String? url = src == 'kader'
         ? await _pickKaderPhoto(aspect)
@@ -662,11 +669,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             maxSize: 2000, // höhere Auflösung fürs große Spielerbild
           );
     if (url == null || !mounted) return;
-    setState(() {
-      _photos.removeWhere((p) => p.place == place); // je Platzierung nur eins
-      _photos.add(_GraphicPhoto(url, place));
-      _photoCtrl.value = Matrix4.identity();
-    });
+    setState(() => _posterMainF[_story] = url);
   }
 
   /// Quelle für ein Poster-Foto abfragen: Kader / Galerie / Kamera (oder, wenn
@@ -1624,9 +1627,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     final sel = _posterSel;
     if (sel == null) return;
     if (sel == 'player') {
-      _photos.removeWhere((p) => p.place == _PhotoPlace.posterMain);
-      _photos.add(_GraphicPhoto(url, _PhotoPlace.posterMain));
-      _photoCtrl.value = Matrix4.identity();
+      _posterMainF[_story] = url;
     } else if (sel.startsWith('overlay_')) {
       final i = _posterOverlays.indexWhere((o) => o.id == sel);
       if (i >= 0) _posterOverlays[i] = (id: sel, dataUrl: url);
@@ -1973,17 +1974,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     if (url == null || !mounted) return;
     final id = 'overlay_${_posterOverlaySeq++}';
     setState(() {
-      _posterOverlays.add((id: id, dataUrl: url));
-      // In BEIDE Formate aufnehmen (gleiches Bild, eigene Position je Format).
-      for (final f in [true, false]) {
-        _posterOrderF[f]!.add(id);
-        _posterPosF[f]![id] = const Offset(0.5, 0.5);
-      }
+      _posterOverlays.add((id: id, dataUrl: url)); // nur aktuelles Format
+      _posterOrder.add(id);
+      _posterPos[id] = const Offset(0.5, 0.5);
       _posterSel = id;
     });
   }
 
-  /// Eigenes Textfeld hinzufügen. Kommt nach vorne und wird ausgewählt.
+  /// Eigenes Textfeld hinzufügen (aktuelles Format). Kommt nach vorne + gewählt.
   void _addPosterText() {
     final id = 'text_${_textSeq++}';
     setState(() {
@@ -1991,15 +1989,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _textContent[id] = 'TEXT';
       _textFont[id] = _posterFont;
       _textColor[id] = 'white';
-      for (final f in [true, false]) {
-        _posterOrderF[f]!.add(id);
-        _posterPosF[f]![id] = const Offset(0.5, 0.5);
-      }
+      _posterOrder.add(id);
+      _posterPos[id] = const Offset(0.5, 0.5);
       _posterSel = id;
     });
   }
 
-  /// Ein Overlay ODER Textfeld wieder entfernen (aus beiden Formaten).
+  /// Ein Overlay ODER Textfeld wieder entfernen (aktuelles Format).
   void _removePosterItem(String id) {
     setState(() {
       _posterOverlays.removeWhere((o) => o.id == id);
@@ -2007,11 +2003,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _textContent.remove(id);
       _textFont.remove(id);
       _textColor.remove(id);
-      for (final f in [true, false]) {
-        _posterOrderF[f]!.remove(id);
-        _posterPosF[f]!.remove(id);
-        _posterScaleF[f]!.remove(id);
-      }
+      _posterOrder.remove(id);
+      _posterPos.remove(id);
+      _posterScale.remove(id);
       if (_posterSel == id) _posterSel = null;
     });
   }
@@ -2055,7 +2049,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 label: Text(
                   _posterMain == null ? 'Spielerbild' : 'Spielerbild ✓',
                 ),
-                onPressed: () => _addPosterPhoto(_PhotoPlace.posterMain),
+                onPressed: _addPosterMain,
               ),
             ),
             const SizedBox(height: 6),
@@ -2123,17 +2117,33 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 style: TextStyle(fontSize: 10.5, color: Colors.grey),
               ),
             ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                const Text('Überschrift:', style: TextStyle(fontSize: 12)),
-                ChoiceChip(
-                  label: const Text('SPIELTAG'),
-                  selected: _annHeadMode == 'spieltag',
-                  onSelected: (_) => setState(() => _annHeadMode = 'spieltag'),
+            const SizedBox(height: 4),
+            Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                title: const Text(
+                  'Überschrift, Schrift, Sponsoren & Schatten',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
                 ),
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 6),
+                children: [
+                  Wrap(
+                    spacing: 6,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text(
+                        'Überschrift:',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      ChoiceChip(
+                        label: const Text('SPIELTAG'),
+                        selected: _annHeadMode == 'spieltag',
+                        onSelected: (_) =>
+                            setState(() => _annHeadMode = 'spieltag'),
+                      ),
                 ChoiceChip(
                   label: const Text('Heim/Auswärts'),
                   selected: _annHeadMode == 'auto',
@@ -2262,6 +2272,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 ],
               ),
             ],
+                ],
+              ),
+            ),
             if (_posterSel != null)
               Row(
                 children: [
@@ -2420,7 +2433,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               onSelectionChanged: (s) => setState(() => _story = s.first),
             ),
           ),
-          if (widget.isAnnouncement) _announcementControls(),
           Expanded(
             child: Center(
               child: Padding(
@@ -2492,6 +2504,22 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     ),
                   ),
                 ],
+              ),
+            ),
+          // Bedienung UNTER der Vorschau in einem scrollbaren Panel fester
+          // Höhe → die Vorschau oben bleibt groß und sichtbar.
+          if (widget.isAnnouncement)
+            DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+              ),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.42,
+                ),
+                child: SingleChildScrollView(child: _announcementControls()),
               ),
             ),
           SafeArea(
