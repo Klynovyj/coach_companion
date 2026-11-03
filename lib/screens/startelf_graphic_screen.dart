@@ -116,6 +116,15 @@ const Map<String, Offset> _kCenteredItemDefaults = {
   'sponsorbar': Offset(0.5, 0.90),
 };
 
+/// Default-Positionen der festen Blöcke in der Startelf-/Ergebnis-Grafik, wenn
+/// sie als frei bewegliche Elemente gerendert werden (grob wie die alte Spalte).
+const Map<String, Offset> _kStandardItemDefaults = {
+  'std_header': Offset(0.5, 0.12),
+  'std_info': Offset(0.5, 0.25),
+  'std_core': Offset(0.5, 0.56),
+  'std_sponsorbar': Offset(0.5, 0.92),
+};
+
 /// Textfarben für eigene Textfelder (key → Anzeigename).
 const Map<String, String> _kTextColors = {
   'white': 'Weiß',
@@ -454,12 +463,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   double _gScale0 = 1.0;
   double _gRot0 = 0.0;
   // Ankündigung: strukturelle Standard-Elemente vorbelegt. Ergebnis/Startelf:
-  // leer → nur selbst hinzugefügte Elemente liegen über dem festen Layout.
+  // die festen Blöcke (Kopf/Spielinfo/Aufstellung-oder-Ergebnis/Sponsoren) als
+  // frei bewegliche Elemente – eigene Bilder/Texte kommen oben drauf.
   List<String> get _posterOrder => _posterOrderF.putIfAbsent(
     _designKey,
     () => widget.isAnnouncement
         ? List<String>.from(_kPosterBaseOrder)
-        : <String>[],
+        : <String>['std_header', 'std_info', 'std_core', 'std_sponsorbar'],
   );
   List<({String id, String dataUrl})> get _posterOverlays =>
       _posterOverlaysF.putIfAbsent(_designKey, () => []);
@@ -3210,6 +3220,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         return 'Titel';
       case 'info':
         return 'Datum';
+      case 'std_header':
+        return 'Kopf/Logo';
+      case 'std_info':
+        return 'Spielinfo';
+      case 'std_core':
+        return widget.isResult ? 'Ergebnis' : 'Aufstellung';
+      case 'std_sponsorbar':
+        return 'Sponsoren';
       default:
         if (id.startsWith('overlay_')) return 'Bild';
         if (id.startsWith('text_')) return 'Text';
@@ -4286,12 +4304,13 @@ class _StartelfGraphic extends StatelessWidget {
       // Auf den Grafik-Bereich beschneiden – nichts ragt nach außen.
       return ClipRect(child: _announcementPosterLayout());
     }
-    // Ergebnis-/Startelf-Grafik: festes Layout + freie Nutzer-Elemente darüber.
-    final content = _standardLayout();
+    // Ergebnis-/Startelf-Grafik: nur der Hintergrund als Basis; Kopf, Spielinfo,
+    // Aufstellung/Ergebnis und Sponsoren liegen als FREIE Elemente darüber
+    // (siehe `_freeOverlayWrap` content() std_*), dazu eigene Bilder/Texte.
     final band = [
       for (final p in bandPhotos) TeamLogo.decode(p),
     ].whereType<Uint8List>().toList();
-    final base = band.isEmpty ? content : _withPhotoBand(band, content);
+    final base = band.isEmpty ? _bgBase() : _withPhotoBand(band, _bgBase());
     return ClipRect(child: _freeOverlayWrap(base));
   }
 
@@ -4338,7 +4357,10 @@ class _StartelfGraphic extends StatelessWidget {
   Widget? _rotationHandle(String? sel, double w, double h) {
     if (sel == null) return null;
     final pos =
-        posterItemPos[sel] ?? _kCenteredItemDefaults[sel] ?? const Offset(0.5, 0.5);
+        posterItemPos[sel] ??
+        _kStandardItemDefaults[sel] ??
+        _kCenteredItemDefaults[sel] ??
+        const Offset(0.5, 0.5);
     final rot = posterItemRot[sel] ?? 0.0;
     final cx = pos.dx * w, cy = pos.dy * h;
     const hd = 54.0; // Abstand des Griffs von der Mitte („nach oben")
@@ -4393,6 +4415,43 @@ class _StartelfGraphic extends StatelessWidget {
             if (mainBytes == null) return null;
             return _imageWithShadow(mainBytes, width: w * 0.6, height: h * 0.6);
           }
+          // Feste Blöcke der Startelf-/Ergebnis-Grafik als bewegliche Elemente.
+          switch (id) {
+            case 'std_header':
+              return SizedBox(width: w * 0.92, child: _header());
+            case 'std_info':
+              return announcement != null
+                  ? null
+                  : SizedBox(
+                      width: w * 0.92,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _matchInfo(),
+                          SizedBox(height: compact ? 8 : 14),
+                          _divider(),
+                        ],
+                      ),
+                    );
+            case 'std_core':
+              final core = result != null
+                  ? Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _scoreRow(),
+                        if (showScorers) ...[
+                          const SizedBox(height: 12),
+                          _scorersCardsBlock(),
+                        ],
+                      ],
+                    )
+                  : _lineupBlock();
+              return SizedBox(width: w * 0.9, child: core);
+            case 'std_sponsorbar':
+              return barSponsors.isEmpty
+                  ? null
+                  : SizedBox(width: w * 0.9, child: _sponsorBar());
+          }
           if (id.startsWith('text_')) {
             final t = posterTexts[id];
             if (t == null || t.text.trim().isEmpty) return null;
@@ -4420,6 +4479,7 @@ class _StartelfGraphic extends StatelessWidget {
         Widget el(String id, Widget child) {
           final pos =
               posterItemPos[id] ??
+              _kStandardItemDefaults[id] ??
               _kCenteredItemDefaults[id] ??
               const Offset(0.5, 0.5);
           final scale = posterItemScale[id] ?? 1.0;
@@ -4655,60 +4715,6 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Standard-Layout (Startelf bzw. Ergebnis ohne eigenen Foto-Bereich).
-  Widget _standardLayout() {
-    final pad = compact ? 16.0 : 20.0;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _bgBase(),
-        Padding(
-          padding: EdgeInsets.all(pad),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Kompakte Kopfleiste (Logo + Titel + Sponsor in EINER Zeile).
-              _header(),
-              SizedBox(height: compact ? 6 : 12),
-              if (announcement == null) _matchInfo(),
-              SizedBox(height: compact ? 7 : 18),
-              _divider(),
-              SizedBox(height: compact ? 7 : 16),
-              if (result != null) ...[
-                // Spielstand groß & fix (der Blickfang) …
-                _scoreRow(),
-                SizedBox(height: compact ? 10 : 14),
-                // … darunter die Torschützen (nur wenn aktiviert).
-                Expanded(
-                  child: showScorers
-                      ? FittedBox(
-                          fit: BoxFit.scaleDown,
-                          alignment: Alignment.topCenter,
-                          child: _scorersCardsBlock(),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ] else
-                Expanded(
-                  child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      alignment: Alignment.center,
-                      child: _lineupBlock(),
-                    ),
-                  ),
-                ),
-              if (barSponsors.isNotEmpty) ...[
-                SizedBox(height: compact ? 6 : 10),
-                _sponsorBar(),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
   /// Hintergrund-Basis: Verlauf, optional mit eigenem Hintergrundbild + Tönung.
   /// Wird von allen Layouts genutzt.
   Widget _bgBase({bool radial = false}) {
@@ -4835,24 +4841,24 @@ class _StartelfGraphic extends StatelessWidget {
               Text(
                 'PRÄSENTIERT VON',
                 style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.8),
-                  fontSize: compact ? 7 : 9,
-                  fontWeight: FontWeight.w700,
+                  color: Colors.white.withValues(alpha: 0.9),
+                  fontSize: compact ? 9 : 12,
+                  fontWeight: FontWeight.w800,
                   letterSpacing: 1.5,
                 ),
               ),
-              SizedBox(height: compact ? 3 : 4),
+              SizedBox(height: compact ? 4 : 6),
               ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: compact ? 118 : 150),
+                constraints: BoxConstraints(maxWidth: compact ? 150 : 200),
                 child: sponsorLogo != null
-                    ? _logoChip(sponsorLogo, height: compact ? 30 : 40)
+                    ? _logoChip(sponsorLogo, height: compact ? 44 : 58)
                     : Text(
                         mainSponsor!.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: Colors.white,
-                          fontSize: compact ? 14 : 18,
+                          fontSize: compact ? 18 : 24,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
