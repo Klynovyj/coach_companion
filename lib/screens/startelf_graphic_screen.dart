@@ -127,49 +127,87 @@ const Map<String, String> _kPosterFonts = {
 /// Entfernt einen einfarbigen Hintergrund (Studio/Einfarb) per Flood-Fill von
 /// den Bildrändern: Pixel, die der Eckfarbe ähneln, werden transparent. Läuft in
 /// einem Isolate (`compute`), damit die UI nicht hängt. Gibt PNG mit Alpha zurück.
-/// Weiche Kanten für ein (freigestelltes) Bild: zieht die Kante leicht nach
-/// innen (schneidet den Freistell-Saum weg) und blendet sie weich aus. Arbeitet
-/// nur auf dem Alpha-Kanal, läuft im Isolate. [args] = {data: Uint8List,
-/// amount: 0..100}.
-Uint8List featherImageEdges(Map<String, dynamic> args) {
+/// Bildeffekte für ein (freigestelltes) Bild, im Isolate:
+/// - weiche Kanten (Alpha schrumpfen + weichzeichnen, [feather] 0..100)
+/// - gerichteter innerer Schatten ([inner] 0..100, Richtung [angle] im Bogenmaß).
+/// [args] = {data: Uint8List, feather, inner, angle}.
+Uint8List applyImageFx(Map<String, dynamic> args) {
   final input = args['data'] as Uint8List;
-  final amount = (args['amount'] as num).toDouble();
-  if (amount <= 0) return input;
+  final feather = (args['feather'] as num).toDouble();
+  final inner = (args['inner'] as num).toDouble();
+  final angle = (args['angle'] as num).toDouble();
+  if (feather <= 0 && inner <= 0) return input;
   final src = img.decodeImage(input);
   if (src == null) return input;
   final im = src.convert(numChannels: 4);
   final w = im.width, h = im.height;
   if (w < 2 || h < 2) return input;
-  // Alpha-Kanal in ein 1-Kanal-Bild kopieren und weichzeichnen.
+  // Arbeits-Alpha als 1-Kanal-Bild.
   final aImg = img.Image(width: w, height: h, numChannels: 1);
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
       aImg.setPixelR(x, y, im.getPixel(x, y).a);
     }
   }
-  final radius = (1 + amount / 100 * 8).round();
-  final blurred = img.gaussianBlur(aImg, radius: radius);
-  // Remap: lo>0.5 zieht die Kante nach innen (Saum weg), Rampe = weiche Kante.
-  final lo = 0.18 + amount / 100 * 0.22;
-  final hi = lo + 0.28;
-  for (var y = 0; y < h; y++) {
-    for (var x = 0; x < w; x++) {
-      final bn = blurred.getPixel(x, y).r / 255.0;
-      var t = (bn - lo) / (hi - lo);
-      if (t < 0) {
-        t = 0;
-      } else if (t > 1) {
-        t = 1;
+  // 1) Weiche Kanten: Alpha weichzeichnen + nach innen ziehen.
+  if (feather > 0) {
+    final radius = (1 + feather / 100 * 8).round();
+    final blurred = img.gaussianBlur(aImg, radius: radius);
+    final lo = 0.18 + feather / 100 * 0.22;
+    final hi = lo + 0.28;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        final bn = blurred.getPixel(x, y).r / 255.0;
+        var t = (bn - lo) / (hi - lo);
+        if (t < 0) {
+          t = 0;
+        } else if (t > 1) {
+          t = 1;
+        }
+        final na = (t * 255).round();
+        final p = im.getPixel(x, y);
+        im.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), na);
+        aImg.setPixelR(x, y, na);
       }
-      final p = im.getPixel(x, y);
-      im.setPixelRgba(
-        x,
-        y,
-        p.r.toInt(),
-        p.g.toInt(),
-        p.b.toInt(),
-        (t * 255).round(),
-      );
+    }
+  }
+  // 2) Gerichteter innerer Schatten: Kantenband auf einer Seite abdunkeln.
+  if (inner > 0) {
+    final d = (4 + inner / 100 * 34).round();
+    final dx = (math.cos(angle) * d).round();
+    final dy = (math.sin(angle) * d).round();
+    final bandImg = img.Image(width: w, height: h, numChannels: 1);
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        final a0 = aImg.getPixel(x, y).r.toInt();
+        final sx = x + dx, sy = y + dy;
+        final a1 = (sx < 0 || sy < 0 || sx >= w || sy >= h)
+            ? 0
+            : aImg.getPixel(sx, sy).r.toInt();
+        final b = a0 - a1;
+        bandImg.setPixelR(x, y, b < 0 ? 0 : b);
+      }
+    }
+    final blurBand = img.gaussianBlur(
+      bandImg,
+      radius: (d / 2).round().clamp(1, 30),
+    );
+    final strength = 0.15 + inner / 100 * 0.75;
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        if (aImg.getPixel(x, y).r.toInt() == 0) continue;
+        final bn = blurBand.getPixel(x, y).r / 255.0;
+        final f = 1 - bn * strength;
+        final p = im.getPixel(x, y);
+        im.setPixelRgba(
+          x,
+          y,
+          (p.r.toInt() * f).round().clamp(0, 255),
+          (p.g.toInt() * f).round().clamp(0, 255),
+          (p.b.toInt() * f).round().clamp(0, 255),
+          p.a.toInt(),
+        );
+      }
     }
   }
   return Uint8List.fromList(img.encodePng(im));
@@ -370,10 +408,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   // Weiche Kanten je Bild-Element: Original-Bild + Stärke (0..100), je Layout.
   final Map<String, Map<String, String>> _imgOrigF = {};
   final Map<String, Map<String, double>> _imgFeatherF = {};
+  final Map<String, Map<String, double>> _imgInnerF = {};
   Map<String, String> get _imgOrig =>
       _imgOrigF.putIfAbsent(_designKey, () => {});
   Map<String, double> get _imgFeather =>
       _imgFeatherF.putIfAbsent(_designKey, () => {});
+  Map<String, double> get _imgInner =>
+      _imgInnerF.putIfAbsent(_designKey, () => {});
   bool _featherBusy = false;
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   String _mainSponsorMode = 'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
@@ -739,6 +780,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
         _posterMainF[_designKey] = null;
         _imgOrig.remove('player');
         _imgFeather.remove('player');
+        _imgInner.remove('player');
       });
       return;
     }
@@ -759,6 +801,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _posterMainF[_designKey] = url;
       _imgOrig['player'] = url;
       _imgFeather['player'] = 0;
+      _imgInner['player'] = 0;
     });
   }
 
@@ -1837,9 +1880,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     } else {
       return;
     }
-    // Neues Original für weiche Kanten; Feather zurücksetzen.
+    // Neues Original für Bildeffekte; Feather/innerer Schatten zurücksetzen.
     _imgOrig[sel] = url;
     _imgFeather[sel] = 0;
+    _imgInner[sel] = 0;
   }
 
   /// Setzt nur das ANGEZEIGTE Bild eines Elements (ohne Original zu ändern).
@@ -1852,13 +1896,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
-  /// Weiche Kanten auf das Element [id] anwenden (immer aus dem Original neu →
-  /// kein Verschlechtern). amount 0 = Originalkante.
-  Future<void> _applyFeather(String id) async {
+  /// Bildeffekte (weiche Kanten + innerer Schatten) auf das Element [id]
+  /// anwenden – immer aus dem Original neu berechnet (kein Verschlechtern).
+  Future<void> _applyImageFx(String id) async {
     final orig = _imgOrig[id];
     if (orig == null) return;
-    final amount = _imgFeather[id] ?? 0;
-    if (amount <= 0) {
+    final feather = _imgFeather[id] ?? 0;
+    final inner = _imgInner[id] ?? 0;
+    if (feather <= 0 && inner <= 0) {
       setState(() => _setImageById(id, orig));
       return;
     }
@@ -1866,16 +1911,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     if (bytes == null) return;
     setState(() => _featherBusy = true);
     try {
-      final out = await compute(featherImageEdges, {
+      final out = await compute(applyImageFx, {
         'data': bytes,
-        'amount': amount,
+        'feather': feather,
+        'inner': inner,
+        'angle': _posterShadowAngle * math.pi / 180,
       });
       if (!mounted) return;
       setState(
         () => _setImageById(id, 'data:image/png;base64,${base64Encode(out)}'),
       );
     } catch (_) {
-      // Weiche Kanten fehlgeschlagen – Bild bleibt wie es war.
+      // Bildeffekt fehlgeschlagen – Bild bleibt wie es war.
     } finally {
       if (mounted) setState(() => _featherBusy = false);
     }
@@ -2243,6 +2290,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _posterPos[id] = const Offset(0.5, 0.5);
       _imgOrig[id] = url;
       _imgFeather[id] = 0;
+      _imgInner[id] = 0;
       _posterSel = id;
     });
   }
@@ -2274,6 +2322,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _posterScale.remove(id);
       _imgOrig.remove(id);
       _imgFeather.remove(id);
+      _imgInner.remove(id);
       if (_posterSel == id) _posterSel = null;
     });
   }
@@ -2638,11 +2687,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             // Weiche Kanten – nur für Bild-Elemente (Spieler/Overlay).
             if (_posterSel != null &&
                 (_posterSel! == 'player' ||
-                    _posterSel!.startsWith('overlay_')))
+                    _posterSel!.startsWith('overlay_'))) ...[
               Row(
                 children: [
                   const SizedBox(
-                    width: 92,
+                    width: 110,
                     child: Text(
                       'Weiche Kanten',
                       style: TextStyle(fontSize: 12),
@@ -2659,7 +2708,31 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                                 setState(() => _imgFeather[_posterSel!] = v),
                       onChangeEnd: _featherBusy
                           ? null
-                          : (v) => _applyFeather(_posterSel!),
+                          : (v) => _applyImageFx(_posterSel!),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 110,
+                    child: Text(
+                      'Innerer Schatten',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _imgInner[_posterSel!] ?? 0,
+                      min: 0,
+                      max: 100,
+                      onChanged: _featherBusy
+                          ? null
+                          : (v) => setState(() => _imgInner[_posterSel!] = v),
+                      onChangeEnd: _featherBusy
+                          ? null
+                          : (v) => _applyImageFx(_posterSel!),
                     ),
                   ),
                   if (_featherBusy)
@@ -2670,6 +2743,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     ),
                 ],
               ),
+            ],
             // Editor für Datum ODER ein eigenes Textfeld (Inhalt mehrzeilig,
             // Schriftart, Farbe). Datum ist mit der Automatik-Zeile vorbelegt.
             if (_posterSel != null &&
