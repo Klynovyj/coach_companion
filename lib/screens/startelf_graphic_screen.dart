@@ -83,6 +83,7 @@ const double _kPosterMainHeightFactor = 0.68;
 
 /// Standard-Positionen (normiert 0..1) der frei verschiebbaren Poster-Elemente.
 const Map<String, Offset> _kPosterItemDefaults = {
+  'player': Offset(0.5, 0.72),
   'sponsor': Offset(0.5, 0.08),
   'logos': Offset(0.5, 0.18),
   'headline': Offset(0.5, 0.30),
@@ -190,11 +191,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   bool _posterShadow = false; // Schlagschatten beim freigestellten Spieler
   double _posterShadowStrength = 45; // 0..100
   double _posterShadowAngle = 45; // Richtung in Grad (0=rechts, 90=unten)
-  double _posterPlayerScale = 1.0; // Größe des Spielerbilds (0.5..2.5)
-  // Freies Positionieren/Skalieren je Element (sponsor/logos/headline/info/badge).
-  final Map<String, Offset> _posterPos = {}; // Position 0..1 (leer = Default)
-  final Map<String, double> _posterScale = {}; // Größe je Element (leer = 1.0)
+  // Einheitliche Ebenen: Spieler + Texte/Logos/Badge + Overlays, alle frei
+  // positionier-/skalierbar und in der Reihenfolge tauschbar. Transient je Grafik.
+  // Layout (Position/Größe/Reihenfolge) GETRENNT je Format (Story/Post), Key =
+  // _story – so beeinflussen sich 9:16 und 1:1 NICHT gegenseitig.
+  final Map<bool, Map<String, Offset>> _posterPosF = {true: {}, false: {}};
+  final Map<bool, Map<String, double>> _posterScaleF = {true: {}, false: {}};
+  final Map<bool, List<String>> _posterOrderF = {};
+  Map<String, Offset> get _posterPos => _posterPosF[_story]!;
+  Map<String, double> get _posterScale => _posterScaleF[_story]!;
+  List<String> get _posterOrder => _posterOrderF[_story]!;
   String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
+  final List<({String id, String dataUrl})> _posterOverlays = []; // Overlays
+  int _posterOverlaySeq = 0; // eindeutige Overlay-IDs
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
   List<Sponsor> _sponsors = [];
   GraphicSettings _settings = const GraphicSettings(id: 'local');
@@ -290,9 +299,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   static const double _storyW = 360, _storyH = 640;
   static const double _postW = 360, _postH = 360;
 
+  /// Standard-Ebenenreihenfolge (hinten → vorne).
+  static const List<String> _kPosterBaseOrder = [
+    'player',
+    'sponsor',
+    'logos',
+    'headline',
+    'info',
+    'badge',
+  ];
+
   @override
   void initState() {
     super.initState();
+    _posterOrderF[true] = List<String>.from(_kPosterBaseOrder);
+    _posterOrderF[false] = List<String>.from(_kPosterBaseOrder);
     _load();
   }
 
@@ -548,8 +569,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
 
   /// Quelle für ein Poster-Foto abfragen: Kader / Galerie / Kamera (oder, wenn
   /// schon eins gesetzt ist, Entfernen).
-  Future<String?> _askPosterSource({bool hasExisting = false}) =>
-      showModalBottomSheet<String>(
+  Future<String?> _askPosterSource({
+    bool hasExisting = false,
+    bool allowKader = true,
+  }) => showModalBottomSheet<String>(
         context: context,
         builder: (ctx) => SafeArea(
           child: Column(
@@ -565,7 +588,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                 ),
               ),
-              if (widget.teamId != null)
+              if (widget.teamId != null && allowKader)
                 ListTile(
                   leading: const Icon(Icons.groups),
                   title: const Text('Kader-Spieler wählen'),
@@ -1709,7 +1732,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     posterShadow: _posterShadow,
     posterShadowStrength: _posterShadowStrength,
     posterShadowAngle: _posterShadowAngle,
-    posterPlayerScale: _posterPlayerScale,
+    posterOrder: _posterOrder,
+    posterOverlays: {for (final o in _posterOverlays) o.id: o.dataUrl},
     posterItemPos: _posterPos,
     posterItemScale: _posterScale,
     posterSelected: _posterSel,
@@ -1721,6 +1745,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   /// Anzeigename eines Poster-Elements (für den Größe-Regler).
   String _posterItemLabel(String id) {
     switch (id) {
+      case 'player':
+        return 'Spieler';
       case 'sponsor':
         return 'Sponsor';
       case 'logos':
@@ -1732,8 +1758,60 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       case 'badge':
         return 'Foto';
       default:
-        return id;
+        return id.startsWith('overlay_') ? 'Bild' : id;
     }
+  }
+
+  /// Verschiebt ein Element in der Ebenen-Reihenfolge um eine Position
+  /// ([dir] +1 = nach vorne, -1 = nach hinten).
+  void _reorderPoster(String id, int dir) {
+    final i = _posterOrder.indexOf(id);
+    if (i < 0) return;
+    final j = i + dir;
+    if (j < 0 || j >= _posterOrder.length) return;
+    setState(() {
+      final tmp = _posterOrder[i];
+      _posterOrder[i] = _posterOrder[j];
+      _posterOrder[j] = tmp;
+    });
+  }
+
+  /// Eigenes Bild/Grafik als Overlay hinzufügen (Galerie/Kamera, Transparenz
+  /// bleibt erhalten). Neues Overlay kommt nach vorne und wird ausgewählt.
+  Future<void> _addPosterOverlay() async {
+    final src = await _askPosterSource(allowKader: false);
+    if (src == null || src == 'remove' || !mounted) return;
+    final url = await _pickImage(
+      asBackground: true,
+      source: src == 'camera' ? ImageSource.camera : ImageSource.gallery,
+      edit: true,
+      keepAlpha: true,
+      maxSize: 2000,
+    );
+    if (url == null || !mounted) return;
+    final id = 'overlay_${_posterOverlaySeq++}';
+    setState(() {
+      _posterOverlays.add((id: id, dataUrl: url));
+      // In BEIDE Formate aufnehmen (gleiches Bild, eigene Position je Format).
+      for (final f in [true, false]) {
+        _posterOrderF[f]!.add(id);
+        _posterPosF[f]![id] = const Offset(0.5, 0.5);
+      }
+      _posterSel = id;
+    });
+  }
+
+  /// Ein Overlay wieder entfernen (aus beiden Formaten).
+  void _removePosterOverlay(String id) {
+    setState(() {
+      _posterOverlays.removeWhere((o) => o.id == id);
+      for (final f in [true, false]) {
+        _posterOrderF[f]!.remove(id);
+        _posterPosF[f]!.remove(id);
+        _posterScaleF[f]!.remove(id);
+      }
+      if (_posterSel == id) _posterSel = null;
+    });
   }
 
   /// Steuerleiste für die Spielankündigung: Stil-Umschalter und – im Poster-Stil –
@@ -1809,6 +1887,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 'Freisteller entfernt den Foto-Hintergrund → dein Hintergrund '
                 'erscheint dahinter. Tipp: fertig freigestelltes PNG geht auch.',
                 style: TextStyle(fontSize: 10.5, color: Colors.grey),
+              ),
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: const Icon(Icons.add_photo_alternate, size: 18),
+                label: const Text('Bild/Grafik hinzufügen'),
+                onPressed: _addPosterOverlay,
               ),
             ),
             const SizedBox(height: 8),
@@ -1930,29 +2017,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 ],
               ),
             ],
-            if (_posterMain != null)
-              Row(
-                children: [
-                  const SizedBox(
-                    width: 64,
-                    child: Text('Spieler', style: TextStyle(fontSize: 12)),
-                  ),
-                  Expanded(
-                    child: Slider(
-                      value: _posterPlayerScale,
-                      min: 0.5,
-                      max: 2.5,
-                      onChanged: (v) =>
-                          setState(() => _posterPlayerScale = v),
-                    ),
-                  ),
-                ],
-              ),
             if (_posterSel != null)
               Row(
                 children: [
                   SizedBox(
-                    width: 64,
+                    width: 52,
                     child: Text(
                       _posterItemLabel(_posterSel!),
                       style: const TextStyle(fontSize: 12),
@@ -1969,6 +2038,26 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     ),
                   ),
                   IconButton(
+                    tooltip: 'Eine Ebene nach hinten',
+                    icon: const Icon(Icons.flip_to_back, size: 18),
+                    onPressed: () => _reorderPoster(_posterSel!, -1),
+                  ),
+                  IconButton(
+                    tooltip: 'Eine Ebene nach vorne',
+                    icon: const Icon(Icons.flip_to_front, size: 18),
+                    onPressed: () => _reorderPoster(_posterSel!, 1),
+                  ),
+                  if (_posterSel!.startsWith('overlay_'))
+                    IconButton(
+                      tooltip: 'Bild entfernen',
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        size: 18,
+                        color: Colors.red,
+                      ),
+                      onPressed: () => _removePosterOverlay(_posterSel!),
+                    ),
+                  IconButton(
                     tooltip: 'Auswahl aufheben',
                     icon: const Icon(Icons.close, size: 18),
                     onPressed: () => setState(() => _posterSel = null),
@@ -1976,9 +2065,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 ],
               ),
             const Text(
-              'Tipp: Spieler per „Spieler"-Regler skalieren. Jedes andere Element '
-              '(Sponsor, Logos, Überschrift, Datum) antippen zum Auswählen, dann '
-              'ziehen zum Verschieben und mit dem Größe-Regler skalieren.',
+              'Tipp: Element (auch der Spieler) antippen = auswählen, ziehen = '
+              'verschieben, Größe-Regler = skalieren, Vorne/Hinten = Ebene tauschen. '
+              '„Bild/Grafik hinzufügen" legt eigene Overlays dazu. Story 9:16 und '
+              'Post 1:1 werden getrennt eingestellt.',
               style: TextStyle(fontSize: 10.5, color: Colors.grey),
             ),
           ],
@@ -2425,7 +2515,8 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterShadow = false,
     this.posterShadowStrength = 45,
     this.posterShadowAngle = 45,
-    this.posterPlayerScale = 1.0,
+    this.posterOrder = const [],
+    this.posterOverlays = const {},
     this.posterItemPos = const {},
     this.posterItemScale = const {},
     this.posterSelected,
@@ -2473,7 +2564,8 @@ class _StartelfGraphic extends StatelessWidget {
   final bool posterShadow; // Schlagschatten beim freigestellten Spieler
   final double posterShadowStrength; // 0..100
   final double posterShadowAngle; // Richtung in Grad (0=rechts, 90=unten)
-  final double posterPlayerScale; // Größe des Spielerbilds
+  final List<String> posterOrder; // Ebenen-Reihenfolge (hinten → vorne)
+  final Map<String, String> posterOverlays; // id → Data-URL der Overlays
   final Map<String, Offset> posterItemPos; // Position je Element (0..1)
   final Map<String, double> posterItemScale; // Größe je Element
   final String? posterSelected; // aktuell gewähltes Element
@@ -3428,70 +3520,12 @@ class _StartelfGraphic extends StatelessWidget {
       }
     }
     final venue = (a.venue ?? '').trim();
+    final address = (a.address ?? '').trim();
     if (venue.isNotEmpty) parts.add(venue.toUpperCase());
-    final infoLine = parts.join('   |   ');
-
-    // Spielerbild (contain = nichts abgeschnitten), skalierbar + zoombar.
-    // Der Schatten liegt im GLEICHEN Zoom-/Verschiebe-Bereich wie der Spieler,
-    // damit er beim Ziehen/Zoomen/Skalieren immer mitgeht.
-    Widget? playerLayer;
-    if (mainBytes != null) {
-      final playerImg = Image.memory(
-        mainBytes,
-        fit: BoxFit.contain,
-        gaplessPlayback: true,
-      );
-      final dist = 6 + 22 * (posterShadowStrength / 100);
-      playerLayer = Align(
-        alignment: Alignment.bottomCenter,
-        child: Transform.scale(
-          scale: posterPlayerScale,
-          alignment: Alignment.bottomCenter,
-          child: FractionallySizedBox(
-            widthFactor: 1,
-            heightFactor: _kPosterMainHeightFactor,
-            child: ClipRect(
-              child: InteractiveViewer(
-                transformationController: photoController,
-                minScale: 0.4,
-                maxScale: 4,
-                boundaryMargin: const EdgeInsets.all(double.infinity),
-                clipBehavior: Clip.none,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (posterShadow)
-                      Transform.translate(
-                        offset: Offset(
-                          math.cos(posterShadowAngle * math.pi / 180) * dist,
-                          math.sin(posterShadowAngle * math.pi / 180) * dist,
-                        ),
-                        child: ImageFiltered(
-                          imageFilter: ui.ImageFilter.blur(
-                            sigmaX: 6 + 14 * (posterShadowStrength / 100),
-                            sigmaY: 6 + 14 * (posterShadowStrength / 100),
-                          ),
-                          child: Opacity(
-                            opacity: 0.2 + 0.55 * (posterShadowStrength / 100),
-                            child: ColorFiltered(
-                              colorFilter: const ColorFilter.mode(
-                                Colors.black,
-                                BlendMode.srcIn,
-                              ),
-                              child: playerImg,
-                            ),
-                          ),
-                        ),
-                      ),
-                    playerImg,
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-      );
+    if (address.isNotEmpty && address.toLowerCase() != venue.toLowerCase()) {
+      parts.add(address.toUpperCase());
     }
+    final infoLine = parts.join(' | ');
 
     // Einzelne, frei verschieb- und skalierbare Elemente.
     final Widget? sponsorW = mainSponsor == null
@@ -3534,17 +3568,21 @@ class _StartelfGraphic extends StatelessWidget {
     );
     final Widget? infoW = infoLine.isEmpty
         ? null
-        : Text(
-            infoLine,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            style: posterFontStyle(
-              posterFont,
-              TextStyle(
-                color: _accent,
-                fontSize: compact ? 12 : 14,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
+        : FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              infoLine,
+              maxLines: 1,
+              softWrap: false,
+              textAlign: TextAlign.center,
+              style: posterFontStyle(
+                posterFont,
+                TextStyle(
+                  color: _accent,
+                  fontSize: compact ? 12 : 14,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.3,
+                ),
               ),
             ),
           );
@@ -3576,9 +3614,83 @@ class _StartelfGraphic extends StatelessWidget {
     return LayoutBuilder(
       builder: (ctx, c) {
         final w = c.maxWidth, h = c.maxHeight;
+
+        // Inhalt je Element-ID (null = nicht vorhanden → wird übersprungen).
+        Widget? content(String id) {
+          switch (id) {
+            case 'player':
+              if (mainBytes == null) return null;
+              final playerImg = Image.memory(
+                mainBytes,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+              );
+              final dist = 6 + 22 * (posterShadowStrength / 100);
+              return SizedBox(
+                width: w - 2 * pad,
+                height: h * 0.6,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (posterShadow)
+                      Transform.translate(
+                        offset: Offset(
+                          math.cos(posterShadowAngle * math.pi / 180) * dist,
+                          math.sin(posterShadowAngle * math.pi / 180) * dist,
+                        ),
+                        child: ImageFiltered(
+                          imageFilter: ui.ImageFilter.blur(
+                            sigmaX: 6 + 14 * (posterShadowStrength / 100),
+                            sigmaY: 6 + 14 * (posterShadowStrength / 100),
+                          ),
+                          child: Opacity(
+                            opacity: 0.2 + 0.55 * (posterShadowStrength / 100),
+                            child: ColorFiltered(
+                              colorFilter: const ColorFilter.mode(
+                                Colors.black,
+                                BlendMode.srcIn,
+                              ),
+                              child: playerImg,
+                            ),
+                          ),
+                        ),
+                      ),
+                    playerImg,
+                  ],
+                ),
+              );
+            case 'sponsor':
+              return sponsorW;
+            case 'logos':
+              return logosW;
+            case 'headline':
+              return headlineW;
+            case 'info':
+              return infoW;
+            case 'badge':
+              return badgeW;
+            default:
+              final url = posterOverlays[id];
+              if (url == null) return null;
+              final bytes = TeamLogo.decode(url);
+              if (bytes == null) return null;
+              return SizedBox(
+                width: w * 0.4,
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                ),
+              );
+          }
+        }
+
         // Ein frei verschieb- und skalierbares Element (tippen = auswählen).
         Widget el(String id, Widget child) {
-          final pos = posterItemPos[id] ?? _kPosterItemDefaults[id]!;
+          final pos =
+              posterItemPos[id] ??
+              _kPosterItemDefaults[id] ??
+              const Offset(0.5, 0.5);
           final scale = posterItemScale[id] ?? 1.0;
           final selected = posterSelected == id;
           return Align(
@@ -3591,8 +3703,8 @@ class _StartelfGraphic extends StatelessWidget {
                 onPosterItemMove?.call(
                   id,
                   Offset(
-                    (pos.dx + d.delta.dx / w).clamp(0.03, 0.97),
-                    (pos.dy + d.delta.dy / h).clamp(0.02, 0.98),
+                    (pos.dx + d.delta.dx / w).clamp(-0.05, 1.05),
+                    (pos.dy + d.delta.dy / h).clamp(-0.05, 1.05),
                   ),
                 );
               },
@@ -3616,11 +3728,17 @@ class _StartelfGraphic extends StatelessWidget {
           );
         }
 
+        // Ebenen in Reihenfolge (hinten → vorne); fehlende Inhalte überspringen.
+        final layers = <Widget>[];
+        for (final id in posterOrder) {
+          final child = content(id);
+          if (child != null) layers.add(el(id, child));
+        }
+
         return Stack(
           fit: StackFit.expand,
           children: [
             _bgBase(radial: true),
-            ?playerLayer,
             // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar.
             Align(
               alignment: Alignment.topCenter,
@@ -3641,12 +3759,7 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               ),
             ),
-            // Frei verschieb-/skalierbare Elemente (tippen = auswählen, ziehen).
-            if (sponsorW != null) el('sponsor', sponsorW),
-            el('logos', logosW),
-            el('headline', headlineW),
-            if (infoW != null) el('info', infoW),
-            if (badgeW != null) el('badge', badgeW),
+            ...layers,
           ],
         );
       },

@@ -59,10 +59,10 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
       final decoded = img.decodeImage(_bytes);
       if (decoded != null) {
         final rotated = img.copyRotate(decoded, angle: 90);
+        // Transparenz automatisch behalten (sonst würde JPEG Weiß hinterlegen).
+        final alpha = widget.keepAlpha || rotated.hasAlpha;
         _bytes = Uint8List.fromList(
-          widget.keepAlpha
-              ? img.encodePng(rotated)
-              : img.encodeJpg(rotated, quality: 92),
+          alpha ? img.encodePng(rotated) : img.encodeJpg(rotated, quality: 92),
         );
         _rotation++;
         _ready = false; // neuer Crop-Key → wieder warten, bis bereit
@@ -105,8 +105,10 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
               ? img.copyResize(im, width: widget.maxSize)
               : img.copyResize(im, height: widget.maxSize);
         }
+        // Transparenz automatisch behalten (PNG), sonst JPEG → Weiß im Grund.
+        final alpha = widget.keepAlpha || im.hasAlpha;
         out = Uint8List.fromList(
-          widget.keepAlpha ? img.encodePng(im) : img.encodeJpg(im, quality: 85),
+          alpha ? img.encodePng(im) : img.encodeJpg(im, quality: 85),
         );
       }
     } catch (_) {
