@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
 import 'dart:math' as math;
@@ -352,6 +353,7 @@ class StartelfGraphicScreen extends StatefulWidget {
     this.result,
     this.announcement,
     this.teamId,
+    this.matchId,
   });
 
   /// Default-Titel (offizieller Teamname) und Default-Logo – werden genutzt,
@@ -377,6 +379,10 @@ class StartelfGraphicScreen extends StatefulWidget {
   /// null → nur Upload/Kamera als Bildquelle.
   final String? teamId;
 
+  /// Spiel-ID → Spielankündigungs-Design wird je Spiel gespeichert/geladen.
+  /// null → kein Speichern (z.B. Startelf/Ergebnis-Grafik).
+  final String? matchId;
+
   bool get isResult => result != null;
   bool get isAnnouncement => announcement != null;
 
@@ -384,7 +390,8 @@ class StartelfGraphicScreen extends StatefulWidget {
   State<StartelfGraphicScreen> createState() => _StartelfGraphicScreenState();
 }
 
-class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
+class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
+    with WidgetsBindingObserver {
   final GlobalKey _boundaryKey = GlobalKey();
   final GlobalKey _bgBoundaryKey = GlobalKey(); // nur die Hintergrund-Ebene
   bool _story = true; // true = Story 9:16, false = Post 1:1
@@ -450,6 +457,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   _Grade get _grade => _gradeF.putIfAbsent(_designKey, () => _Grade());
   bool _gradeBusy = false; // KI-Analyse läuft
   bool _fullEdit = false; // Vollbild-Editor (großes Canvas) offen?
+  // Speichern des Ankündigungs-Designs je Spiel (lokal + Cloud).
+  Timer? _saveTimer; // debounced Autosave
+  bool _designLoaded = false; // erst nach dem Laden speichern (nichts überschr.)
+  AppState? _appStateRef; // für Speichern in dispose (ohne context)
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   String _mainSponsorMode = 'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
@@ -579,13 +590,52 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _load();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _appStateRef = context.read<AppState>();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // App geht in den Hintergrund → den letzten Stand sichern.
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.detached) {
+      _flushSave();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _saveTimer?.cancel();
+    _flushSave(); // letzten Stand beim Verlassen sichern
     _photoCtrl.dispose();
     super.dispose();
+  }
+
+  /// Autosave anstoßen (debounced) – wird bei jeder Änderung aus build() gerufen.
+  void _scheduleSave() {
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 800), _flushSave);
+  }
+
+  /// Aktuelles Design sofort speichern (lokal + Cloud). No-op ohne matchId oder
+  /// bevor das Laden fertig ist (sonst würde leer gespeichert).
+  void _flushSave() {
+    _saveTimer?.cancel();
+    final id = widget.matchId;
+    if (id == null || !widget.isAnnouncement || !_designLoaded) return;
+    try {
+      _appStateRef?.saveAnnouncementDesign(id, jsonEncode(_designToJson()));
+    } catch (_) {
+      // Speichern fehlgeschlagen – nächste Änderung versucht es erneut.
+    }
   }
 
   Future<void> _load() async {
@@ -602,6 +652,214 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     // Lokale Einstellung (evtl. vor Existenz der Cloud-Tabelle angelegt) in die
     // Cloud nachschieben, damit sie auf anderen Geräten erscheint.
     state.pushGraphicSettingsToCloud();
+    // Gespeichertes Ankündigungs-Design dieses Spiels laden (erst Cloud→lokal
+    // frisch ziehen, dann lokal lesen). Danach ist Autosave scharf.
+    final mid = widget.matchId;
+    if (widget.isAnnouncement && mid != null) {
+      await state.refreshAnnouncementDesign(mid);
+      final json = await state.loadAnnouncementDesign(mid);
+      if (!mounted) return;
+      if (json != null && json.isNotEmpty) {
+        try {
+          _applyDesignJson(jsonDecode(json) as Map<String, dynamic>);
+          setState(() {});
+        } catch (_) {
+          // Beschädigtes/altes JSON → ignorieren, mit leerem Design starten.
+        }
+      }
+    }
+    _designLoaded = true;
+  }
+
+  /// Gesamten Editor-Zustand der Ankündigung als JSON (für Speichern je Spiel).
+  Map<String, dynamic> _designToJson() {
+    Map<String, dynamic> offMap(Map<String, Map<String, Offset>> m) => {
+      for (final e in m.entries)
+        e.key: {
+          for (final o in e.value.entries) o.key: [o.value.dx, o.value.dy],
+        },
+    };
+    Map<String, dynamic> dblMap(Map<String, Map<String, double>> m) => {
+      for (final e in m.entries) e.key: Map<String, double>.from(e.value),
+    };
+    Map<String, dynamic> strMap(Map<String, Map<String, String>> m) => {
+      for (final e in m.entries) e.key: Map<String, String>.from(e.value),
+    };
+    return {
+      'v': 1,
+      'pos': offMap(_posterPosF),
+      'scale': dblMap(_posterScaleF),
+      'rot': dblMap(_posterRotF),
+      'order': {for (final e in _posterOrderF.entries) e.key: e.value},
+      'main': {for (final e in _posterMainF.entries) e.key: e.value},
+      'overlays': {
+        for (final e in _posterOverlaysF.entries)
+          e.key: [
+            for (final o in e.value) {'id': o.id, 'dataUrl': o.dataUrl},
+          ],
+      },
+      'textIds': {for (final e in _textIdsF.entries) e.key: e.value},
+      'textContent': strMap(_textContentF),
+      'textFont': strMap(_textFontF),
+      'textColor': strMap(_textColorF),
+      'imgOrig': strMap(_imgOrigF),
+      'imgFeather': dblMap(_imgFeatherF),
+      'imgInner': dblMap(_imgInnerF),
+      'grade': {
+        for (final e in _gradeF.entries)
+          e.key: {
+            'on': e.value.on,
+            'b': e.value.brightness,
+            'c': e.value.contrast,
+            's': e.value.saturation,
+            'w': e.value.warmth,
+            'vig': e.value.vignette,
+          },
+      },
+      'headMode': _annHeadMode,
+      'headText': _annHeadText,
+      'logoDisc': _posterLogoDisc,
+      'shadow': _posterShadow,
+      'shadowStrength': _posterShadowStrength,
+      'shadowAngle': _posterShadowAngle,
+      'font': _posterFont,
+      'showMain': _showMainSponsor,
+      'mainMode': _mainSponsorMode,
+      'showOthers': _showOtherSponsors,
+      'story': _story,
+      'ovSeq': _posterOverlaySeq,
+      'txtSeq': _textSeq,
+    };
+  }
+
+  /// Gespeichertes Design in die transienten Maps zurückschreiben.
+  void _applyDesignJson(Map<String, dynamic> m) {
+    void fillOff(Map<String, Map<String, Offset>> t, dynamic src) {
+      t.clear();
+      if (src is Map) {
+        src.forEach((k, v) {
+          final inner = <String, Offset>{};
+          if (v is Map) {
+            v.forEach((ik, iv) {
+              if (iv is List && iv.length == 2) {
+                inner[ik.toString()] = Offset(
+                  (iv[0] as num).toDouble(),
+                  (iv[1] as num).toDouble(),
+                );
+              }
+            });
+          }
+          t[k.toString()] = inner;
+        });
+      }
+    }
+
+    void fillDbl(Map<String, Map<String, double>> t, dynamic src) {
+      t.clear();
+      if (src is Map) {
+        src.forEach((k, v) {
+          final inner = <String, double>{};
+          if (v is Map) {
+            v.forEach((ik, iv) {
+              if (iv is num) inner[ik.toString()] = iv.toDouble();
+            });
+          }
+          t[k.toString()] = inner;
+        });
+      }
+    }
+
+    void fillStr(Map<String, Map<String, String>> t, dynamic src) {
+      t.clear();
+      if (src is Map) {
+        src.forEach((k, v) {
+          final inner = <String, String>{};
+          if (v is Map) {
+            v.forEach((ik, iv) {
+              if (iv != null) inner[ik.toString()] = iv.toString();
+            });
+          }
+          t[k.toString()] = inner;
+        });
+      }
+    }
+
+    fillOff(_posterPosF, m['pos']);
+    fillDbl(_posterScaleF, m['scale']);
+    fillDbl(_posterRotF, m['rot']);
+    _posterOrderF.clear();
+    if (m['order'] is Map) {
+      (m['order'] as Map).forEach((k, v) {
+        if (v is List) {
+          _posterOrderF[k.toString()] = v.map((e) => e.toString()).toList();
+        }
+      });
+    }
+    _posterMainF.clear();
+    if (m['main'] is Map) {
+      (m['main'] as Map).forEach((k, v) {
+        _posterMainF[k.toString()] = v as String?;
+      });
+    }
+    _posterOverlaysF.clear();
+    if (m['overlays'] is Map) {
+      (m['overlays'] as Map).forEach((k, v) {
+        final list = <({String id, String dataUrl})>[];
+        if (v is List) {
+          for (final o in v) {
+            if (o is Map && o['id'] != null && o['dataUrl'] != null) {
+              list.add((id: o['id'].toString(), dataUrl: o['dataUrl'].toString()));
+            }
+          }
+        }
+        _posterOverlaysF[k.toString()] = list;
+      });
+    }
+    _textIdsF.clear();
+    if (m['textIds'] is Map) {
+      (m['textIds'] as Map).forEach((k, v) {
+        if (v is List) {
+          _textIdsF[k.toString()] = v.map((e) => e.toString()).toList();
+        }
+      });
+    }
+    fillStr(_textContentF, m['textContent']);
+    fillStr(_textFontF, m['textFont']);
+    fillStr(_textColorF, m['textColor']);
+    fillStr(_imgOrigF, m['imgOrig']);
+    fillDbl(_imgFeatherF, m['imgFeather']);
+    fillDbl(_imgInnerF, m['imgInner']);
+    _gradeF.clear();
+    if (m['grade'] is Map) {
+      (m['grade'] as Map).forEach((k, v) {
+        if (v is Map) {
+          _gradeF[k.toString()] = _Grade()
+            ..on = v['on'] == true
+            ..brightness = (v['b'] as num?)?.toDouble() ?? 0
+            ..contrast = (v['c'] as num?)?.toDouble() ?? 0
+            ..saturation = (v['s'] as num?)?.toDouble() ?? 0
+            ..warmth = (v['w'] as num?)?.toDouble() ?? 0
+            ..vignette = (v['vig'] as num?)?.toDouble() ?? 0;
+        }
+      });
+    }
+    if (m['headMode'] is String) _annHeadMode = m['headMode'];
+    if (m['headText'] is String) _annHeadText = m['headText'];
+    if (m['logoDisc'] is bool) _posterLogoDisc = m['logoDisc'];
+    if (m['shadow'] is bool) _posterShadow = m['shadow'];
+    if (m['shadowStrength'] is num) {
+      _posterShadowStrength = (m['shadowStrength'] as num).toDouble();
+    }
+    if (m['shadowAngle'] is num) {
+      _posterShadowAngle = (m['shadowAngle'] as num).toDouble();
+    }
+    if (m['font'] is String) _posterFont = m['font'];
+    if (m['showMain'] is bool) _showMainSponsor = m['showMain'];
+    if (m['mainMode'] is String) _mainSponsorMode = m['mainMode'];
+    if (m['showOthers'] is bool) _showOtherSponsors = m['showOthers'];
+    if (m['story'] is bool) _story = m['story'];
+    if (m['ovSeq'] is num) _posterOverlaySeq = (m['ovSeq'] as num).toInt();
+    if (m['txtSeq'] is num) _textSeq = (m['txtSeq'] as num).toInt();
   }
 
   // Effektive Anzeige-Werte (Einstellung überschreibt die Defaults).
@@ -3566,6 +3824,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+    // Jede Änderung (rebuild) stößt debounced das Speichern an – so bleibt immer
+    // der letzte Stand je Spiel erhalten.
+    if (widget.isAnnouncement && widget.matchId != null && _designLoaded) {
+      _scheduleSave();
     }
     if (widget.isAnnouncement && _fullEdit) return _buildEditor();
     return Scaffold(

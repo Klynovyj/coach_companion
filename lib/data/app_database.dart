@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 64;
+  static const _dbVersion = 65;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -535,6 +535,11 @@ class AppDatabase {
         'ALTER TABLE graphic_settings ADD COLUMN show_scorers INTEGER',
       );
     }
+    // v64 -> v65: Spielankündigungs-Design je Spiel (Positionen/Bilder/Finish),
+    // team-weit geteilt (lokal ohne team_id, die Cloud-Zeile bekommt es beim Push).
+    if (oldV < 65) {
+      await db.execute(_announcementDesignsTableSql);
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -552,6 +557,18 @@ class AppDatabase {
 
   // Aktivitäten-Feed: team-weit protokollierte Aktionen (lokal ohne team_id;
   // die Cloud-Zeile bekommt beim Push team_id ergänzt).
+  // Spielankündigung: gespeichertes Design je Spiel (JSON in `data`). Team-weit
+  // geteilt; lokal ohne team_id (die Cloud-Zeile bekommt es beim Push). PK = id
+  // = match.id → ein Design pro Spiel.
+  static const _announcementDesignsTableSql = '''
+      CREATE TABLE announcement_designs (
+        id TEXT PRIMARY KEY,
+        match_id TEXT,
+        data TEXT,
+        updated_at TEXT
+      )
+    ''';
+
   static const _activitiesTableSql = '''
       CREATE TABLE activities (
         id TEXT PRIMARY KEY,
@@ -1141,6 +1158,7 @@ class AppDatabase {
     await db.execute(
       'CREATE INDEX idx_session_items_session ON session_items (session_id)',
     );
+    await db.execute(_announcementDesignsTableSql);
 
     await db.execute('''
       CREATE TABLE settings (

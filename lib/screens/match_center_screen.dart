@@ -597,6 +597,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
             teamName: _ownTeam?.name ?? 'Heim',
             teamLogo: _ownTeam?.logoPath,
             teamId: _ownTeam?.id,
+            matchId: match.id,
             starters: const [],
             benchNames: const [],
             matchDate: match.kickoff,

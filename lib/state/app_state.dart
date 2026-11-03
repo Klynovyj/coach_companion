@@ -124,6 +124,8 @@ class AppState extends ChangeNotifier {
     'sponsors',
     'graphic_settings',
     'graphic_presets',
+    // Spielankündigung: gespeichertes Design je Spiel (Positionen/Bilder/Finish).
+    'announcement_designs',
     'match_ratings',
     'player_of_month',
     'activities',
@@ -265,6 +267,38 @@ class AppState extends ChangeNotifier {
       }
     }
     if (changed) notifyListeners();
+  }
+
+  /// Speichert das Design einer Spielankündigung (lokal + Cloud). [matchId] ist
+  /// zugleich die Zeilen-id (ein Design pro Spiel).
+  Future<void> saveAnnouncementDesign(String matchId, String data) =>
+      _repo.saveAnnouncementDesign(matchId, matchId, data);
+
+  /// Lädt das gespeicherte Design-JSON einer Spielankündigung (lokal), oder null.
+  Future<String?> loadAnnouncementDesign(String matchId) =>
+      _repo.getAnnouncementDesign(matchId);
+
+  /// Holt das Design eines Spiels frisch aus der Cloud in den lokalen Cache,
+  /// damit die letzte Version anderer Geräte sofort erscheint. No-op ohne
+  /// aktives Cloud-Team / fehlende Tabelle (dann bleibt der lokale Stand).
+  Future<void> refreshAnnouncementDesign(String matchId) async {
+    final teamId = _activeCloudTeamId;
+    if (teamId == null || !CloudService.ready || !CloudService.signedIn) return;
+    try {
+      final rows = await CloudService.fetchForTeam(
+        'announcement_designs',
+        teamId,
+      );
+      for (final r in rows) {
+        if (r['id'] != matchId) continue;
+        final map = Map<String, Object?>.from(r)..remove('team_id');
+        try {
+          await _repo.upsertRawById('announcement_designs', map);
+        } catch (_) {}
+      }
+    } catch (_) {
+      // Tabelle fehlt/nicht erreichbar – lokal weiterarbeiten.
+    }
   }
 
   /// Lädt die Cloud-Ereignisse eines Teams in den lokalen Cache. Gegner-

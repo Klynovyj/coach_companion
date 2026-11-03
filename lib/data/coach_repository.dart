@@ -127,6 +127,36 @@ class CoachRepository {
     _syncDelete(table, {'id': id});
   }
 
+  // -------------------------------------------- Spielankündigungs-Design
+  /// Speichert das Design einer Spielankündigung (JSON) je Spiel – lokal UND in
+  /// die Cloud gespiegelt (team-weit via `_upsertById`). [id] = `match.id`.
+  Future<void> saveAnnouncementDesign(
+    String id,
+    String matchId,
+    String data,
+  ) async {
+    await _upsertById('announcement_designs', {
+      'id': id,
+      'match_id': matchId,
+      'data': data,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    });
+  }
+
+  /// Liefert das gespeicherte Design-JSON eines Spiels (oder null).
+  Future<String?> getAnnouncementDesign(String id) async {
+    final db = await _db;
+    final rows = await db.query(
+      'announcement_designs',
+      columns: ['data'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['data'] as String?;
+  }
+
   // ---------------------------------------------------------------- Settings
   Future<String?> getSetting(String key) async {
     final db = await _db;
