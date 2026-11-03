@@ -284,36 +284,40 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   bool _posterShadow = false; // Schlagschatten beim freigestellten Spieler
   double _posterShadowStrength = 45; // 0..100
   double _posterShadowAngle = 45; // Richtung in Grad (0=rechts, 90=unten)
-  // Einheitliche Ebenen: Spieler + Texte/Logos/Badge + Overlays, alle frei
-  // positionier-/skalierbar und in der Reihenfolge tauschbar. Transient je Grafik.
-  // Layout (Position/Größe/Reihenfolge) GETRENNT je Format (Story/Post), Key =
-  // _story – so beeinflussen sich 9:16 und 1:1 NICHT gegenseitig.
-  final Map<bool, Map<String, Offset>> _posterPosF = {true: {}, false: {}};
-  final Map<bool, Map<String, double>> _posterScaleF = {true: {}, false: {}};
-  final Map<bool, List<String>> _posterOrderF = {};
-  Map<String, Offset> get _posterPos => _posterPosF[_story]!;
-  Map<String, double> get _posterScale => _posterScaleF[_story]!;
-  List<String> get _posterOrder => _posterOrderF[_story]!;
-  String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
-  // Komplett getrennte Designs je Format (Key _story): Spielerbild, Overlays und
-  // Textfelder – so können Story 9:16 und Post 1:1 andere Bilder/Texte haben.
-  final Map<bool, String?> _posterMainF = {true: null, false: null};
-  final Map<bool, List<({String id, String dataUrl})>> _posterOverlaysF = {
-    true: [],
-    false: [],
-  };
-  final Map<bool, List<String>> _textIdsF = {true: [], false: []};
-  final Map<bool, Map<String, String>> _textContentF = {true: {}, false: {}};
-  final Map<bool, Map<String, String>> _textFontF = {true: {}, false: {}};
-  final Map<bool, Map<String, String>> _textColorF = {true: {}, false: {}};
+  // Jede Kombination Format×Stil (Story/Post × Zentriert/Poster) ist ein EIGENES
+  // Layout: Spielerbild, Overlays, Texte und Position/Größe/Reihenfolge getrennt
+  // (Key `_designKey`, 4 Kombinationen). Lazy angelegt via putIfAbsent.
+  String get _designKey =>
+      '${_story ? 's' : 'p'}_${_annStyle == _AnnStyle.poster ? 'po' : 'ze'}';
+  final Map<String, Map<String, Offset>> _posterPosF = {};
+  final Map<String, Map<String, double>> _posterScaleF = {};
+  final Map<String, List<String>> _posterOrderF = {};
+  final Map<String, String?> _posterMainF = {};
+  final Map<String, List<({String id, String dataUrl})>> _posterOverlaysF = {};
+  final Map<String, List<String>> _textIdsF = {};
+  final Map<String, Map<String, String>> _textContentF = {};
+  final Map<String, Map<String, String>> _textFontF = {};
+  final Map<String, Map<String, String>> _textColorF = {};
   int _posterOverlaySeq = 0; // eindeutige Overlay-IDs (global)
   int _textSeq = 0; // eindeutige Text-IDs (global)
+  String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
+  Map<String, Offset> get _posterPos =>
+      _posterPosF.putIfAbsent(_designKey, () => {});
+  Map<String, double> get _posterScale =>
+      _posterScaleF.putIfAbsent(_designKey, () => {});
+  List<String> get _posterOrder => _posterOrderF.putIfAbsent(
+    _designKey,
+    () => List<String>.from(_kPosterBaseOrder),
+  );
   List<({String id, String dataUrl})> get _posterOverlays =>
-      _posterOverlaysF[_story]!;
-  List<String> get _textIds => _textIdsF[_story]!;
-  Map<String, String> get _textContent => _textContentF[_story]!;
-  Map<String, String> get _textFont => _textFontF[_story]!;
-  Map<String, String> get _textColor => _textColorF[_story]!;
+      _posterOverlaysF.putIfAbsent(_designKey, () => []);
+  List<String> get _textIds => _textIdsF.putIfAbsent(_designKey, () => []);
+  Map<String, String> get _textContent =>
+      _textContentF.putIfAbsent(_designKey, () => {});
+  Map<String, String> get _textFont =>
+      _textFontF.putIfAbsent(_designKey, () => {});
+  Map<String, String> get _textColor =>
+      _textColorF.putIfAbsent(_designKey, () => {});
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
@@ -343,8 +347,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       if (p.place == _PhotoPlace.band) p.dataUrl,
   ];
 
-  /// Großes Spielerbild im Poster, je Format getrennt.
-  String? get _posterMain => _posterMainF[_story];
+  /// Großes Spielerbild, je Layout (Format×Stil) getrennt.
+  String? get _posterMain => _posterMainF[_designKey];
 
   /// Rundes Zweit-Foto (Badge) im Poster (erstes mit Platzierung „posterBadge").
   String? get _posterBadge {
@@ -420,8 +424,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   @override
   void initState() {
     super.initState();
-    _posterOrderF[true] = List<String>.from(_kPosterBaseOrder);
-    _posterOrderF[false] = List<String>.from(_kPosterBaseOrder);
     _load();
   }
 
@@ -653,7 +655,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     final src = await _askPosterSource(hasExisting: _posterMain != null);
     if (src == null || !mounted) return;
     if (src == 'remove') {
-      setState(() => _posterMainF[_story] = null);
+      setState(() => _posterMainF[_designKey] = null);
       return;
     }
     const place = _PhotoPlace.posterMain;
@@ -669,7 +671,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             maxSize: 2000, // höhere Auflösung fürs große Spielerbild
           );
     if (url == null || !mounted) return;
-    setState(() => _posterMainF[_story] = url);
+    setState(() => _posterMainF[_designKey] = url);
   }
 
   /// Quelle für ein Poster-Foto abfragen: Kader / Galerie / Kamera (oder, wenn
@@ -1627,7 +1629,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     final sel = _posterSel;
     if (sel == null) return;
     if (sel == 'player') {
-      _posterMainF[_story] = url;
+      _posterMainF[_designKey] = url;
     } else if (sel.startsWith('overlay_')) {
       final i = _posterOverlays.indexWhere((o) => o.id == sel);
       if (i >= 0) _posterOverlays[i] = (id: sel, dataUrl: url);
@@ -2031,13 +2033,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             selected: {_annStyle},
             showSelectedIcon: false,
             onSelectionChanged: (s) => setState(() {
+              // Jeder Stil ist ein eigenes Layout (eigene Bilder/Positionen) –
+              // einfach umschalten, nichts zurücksetzen.
               _annStyle = s.first;
-              // Grundelemente auf das Preset des neuen Stils zurücksetzen
-              // (Overlays/Texte bleiben; nur aktuelles Format).
-              for (final id in _kPosterBaseOrder) {
-                _posterPos.remove(id);
-                _posterScale.remove(id);
-              }
+              _posterSel = null;
             }),
           ),
           ...[
@@ -3656,7 +3655,7 @@ class _StartelfGraphic extends StatelessWidget {
     // Einzelne, frei verschieb- und skalierbare Elemente.
     final Widget? sponsorW = mainSponsor == null
         ? null
-        : _presentedByText(mainSponsor!.name);
+        : _presentedBy(mainSponsor!);
     final Widget? sponsorbarW = barSponsors.isEmpty
         ? null
         : Row(
@@ -3919,6 +3918,50 @@ class _StartelfGraphic extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+
+  /// Hauptsponsor: „PRÄSENTIERT VON" + Logo (weißer Chip) falls vorhanden,
+  /// sonst als Text.
+  Widget _presentedBy(Sponsor s) {
+    final logoBytes = TeamLogo.decode(s.logo);
+    if (logoBytes == null) return _presentedByText(s.name);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          'PRÄSENTIERT VON',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.85),
+            fontSize: compact ? 8 : 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.5,
+          ),
+        ),
+        SizedBox(height: compact ? 3 : 5),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Image.memory(
+            logoBytes,
+            height: compact ? 26 : 34,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+          ),
+        ),
+      ],
     );
   }
 
