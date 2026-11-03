@@ -2898,7 +2898,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     setState(() => _posterSel = id);
     final isImage = id == 'player' || id.startsWith('overlay_');
     final isText = id.startsWith('text_') || id == 'info';
-    final removable = id.startsWith('overlay_') || id.startsWith('text_');
+    final delLabel = id == 'player'
+        ? 'Spielerbild entfernen'
+        : (id.startsWith('overlay_') || id.startsWith('text_'))
+            ? 'Element löschen'
+            : 'Element ausblenden';
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -3166,23 +3170,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         ],
                       ),
                     ],
-                    if (removable) ...[
-                      const SizedBox(height: 4),
-                      TextButton.icon(
-                        icon: const Icon(
-                          Icons.delete_outline,
-                          color: Colors.red,
-                        ),
-                        label: const Text(
-                          'Element löschen',
-                          style: TextStyle(color: Colors.red),
-                        ),
-                        onPressed: () {
-                          Navigator.pop(ctx);
-                          _removePosterItem(id);
-                        },
+                    const SizedBox(height: 4),
+                    TextButton.icon(
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: Colors.red,
                       ),
-                    ],
+                      label: Text(
+                        delLabel,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _removePosterItem(id);
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -3273,14 +3275,25 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Ein Overlay ODER Textfeld wieder entfernen (aktuelles Format).
   void _removePosterItem(String id) {
     setState(() {
+      if (id == 'player') {
+        // Spieler: nur das Bild entfernen (bleibt in der Reihenfolge, lässt sich
+        // über „Spielerbild" wieder hinzufügen).
+        _posterMainF[_designKey] = null;
+        _imgOrig.remove('player');
+        _imgFeather.remove('player');
+        _imgInner.remove('player');
+        if (_posterSel == 'player') _posterSel = null;
+        return;
+      }
       _posterOverlays.removeWhere((o) => o.id == id);
       _textIds.remove(id);
       _textContent.remove(id);
       _textFont.remove(id);
       _textColor.remove(id);
-      _posterOrder.remove(id);
+      _posterOrder.remove(id); // strukturelle Elemente werden ausgeblendet
       _posterPos.remove(id);
       _posterScale.remove(id);
+      _posterRot.remove(id);
       _imgOrig.remove(id);
       _imgFeather.remove(id);
       _imgInner.remove(id);
