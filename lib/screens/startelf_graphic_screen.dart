@@ -141,6 +141,31 @@ const Map<String, String> _kPosterFonts = {
 /// Entfernt einen einfarbigen Hintergrund (Studio/Einfarb) per Flood-Fill von
 /// den Bildrändern: Pixel, die der Eckfarbe ähneln, werden transparent. Läuft in
 /// einem Isolate (`compute`), damit die UI nicht hängt. Gibt PNG mit Alpha zurück.
+/// Normalisiert gewählte Bild-Bytes (im Isolate): dekodieren, auf [maxSize] px
+/// längste Kante verkleinern und als PNG (mit Alpha) bzw. JPEG neu kodieren.
+/// Nötig, weil manche Quellen (Google Fotos / sehr große Originale) Formate oder
+/// Auflösungen liefern, die der Zuschnitt-Editor nicht direkt rendert (→ schwarz).
+/// Scheitert die Dekodierung (z.B. HEIC), bleiben die Bytes unverändert.
+/// [args] = {data: Uint8List, keepAlpha: bool, maxSize: int}.
+Uint8List normalizeImageBytes(Map<String, dynamic> args) {
+  final data = args['data'] as Uint8List;
+  final keepAlpha = args['keepAlpha'] as bool? ?? false;
+  final maxSize = args['maxSize'] as int? ?? 2000;
+  final im = img.decodeImage(data);
+  if (im == null) return data;
+  var out = im;
+  final longer = im.width >= im.height ? im.width : im.height;
+  if (longer > maxSize) {
+    out = im.width >= im.height
+        ? img.copyResize(im, width: maxSize)
+        : img.copyResize(im, height: maxSize);
+  }
+  final alpha = keepAlpha && out.hasAlpha;
+  return Uint8List.fromList(
+    alpha ? img.encodePng(out) : img.encodeJpg(out, quality: 92),
+  );
+}
+
 /// Bildeffekte für ein (freigestelltes) Bild, im Isolate:
 /// - weiche Kanten (Alpha schrumpfen + weichzeichnen, [feather] 0..100)
 /// - gerichteter innerer Schatten ([inner] 0..100, Richtung [angle] im Bogenmaß).
@@ -471,6 +496,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   Timer? _saveTimer; // debounced Autosave
   bool _designLoaded = false; // erst nach dem Laden speichern (nichts überschr.)
   AppState? _appStateRef; // für Speichern in dispose (ohne context)
+  final GlobalKey _posterCanvasKey = GlobalKey(); // Koord. für den Dreh-Griff
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   String _mainSponsorMode = 'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
@@ -930,6 +956,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       );
       if (file == null) return null;
       var bytes = await file.readAsBytes();
+      // keepAlpha-Pfad liefert das ungedrosselte Original (z.B. aus Google Fotos,
+      // volle Auflösung) → der Zuschnitt-Editor zeigt sonst Schwarz. Normalisieren
+      // (verkleinern + als PNG/JPEG neu kodieren), damit es sicher rendert.
+      if (keepAlpha) {
+        try {
+          bytes = await compute(normalizeImageBytes, {
+            'data': bytes,
+            'keepAlpha': keepAlpha,
+            'maxSize': maxSize,
+          });
+        } catch (_) {
+          // Normalisierung fehlgeschlagen – Originalbytes weiterverwenden.
+        }
+      }
       // Vor dem Übernehmen bearbeiten (zuschneiden/drehen/Helligkeit/Kontrast).
       if (edit && mounted) {
         final edited = await Navigator.push<Uint8List?>(
@@ -2787,8 +2827,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _posterRot[id] = _gRot0 + d.rotation;
     }),
     onPosterLongPress: _showElementProperties,
+    onPosterRotateTo: (id, a) => setState(() => _posterRot[id] = a),
     onBackgroundLongPress: _showBackgroundMenu,
     onBackgroundTap: () => setState(() => _posterSel = null),
+    canvasKey: _posterCanvasKey,
     onPosterSelect: (id) => setState(() => _posterSel = id),
     posterFont: _posterFont,
     showMainSponsor: _showMainSponsor,
@@ -2802,7 +2844,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           color: _textColor[id] ?? 'white',
         ),
       // Datum („info") als editierbarer Override, falls gesetzt.
-      if (_textContent.containsKey('info'))
+      // Datum-Override auch, wenn NUR Schrift/Farbe geändert wurde (nicht nur
+      // bei geändertem Text) – sonst greift die Farbwahl beim Datum nicht.
+      if (_textContent.containsKey('info') ||
+          _textFont.containsKey('info') ||
+          _textColor.containsKey('info'))
         'info': (
           text: _textContent['info'] ?? '',
           font: _textFont['info'] ?? 'standard',
@@ -2818,21 +2864,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (c == 'black') return '#000000';
     if (c == 'accent') return _settings.accent ?? '#FFFFFF';
     return c;
-  }
-
-  /// Auswahl ein Element weiter/zurück schalten (◀▶) – schaltet zuverlässig
-  /// durch alle Elemente, auch kleine/überlappende.
-  void _stepSelection(int dir) {
-    final ids = _posterOrder;
-    if (ids.isEmpty) return;
-    final i = _posterSel == null ? -1 : ids.indexOf(_posterSel!);
-    final int ni;
-    if (i < 0) {
-      ni = dir > 0 ? 0 : ids.length - 1;
-    } else {
-      ni = ((i + dir) % ids.length + ids.length) % ids.length;
-    }
-    setState(() => _posterSel = ids[ni]);
   }
 
   /// Langdruck auf ein Element → Eigenschaften-Sheet (Größe, Drehung, Ebene,
@@ -3239,73 +3270,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   /// Element-Werkzeuge (im Vollbild-Editor): Auswahl (Antippen/Liste/Pfeile),
   /// Hinzufügen, gewähltes Element, Bild-Effekte, Text, Überschrift/Sponsoren.
-  Widget _editTools() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
-      child: Column(
-        children: [
-          ...[
-            const SizedBox(height: 6),
-            // Element direkt auswählen (auch dünne/überlappende wie „Datum").
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'Vorheriges Element',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.chevron_left),
-                  onPressed: () => _stepSelection(-1),
-                ),
-                Expanded(
-                  child: DropdownButton<String>(
-                    isExpanded: true,
-                    isDense: true,
-                    value: _posterOrder.contains(_posterSel) ? _posterSel : null,
-                    hint: const Text(
-                      'Element wählen (oder antippen) …',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    items: [
-                      for (final id in _posterOrder)
-                        DropdownMenuItem(
-                          value: id,
-                          child: Text(_posterItemLabel(id)),
-                        ),
-                    ],
-                    onChanged: (v) => setState(() => _posterSel = v),
-                  ),
-                ),
-                IconButton(
-                  tooltip: 'Nächstes Element',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.chevron_right),
-                  onPressed: () => _stepSelection(1),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.tonalIcon(
-                icon: const Icon(Icons.add, size: 20),
-                label: const Text('Hinzufügen & Hintergrund'),
-                onPressed: _showBackgroundMenu,
-              ),
-            ),
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: Text(
-                'Objekt antippen = wählen · lange drücken = Optionen · '
-                'Hintergrund lange drücken = hinzufügen',
-                style: TextStyle(fontSize: 10.5, color: Colors.grey),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   /// Zentrale Hintergrund-/Kopf-Eigenschaften (Überschrift, Schrift, Sponsoren,
   /// Logos, Schatten) – im Hintergrund-Menü. [refresh] aktualisiert das Sheet
   /// live (zusätzlich zum setState der Grafik dahinter).
@@ -3602,52 +3566,98 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     );
   }
 
-  /// Vollbild-Editor: großes Canvas + schlanke Werkzeugleiste (dieselben
-  /// Callbacks/State wie der Hauptscreen – nur mehr Platz zum Antippen/Ziehen).
+  /// Design dieses Formats komplett zurücksetzen (nach Rückfrage): entfernt alle
+  /// hinzugefügten Bilder/Texte/Positionen/Finish; das Grundlayout bleibt.
+  Future<void> _resetDesign() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Design zurücksetzen?'),
+        content: const Text(
+          'Alle hinzugefügten Bilder, Texte und Anpassungen dieses Formats '
+          'werden entfernt. Das Grundlayout bleibt.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Zurücksetzen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      final k = _designKey;
+      _posterPosF.remove(k);
+      _posterScaleF.remove(k);
+      _posterRotF.remove(k);
+      _posterOrderF.remove(k);
+      _posterMainF.remove(k);
+      _posterOverlaysF.remove(k);
+      _textIdsF.remove(k);
+      _textContentF.remove(k);
+      _textFontF.remove(k);
+      _textColorF.remove(k);
+      _imgOrigF.remove(k);
+      _imgFeatherF.remove(k);
+      _imgInnerF.remove(k);
+      _gradeF.remove(k);
+      _posterSel = null;
+    });
+  }
+
+  /// Vollbild-Editor: das Canvas nimmt (fast) den ganzen Schirm; der
+  /// „Hinzufügen & Hintergrund"-Button schwebt als FAB darüber. Hinzufügen geht
+  /// zusätzlich per Langdruck auf den Hintergrund, Objekt-Optionen per Langdruck.
   Widget _buildEditor() {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.check),
           tooltip: 'Fertig',
-          onPressed: () => setState(() => _fullEdit = false),
+          onPressed: () => setState(() {
+            _fullEdit = false;
+            _posterSel = null; // Auswahl aufheben → Hauptvorschau sauber
+          }),
         ),
         title: const Text('Bearbeiten'),
         actions: [
+          IconButton(
+            tooltip: 'Design zurücksetzen',
+            icon: const Icon(Icons.restart_alt),
+            onPressed: _resetDesign,
+          ),
           TextButton(
-            onPressed: () => setState(() => _fullEdit = false),
+            onPressed: () => setState(() {
+              _fullEdit = false;
+              _posterSel = null;
+            }),
             child: const Text('Fertig'),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Canvas nimmt den gesamten Rest → so groß wie möglich.
-          Expanded(
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: _previewStack(interactive: true),
-                ),
-              ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _showBackgroundMenu,
+        icon: const Icon(Icons.add),
+        label: const Text('Hinzufügen & Hintergrund'),
+      ),
+      // Canvas füllt den ganzen Body → maximal groß; der FAB liegt darüber.
+      body: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: FittedBox(
+              fit: BoxFit.contain,
+              child: _previewStack(interactive: true),
             ),
           ),
-          // Werkzeuge in einer kompakten, scrollbaren Leiste unten.
-          SizedBox(
-            height: MediaQuery.of(context).size.height * 0.34,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: Theme.of(context).dividerColor),
-                ),
-              ),
-              child: SingleChildScrollView(child: _editTools()),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -4104,8 +4114,10 @@ class _StartelfGraphic extends StatelessWidget {
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
     this.onPosterLongPress,
+    this.onPosterRotateTo,
     this.onBackgroundLongPress,
     this.onBackgroundTap,
+    this.canvasKey,
     this.onPosterSelect,
     this.posterFont = 'standard',
     this.showMainSponsor = true,
@@ -4165,8 +4177,12 @@ class _StartelfGraphic extends StatelessWidget {
   final void Function(String id, ScaleUpdateDetails details, double w, double h)?
       onPosterGestureUpdate;
   final void Function(String id)? onPosterLongPress; // Langdruck → Eigenschaften
+  // Dreh-Griff an der Seite: setzt die Drehung absolut (Radiant) für [id].
+  final void Function(String id, double angle)? onPosterRotateTo;
   final VoidCallback? onBackgroundLongPress; // Langdruck leere Fläche → hinzufügen
   final VoidCallback? onBackgroundTap; // Tippen leere Fläche → Auswahl aufheben
+  // Für Global→Local-Umrechnung des Dreh-Griffs (Zeiger im Canvas-Koordinaten).
+  final GlobalKey? canvasKey;
   final void Function(String id)? onPosterSelect;
   final String posterFont; // Schriftart der Poster-Texte
   final bool showMainSponsor; // Hauptsponsor-Element anzeigen
@@ -4252,6 +4268,53 @@ class _StartelfGraphic extends StatelessWidget {
         ),
         mk(),
       ],
+    );
+  }
+
+  /// Dreh-Griff (Kreis mit Icon) an der Seite des gewählten Elements: packen und
+  /// um die Mitte drehen. null, wenn nichts gewählt ist.
+  Widget? _rotationHandle(String? sel, double w, double h) {
+    if (sel == null) return null;
+    final pos =
+        posterItemPos[sel] ?? _kCenteredItemDefaults[sel] ?? const Offset(0.5, 0.5);
+    final rot = posterItemRot[sel] ?? 0.0;
+    final cx = pos.dx * w, cy = pos.dy * h;
+    const hd = 54.0; // Abstand des Griffs von der Mitte („nach oben")
+    final hx = cx + hd * math.sin(rot);
+    final hy = cy - hd * math.cos(rot);
+    return Positioned(
+      left: hx - 18,
+      top: hy - 18,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanUpdate: (d) {
+          final box =
+              canvasKey?.currentContext?.findRenderObject() as RenderBox?;
+          if (box == null) return;
+          final local = box.globalToLocal(d.globalPosition);
+          final ang = math.atan2(local.dy - cy, local.dx - cx) + math.pi / 2;
+          onPosterRotateTo?.call(sel, ang);
+        },
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 4,
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.rotate_right,
+            size: 20,
+            color: Colors.black87,
+          ),
+        ),
+      ),
     );
   }
 
@@ -4346,6 +4409,7 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               );
         return Stack(
+          key: canvasKey,
           fit: StackFit.expand,
           children: [
             base,
@@ -4359,6 +4423,8 @@ class _StartelfGraphic extends StatelessWidget {
             ),
             ...layers,
             ?dragLayer,
+            // Dreh-Griff (oben über allem, damit er die Geste bekommt).
+            ?_rotationHandle(sel, w, h),
           ],
         );
       },
@@ -5336,6 +5402,7 @@ class _StartelfGraphic extends StatelessWidget {
               );
 
         return Stack(
+          key: canvasKey,
           fit: StackFit.expand,
           children: [
             // Hintergrund-Gesten (unterste Ebene): Tippen auf leere Fläche =
@@ -5371,6 +5438,8 @@ class _StartelfGraphic extends StatelessWidget {
             ),
             ...layers,
             ?dragLayer,
+            // Dreh-Griff (oben über allem, damit er die Geste bekommt).
+            ?_rotationHandle(sel, w, h),
           ],
         );
       },
