@@ -3911,14 +3911,11 @@ class _StartelfGraphic extends StatelessWidget {
                             ? _kPosterItemDefaults
                             : _kCenteredItemDefaults)[sel] ??
                         const Offset(0.5, 0.5);
+                    // KEINE Grenze – frei platzierbar, auch ganz außerhalb.
+                    // (Solange ausgewählt, kann man es wieder zurückziehen.)
                     onPosterItemMove?.call(
                       sel,
-                      Offset(
-                        // Weit über den Rand erlaubt (Elemente dürfen teils aus
-                        // dem Bild ragen) – kein enges Limit mehr.
-                        (cur.dx + d.delta.dx / w).clamp(-0.6, 1.6),
-                        (cur.dy + d.delta.dy / h).clamp(-0.6, 1.6),
-                      ),
+                      Offset(cur.dx + d.delta.dx / w, cur.dy + d.delta.dy / h),
                     );
                   },
                 ),
