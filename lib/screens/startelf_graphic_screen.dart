@@ -448,6 +448,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   final Map<String, _Grade> _gradeF = {};
   _Grade get _grade => _gradeF.putIfAbsent(_designKey, () => _Grade());
   bool _gradeBusy = false; // KI-Analyse läuft
+  bool _fullEdit = false; // Vollbild-Editor (großes Canvas) offen?
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   String _mainSponsorMode = 'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
@@ -2526,6 +2527,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     return c;
   }
 
+  /// Auswahl ein Element weiter/zurück schalten (◀▶) – schaltet zuverlässig
+  /// durch alle Elemente, auch kleine/überlappende.
+  void _stepSelection(int dir) {
+    final ids = _posterOrder;
+    if (ids.isEmpty) return;
+    final i = _posterSel == null ? -1 : ids.indexOf(_posterSel!);
+    final int ni;
+    if (i < 0) {
+      ni = dir > 0 ? 0 : ids.length - 1;
+    } else {
+      ni = ((i + dir) % ids.length + ids.length) % ids.length;
+    }
+    setState(() => _posterSel = ids[ni]);
+  }
+
   /// Anzeigename eines Poster-Elements (für den Größe-Regler).
   String _posterItemLabel(String id) {
     switch (id) {
@@ -2623,10 +2639,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
 
   /// Steuerleiste für die Spielankündigung: Stil-Umschalter und – im Poster-Stil –
   /// Bilder-Buttons plus Überschrift-Auswahl.
+  /// Schlanker Hauptscreen-Block: Stil-Umschalter + großer „Bearbeiten"-Button.
+  /// Die element-schweren Werkzeuge stecken im Vollbild-Editor (_editTools).
   Widget _announcementControls() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           SegmentedButton<_AnnStyle>(
             segments: const [
@@ -2642,26 +2661,57 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             selected: {_annStyle},
             showSelectedIcon: false,
             onSelectionChanged: (s) => setState(() {
-              // Jeder Stil ist ein eigenes Layout (eigene Bilder/Positionen) –
-              // einfach umschalten, nichts zurücksetzen.
               _annStyle = s.first;
               _posterSel = null;
             }),
           ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () => setState(() => _fullEdit = true),
+              icon: const Icon(Icons.edit),
+              label: const Text('Bearbeiten (Vollbild)'),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'Tippe aufs Bild oder „Bearbeiten", um Elemente groß zu platzieren.',
+              style: TextStyle(fontSize: 10.5, color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Element-Werkzeuge (im Vollbild-Editor): Auswahl (Antippen/Liste/Pfeile),
+  /// Hinzufügen, gewähltes Element, Bild-Effekte, Text, Überschrift/Sponsoren.
+  Widget _editTools() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Column(
+        children: [
           ...[
             const SizedBox(height: 6),
             // Element direkt auswählen (auch dünne/überlappende wie „Datum").
             Row(
               children: [
-                const Text('Element:', style: TextStyle(fontSize: 12)),
-                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Vorheriges Element',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.chevron_left),
+                  onPressed: () => _stepSelection(-1),
+                ),
                 Expanded(
                   child: DropdownButton<String>(
                     isExpanded: true,
                     isDense: true,
                     value: _posterOrder.contains(_posterSel) ? _posterSel : null,
                     hint: const Text(
-                      'wählen (dann ziehen/skalieren) …',
+                      'Element wählen (oder antippen) …',
                       style: TextStyle(fontSize: 12),
                     ),
                     items: [
@@ -2673,6 +2723,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     ],
                     onChanged: (v) => setState(() => _posterSel = v),
                   ),
+                ),
+                IconButton(
+                  tooltip: 'Nächstes Element',
+                  visualDensity: VisualDensity.compact,
+                  icon: const Icon(Icons.chevron_right),
+                  onPressed: () => _stepSelection(1),
                 ),
               ],
             ),
@@ -3147,13 +3203,97 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     );
   }
 
+  /// Die Vorschau-/Canvas-Fläche (feste logische Größe). [interactive]=true →
+  /// Elemente antippen/ziehen (im Vollbild-Editor). [interactive]=false am
+  /// Hauptscreen: bei der Ankündigung nicht fummelig – Tippen öffnet stattdessen
+  /// den Editor (Spieler-Ebene ignoriert Gesten).
+  Widget _previewStack({required bool interactive}) {
+    final w = _story ? _storyW : _postW;
+    final h = _story ? _storyH : _postH;
+    final mainGraphic = RepaintBoundary(
+      key: _boundaryKey,
+      child: _gradeWrap(_graphic()),
+    );
+    // Nur die Ankündigung hat den freien Element-Editor; andere Grafiktypen
+    // behalten ihre eigenen Gesten (z.B. Band-Foto zoomen).
+    final lockForTap = widget.isAnnouncement && !interactive;
+    final stack = SizedBox(
+      width: w,
+      height: h,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Verdeckte Hintergrund-Ebene (nur Verlauf/Foto) für „Nur Hintergrund".
+          RepaintBoundary(
+            key: _bgBoundaryKey,
+            child: _graphic(backgroundOnly: true),
+          ),
+          lockForTap ? IgnorePointer(child: mainGraphic) : mainGraphic,
+        ],
+      ),
+    );
+    if (!lockForTap) return stack;
+    return GestureDetector(
+      onTap: () => setState(() => _fullEdit = true),
+      child: stack,
+    );
+  }
+
+  /// Vollbild-Editor: großes Canvas + schlanke Werkzeugleiste (dieselben
+  /// Callbacks/State wie der Hauptscreen – nur mehr Platz zum Antippen/Ziehen).
+  Widget _buildEditor() {
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(
+          icon: const Icon(Icons.check),
+          tooltip: 'Fertig',
+          onPressed: () => setState(() => _fullEdit = false),
+        ),
+        title: const Text('Bearbeiten'),
+        actions: [
+          TextButton(
+            onPressed: () => setState(() => _fullEdit = false),
+            child: const Text('Fertig'),
+          ),
+        ],
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: _previewStack(interactive: true),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            flex: 2,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Theme.of(context).dividerColor),
+                ),
+              ),
+              child: SingleChildScrollView(child: _editTools()),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final w = _story ? _storyW : _postW;
-    final h = _story ? _storyH : _postH;
+    if (widget.isAnnouncement && _fullEdit) return _buildEditor();
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -3202,25 +3342,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 padding: const EdgeInsets.all(8),
                 child: FittedBox(
                   fit: BoxFit.contain,
-                  child: SizedBox(
-                    width: w,
-                    height: h,
-                    child: Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // Verdeckte Hintergrund-Ebene (nur Verlauf/Foto) für
-                        // „Nur Hintergrund speichern".
-                        RepaintBoundary(
-                          key: _bgBoundaryKey,
-                          child: _graphic(backgroundOnly: true),
-                        ),
-                        RepaintBoundary(
-                          key: _boundaryKey,
-                          child: _gradeWrap(_graphic()),
-                        ),
-                      ],
-                    ),
-                  ),
+                  child: _previewStack(interactive: false),
                 ),
               ),
             ),
@@ -3272,16 +3394,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
           // Bedienung UNTER der Vorschau in einem scrollbaren Panel fester
           // Höhe → die Vorschau oben bleibt groß und sichtbar.
           if (widget.isAnnouncement)
-            Expanded(
-              flex: 2,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border(
-                    top: BorderSide(color: Theme.of(context).dividerColor),
-                  ),
+            DecoratedBox(
+              decoration: BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: Theme.of(context).dividerColor),
                 ),
-                child: SingleChildScrollView(child: _announcementControls()),
               ),
+              child: _announcementControls(),
             ),
           SafeArea(
             top: false,
