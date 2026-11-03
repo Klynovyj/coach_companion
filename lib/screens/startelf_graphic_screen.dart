@@ -89,7 +89,6 @@ class AnnouncementData {
 enum _PhotoPlace { background, band, posterMain, posterBadge }
 
 /// Stil der Spielankündigung: zentriert (bisher) oder Spieler-Poster.
-enum _AnnStyle { zentriert, poster }
 
 /// Höhenanteil des großen Spielerbilds im Poster (unterer, randabfallender Teil).
 /// Steuert zugleich das Zuschnitt-Seitenverhältnis (WYSIWYG).
@@ -389,20 +388,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   final GlobalKey _boundaryKey = GlobalKey();
   final GlobalKey _bgBoundaryKey = GlobalKey(); // nur die Hintergrund-Ebene
   bool _story = true; // true = Story 9:16, false = Post 1:1
-  // Spielankündigung: Stil (zentriert/Poster), Überschrift-Modus & -Text.
-  // Alles transient je Grafik (kein Speichern/Sync).
-  _AnnStyle _annStyle = _AnnStyle.zentriert;
+  // Spielankündigung: Überschrift-Modus & -Text. Transient je Grafik (kein Sync).
   String _annHeadMode = 'spieltag'; // 'spieltag' | 'auto' | 'custom'
   String _annHeadText = 'SPIELTAG';
   bool _posterLogoDisc = true; // heller Kreis hinter den Logos (Sichtbarkeit)
   bool _posterShadow = false; // Schlagschatten beim freigestellten Spieler
   double _posterShadowStrength = 45; // 0..100
   double _posterShadowAngle = 45; // Richtung in Grad (0=rechts, 90=unten)
-  // Jede Kombination Format×Stil (Story/Post × Zentriert/Poster) ist ein EIGENES
-  // Layout: Spielerbild, Overlays, Texte und Position/Größe/Reihenfolge getrennt
-  // (Key `_designKey`, 4 Kombinationen). Lazy angelegt via putIfAbsent.
-  String get _designKey =>
-      '${_story ? 's' : 'p'}_${_annStyle == _AnnStyle.poster ? 'po' : 'ze'}';
+  // Pro Format (Story/Post) ein EIGENES Layout: Spielerbild, Overlays, Texte und
+  // Position/Größe/Reihenfolge getrennt (Key `_designKey`). Lazy via putIfAbsent.
+  String get _designKey => _story ? 's' : 'p';
   final Map<String, Map<String, Offset>> _posterPosF = {};
   final Map<String, Map<String, double>> _posterScaleF = {};
   final Map<String, Map<String, double>> _posterRotF = {}; // Drehung (rad) je Elem.
@@ -2488,7 +2483,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     ),
     onInfoMoveEnd: () =>
         context.read<AppState>().saveGraphicSettings(_settings),
-    posterStyle: _annStyle == _AnnStyle.poster,
+    posterStyle: false,
     posterHeadline: _posterHeadline,
     posterMain: _posterMain,
     posterBadge: _posterBadge,
@@ -2509,11 +2504,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     },
     onPosterGestureUpdate: (id, d, w, h) => setState(() {
       final cur =
-          _posterPos[id] ??
-          (_annStyle == _AnnStyle.poster
-              ? _kPosterItemDefaults
-              : _kCenteredItemDefaults)[id] ??
-          const Offset(0.5, 0.5);
+          _posterPos[id] ?? _kCenteredItemDefaults[id] ?? const Offset(0.5, 0.5);
       // Ein Finger = verschieben; zwei Finger = zusätzlich skalieren + drehen.
       _posterPos[id] = Offset(
         cur.dx + d.focalPointDelta.dx / w,
@@ -2928,35 +2919,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     });
   }
 
-  /// Steuerleiste für die Spielankündigung: Stil-Umschalter und – im Poster-Stil –
-  /// Bilder-Buttons plus Überschrift-Auswahl.
-  /// Schlanker Hauptscreen-Block: Stil-Umschalter + großer „Bearbeiten"-Button.
-  /// Die element-schweren Werkzeuge stecken im Vollbild-Editor (_editTools).
+  /// Schlanker Hauptscreen-Block: großer „Bearbeiten"-Button. Die element-
+  /// schweren Werkzeuge stecken im Vollbild-Editor (_editTools).
   Widget _announcementControls() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          SegmentedButton<_AnnStyle>(
-            segments: const [
-              ButtonSegment(
-                value: _AnnStyle.zentriert,
-                label: Text('Zentriert'),
-              ),
-              ButtonSegment(
-                value: _AnnStyle.poster,
-                label: Text('Spieler-Poster'),
-              ),
-            ],
-            selected: {_annStyle},
-            showSelectedIcon: false,
-            onSelectionChanged: (s) => setState(() {
-              _annStyle = s.first;
-              _posterSel = null;
-            }),
-          ),
-          const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
