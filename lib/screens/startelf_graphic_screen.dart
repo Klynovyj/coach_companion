@@ -319,6 +319,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   Map<String, String> get _textColor =>
       _textColorF.putIfAbsent(_designKey, () => {});
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
+  String _mainSponsorMode = 'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
   List<Sponsor> _sponsors = [];
@@ -1915,6 +1916,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     posterFont: _posterFont,
     showMainSponsor: _showMainSponsor,
     showOtherSponsors: _showOtherSponsors,
+    mainSponsorMode: _mainSponsorMode,
     posterTexts: {
       for (final id in _textIds)
         id: (
@@ -2199,6 +2201,26 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               value: _showMainSponsor,
               onChanged: (v) => setState(() => _showMainSponsor = v),
             ),
+            if (_showMainSponsor)
+              Row(
+                children: [
+                  const Text('Hauptsponsor:', style: TextStyle(fontSize: 12)),
+                  const SizedBox(width: 8),
+                  ChoiceChip(
+                    label: const Text('Logo'),
+                    selected: _mainSponsorMode == 'logo',
+                    onSelected: (_) =>
+                        setState(() => _mainSponsorMode = 'logo'),
+                  ),
+                  const SizedBox(width: 6),
+                  ChoiceChip(
+                    label: const Text('Text'),
+                    selected: _mainSponsorMode == 'text',
+                    onSelected: (_) =>
+                        setState(() => _mainSponsorMode = 'text'),
+                  ),
+                ],
+              ),
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
@@ -2848,6 +2870,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterFont = 'standard',
     this.showMainSponsor = true,
     this.showOtherSponsors = true,
+    this.mainSponsorMode = 'logo',
     this.posterTexts = const {},
   });
 
@@ -2900,6 +2923,7 @@ class _StartelfGraphic extends StatelessWidget {
   final String posterFont; // Schriftart der Poster-Texte
   final bool showMainSponsor; // Hauptsponsor-Element anzeigen
   final bool showOtherSponsors; // weitere Sponsoren (Logo-Reihe) anzeigen
+  final String mainSponsorMode; // 'logo' | 'text' – Hauptsponsor-Darstellung
   // Eigene Textfelder: id → (Inhalt, Schriftart, Farb-Key).
   final Map<String, ({String text, String font, String color})> posterTexts;
 
@@ -3655,7 +3679,9 @@ class _StartelfGraphic extends StatelessWidget {
     // Einzelne, frei verschieb- und skalierbare Elemente.
     final Widget? sponsorW = mainSponsor == null
         ? null
-        : _presentedBy(mainSponsor!);
+        : (mainSponsorMode == 'text'
+              ? _presentedByText(mainSponsor!.name)
+              : _presentedBy(mainSponsor!));
     final Widget? sponsorbarW = barSponsors.isEmpty
         ? null
         : Row(
