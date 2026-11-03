@@ -596,6 +596,7 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
           builder: (_) => StartelfGraphicScreen(
             teamName: _ownTeam?.name ?? 'Heim',
             teamLogo: _ownTeam?.logoPath,
+            teamId: _ownTeam?.id,
             starters: const [],
             benchNames: const [],
             matchDate: match.kickoff,

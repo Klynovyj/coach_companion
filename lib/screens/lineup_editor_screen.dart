@@ -443,6 +443,7 @@ class _LineupEditorScreenState extends State<LineupEditorScreen> {
           // anpassbar.
           teamName: team?.name ?? widget.teamName,
           teamLogo: team?.logoPath,
+          teamId: team?.id,
           starters: starters,
           benchNames: bench,
           matchDate: match?.kickoff,

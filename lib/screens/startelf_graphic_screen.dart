@@ -17,6 +17,7 @@ import '../models/sponsor.dart';
 import '../services/cloud_service.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
+import '../widgets/player_picker_page.dart';
 import '../widgets/team_logo.dart';
 import 'photo_editor_screen.dart';
 
@@ -67,7 +68,16 @@ class AnnouncementData {
 }
 
 /// Platzierung eines hinzugefügten Fotos in der Grafik.
-enum _PhotoPlace { background, band }
+/// posterMain = großes Spielerbild, posterBadge = rundes Zweit-Foto (nur im
+/// Spieler-Poster der Spielankündigung).
+enum _PhotoPlace { background, band, posterMain, posterBadge }
+
+/// Stil der Spielankündigung: zentriert (bisher) oder Spieler-Poster.
+enum _AnnStyle { zentriert, poster }
+
+/// Höhenanteil des großen Spielerbilds im Poster (unterer, randabfallender Teil).
+/// Steuert zugleich das Zuschnitt-Seitenverhältnis (WYSIWYG).
+const double _kPosterMainHeightFactor = 0.68;
 
 /// Ein zur Grafik hinzugefügtes Foto (Data-URL) mit seiner Platzierung.
 /// Transient (nicht gespeichert), gilt für alle Grafiktypen.
@@ -95,6 +105,7 @@ class StartelfGraphicScreen extends StatefulWidget {
     this.opponentLogo,
     this.result,
     this.announcement,
+    this.teamId,
   });
 
   /// Default-Titel (offizieller Teamname) und Default-Logo – werden genutzt,
@@ -116,6 +127,10 @@ class StartelfGraphicScreen extends StatefulWidget {
   /// Gesetzt → Spielankündigungs-Grafik („SPIELTAG").
   final AnnouncementData? announcement;
 
+  /// Eigene Mannschaft – für die Kader-Auswahl des Spielerbilds im Poster.
+  /// null → nur Upload/Kamera als Bildquelle.
+  final String? teamId;
+
   bool get isResult => result != null;
   bool get isAnnouncement => announcement != null;
 
@@ -127,6 +142,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   final GlobalKey _boundaryKey = GlobalKey();
   final GlobalKey _bgBoundaryKey = GlobalKey(); // nur die Hintergrund-Ebene
   bool _story = true; // true = Story 9:16, false = Post 1:1
+  // Spielankündigung: Stil (zentriert/Poster), Überschrift-Modus & -Text.
+  // Alles transient je Grafik (kein Speichern/Sync).
+  _AnnStyle _annStyle = _AnnStyle.zentriert;
+  String _annHeadMode = 'spieltag'; // 'spieltag' | 'auto' | 'custom'
+  String _annHeadText = 'SPIELTAG';
   List<Sponsor> _sponsors = [];
   GraphicSettings _settings = const GraphicSettings(id: 'local');
   bool _loading = true;
@@ -151,6 +171,35 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     for (final p in _photos)
       if (p.place == _PhotoPlace.band) p.dataUrl,
   ];
+
+  /// Großes Spielerbild im Poster (erstes mit Platzierung „posterMain").
+  String? get _posterMain {
+    for (final p in _photos) {
+      if (p.place == _PhotoPlace.posterMain) return p.dataUrl;
+    }
+    return null;
+  }
+
+  /// Rundes Zweit-Foto (Badge) im Poster (erstes mit Platzierung „posterBadge").
+  String? get _posterBadge {
+    for (final p in _photos) {
+      if (p.place == _PhotoPlace.posterBadge) return p.dataUrl;
+    }
+    return null;
+  }
+
+  /// Aktuelle Poster-Überschrift aus Modus + Text.
+  String get _posterHeadline {
+    switch (_annHeadMode) {
+      case 'auto':
+        return widget.isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL';
+      case 'custom':
+        final t = _annHeadText.trim();
+        return t.isEmpty ? 'SPIELTAG' : t.toUpperCase();
+      default:
+        return 'SPIELTAG';
+    }
+  }
 
   // Ist der wirksame Hintergrund dunkel? → steuert die Auto-Logo-Variante.
   bool _bgDark = false;
@@ -241,7 +290,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   double _photoAspect(_PhotoPlace place) {
     final w = _story ? _storyW : _postW;
     final h = _story ? _storyH : _postH;
-    return place == _PhotoPlace.band ? w / (h * 0.46) : w / h;
+    switch (place) {
+      case _PhotoPlace.band:
+        return w / (h * 0.46);
+      case _PhotoPlace.posterMain:
+        return w / (h * _kPosterMainHeightFactor); // Hochformat, unterer Bereich
+      case _PhotoPlace.posterBadge:
+        return 1.0; // quadratisch → Kreis
+      default:
+        return w / h;
+    }
   }
 
   Future<String?> _pickImage({
@@ -397,6 +455,115 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       _photos.add(_GraphicPhoto(url, place));
       _photoCtrl.value = Matrix4.identity();
     });
+  }
+
+  /// Großes Spielerbild bzw. rundes Badge im Poster setzen. Quelle wählbar:
+  /// Kader-Profilfoto (wenn [widget.teamId] vorhanden) oder Upload/Kamera.
+  Future<void> _addPosterPhoto(_PhotoPlace place) async {
+    final src = await _askPosterSource();
+    if (src == null || !mounted) return;
+    final aspect = _photoAspect(place);
+    final String? url = src == 'kader'
+        ? await _pickKaderPhoto(aspect)
+        : await _pickImage(
+            asBackground: true,
+            source: src == 'camera' ? ImageSource.camera : ImageSource.gallery,
+            edit: true,
+            aspectRatio: aspect,
+          );
+    if (url == null || !mounted) return;
+    setState(() {
+      _photos.removeWhere((p) => p.place == place); // je Platzierung nur eins
+      _photos.add(_GraphicPhoto(url, place));
+      _photoCtrl.value = Matrix4.identity();
+    });
+  }
+
+  /// Quelle für ein Poster-Foto abfragen: Kader / Galerie / Kamera.
+  Future<String?> _askPosterSource() => showModalBottomSheet<String>(
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Bildquelle',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ),
+          if (widget.teamId != null)
+            ListTile(
+              leading: const Icon(Icons.groups),
+              title: const Text('Kader-Spieler wählen'),
+              subtitle: const Text('Nimmt das gespeicherte Profilfoto'),
+              onTap: () => Navigator.pop(ctx, 'kader'),
+            ),
+          ListTile(
+            leading: const Icon(Icons.photo_library),
+            title: const Text('Aus Galerie'),
+            onTap: () => Navigator.pop(ctx, 'gallery'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_camera),
+            title: const Text('Foto aufnehmen'),
+            onTap: () => Navigator.pop(ctx, 'camera'),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+
+  /// Kader-Spieler auswählen und dessen Profilfoto (zugeschnitten) liefern.
+  Future<String?> _pickKaderPhoto(double aspect) async {
+    final teamId = widget.teamId;
+    if (teamId == null) return null;
+    final messenger = ScaffoldMessenger.of(context);
+    final players = await context.read<AppState>().playersOf(teamId);
+    if (!mounted) return null;
+    if (players.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Kein Kader vorhanden.')),
+      );
+      return null;
+    }
+    final id = await Navigator.push<String?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerPickerPage(
+          players: players,
+          allowNone: false,
+          title: 'Spieler für das Bild',
+        ),
+      ),
+    );
+    if (id == null || id == kPlayerPickNone || !mounted) return null;
+    final player = players.firstWhere(
+      (p) => p.id == id,
+      orElse: () => players.first,
+    );
+    final bytes = TeamLogo.decode(player.photoPath);
+    if (bytes == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Dieser Spieler hat kein Profilfoto.')),
+      );
+      return null;
+    }
+    // Im Editor auf das Zielformat zuschneiden (WYSIWYG).
+    final edited = await Navigator.push<Uint8List?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            PhotoEditorScreen(imageBytes: bytes, aspectRatio: aspect),
+      ),
+    );
+    if (edited == null) return null;
+    return 'data:image/png;base64,${base64Encode(edited)}';
   }
 
   /// Platzierung für ein Foto abfragen (Hintergrund / Foto-Bereich).
@@ -1376,7 +1543,102 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     ),
     onInfoMoveEnd: () =>
         context.read<AppState>().saveGraphicSettings(_settings),
+    posterStyle: _annStyle == _AnnStyle.poster,
+    posterHeadline: _posterHeadline,
+    posterMain: _posterMain,
+    posterBadge: _posterBadge,
   );
+
+  /// Steuerleiste für die Spielankündigung: Stil-Umschalter und – im Poster-Stil –
+  /// Bilder-Buttons plus Überschrift-Auswahl.
+  Widget _announcementControls() {
+    final poster = _annStyle == _AnnStyle.poster;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: Column(
+        children: [
+          SegmentedButton<_AnnStyle>(
+            segments: const [
+              ButtonSegment(
+                value: _AnnStyle.zentriert,
+                label: Text('Zentriert'),
+              ),
+              ButtonSegment(
+                value: _AnnStyle.poster,
+                label: Text('Spieler-Poster'),
+              ),
+            ],
+            selected: {_annStyle},
+            showSelectedIcon: false,
+            onSelectionChanged: (s) => setState(() => _annStyle = s.first),
+          ),
+          if (poster) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.person, size: 18),
+                    label: Text(
+                      _posterMain == null ? 'Spielerbild' : 'Spielerbild ✓',
+                    ),
+                    onPressed: () => _addPosterPhoto(_PhotoPlace.posterMain),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.account_circle, size: 18),
+                    label: Text(
+                      _posterBadge == null ? 'Rundes Foto' : 'Rundes Foto ✓',
+                    ),
+                    onPressed: () => _addPosterPhoto(_PhotoPlace.posterBadge),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text('Überschrift:', style: TextStyle(fontSize: 12)),
+                ChoiceChip(
+                  label: const Text('SPIELTAG'),
+                  selected: _annHeadMode == 'spieltag',
+                  onSelected: (_) => setState(() => _annHeadMode = 'spieltag'),
+                ),
+                ChoiceChip(
+                  label: const Text('Heim/Auswärts'),
+                  selected: _annHeadMode == 'auto',
+                  onSelected: (_) => setState(() => _annHeadMode = 'auto'),
+                ),
+                ChoiceChip(
+                  label: const Text('Eigener'),
+                  selected: _annHeadMode == 'custom',
+                  onSelected: (_) => setState(() => _annHeadMode = 'custom'),
+                ),
+              ],
+            ),
+            if (_annHeadMode == 'custom')
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: TextFormField(
+                  initialValue: _annHeadText,
+                  textCapitalization: TextCapitalization.characters,
+                  decoration: const InputDecoration(
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                    hintText: 'z. B. DERBY, TOPSPIEL',
+                  ),
+                  onChanged: (v) => setState(() => _annHeadText = v),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1425,6 +1687,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               onSelectionChanged: (s) => setState(() => _story = s.first),
             ),
           ),
+          if (widget.isAnnouncement) _announcementControls(),
           Expanded(
             child: Center(
               child: Padding(
@@ -1807,6 +2070,10 @@ class _StartelfGraphic extends StatelessWidget {
     this.bgBlend = BlendMode.srcOver,
     this.backgroundOnly = false,
     this.showScorers = true,
+    this.posterStyle = false,
+    this.posterHeadline = 'SPIELTAG',
+    this.posterMain,
+    this.posterBadge,
   });
 
   final String title;
@@ -1840,6 +2107,10 @@ class _StartelfGraphic extends StatelessWidget {
   final BlendMode bgBlend; // Mischmodus des Hintergrundbilds mit dem Verlauf
   final bool backgroundOnly; // nur die Hintergrund-Ebene (für Export)
   final bool showScorers; // Torschützen-Block in der Ergebnis-Grafik zeigen
+  final bool posterStyle; // Spielankündigung: Spieler-Poster statt zentriert
+  final String posterHeadline; // Poster-Überschrift (SPIELTAG / HEIMSPIEL / …)
+  final String? posterMain; // großes Spielerbild (Data-URL)
+  final String? posterBadge; // rundes Zweit-Foto (Data-URL)
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
@@ -1848,6 +2119,7 @@ class _StartelfGraphic extends StatelessWidget {
   Widget build(BuildContext context) {
     if (backgroundOnly) return _bgBase(); // nur Verlauf/Foto, ohne Inhalt
     if (designMode) return _designLayout();
+    if (announcement != null && posterStyle) return _announcementPosterLayout();
     final content = announcement != null
         ? _announcementLayout()
         : _standardLayout();
@@ -2716,6 +2988,209 @@ class _StartelfGraphic extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// Spieler-Poster für die Spielankündigung (Vorbild: Fortuna-„SPIELTAG"):
+  /// Sponsor-Text oben, Logos + Überschrift + Datum/Ort, großes Spielerbild
+  /// unten, optional ein rundes Zweit-Foto als Badge.
+  Widget _announcementPosterLayout() {
+    final a = announcement!;
+    final ownLogo = TeamLogo.decode(logo);
+    final oppLogo = TeamLogo.decode(opponentLogo);
+    final mainBytes = TeamLogo.decode(posterMain);
+    final badgeBytes = TeamLogo.decode(posterBadge);
+    final pad = compact ? 16.0 : 22.0;
+    final logoH = compact ? 40.0 : 52.0;
+    final badgeSize = compact ? 84.0 : 112.0;
+
+    Widget side(Uint8List? bytes) => bytes != null
+        ? _logoChip(bytes, height: logoH, circle: logoCircle)
+        : SizedBox(height: logoH, width: logoH);
+
+    // Datum/Ort-Zeile „Fr. | 30. Okt. | 19:00 Uhr | ORT".
+    final parts = <String>[];
+    if (matchDate != null) {
+      final local = matchDate!.toLocal();
+      parts.add(DateFormat('EEE', 'de_DE').format(local));
+      parts.add(DateFormat('dd. MMM', 'de_DE').format(local));
+      if (local.hour != 0 || local.minute != 0) {
+        parts.add('${DateFormat('HH:mm', 'de_DE').format(local)} Uhr');
+      }
+    }
+    final venue = (a.venue ?? '').trim();
+    if (venue.isNotEmpty) parts.add(venue.toUpperCase());
+    final infoLine = parts.join('   |   ');
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _bgBase(),
+        // Großes Spielerbild unten, randabfallend (verschieb-/zoombar).
+        if (mainBytes != null)
+          Align(
+            alignment: Alignment.bottomCenter,
+            child: FractionallySizedBox(
+              widthFactor: 1,
+              heightFactor: _kPosterMainHeightFactor,
+              child: ClipRect(
+                child: InteractiveViewer(
+                  transformationController: photoController,
+                  minScale: 0.4,
+                  maxScale: 4,
+                  boundaryMargin: const EdgeInsets.all(double.infinity),
+                  clipBehavior: Clip.none,
+                  child: Image.memory(
+                    mainBytes,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar.
+        Align(
+          alignment: Alignment.topCenter,
+          child: FractionallySizedBox(
+            widthFactor: 1,
+            heightFactor: 0.5,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.black.withValues(alpha: 0.45),
+                    Colors.black.withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+        // Rundes Zweit-Foto (Badge) unten links.
+        if (badgeBytes != null)
+          Padding(
+            padding: EdgeInsets.only(bottom: pad, left: pad),
+            child: Align(
+              alignment: Alignment.bottomLeft,
+              child: Container(
+                width: badgeSize,
+                height: badgeSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 3),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: ClipOval(
+                  child: Image.memory(
+                    badgeBytes,
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        // Textblock oben: Sponsor-Text, Logos, Überschrift, Datum/Ort.
+        Padding(
+          padding: EdgeInsets.all(pad),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              if (mainSponsor != null) ...[
+                _presentedByText(mainSponsor!.name),
+                SizedBox(height: compact ? 10 : 14),
+              ],
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  side(ownLogo),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    child: Container(
+                      width: 1.5,
+                      height: logoH * 0.7,
+                      color: Colors.white.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  side(oppLogo),
+                ],
+              ),
+              SizedBox(height: compact ? 8 : 12),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  posterHeadline,
+                  maxLines: 1,
+                  softWrap: false,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 58,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 2,
+                    height: 1.0,
+                  ),
+                ),
+              ),
+              if (infoLine.isNotEmpty) ...[
+                SizedBox(height: compact ? 4 : 6),
+                Text(
+                  infoLine,
+                  maxLines: 2,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _accent,
+                    fontSize: compact ? 12 : 14,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Hauptsponsor NUR als Text („Präsentiert von NAME"), ohne Logo.
+  Widget _presentedByText(String name) {
+    return Text.rich(
+      TextSpan(
+        children: [
+          TextSpan(
+            text: 'Präsentiert von ',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: compact ? 12 : 15,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          TextSpan(
+            text: name.toUpperCase(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      textAlign: TextAlign.center,
     );
   }
 
