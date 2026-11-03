@@ -2891,7 +2891,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             double max,
             ValueChanged<double> onCh, {
             ValueChanged<double>? onEnd,
+            String Function(double)? fmt,
           }) {
+            final v = value.clamp(min, max);
             return Row(
               children: [
                 SizedBox(
@@ -2900,11 +2902,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 ),
                 Expanded(
                   child: Slider(
-                    value: value.clamp(min, max),
+                    value: v,
                     min: min,
                     max: max,
                     onChanged: onCh,
                     onChangeEnd: onEnd,
+                  ),
+                ),
+                SizedBox(
+                  width: 46,
+                  child: Text(
+                    fmt != null ? fmt(v) : v.round().toString(),
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 12),
                   ),
                 ),
               ],
@@ -2940,6 +2950,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       0.4,
                       3.0,
                       (v) => apply(() => _posterScale[id] = v),
+                      fmt: (v) => '${(v * 100).round()}%',
                     ),
                     labeledSlider(
                       'Drehung',
@@ -2958,6 +2969,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         }
                         apply(() => _posterRot[id] = d * math.pi / 180);
                       },
+                      fmt: (v) => '${v.round()}°',
                     ),
                     Row(
                       children: [
