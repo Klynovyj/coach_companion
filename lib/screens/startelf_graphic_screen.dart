@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -100,6 +100,66 @@ const Map<String, String> _kPosterFonts = {
   'bebas': 'Bebas Neue',
   'teko': 'Teko',
 };
+
+/// Entfernt einen einfarbigen Hintergrund (Studio/Einfarb) per Flood-Fill von
+/// den Bildrändern: Pixel, die der Eckfarbe ähneln, werden transparent. Läuft in
+/// einem Isolate (`compute`), damit die UI nicht hängt. Gibt PNG mit Alpha zurück.
+Uint8List removeUniformBackground(Uint8List input) {
+  final src = img.decodeImage(input);
+  if (src == null) return input;
+  final im = src.convert(numChannels: 4);
+  final w = im.width, h = im.height;
+  if (w < 2 || h < 2) return input;
+  // Referenzfarbe = Mittel der vier Ecken.
+  final corners = [
+    im.getPixel(0, 0),
+    im.getPixel(w - 1, 0),
+    im.getPixel(0, h - 1),
+    im.getPixel(w - 1, h - 1),
+  ];
+  var rr = 0, gg = 0, bb = 0;
+  for (final p in corners) {
+    rr += p.r.toInt();
+    gg += p.g.toInt();
+    bb += p.b.toInt();
+  }
+  rr ~/= 4;
+  gg ~/= 4;
+  bb ~/= 4;
+  const tol = 42; // Toleranz je Kanal
+  const tol2 = tol * tol * 3;
+  final visited = Uint8List(w * h);
+  final stack = <int>[];
+  void push(int x, int y) {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    final idx = y * w + x;
+    if (visited[idx] != 0) return;
+    visited[idx] = 1;
+    stack.add(idx);
+  }
+
+  for (var x = 0; x < w; x++) {
+    push(x, 0);
+    push(x, h - 1);
+  }
+  for (var y = 0; y < h; y++) {
+    push(0, y);
+    push(w - 1, y);
+  }
+  while (stack.isNotEmpty) {
+    final idx = stack.removeLast();
+    final x = idx % w, y = idx ~/ w;
+    final p = im.getPixel(x, y);
+    final dr = p.r.toInt() - rr, dg = p.g.toInt() - gg, db = p.b.toInt() - bb;
+    if (dr * dr + dg * dg + db * db > tol2) continue; // Kante → nicht überqueren
+    im.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), 0);
+    push(x + 1, y);
+    push(x - 1, y);
+    push(x, y + 1);
+    push(x, y - 1);
+  }
+  return Uint8List.fromList(img.encodePng(im));
+}
 
 /// Wendet die gewählte Schriftart auf einen TextStyle an (null = Standard).
 TextStyle posterFontStyle(String font, TextStyle base) {
@@ -210,6 +270,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   bool _loading = true;
   bool _sharing = false;
   bool _aiBusy = false;
+  bool _bgBusy = false; // clientseitiges Hintergrund-Entfernen läuft
   // Hinzugefügte Fotos (für alle Grafiktypen), transient. Hintergrund ODER
   // Foto-Bereich oben; mehrere möglich.
   final List<_GraphicPhoto> _photos = [];
@@ -1561,6 +1622,52 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     }
   }
 
+  /// Einfarbigen Hintergrund des großen Spielerbilds clientseitig entfernen
+  /// (ohne KI). Nutzt [removeUniformBackground] in einem Isolate.
+  Future<void> _removePosterMainBg() async {
+    if (_bgBusy) return;
+    final main = _posterMain;
+    if (main == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erst ein Spielerbild wählen.')),
+      );
+      return;
+    }
+    final bytes = TeamLogo.decode(main);
+    if (bytes == null) return;
+    setState(() => _bgBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final out = await compute(removeUniformBackground, bytes);
+      if (!mounted) return;
+      setState(() {
+        _photos.removeWhere((p) => p.place == _PhotoPlace.posterMain);
+        _photos.add(
+          _GraphicPhoto(
+            'data:image/png;base64,${base64Encode(out)}',
+            _PhotoPlace.posterMain,
+          ),
+        );
+        _photoCtrl.value = Matrix4.identity();
+      });
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Einfarbiger Hintergrund entfernt. Reste? Noch mal probieren oder '
+            'eigenes transparentes PNG nutzen.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Hintergrund-Entfernen fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _bgBusy = false);
+    }
+  }
+
   /// Übersetzt die (oft sehr langen) Gemini-/Function-Fehler in eine kurze,
   /// verständliche Meldung für den Trainer.
   String _aiErrorMessage(Object e) {
@@ -1881,11 +1988,33 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     : _cutoutPosterMain,
               ),
             ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                icon: _bgBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.format_color_reset, size: 18),
+                label: Text(
+                  _bgBusy
+                      ? 'Entferne …'
+                      : 'Hintergrund entfernen (einfarbig, ohne KI)',
+                ),
+                onPressed: (_posterMain == null || _bgBusy)
+                    ? null
+                    : _removePosterMainBg,
+              ),
+            ),
             const Padding(
               padding: EdgeInsets.only(top: 2),
               child: Text(
                 'Freisteller entfernt den Foto-Hintergrund → dein Hintergrund '
-                'erscheint dahinter. Tipp: fertig freigestelltes PNG geht auch.',
+                'erscheint dahinter. „Einfarbig" geht ohne KI (Studio-/weißer '
+                'Grund); Tipp: fertig freigestelltes PNG geht auch.',
                 style: TextStyle(fontSize: 10.5, color: Colors.grey),
               ),
             ),
@@ -3516,7 +3645,7 @@ class _StartelfGraphic extends StatelessWidget {
       parts.add(DateFormat('EEE', 'de_DE').format(local));
       parts.add(DateFormat('dd. MMM', 'de_DE').format(local));
       if (local.hour != 0 || local.minute != 0) {
-        parts.add('${DateFormat('HH:mm', 'de_DE').format(local)} Uhr');
+        parts.add(DateFormat('HH:mm', 'de_DE').format(local));
       }
     }
     final venue = (a.venue ?? '').trim();
