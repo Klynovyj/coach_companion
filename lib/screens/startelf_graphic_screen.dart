@@ -181,6 +181,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   bool _posterShadow = false; // Schlagschatten beim freigestellten Spieler
   double _posterShadowStrength = 45; // 0..100
   double _posterShadowAngle = 45; // Richtung in Grad (0=rechts, 90=unten)
+  double _posterPlayerScale = 1.0; // Größe des Spielerbilds (0.5..2.5)
+  Offset _posterTextPos = const Offset(0.5, 0.17); // Position des Textblocks 0..1
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
   List<Sponsor> _sponsors = [];
   GraphicSettings _settings = const GraphicSettings(id: 'local');
@@ -1689,6 +1691,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     posterShadow: _posterShadow,
     posterShadowStrength: _posterShadowStrength,
     posterShadowAngle: _posterShadowAngle,
+    posterPlayerScale: _posterPlayerScale,
+    posterTextPos: _posterTextPos,
+    onPosterTextMove: (p) => setState(() => _posterTextPos = p),
     posterFont: _posterFont,
   );
 
@@ -1886,6 +1891,29 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                 ],
               ),
             ],
+            if (_posterMain != null)
+              Row(
+                children: [
+                  const SizedBox(
+                    width: 52,
+                    child: Text('Größe', style: TextStyle(fontSize: 12)),
+                  ),
+                  Expanded(
+                    child: Slider(
+                      value: _posterPlayerScale,
+                      min: 0.5,
+                      max: 2.5,
+                      onChanged: (v) =>
+                          setState(() => _posterPlayerScale = v),
+                    ),
+                  ),
+                ],
+              ),
+            const Text(
+              'Tipp: Spieler mit „Größe" skalieren und per Ziehen verschieben; '
+              'Texte lassen sich direkt in der Vorschau ziehen.',
+              style: TextStyle(fontSize: 10.5, color: Colors.grey),
+            ),
           ],
         ],
       ),
@@ -2330,6 +2358,9 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterShadow = false,
     this.posterShadowStrength = 45,
     this.posterShadowAngle = 45,
+    this.posterPlayerScale = 1.0,
+    this.posterTextPos = const Offset(0.5, 0.17),
+    this.onPosterTextMove,
     this.posterFont = 'standard',
   });
 
@@ -2372,6 +2403,9 @@ class _StartelfGraphic extends StatelessWidget {
   final bool posterShadow; // Schlagschatten beim freigestellten Spieler
   final double posterShadowStrength; // 0..100
   final double posterShadowAngle; // Richtung in Grad (0=rechts, 90=unten)
+  final double posterPlayerScale; // Größe des Spielerbilds
+  final Offset posterTextPos; // Position des Textblocks (0..1)
+  final void Function(Offset pos)? onPosterTextMove; // Textblock verschieben
   final String posterFont; // Schriftart der Poster-Texte
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
@@ -3324,23 +3358,49 @@ class _StartelfGraphic extends StatelessWidget {
     if (venue.isNotEmpty) parts.add(venue.toUpperCase());
     final infoLine = parts.join('   |   ');
 
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _bgBase(radial: true),
-        // Schlagschatten des (freigestellten) Spielers – optional, einstellbar.
-        if (mainBytes != null && posterShadow)
-          Align(
+    // Spielerbild (contain = nichts abgeschnitten), skalierbar + zoombar.
+    Widget? playerLayer;
+    Widget? shadowLayer;
+    if (mainBytes != null) {
+      playerLayer = Align(
+        alignment: Alignment.bottomCenter,
+        child: Transform.scale(
+          scale: posterPlayerScale,
+          alignment: Alignment.bottomCenter,
+          child: FractionallySizedBox(
+            widthFactor: 1,
+            heightFactor: _kPosterMainHeightFactor,
+            child: ClipRect(
+              child: InteractiveViewer(
+                transformationController: photoController,
+                minScale: 0.4,
+                maxScale: 4,
+                boundaryMargin: const EdgeInsets.all(double.infinity),
+                clipBehavior: Clip.none,
+                child: Image.memory(
+                  mainBytes,
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      if (posterShadow) {
+        final dist = 6 + 22 * (posterShadowStrength / 100);
+        shadowLayer = Align(
+          alignment: Alignment.bottomCenter,
+          child: Transform.scale(
+            scale: posterPlayerScale,
             alignment: Alignment.bottomCenter,
             child: FractionallySizedBox(
               widthFactor: 1,
               heightFactor: _kPosterMainHeightFactor,
               child: Transform.translate(
                 offset: Offset(
-                  math.cos(posterShadowAngle * math.pi / 180) *
-                      (6 + 22 * (posterShadowStrength / 100)),
-                  math.sin(posterShadowAngle * math.pi / 180) *
-                      (6 + 22 * (posterShadowStrength / 100)),
+                  math.cos(posterShadowAngle * math.pi / 180) * dist,
+                  math.sin(posterShadowAngle * math.pi / 180) * dist,
                 ),
                 child: ImageFiltered(
                   imageFilter: ui.ImageFilter.blur(
@@ -3365,147 +3425,159 @@ class _StartelfGraphic extends StatelessWidget {
               ),
             ),
           ),
-        // Großes Spielerbild unten (contain = nichts abgeschnitten; zoombar).
-        if (mainBytes != null)
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: FractionallySizedBox(
-              widthFactor: 1,
-              heightFactor: _kPosterMainHeightFactor,
-              child: ClipRect(
-                child: InteractiveViewer(
-                  transformationController: photoController,
-                  minScale: 0.4,
-                  maxScale: 4,
-                  boundaryMargin: const EdgeInsets.all(double.infinity),
-                  clipBehavior: Clip.none,
-                  child: Image.memory(
-                    mainBytes,
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar.
-        Align(
-          alignment: Alignment.topCenter,
-          child: FractionallySizedBox(
-            widthFactor: 1,
-            heightFactor: 0.5,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withValues(alpha: 0.45),
-                    Colors.black.withValues(alpha: 0.0),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ),
-        // Rundes Zweit-Foto (Badge) unten links.
-        if (badgeBytes != null)
-          Padding(
-            padding: EdgeInsets.only(bottom: pad, left: pad),
-            child: Align(
-              alignment: Alignment.bottomLeft,
+        );
+      }
+    }
+
+    // Verschiebbarer Textblock (Sponsor-Text, Logos, Überschrift, Datum/Ort).
+    final textBlock = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (mainSponsor != null) ...[
+          _presentedByText(mainSponsor!.name),
+          SizedBox(height: compact ? 10 : 14),
+        ],
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            side(ownLogo),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10),
               child: Container(
-                width: badgeSize,
-                height: badgeSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 3),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.35),
-                      blurRadius: 10,
-                      offset: const Offset(0, 4),
+                width: 1.5,
+                height: logoH * 0.7,
+                color: Colors.white.withValues(alpha: 0.5),
+              ),
+            ),
+            side(oppLogo),
+          ],
+        ),
+        SizedBox(height: compact ? 8 : 12),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            posterHeadline,
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.center,
+            style: posterFontStyle(
+              posterFont,
+              const TextStyle(
+                color: Colors.white,
+                fontSize: 58,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+                height: 1.0,
+              ),
+            ),
+          ),
+        ),
+        if (infoLine.isNotEmpty) ...[
+          SizedBox(height: compact ? 4 : 6),
+          Text(
+            infoLine,
+            maxLines: 2,
+            textAlign: TextAlign.center,
+            style: posterFontStyle(
+              posterFont,
+              TextStyle(
+                color: _accent,
+                fontSize: compact ? 12 : 14,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (ctx, c) {
+        final w = c.maxWidth, h = c.maxHeight;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            _bgBase(radial: true),
+            ?shadowLayer,
+            ?playerLayer,
+            // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar.
+            Align(
+              alignment: Alignment.topCenter,
+              child: FractionallySizedBox(
+                widthFactor: 1,
+                heightFactor: 0.5,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withValues(alpha: 0.45),
+                        Colors.black.withValues(alpha: 0.0),
+                      ],
                     ),
-                  ],
-                ),
-                child: ClipOval(
-                  child: Image.memory(
-                    badgeBytes,
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
                   ),
                 ),
               ),
             ),
-          ),
-        // Textblock oben: Sponsor-Text, Logos, Überschrift, Datum/Ort.
-        Padding(
-          padding: EdgeInsets.all(pad),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (mainSponsor != null) ...[
-                _presentedByText(mainSponsor!.name),
-                SizedBox(height: compact ? 10 : 14),
-              ],
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  side(ownLogo),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    child: Container(
-                      width: 1.5,
-                      height: logoH * 0.7,
-                      color: Colors.white.withValues(alpha: 0.5),
+            // Rundes Zweit-Foto (Badge) unten links.
+            if (badgeBytes != null)
+              Padding(
+                padding: EdgeInsets.only(bottom: pad, left: pad),
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: Container(
+                    width: badgeSize,
+                    height: badgeSize,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.35),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                  ),
-                  side(oppLogo),
-                ],
-              ),
-              SizedBox(height: compact ? 8 : 12),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  posterHeadline,
-                  maxLines: 1,
-                  softWrap: false,
-                  textAlign: TextAlign.center,
-                  style: posterFontStyle(
-                    posterFont,
-                    const TextStyle(
-                      color: Colors.white,
-                      fontSize: 58,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 2,
-                      height: 1.0,
+                    child: ClipOval(
+                      child: Image.memory(
+                        badgeBytes,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      ),
                     ),
                   ),
                 ),
               ),
-              if (infoLine.isNotEmpty) ...[
-                SizedBox(height: compact ? 4 : 6),
-                Text(
-                  infoLine,
-                  maxLines: 2,
-                  textAlign: TextAlign.center,
-                  style: posterFontStyle(
-                    posterFont,
-                    TextStyle(
-                      color: _accent,
-                      fontSize: compact ? 12 : 14,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-      ],
+            // Textblock – frei verschiebbar (Ziehen zum Positionieren).
+            Align(
+              alignment: Alignment(
+                posterTextPos.dx * 2 - 1,
+                posterTextPos.dy * 2 - 1,
+              ),
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onPanUpdate: (d) {
+                  final nx = (posterTextPos.dx + d.delta.dx / w).clamp(
+                    0.12,
+                    0.88,
+                  );
+                  final ny = (posterTextPos.dy + d.delta.dy / h).clamp(
+                    0.06,
+                    0.94,
+                  );
+                  onPosterTextMove?.call(Offset(nx, ny));
+                },
+                child: SizedBox(width: w - 2 * pad, child: textBlock),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 
