@@ -91,6 +91,24 @@ const Map<String, Offset> _kPosterItemDefaults = {
   'sponsorbar': Offset(0.5, 0.93),
 };
 
+/// Default-Positionen für das „Zentriert"-Preset (mittig gestapelt, kein großes
+/// Spielerbild im Fokus).
+const Map<String, Offset> _kCenteredItemDefaults = {
+  'player': Offset(0.5, 0.80),
+  'sponsor': Offset(0.5, 0.18),
+  'headline': Offset(0.5, 0.40),
+  'logos': Offset(0.5, 0.56),
+  'info': Offset(0.5, 0.72),
+  'sponsorbar': Offset(0.5, 0.90),
+};
+
+/// Textfarben für eigene Textfelder (key → Anzeigename).
+const Map<String, String> _kTextColors = {
+  'white': 'Weiß',
+  'accent': 'Akzent',
+  'black': 'Schwarz',
+};
+
 /// Auswählbare Schriftarten für die Poster-Texte (key → Anzeigename).
 const Map<String, String> _kPosterFonts = {
   'standard': 'Standard',
@@ -279,6 +297,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
   final List<({String id, String dataUrl})> _posterOverlays = []; // Overlays
   int _posterOverlaySeq = 0; // eindeutige Overlay-IDs
+  // Eigene Textfelder (Inhalt/Font/Farbe je Text; Position je Format wie Overlays).
+  final List<String> _textIds = [];
+  final Map<String, String> _textContent = {};
+  final Map<String, String> _textFont = {};
+  final Map<String, String> _textColor = {}; // 'white' | 'accent' | 'black'
+  int _textSeq = 0;
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
@@ -1888,6 +1912,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     posterFont: _posterFont,
     showMainSponsor: _showMainSponsor,
     showOtherSponsors: _showOtherSponsors,
+    posterTexts: {
+      for (final id in _textIds)
+        id: (
+          text: _textContent[id] ?? '',
+          font: _textFont[id] ?? 'standard',
+          color: _textColor[id] ?? 'white',
+        ),
+    },
   );
 
   /// Anzeigename eines Poster-Elements (für den Größe-Regler).
@@ -1906,7 +1938,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
       case 'info':
         return 'Datum';
       default:
-        return id.startsWith('overlay_') ? 'Bild' : id;
+        if (id.startsWith('overlay_')) return 'Bild';
+        if (id.startsWith('text_')) return 'Text';
+        return id;
     }
   }
 
@@ -1949,10 +1983,30 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
     });
   }
 
-  /// Ein Overlay wieder entfernen (aus beiden Formaten).
-  void _removePosterOverlay(String id) {
+  /// Eigenes Textfeld hinzufügen. Kommt nach vorne und wird ausgewählt.
+  void _addPosterText() {
+    final id = 'text_${_textSeq++}';
+    setState(() {
+      _textIds.add(id);
+      _textContent[id] = 'TEXT';
+      _textFont[id] = _posterFont;
+      _textColor[id] = 'white';
+      for (final f in [true, false]) {
+        _posterOrderF[f]!.add(id);
+        _posterPosF[f]![id] = const Offset(0.5, 0.5);
+      }
+      _posterSel = id;
+    });
+  }
+
+  /// Ein Overlay ODER Textfeld wieder entfernen (aus beiden Formaten).
+  void _removePosterItem(String id) {
     setState(() {
       _posterOverlays.removeWhere((o) => o.id == id);
+      _textIds.remove(id);
+      _textContent.remove(id);
+      _textFont.remove(id);
+      _textColor.remove(id);
       for (final f in [true, false]) {
         _posterOrderF[f]!.remove(id);
         _posterPosF[f]!.remove(id);
@@ -1965,7 +2019,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
   /// Steuerleiste für die Spielankündigung: Stil-Umschalter und – im Poster-Stil –
   /// Bilder-Buttons plus Überschrift-Auswahl.
   Widget _announcementControls() {
-    final poster = _annStyle == _AnnStyle.poster;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
       child: Column(
@@ -1983,9 +2036,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
             ],
             selected: {_annStyle},
             showSelectedIcon: false,
-            onSelectionChanged: (s) => setState(() => _annStyle = s.first),
+            onSelectionChanged: (s) => setState(() {
+              _annStyle = s.first;
+              // Grundelemente auf das Preset des neuen Stils zurücksetzen
+              // (Overlays/Texte bleiben; nur aktuelles Format).
+              for (final id in _kPosterBaseOrder) {
+                _posterPos.remove(id);
+                _posterScale.remove(id);
+              }
+            }),
           ),
-          if (poster) ...[
+          ...[
             const SizedBox(height: 8),
             SizedBox(
               width: double.infinity,
@@ -1998,13 +2059,24 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
               ),
             ),
             const SizedBox(height: 6),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                icon: const Icon(Icons.add_photo_alternate, size: 18),
-                label: const Text('Bild/Grafik hinzufügen'),
-                onPressed: _addPosterOverlay,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.add_photo_alternate, size: 18),
+                    label: const Text('Bild/Grafik'),
+                    onPressed: _addPosterOverlay,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.text_fields, size: 18),
+                    label: const Text('Text'),
+                    onPressed: _addPosterText,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 6),
             Row(
@@ -2220,15 +2292,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                     icon: const Icon(Icons.flip_to_front, size: 18),
                     onPressed: () => _reorderPoster(_posterSel!, 1),
                   ),
-                  if (_posterSel!.startsWith('overlay_'))
+                  if (_posterSel!.startsWith('overlay_') ||
+                      _posterSel!.startsWith('text_'))
                     IconButton(
-                      tooltip: 'Bild entfernen',
+                      tooltip: 'Entfernen',
                       icon: const Icon(
                         Icons.delete_outline,
                         size: 18,
                         color: Colors.red,
                       ),
-                      onPressed: () => _removePosterOverlay(_posterSel!),
+                      onPressed: () => _removePosterItem(_posterSel!),
                     ),
                   IconButton(
                     tooltip: 'Auswahl aufheben',
@@ -2237,11 +2310,61 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen> {
                   ),
                 ],
               ),
+            // Editor für ein eigenes Textfeld (Inhalt/Schriftart/Farbe).
+            if (_posterSel != null && _posterSel!.startsWith('text_')) ...[
+              TextFormField(
+                key: ValueKey('txt_${_posterSel!}'),
+                initialValue: _textContent[_posterSel!] ?? '',
+                textCapitalization: TextCapitalization.characters,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                  hintText: 'Text eingeben',
+                ),
+                onChanged: (v) =>
+                    setState(() => _textContent[_posterSel!] = v),
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Text('Schrift:', style: TextStyle(fontSize: 12)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: DropdownButton<String>(
+                      isExpanded: true,
+                      isDense: true,
+                      value: _textFont[_posterSel!] ?? 'standard',
+                      items: [
+                        for (final e in _kPosterFonts.entries)
+                          DropdownMenuItem(value: e.key, child: Text(e.value)),
+                      ],
+                      onChanged: (v) => setState(
+                        () => _textFont[_posterSel!] = v ?? 'standard',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Wrap(
+                spacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text('Farbe:', style: TextStyle(fontSize: 12)),
+                  for (final e in _kTextColors.entries)
+                    ChoiceChip(
+                      label: Text(e.value),
+                      selected: (_textColor[_posterSel!] ?? 'white') == e.key,
+                      onSelected: (_) =>
+                          setState(() => _textColor[_posterSel!] = e.key),
+                    ),
+                ],
+              ),
+            ],
             const Text(
-              'Tipp: Element (auch der Spieler) antippen = auswählen, ziehen = '
-              'verschieben, Größe-Regler = skalieren, Vorne/Hinten = Ebene tauschen. '
-              '„Bild/Grafik hinzufügen" legt eigene Overlays dazu. Story 9:16 und '
-              'Post 1:1 werden getrennt eingestellt.',
+              'Tipp: Element antippen = auswählen, ziehen = verschieben, '
+              'Größe-Regler = skalieren, Vorne/Hinten = Ebene tauschen. '
+              '„Bild/Grafik" und „Text" legen eigene Elemente dazu. Story 9:16 '
+              'und Post 1:1 werden getrennt eingestellt.',
               style: TextStyle(fontSize: 10.5, color: Colors.grey),
             ),
           ],
@@ -2698,6 +2821,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterFont = 'standard',
     this.showMainSponsor = true,
     this.showOtherSponsors = true,
+    this.posterTexts = const {},
   });
 
   final String title;
@@ -2749,6 +2873,8 @@ class _StartelfGraphic extends StatelessWidget {
   final String posterFont; // Schriftart der Poster-Texte
   final bool showMainSponsor; // Hauptsponsor-Element anzeigen
   final bool showOtherSponsors; // weitere Sponsoren (Logo-Reihe) anzeigen
+  // Eigene Textfelder: id → (Inhalt, Schriftart, Farb-Key).
+  final Map<String, ({String text, String font, String color})> posterTexts;
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
@@ -2759,13 +2885,12 @@ class _StartelfGraphic extends StatelessWidget {
       return _bgBase(radial: posterStyle); // nur Verlauf/Foto, ohne Inhalt
     }
     if (designMode) return _designLayout();
-    if (announcement != null && posterStyle) {
+    if (announcement != null) {
+      // Freier Editor für BEIDE Stile (Zentriert = anderes Default-Preset).
       // Auf den Grafik-Bereich beschneiden – nichts ragt nach außen.
       return ClipRect(child: _announcementPosterLayout());
     }
-    final content = announcement != null
-        ? _announcementLayout()
-        : _standardLayout();
+    final content = _standardLayout();
     final band = [
       for (final p in bandPhotos) TeamLogo.decode(p),
     ].whereType<Uint8List>().toList();
@@ -3144,41 +3269,6 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Hauptsponsor als zentraler Blickfang: kleines „PRÄSENTIERT VON" darüber,
-  /// darunter das Logo groß & mittig (ohne Logo der Name groß).
-  Widget _presentedBy(Sponsor s) {
-    final logoBytes = TeamLogo.decode(s.logo);
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(
-          'PRÄSENTIERT VON',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.8),
-            fontSize: compact ? 9 : 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2,
-          ),
-        ),
-        SizedBox(height: compact ? 3 : 7),
-        if (logoBytes != null)
-          _logoChip(logoBytes, height: compact ? 34 : 50)
-        else
-          Text(
-            s.name,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: compact ? 22 : 28,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-      ],
-    );
-  }
-
   /// Spielinfo-Zeile: Heim/Auswärts, Datum und darunter der Gegner („vs …")
   /// mit optionalem Gegner-Logo.
   Widget _matchInfo() {
@@ -3471,177 +3561,7 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Spielankündigungs-Grafik: Titel (POKALSPIEL/SPIELTAG) + große Logos „VS" +
-  /// Datum/Uhrzeit/Spielstätte/Adresse mit Icons.
-  Widget _announcementLayout() {
-    final a = announcement!;
-    final ownLogo = TeamLogo.decode(logo);
-    final oppLogo = TeamLogo.decode(opponentLogo);
-    final pad = compact ? 18.0 : 26.0;
-    final logoH = compact ? 72.0 : 92.0;
-
-    Widget side(Uint8List? bytes) => bytes != null
-        ? _logoChip(bytes, height: logoH, circle: logoCircle)
-        : SizedBox(height: logoH, width: logoH);
-
-    // Datum/Uhrzeit stehen im Fokus → groesser als Spielstaette/Adresse.
-    Widget infoRow(IconData icon, String text, {bool big = false}) => Padding(
-      padding: EdgeInsets.symmetric(vertical: big ? 5 : 4),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: big ? 28 : 22),
-          const SizedBox(width: 10),
-          Flexible(
-            child: Text(
-              text,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: big ? 24 : 17,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    final rows = <Widget>[];
-    if (matchDate != null) {
-      final local = matchDate!.toLocal();
-      rows.add(
-        infoRow(
-          Icons.event,
-          DateFormat('EEEE, dd.MM.yyyy', 'de_DE').format(local),
-          big: true,
-        ),
-      );
-      if (local.hour != 0 || local.minute != 0) {
-        rows.add(
-          infoRow(
-            Icons.schedule,
-            '${DateFormat('HH:mm', 'de_DE').format(local)} Uhr',
-            big: true,
-          ),
-        );
-      }
-    }
-    if ((a.venue ?? '').trim().isNotEmpty) {
-      rows.add(infoRow(Icons.place, a.venue!.trim()));
-    }
-    if ((a.address ?? '').trim().isNotEmpty) {
-      rows.add(infoRow(Icons.map_outlined, a.address!.trim()));
-    }
-
-    // Großer Titel = Heim/Auswärts; Pokal bzw. Spieltag-Nummer als Untertitel.
-    final titleWord = isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL';
-    final md = (a.matchday ?? '').trim();
-    final subtitle = a.isCup
-        ? 'POKALSPIEL'
-        : (md.isNotEmpty ? '$md. SPIELTAG' : null);
-
-    // Zentraler Inhalt (Sponsor → Titel → Logos → Namen → Info). Liegt in einer
-    // FittedBox mit fester Breite, damit er immer in die Grafik passt und die
-    // Adresse unten nie abgeschnitten wird (egal ob Story oder Post).
-    final central = SizedBox(
-      width: 320,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          if (mainSponsor != null) ...[
-            _presentedBy(mainSponsor!),
-            SizedBox(height: compact ? 14 : 18),
-          ],
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              titleWord,
-              maxLines: 1,
-              softWrap: false,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _accent,
-                fontSize: 52,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 2,
-                height: 1.0,
-              ),
-            ),
-          ),
-          if (subtitle != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                subtitle,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.5,
-                ),
-              ),
-            ),
-          SizedBox(height: compact ? 20 : 30),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(child: Center(child: side(ownLogo))),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  'VS',
-                  style: TextStyle(
-                    color: _accent,
-                    fontSize: compact ? 34 : 44,
-                    fontWeight: FontWeight.w900,
-                    height: 1.0,
-                  ),
-                ),
-              ),
-              Expanded(child: Center(child: side(oppLogo))),
-            ],
-          ),
-          SizedBox(height: compact ? 20 : 28),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: rows,
-          ),
-        ],
-      ),
-    );
-
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        _bgBase(),
-        Padding(
-          padding: EdgeInsets.all(pad),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.center,
-                  child: central,
-                ),
-              ),
-              if (barSponsors.isNotEmpty) ...[
-                SizedBox(height: compact ? 8 : 12),
-                _sponsorBar(),
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Spieler-Poster für die Spielankündigung (Vorbild: Fortuna-„SPIELTAG"):
+  /// Freier Editor für die Spielankündigung (Vorbild: Fortuna-„SPIELTAG"):
   /// Sponsor-Text oben, Logos + Überschrift + Datum/Ort, großes Spielerbild
   /// unten, optional ein rundes Zweit-Foto als Badge.
   Widget _announcementPosterLayout() {
@@ -3857,6 +3777,26 @@ class _StartelfGraphic extends StatelessWidget {
             case 'info':
               return infoW;
             default:
+              if (id.startsWith('text_')) {
+                final t = posterTexts[id];
+                if (t == null || t.text.trim().isEmpty) return null;
+                final col = t.color == 'accent'
+                    ? _accent
+                    : (t.color == 'black' ? Colors.black : Colors.white);
+                return Text(
+                  t.text,
+                  textAlign: TextAlign.center,
+                  style: posterFontStyle(
+                    t.font,
+                    TextStyle(
+                      color: col,
+                      fontSize: 34,
+                      fontWeight: FontWeight.w900,
+                      height: 1.0,
+                    ),
+                  ),
+                );
+              }
               final url = posterOverlays[id];
               if (url == null) return null;
               final bytes = TeamLogo.decode(url);
@@ -3869,7 +3809,7 @@ class _StartelfGraphic extends StatelessWidget {
         Widget el(String id, Widget child) {
           final pos =
               posterItemPos[id] ??
-              _kPosterItemDefaults[id] ??
+              (posterStyle ? _kPosterItemDefaults : _kCenteredItemDefaults)[id] ??
               const Offset(0.5, 0.5);
           final scale = posterItemScale[id] ?? 1.0;
           final selected = posterSelected == id;
