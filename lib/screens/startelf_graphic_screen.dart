@@ -2178,6 +2178,45 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   Future<Uint8List?> _captureBackgroundPng() => _capturePng(_bgBoundaryKey);
 
   Future<Uint8List?> _capturePng(GlobalKey key) async {
+    // Höhere Export-Auflösung (1440 px Breite → 1440×2560 bzw. 1440×1440).
+    final image = await _captureImage(key, 1440);
+    if (image == null) return null;
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    return data?.buffer.asUint8List();
+  }
+
+  /// Kleine Aufnahme NUR für die KI-Analyse: direkt in [widthPx] Breite und als
+  /// Rohpixel → JPEG. Spart das teure Kodieren/Dekodieren der großen
+  /// Export-PNG (auf dem Handy mehrere Sekunden).
+  Future<String?> _captureForAi({double widthPx = 512}) async {
+    final image = await _captureImage(_boundaryKey, widthPx);
+    if (image == null) return null;
+    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (data == null) return null;
+    return compute(_rgbaToJpegDataUrl, <String, Object>{
+      'w': image.width,
+      'h': image.height,
+      'px': data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    });
+  }
+
+  /// Rohpixel (RGBA) → JPEG-Data-URL (läuft im Isolate).
+  static String _rgbaToJpegDataUrl(Map<String, Object> a) {
+    final px = a['px'] as Uint8List;
+    final im = img.Image.fromBytes(
+      width: a['w'] as int,
+      height: a['h'] as int,
+      bytes: px.buffer,
+      bytesOffset: px.offsetInBytes,
+      numChannels: 4,
+    );
+    final jpg = img.encodeJpg(im, quality: 80);
+    return 'data:image/jpeg;base64,${base64Encode(jpg)}';
+  }
+
+  /// Nimmt die Grafik hinter [key] in [widthPx] Breite auf (ohne Auswahlrahmen,
+  /// mit geladenen Schriften/Bildern).
+  Future<ui.Image?> _captureImage(GlobalKey key, double widthPx) async {
     // Auswahl-Rahmen eines Poster-Elements nicht mit exportieren.
     final hadSel = _posterSel;
     if (hadSel != null && mounted) {
@@ -2197,10 +2236,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) return null;
     final logicalWidth = _story ? _storyW : _postW;
-    // Höhere Export-Auflösung (1440 px Breite → 1440×2560 bzw. 1440×1440).
-    final image = await boundary.toImage(pixelRatio: 1440 / logicalWidth);
-    final data = await image.toByteData(format: ui.ImageByteFormat.png);
-    return data?.buffer.asUint8List();
+    return boundary.toImage(pixelRatio: widthPx / logicalWidth);
   }
 
   String get _kind => widget.isAnnouncement
@@ -2388,16 +2424,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
   }
 
-  /// Verkleinert ein PNG auf höchstens [maxW] px Breite und gibt es als
-  /// JPEG-Data-URL zurück (spart Tokens für die KI-Analyse).
-  static String _downscaleToDataUrl(Uint8List png, {int maxW = 768}) {
-    final im = img.decodeImage(png);
-    if (im == null) return 'data:image/png;base64,${base64Encode(png)}';
-    final small = im.width > maxW ? img.copyResize(im, width: maxW) : im;
-    final jpg = img.encodeJpg(small, quality: 85);
-    return 'data:image/jpeg;base64,${base64Encode(jpg)}';
-  }
-
   /// „Mit KI optimieren": nimmt die fertige Grafik, lässt die Vision-KI globale
   /// Korrekturwerte (Helligkeit/Kontrast/Sättigung/Wärme/Tiefe) schätzen und
   /// wendet sie als Profi-Finish an. Verändert KEINE Inhalte, nur das Gesamtbild.
@@ -2406,9 +2432,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     setState(() => _gradeBusy = true);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final png = await _captureGraphicPng();
-      if (png == null || !mounted) return;
-      final dataUrl = await compute(_downscaleToDataUrl, png);
+      // Kleine Aufnahme direkt in Analyse-Größe (schnell, wenige Tokens).
+      final dataUrl = await _captureForAi();
+      if (dataUrl == null || !mounted) return;
       final vals = await CloudService.aiGrade(dataUrl);
       if (vals == null) {
         messenger.showSnackBar(
@@ -2996,6 +3022,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final isText = id.startsWith('text_') || id == 'info';
     // Feste Teile (Ergebnis/Startelf) liegen im Layout – keine Ebenen-Reihenfolge.
     final isStd = id.startsWith('std_');
+    // Vereinsname geändert → beim Schließen teamweit speichern (nicht je Taste).
+    var titleDirty = false;
     final delLabel = id == 'player'
         ? 'Spielerbild entfernen'
         : (id.startsWith('overlay_') || id.startsWith('text_'))
@@ -3109,6 +3137,63 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           _posterRot.remove(id);
                         }),
                       ),
+                    // Überschrift-Objekt: Texte direkt hier bearbeiten.
+                    if (id == 'std_title') ...[
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        initialValue: _title,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                          labelText: 'Vereinsname (gilt für alle Grafiken)',
+                        ),
+                        onChanged: (v) {
+                          titleDirty = true;
+                          apply(
+                            () => _settings = v.trim().isEmpty
+                                ? _settings.copyWith(clearTitle: true)
+                                : _settings.copyWith(title: v.trim()),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        initialValue: _posterHeadline,
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: const OutlineInputBorder(),
+                          labelText: 'Überschrift (leer = $_defaultHeadline)',
+                        ),
+                        onChanged: (v) => apply(() {
+                          _annHeadMode = 'custom';
+                          _annHeadText = v;
+                        }),
+                      ),
+                      Row(
+                        children: [
+                          const Text('Schrift:', style: TextStyle(fontSize: 12)),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: DropdownButton<String>(
+                              isExpanded: true,
+                              isDense: true,
+                              value: _posterFont,
+                              items: [
+                                for (final e in _kPosterFonts.entries)
+                                  DropdownMenuItem(
+                                    value: e.key,
+                                    child: Text(e.value),
+                                  ),
+                              ],
+                              onChanged: (v) =>
+                                  apply(() => _posterFont = v ?? 'standard'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     if (!isStd)
                     Row(
                       children: [
@@ -3297,7 +3382,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      if (titleDirty && mounted) {
+        context.read<AppState>().saveGraphicSettings(_settings);
+      }
+    });
   }
 
   /// Anzeigename eines Poster-Elements (für den Größe-Regler).
@@ -3322,7 +3411,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       case 'std_sponsor':
         return 'Präsentiert von';
       case 'std_info':
-        return 'Spielinfo';
+        return 'Datum & Uhrzeit';
+      case 'std_vs':
+        return 'Gegner';
       case 'std_score':
         return 'Ergebnis';
       case 'std_scorers':
@@ -3414,6 +3505,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     'std_title',
     'std_sponsor',
     'std_info',
+    'std_vs',
     'std_score',
     'std_scorers',
     'std_lineup',
@@ -4623,6 +4715,7 @@ class _StartelfGraphic extends StatelessWidget {
     'std_lineup',
     'std_scorers',
     'std_score',
+    'std_vs',
     'std_info',
     'std_sponsor',
     'std_title',
@@ -5129,12 +5222,20 @@ class _StartelfGraphic extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Kompakte Kopfleiste (Logo + Titel + Sponsor in EINER Zeile).
-              // Jedes Teil ist ein eigenes, frei gestaltbares Objekt (_stdEl),
-              // startet aber exakt an seiner Stelle im Layout.
+              // Story: „Präsentiert von" als eigene Zeile oben rechts.
+              if (!compact && _presentedByTopRow() != null) ...[
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: _stdEl('std_sponsor', _presentedByTopRow()!),
+                ),
+                const SizedBox(height: 8),
+              ],
+              // Kopfleiste (Logo + Vereinsname/Überschrift; im Post-Format auch
+              // der Sponsor). Jedes Teil ist ein eigenes, frei gestaltbares
+              // Objekt (_stdEl) und startet an seiner Stelle im Layout.
               _header(),
               SizedBox(height: compact ? 6 : 12),
-              if (announcement == null) _stdEl('std_info', _matchInfo()),
+              if (announcement == null) _infoRow(),
               SizedBox(height: compact ? 7 : 18),
               _divider(),
               SizedBox(height: compact ? 7 : 16),
@@ -5250,13 +5351,11 @@ class _StartelfGraphic extends StatelessWidget {
     ),
   );
 
-  /// Kombinierte Kopfleiste: links Vereinslogo + „VEREIN / STARTELF", rechts
-  /// „präsentiert von [Sponsor]". Spart Höhe → mehr Platz für den Kader.
+  /// Kopfleiste: Vereinslogo + „VEREIN / STARTELF" über die volle Breite
+  /// (der Hauptsponsor sitzt rechts neben der Spielinfo, siehe [_infoRow]) –
+  /// so wird der Text nie abgeschnitten oder winzig.
   Widget _header() {
     final logoBytes = TeamLogo.decode(logo);
-    final sponsorLogo = mainSponsor == null
-        ? null
-        : TeamLogo.decode(mainSponsor!.logo);
     // Überschrift: wählbar wie bei der Ankündigung (Standard/Eigener Text).
     final rubric = posterHeadline;
     final logoW = logoBytes != null
@@ -5281,15 +5380,20 @@ class _StartelfGraphic extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    title.toUpperCase(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white.withValues(alpha: 0.9),
-                      fontSize: compact ? 12 : 15,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5,
+                  // Vereinsname immer vollständig (notfalls verkleinert, nie „…").
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      title.toUpperCase(),
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: compact ? 12 : 15,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.5,
+                      ),
                     ),
                   ),
                   // Überschrift automatisch verkleinern, falls sie nicht in die
@@ -5318,52 +5422,112 @@ class _StartelfGraphic extends StatelessWidget {
             ),
           ),
         ),
-        // „präsentiert von [Sponsor]" rechts in derselben Leiste (abschaltbar,
-        // als Logo oder Text – wie bei der Ankündigung).
-        if (mainSponsor != null && showMainSponsor) ...[
+        // Post-Format (1:1): „Präsentiert von" rechts in derselben Leiste
+        // (spart Höhe; die Breite reicht hier für Vereinsname + Überschrift).
+        if (compact && _presentedByBlock() != null) ...[
           const SizedBox(width: 10),
-          _stdEl(
-            'std_sponsor',
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Text(
-                  'PRÄSENTIERT VON',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    fontSize: compact ? 8 : 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.5,
-                  ),
-                ),
-                SizedBox(height: compact ? 4 : 5),
-                ConstrainedBox(
-                  constraints: BoxConstraints(maxWidth: compact ? 130 : 168),
-                  child: sponsorLogo != null && mainSponsorMode != 'text'
-                      ? _logoChip(sponsorLogo, height: compact ? 38 : 50)
-                      : Text(
-                          mainSponsor!.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: compact ? 16 : 21,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                ),
-              ],
-            ),
-          ),
+          _stdEl('std_sponsor', _presentedByBlock()!),
         ],
       ],
     );
   }
 
-  /// Spielinfo-Zeile: Heim/Auswärts, Datum und darunter der Gegner („vs …")
-  /// mit optionalem Gegner-Logo.
-  Widget _matchInfo() {
+  /// „Präsentiert von [Sponsor]" (Hauptsponsor; abschaltbar, als Logo oder
+  /// Text – wie bei der Ankündigung). null = kein/ausgeschalteter Sponsor.
+  Widget? _presentedByBlock() {
+    if (mainSponsor == null || !showMainSponsor) return null;
+    final sponsorLogo = TeamLogo.decode(mainSponsor!.logo);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Text(
+          'PRÄSENTIERT VON',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontSize: compact ? 8 : 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.5,
+          ),
+        ),
+        SizedBox(height: compact ? 4 : 5),
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: compact ? 130 : 168),
+          child: sponsorLogo != null && mainSponsorMode != 'text'
+              ? _logoChip(sponsorLogo, height: compact ? 38 : 50)
+              : Text(
+                  mainSponsor!.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: compact ? 16 : 21,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Story-Format: „Präsentiert von [Logo]" als eigene Zeile oben rechts –
+  /// so haben Überschrift und Spielinfo darunter die volle Breite.
+  Widget? _presentedByTopRow() {
+    if (mainSponsor == null || !showMainSponsor) return null;
+    final sponsorLogo = TeamLogo.decode(mainSponsor!.logo);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          'PRÄSENTIERT VON',
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.9),
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.5,
+          ),
+        ),
+        const SizedBox(width: 10),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 190),
+          child: sponsorLogo != null && mainSponsorMode != 'text'
+              ? _logoChip(sponsorLogo, height: 46)
+              : Text(
+                  mainSponsor!.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 21,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Unter der Kopfleiste: Datum/Uhrzeit und Gegner als ZWEI eigene Objekte.
+  Widget _infoRow() {
+    final showVs = result == null && opponentName.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _stdEl('std_info', _matchDateLine()),
+        // „vs GEGNER" nur bei Startelf/Spieltag – in der Ergebnis-Grafik steht
+        // der Gegner ohnehin groß mit Logo + Spielstand darunter.
+        if (showVs) ...[
+          const SizedBox(height: 4),
+          _stdEl('std_vs', _matchVsRow()),
+        ],
+      ],
+    );
+  }
+
+  /// Heim/Auswärts · Datum · Anstoßzeit.
+  Widget _matchDateLine() {
     final line1 = <String>[isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL'];
     if (matchDate != null) {
       final local = matchDate!.toLocal();
@@ -5373,45 +5537,39 @@ class _StartelfGraphic extends StatelessWidget {
         line1.add('${DateFormat('HH:mm', 'de_DE').format(local)} Uhr');
       }
     }
+    return Text(
+      line1.join('  ·  '),
+      style: TextStyle(
+        color: _accent.withValues(alpha: 0.85),
+        fontSize: compact ? 10 : 11,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1,
+      ),
+    );
+  }
+
+  /// „vs GEGNER" mit optionalem Gegner-Logo (nur so breit wie der Inhalt).
+  Widget _matchVsRow() {
     final oppBytes = TeamLogo.decode(opponentLogo);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          line1.join('  ·  '),
-          style: TextStyle(
-            color: _accent.withValues(alpha: 0.85),
-            fontSize: compact ? 10 : 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1,
+        if (oppBytes != null) ...[
+          _logoChip(oppBytes, height: compact ? 20 : 24, circle: logoCircle),
+          const SizedBox(width: 8),
+        ],
+        Flexible(
+          child: Text(
+            'vs ${opponentName.toUpperCase()}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 13 : 15,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ),
-        // „vs GEGNER" nur bei Startelf/Spieltag – in der Ergebnis-Grafik steht
-        // der Gegner ohnehin groß mit Logo + Spielstand darunter.
-        if (result == null && opponentName.isNotEmpty) ...[
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              if (oppBytes != null) ...[
-                _logoChip(oppBytes, height: compact ? 20 : 24, circle: logoCircle),
-                const SizedBox(width: 8),
-              ],
-              Flexible(
-                child: Text(
-                  'vs ${opponentName.toUpperCase()}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: compact ? 13 : 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
       ],
     );
   }

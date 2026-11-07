@@ -8,6 +8,8 @@
 //   ANTHROPIC_API_KEY = dein Anthropic-API-Key (sk-ant-...)
 //   AI_MODEL          = optional, Standard: claude-opus-5-5
 //                       (guenstiger: claude-haiku-5-5 oder claude-sonnet-5-5)
+//   AI_GRADE_MODEL    = optional, Modell NUR fuer den Bild-Finish (`grade`),
+//                       Standard: claude-haiku-5-5 (schnell; liefert nur 5 Zahlen)
 // SUPABASE_URL / SUPABASE_ANON_KEY liefert Supabase automatisch.
 //
 // Deploy:  supabase functions deploy ai-coach
@@ -16,6 +18,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
 const MODEL = Deno.env.get("AI_MODEL") ?? "claude-opus-5-5";
+// Bild-Finish braucht nur eine grobe Einschaetzung (5 Zahlen) → schnelles,
+// guenstiges Modell ohne Denkphase statt des grossen Uebungs-Modells.
+const GRADE_MODEL = Deno.env.get("AI_GRADE_MODEL") ?? "claude-haiku-5-5";
 // Nur noetig, wenn der API-Key nicht an einen Workspace gebunden ist
 // (sk-ant-usr-... Benutzer-Keys). Dann verlangt Anthropic diesen Header.
 const WORKSPACE_ID = Deno.env.get("ANTHROPIC_WORKSPACE_ID") ?? "";
@@ -314,16 +319,36 @@ Deno.serve(async (req) => {
     };
     if (WORKSPACE_ID) headers["anthropic-workspace-id"] = WORKSPACE_ID;
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: mode === "grade" ? 300 : 4000,
-        system,
-        messages,
-      }),
+    // Bild-Finish: schnelles Modell, Denkphase aus (wo erlaubt), Aufwand
+    // niedrig, kurze Antwort. Opus 5.5/Fable lehnen `disabled` ab → dort weglassen.
+    const gradeBody = (model: string) => ({
+      model,
+      max_tokens: 200,
+      system,
+      messages,
+      ...(/^claude-(opus-5-5|fable)/.test(model)
+        ? {}
+        : { thinking: { type: "disabled" } }),
+      output_config: { effort: "low" },
     });
+    const send = (payload: unknown) =>
+      fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+
+    let resp = await send(
+      mode === "grade"
+        ? gradeBody(GRADE_MODEL)
+        : { model: MODEL, max_tokens: 4000, system, messages },
+    );
+    // Schnelles Modell nicht verfuegbar (z. B. im Workspace gesperrt) → einmal
+    // mit dem Standard-Modell erneut versuchen.
+    if (mode === "grade" && !resp.ok && GRADE_MODEL !== MODEL &&
+        (resp.status === 400 || resp.status === 403 || resp.status === 404)) {
+      resp = await send(gradeBody(MODEL));
+    }
     if (!resp.ok) {
       const t = await resp.text();
       return new Response("Anthropic-Fehler: " + t, { status: 502 });
