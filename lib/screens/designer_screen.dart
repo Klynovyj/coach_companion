@@ -11,6 +11,7 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/player.dart';
 import '../state/app_state.dart';
+import '../widgets/player_avatar.dart';
 import '../widgets/team_logo.dart';
 import 'startelf_graphic_screen.dart';
 
@@ -228,7 +229,7 @@ class _DesignerScreenState extends State<DesignerScreen> {
   /// FuPa-Foto: Spieler wählen → Editor im FuPa-Format (960×1200), dort
   /// Foto aufnehmen und freistellen; fertig → als Spielerfoto übernehmen.
   Future<DesignerData?> _wizardFupa() async {
-    final p = await _pickPlayer(title: 'FuPa-Foto für');
+    final p = await _pickPlayer(title: 'FuPa-Foto für', includeStaff: true);
     if (p == null || !mounted) return null;
     return DesignerData(
       id: _newId(),
@@ -314,7 +315,11 @@ class _DesignerScreenState extends State<DesignerScreen> {
       headline = e['Überschrift']!.trim().toUpperCase();
     }
     if (!mounted) return null;
-    final p = await _pickPlayer(title: 'Für wen? (optional)', optional: true);
+    final p = await _pickPlayer(
+      title: 'Für wen? (optional)',
+      optional: true,
+      includeStaff: true,
+    );
     if (!mounted) return null;
     return DesignerData(
       id: _newId(),
@@ -410,16 +415,35 @@ class _DesignerScreenState extends State<DesignerScreen> {
   Future<Player?> _pickPlayer({
     required String title,
     bool optional = false,
+    // Auch das Trainerteam (Trainer, Co-Trainer, Betreuer …) anbieten – z. B.
+    // für FuPa-Fotos und Anlässe; „Spieler des Spiels" nur Spieler.
+    bool includeStaff = false,
   }) async {
     final team = _app.ownTeam;
     if (team == null) return null;
-    final players =
-        (await _app.playersOf(
-            team.id,
-            onlyActive: true,
-          )).where((p) => !p.isStaffOnly).toList()
-          ..sort((a, b) => a.fullName.compareTo(b.fullName));
+    final all = await _app.playersOf(team.id, onlyActive: true);
+    int byName(Player a, Player b) => a.fullName.compareTo(b.fullName);
+    final players = all.where((p) => !p.isStaffOnly).toList()..sort(byName);
+    final staff = includeStaff
+        ? (all.where((p) => p.isStaffOnly).toList()..sort(byName))
+        : const <Player>[];
     if (!mounted) return null;
+    Widget tile(BuildContext ctx, Player p) => ListTile(
+      // Rund und gefüllt (auch hochkante eigene Fotos, nicht nur FuPa).
+      leading: PlayerAvatar(player: p, radius: 18),
+      title: Text(p.fullName),
+      subtitle: p.isStaffOnly
+          ? Text(p.staffRole!)
+          : (p.number != null ? Text('#${p.number}') : null),
+      onTap: () => Navigator.pop(ctx, p),
+    );
+    Widget header(String t) => Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Text(
+        t,
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+      ),
+    );
     return showModalBottomSheet<Player>(
       context: context,
       showDragHandle: true,
@@ -444,21 +468,12 @@ class _DesignerScreenState extends State<DesignerScreen> {
                   title: const Text('Ohne Spieler'),
                   onTap: () => Navigator.pop(ctx),
                 ),
-              for (final p in players)
-                ListTile(
-                  leading: SizedBox(
-                    width: 36,
-                    height: 36,
-                    child: p.photoPath != null
-                        ? ClipOval(
-                            child: TeamLogo(logoPath: p.photoPath, size: 36),
-                          )
-                        : const Icon(Icons.person),
-                  ),
-                  title: Text(p.fullName),
-                  subtitle: p.number != null ? Text('#${p.number}') : null,
-                  onTap: () => Navigator.pop(ctx, p),
-                ),
+              if (staff.isNotEmpty) header('Spieler'),
+              for (final p in players) tile(ctx, p),
+              if (staff.isNotEmpty) ...[
+                header('Trainerteam'),
+                for (final p in staff) tile(ctx, p),
+              ],
             ],
           ),
         ),

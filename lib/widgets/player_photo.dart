@@ -50,6 +50,9 @@ class PlayerPhoto extends StatelessWidget {
                       // einer anderen Zeile stehen bleibt (falsches Foto).
                       key: ValueKey('photo_${player.id}'),
                       fit: BoxFit.cover,
+                      // Hochkante Fotos wie bei FuPa von OBEN ausschneiden
+                      // (Kopf + Schultern), nicht aus der Mitte.
+                      alignment: Alignment.topCenter,
                       gaplessPlayback: true,
                     )
                   : Container(

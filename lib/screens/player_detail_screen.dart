@@ -415,6 +415,8 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     ? Image.memory(
                         bytes,
                         fit: BoxFit.cover,
+                        // Wie FuPa: hochkante Fotos von oben ausschneiden.
+                        alignment: Alignment.topCenter,
                         gaplessPlayback: true,
                       )
                     : Center(
@@ -844,11 +846,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
 
   /// Starker Fuß (links/rechts/beide) – antippen zum Setzen, nochmal zum Lösen.
   Widget _strongFootField(BuildContext context, Player p) {
-    const opts = [
-      ('links', 'Links'),
-      ('rechts', 'Rechts'),
-      ('beide', 'Beide'),
-    ];
+    const opts = [('links', 'Links'), ('rechts', 'Rechts'), ('beide', 'Beide')];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1328,7 +1326,9 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       setState(() => _careerFuture = Future.value(map));
     } catch (e) {
       messenger.showSnackBar(
-        SnackBar(content: Text('FuPa-Statistik konnte nicht geladen werden: $e')),
+        SnackBar(
+          content: Text('FuPa-Statistik konnte nicht geladen werden: $e'),
+        ),
       );
     } finally {
       if (mounted) setState(() => _careerBusy = false);
@@ -1435,7 +1435,10 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('${v ?? 0}', style: TextStyle(color: c, fontWeight: FontWeight.w800)),
+          Text(
+            '${v ?? 0}',
+            style: TextStyle(color: c, fontWeight: FontWeight.w800),
+          ),
           const SizedBox(width: 5),
           Text(label, style: Theme.of(context).textTheme.bodySmall),
         ],

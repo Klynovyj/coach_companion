@@ -17,10 +17,22 @@ class PlayerAvatar extends StatelessWidget {
     final fallback =
         player.number?.toString() ??
         (player.lastName.isNotEmpty ? player.lastName[0] : '?');
-    return CircleAvatar(
-      radius: radius,
-      backgroundImage: bytes != null ? MemoryImage(bytes) : null,
-      child: bytes == null ? Text(fallback) : null,
+    if (bytes == null) {
+      return CircleAvatar(radius: radius, child: Text(fallback));
+    }
+    // Rund gefüllt; hochkante (eigene) Fotos wie bei FuPa von OBEN
+    // ausschneiden (Kopf + Schultern) statt aus der Mitte.
+    return ClipOval(
+      child: Image.memory(
+        bytes,
+        width: radius * 2,
+        height: radius * 2,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) =>
+            CircleAvatar(radius: radius, child: Text(fallback)),
+      ),
     );
   }
 }
