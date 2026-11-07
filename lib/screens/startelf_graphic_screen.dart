@@ -735,24 +735,137 @@ Uint8List chromaKeyMagenta(Uint8List input) {
   const inner = 70.0; // bis hier: komplett transparent
   const outer = 150.0; // ab hier: voll deckend
   for (final p in im) {
+    if (p.a == 0) continue;
     final r = p.r.toDouble(), g = p.g.toDouble(), b = p.b.toDouble();
+    // 1) Abstand zu reinem Magenta (helle Flächen).
     final dr = 255 - r, db = 255 - b;
     final dist = math.sqrt(dr * dr + g * g + db * db);
-    if (dist <= inner) {
+    var keep = ((dist - inner) / (outer - inner)).clamp(0.0, 1.0);
+    // 2) Farbton (auch abgedunkeltes/schattiges Magenta, z. B. zwischen Arm
+    //    und Körper): Rot UND Blau deutlich über Grün, beide ähnlich stark.
+    final hi = math.max(r, b), lo = math.min(r, b);
+    if (hi > 40 && lo / hi > 0.5) {
+      final m = (lo - g) / hi; // 1 = reines Magenta, ≤0 = kein Magenta
+      // ≥0.55 → weg, ≤0.30 → bleibt, dazwischen weich.
+      final hueKeep = ((0.55 - m) / 0.25).clamp(0.0, 1.0);
+      keep = math.min(keep, hueKeep);
+    }
+    if (keep <= 0) {
       p.a = 0;
       continue;
     }
-    if (dist < outer) {
-      // Kante: teiltransparent + Magenta-Stich entfernen.
-      final t = (dist - inner) / (outer - inner);
-      final spill = math.min(r, b) - g;
+    // Kante: teiltransparent + Magenta-Stich entfernen (Despill). Voll
+    // deckende Pixel bleiben unverändert (z. B. ein pinkes Trikot-Detail).
+    if (keep < 1) {
+      final spill = lo - g;
       if (spill > 0) {
         p
           ..r = (r - spill).clamp(0, 255)
           ..b = (b - spill).clamp(0, 255);
       }
-      p.a = (t * 255).round();
+      p.a = (p.a * keep).round();
     }
+  }
+  return Uint8List.fromList(img.encodePng(im));
+}
+
+/// Nach dem KI-Freistellen: erst Magenta keyen; hat die KI einen ANDEREN
+/// Hintergrund geliefert (Rand danach noch überwiegend deckend), zusätzlich
+/// die Randfarbe entfernen ([keyBorderBackground]).
+Uint8List cutoutFinish(Uint8List input) {
+  final keyed = chromaKeyMagenta(input);
+  final im = img.decodePng(keyed);
+  if (im == null) return keyed;
+  var n = 0, opaque = 0;
+  void count(int x, int y) {
+    n++;
+    if (im.getPixel(x, y).a > 200) opaque++;
+  }
+
+  for (var x = 0; x < im.width; x++) {
+    count(x, 0);
+    count(x, im.height - 1);
+  }
+  for (var y = 0; y < im.height; y++) {
+    count(0, y);
+    count(im.width - 1, y);
+  }
+  if (n == 0 || opaque / n < 0.3) return keyed;
+  return keyBorderBackground(keyed);
+}
+
+/// Einfarbigen (auch leicht verlaufenden) Hintergrund entfernen: Referenz =
+/// Median der deckenden Randpixel. Vom Rand aus zusammenhängend mit weicher
+/// Kante, eingeschlossene Flächen derselben Farbe (z. B. zwischen Arm und
+/// Körper) streng global.
+Uint8List keyBorderBackground(Uint8List input) {
+  final src = img.decodeImage(input);
+  if (src == null) return input;
+  final im = src.convert(numChannels: 4);
+  final w = im.width, h = im.height;
+  if (w < 3 || h < 3) return input;
+  final rs = <int>[], gs = <int>[], bs = <int>[];
+  void sample(int x, int y) {
+    final p = im.getPixel(x, y);
+    if (p.a < 128) return;
+    rs.add(p.r.toInt());
+    gs.add(p.g.toInt());
+    bs.add(p.b.toInt());
+  }
+
+  for (var x = 0; x < w; x++) {
+    sample(x, 0);
+    sample(x, h - 1);
+  }
+  for (var y = 0; y < h; y++) {
+    sample(0, y);
+    sample(w - 1, y);
+  }
+  if (rs.isEmpty) return input;
+  int median(List<int> v) => (v..sort())[v.length ~/ 2];
+  final br = median(rs), bgc = median(gs), bb = median(bs);
+  double dist(img.Pixel p) {
+    final dr = p.r - br, dg = p.g - bgc, db = p.b - bb;
+    return math.sqrt(dr * dr + dg * dg + db * db).toDouble();
+  }
+
+  const inner = 30.0, outer = 62.0, strict = 16.0;
+  final visited = Uint8List(w * h);
+  final stack = <int>[];
+  void push(int x, int y) {
+    if (x < 0 || y < 0 || x >= w || y >= h) return;
+    final i = y * w + x;
+    if (visited[i] != 0) return;
+    visited[i] = 1;
+    stack.add(i);
+  }
+
+  for (var x = 0; x < w; x++) {
+    push(x, 0);
+    push(x, h - 1);
+  }
+  for (var y = 0; y < h; y++) {
+    push(0, y);
+    push(w - 1, y);
+  }
+  while (stack.isNotEmpty) {
+    final i = stack.removeLast();
+    final p = im.getPixel(i % w, i ~/ w);
+    if (p.a > 0) {
+      final d = dist(p);
+      if (d >= outer) continue; // Motiv-Kante → nicht weiter
+      final keep = ((d - inner) / (outer - inner)).clamp(0.0, 1.0);
+      p.a = (p.a * keep).round();
+    }
+    final x = i % w, y = i ~/ w;
+    push(x + 1, y);
+    push(x - 1, y);
+    push(x, y + 1);
+    push(x, y - 1);
+  }
+  // Eingeschlossene Reste exakt dieser Farbe.
+  for (final p in im) {
+    if (p.a > 0 && dist(p) <= strict) p.a = 0;
   }
   return Uint8List.fromList(img.encodePng(im));
 }
@@ -3603,8 +3716,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         );
         return;
       }
-      // KI liefert das Motiv auf reinem Magenta → hier echt transparent machen.
-      final png = await compute(chromaKeyMagenta, out);
+      // KI liefert das Motiv auf Magenta → transparent machen; hält sie sich
+      // nicht daran (anderer Grund), wird die Randfarbe entfernt.
+      final png = await compute(cutoutFinish, out);
       if (!mounted) return;
       final url = 'data:image/png;base64,${base64Encode(png)}';
       setState(() {
@@ -3719,6 +3833,44 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   /// Einfarbigen Hintergrund des GEWÄHLTEN Bildes clientseitig entfernen (ohne
   /// KI). Nutzt [removeUniformBackground] in einem Isolate.
+  /// Rosa/Magenta-Reste (vom KI-Freistellen) aus dem gewählten Bild entfernen
+  /// – lokal, ohne neue KI-Anfrage; auch eingeschlossene Flächen (z. B.
+  /// zwischen Arm und Körper).
+  Future<void> _removePinkSelected() async {
+    if (_bgBusy) return;
+    final sel = _posterSel;
+    final src = _selectedImageDataUrl();
+    final bytes = src == null ? null : TeamLogo.decode(src);
+    if (sel == null || bytes == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Erst ein Bild auswählen (antippen).')),
+      );
+      return;
+    }
+    setState(() => _bgBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final out = await compute(cutoutFinish, bytes);
+      if (!mounted) return;
+      final url = 'data:image/png;base64,${base64Encode(out)}';
+      setState(() {
+        _setImageById(sel, url);
+        _imgOrig[sel] = url;
+        _imgFeather[sel] = 0;
+        _imgInner[sel] = 0;
+      });
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Hintergrund-Reste entfernt.')),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Entfernen fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _bgBusy = false);
+    }
+  }
+
   Future<void> _removeBgSelected() async {
     if (_bgBusy) return;
     final src = _selectedImageDataUrl();
@@ -4299,6 +4451,22 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                             ),
                           ),
                         ],
+                      ),
+                      // Nach KI-Freistellen: übrig gebliebenes Rosa entfernen.
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.cleaning_services, size: 18),
+                          label: const Text(
+                            'Reste entfernen (Rosa/Hintergrund)',
+                          ),
+                          onPressed: _bgBusy
+                              ? null
+                              : () {
+                                  Navigator.pop(ctx);
+                                  _removePinkSelected();
+                                },
+                        ),
                       ),
                       labeledSlider(
                         'Weiche Kanten',

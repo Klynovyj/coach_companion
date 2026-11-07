@@ -68,7 +68,11 @@ function guardText(
       "folgende Motiv und entferne ALLES andere (Wand, Boden, Himmel, Zaun, " +
       "andere Personen, Gegenstaende). Ersetze den kompletten restlichen " +
       "Bereich durch exakt einfarbiges, reines MAGENTA (#FF00FF) – ohne " +
-      "Verlauf, ohne Schatten, ohne Boden. Das Motiv bleibt EXAKT unveraendert " +
+      "Verlauf, ohne Schatten, ohne Boden – AUCH alle Luecken im Motiv " +
+      "(zwischen Armen und Koerper, zwischen den Beinen, zwischen Haaren) " +
+      "und der GESAMTE Bildrand muessen reines Magenta sein. Niemals Braun, " +
+      "Grau, Schwarz oder den alten Hintergrund stehen lassen. " +
+      "Das Motiv bleibt EXAKT unveraendert " +
       "(gleiche Pose, Kleidung, Gesicht, Haare, Farben, Groesse und Position " +
       "im Bild, gleiches Seitenverhaeltnis). Saubere, praezise Kanten. Keine " +
       "Magenta-Toene im Motiv selbst. Freizustellendes Motiv: "
