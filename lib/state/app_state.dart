@@ -4992,6 +4992,7 @@ class AppState extends ChangeNotifier {
     String name, {
     String? logo,
     bool isMain = false,
+    String chip = 'auto',
   }) async {
     final list = await _repo.getSponsors();
     if (isMain) {
@@ -5005,6 +5006,7 @@ class AppState extends ChangeNotifier {
       logo: logo,
       isMain: isMain,
       sortOrder: list.length,
+      chip: chip,
     );
     await _repo.upsertSponsor(sponsor);
     notifyListeners();

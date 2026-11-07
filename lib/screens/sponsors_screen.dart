@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -7,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../models/sponsor.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import 'logo_editor_screen.dart';
 
 /// Verwaltung der Vereins-Sponsoren. Die hier eingetragenen Logos erscheinen
 /// automatisch auf der Startelf-Grafik: der Haupt-Sponsor als „Präsentiert von
@@ -57,6 +59,25 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     String? logo = existing?.logo;
     bool isMain = existing?.isMain ?? false;
+    String chip = existing?.chip ?? 'auto';
+
+    // Logo im Editor bearbeiten (zuschneiden, Ränder/Weiß weg, Feld).
+    Future<void> edit(StateSetter setSheet, Uint8List bytes) async {
+      final r = await Navigator.of(context).push<LogoEditResult>(
+        MaterialPageRoute(
+          builder: (_) => LogoEditorScreen(
+            imageBytes: bytes,
+            chip: chip,
+            name: nameCtrl.text,
+          ),
+        ),
+      );
+      if (r == null) return;
+      setSheet(() {
+        logo = 'data:image/png;base64,${base64Encode(r.bytes)}';
+        chip = r.chip;
+      });
+    }
 
     final saved = await showModalBottomSheet<bool>(
       context: context,
@@ -81,34 +102,64 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
                   const SizedBox(height: 14),
                   Row(
                     children: [
-                      Container(
-                        width: 56,
-                        height: 56,
-                        decoration: BoxDecoration(
-                          color: Theme.of(
-                            ctx,
-                          ).colorScheme.surfaceContainerHighest,
-                          borderRadius: BorderRadius.circular(8),
+                      GestureDetector(
+                        onTap: () {
+                          final b = TeamLogo.decode(logo);
+                          if (b != null) edit(setSheet, b);
+                        },
+                        child: Container(
+                          width: 56,
+                          height: 56,
+                          decoration: BoxDecoration(
+                            color: Theme.of(
+                              ctx,
+                            ).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          alignment: Alignment.center,
+                          child: logo != null
+                              ? TeamLogo(logoPath: logo, size: 48)
+                              : Icon(
+                                  Icons.image_outlined,
+                                  color: Theme.of(ctx).hintColor,
+                                ),
                         ),
-                        alignment: Alignment.center,
-                        child: logo != null
-                            ? TeamLogo(logoPath: logo, size: 48)
-                            : Icon(
-                                Icons.image_outlined,
-                                color: Theme.of(ctx).hintColor,
-                              ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.upload, size: 18),
-                          label: Text(
-                            logo == null ? 'Logo wählen' : 'Logo ändern',
-                          ),
-                          onPressed: () async {
-                            final picked = await _pickLogo();
-                            if (picked != null) setSheet(() => logo = picked);
-                          },
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.upload, size: 18),
+                              label: Text(
+                                logo == null ? 'Logo wählen' : 'Logo ändern',
+                              ),
+                              onPressed: () async {
+                                final picked = await _pickLogo();
+                                if (picked == null) return;
+                                // Erst das Rohbild übernehmen, dann direkt
+                                // den Editor öffnen (Abbrechen = so lassen).
+                                setSheet(
+                                  () => logo =
+                                      'data:image/png;base64,'
+                                      '${base64Encode(picked)}',
+                                );
+                                await edit(setSheet, picked);
+                              },
+                            ),
+                            if (logo != null) ...[
+                              const SizedBox(height: 6),
+                              FilledButton.tonalIcon(
+                                icon: const Icon(Icons.tune, size: 18),
+                                label: const Text('Logo bearbeiten'),
+                                onPressed: () {
+                                  final b = TeamLogo.decode(logo);
+                                  if (b != null) edit(setSheet, b);
+                                },
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ],
@@ -161,10 +212,10 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
     if (name.isEmpty) return;
     final state = context.read<AppState>();
     if (existing == null) {
-      await state.addSponsor(name, logo: logo, isMain: isMain);
+      await state.addSponsor(name, logo: logo, isMain: isMain, chip: chip);
     } else {
       await state.saveSponsor(
-        existing.copyWith(name: name, logo: logo, isMain: isMain),
+        existing.copyWith(name: name, logo: logo, isMain: isMain, chip: chip),
       );
     }
     await _load();
@@ -172,18 +223,16 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
 
   /// Wählt ein Logo aus der Galerie/Datei und kodiert es als Base64-Data-URL
   /// (wie die Vereinslogos).
-  Future<String?> _pickLogo() async {
+  Future<Uint8List?> _pickLogo() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
       final file = await ImagePicker().pickImage(
         source: ImageSource.gallery,
-        maxWidth: 600,
-        maxHeight: 600,
-        imageQuality: 90,
+        maxWidth: 1200,
+        maxHeight: 1200,
       );
       if (file == null) return null;
-      final bytes = await file.readAsBytes();
-      return 'data:image/png;base64,${base64Encode(bytes)}';
+      return await file.readAsBytes();
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('Logo konnte nicht geladen werden: $e')),

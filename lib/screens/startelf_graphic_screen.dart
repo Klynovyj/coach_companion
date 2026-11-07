@@ -24,6 +24,7 @@ import '../services/cloud_service.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_picker_page.dart';
+import '../widgets/logo_chip.dart';
 import '../widgets/team_logo.dart';
 import 'photo_editor_screen.dart';
 
@@ -609,88 +610,6 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
     }
   }
   return Uint8List.fromList(img.encodePng(im));
-}
-
-final _logoFixCache = <String, ({bool dark, Uint8List bytes})>{};
-
-/// Logo-Kontrast: Ist die „Tinte" eines Logos (alle nicht-weißen, sichtbaren
-/// Pixel) auf Weiß schlecht lesbar (Kontrast < 3, z. B. Gold/Gelb/hell), wird
-/// `dark: true` geliefert. Hat das Logo einen weißen (undurchsichtigen)
-/// Hintergrund, wird der dabei transparent gemacht (weiche Kante), damit es
-/// auf dem dunklen Feld sauber steht. Ergebnis wird je Logo zwischengespeichert.
-({bool dark, Uint8List bytes}) logoContrastFix(Uint8List bytes) {
-  var h = bytes.length;
-  final step = math.max(1, bytes.length ~/ 64);
-  for (var i = 0; i < bytes.length; i += step) {
-    h = (h * 31 + bytes[i]) & 0x3fffffff;
-  }
-  final key = '${bytes.length}:$h';
-  final cached = _logoFixCache[key];
-  if (cached != null) return cached;
-  var res = (dark: false, bytes: bytes);
-  try {
-    final im = img.decodeImage(bytes);
-    if (im != null) {
-      final small = im.width > 96 || im.height > 96
-          ? img.copyResize(
-              im,
-              width: im.width >= im.height ? 96 : null,
-              height: im.height > im.width ? 96 : null,
-            )
-          : im;
-      var n = 0, transparent = 0;
-      var lum = 0.0;
-      double lin(num c) {
-        final v = c / 255.0;
-        return v <= 0.04045
-            ? v / 12.92
-            : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
-      }
-
-      for (final p in small) {
-        final a = p.aNormalized;
-        if (a < 0.8) {
-          transparent++;
-          continue;
-        }
-        if (math.min(p.r, math.min(p.g, p.b)) >= 225) continue; // weiß
-        lum += 0.2126 * lin(p.r) + 0.7152 * lin(p.g) + 0.0722 * lin(p.b);
-        n++;
-      }
-      final total = small.width * small.height;
-      if (n > total * 0.01) {
-        final contrast = 1.05 / (lum / n + 0.05);
-        if (contrast < 3) {
-          var out = bytes;
-          if (transparent < total * 0.05) {
-            // Undurchsichtig mit weißem Grund → Weiß ausstanzen (max. 600 px).
-            final big = im.width > 600 || im.height > 600
-                ? img.copyResize(
-                    im,
-                    width: im.width >= im.height ? 600 : null,
-                    height: im.height > im.width ? 600 : null,
-                  )
-                : im.clone();
-            final rgba = big.numChannels == 4
-                ? big
-                : big.convert(numChannels: 4);
-            for (final p in rgba) {
-              final m = math.min(p.r, math.min(p.g, p.b));
-              if (m >= 200) {
-                // 200 → deckend … 245+ → transparent.
-                final t = ((m - 200) / 45).clamp(0.0, 1.0);
-                p.a = (p.a * (1 - t)).round();
-              }
-            }
-            out = Uint8List.fromList(img.encodePng(rgba));
-          }
-          res = (dark: true, bytes: out);
-        }
-      }
-    }
-  } catch (_) {}
-  _logoFixCache[key] = res;
-  return res;
 }
 
 final _photoInfoCache = <String, ({double aspect, bool opaque})>{};
@@ -7560,7 +7479,11 @@ class _StartelfGraphic extends StatelessWidget {
         ConstrainedBox(
           constraints: BoxConstraints(maxWidth: compact ? 130 : 168),
           child: sponsorLogo != null && mainSponsorMode != 'text'
-              ? _logoChip(sponsorLogo, height: compact ? 38 : 50)
+              ? _logoChip(
+                  sponsorLogo,
+                  height: compact ? 38 : 50,
+                  mode: mainSponsor!.chip,
+                )
               : Text(
                   mainSponsor!.name,
                   maxLines: 1,
@@ -7598,7 +7521,7 @@ class _StartelfGraphic extends StatelessWidget {
         ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 190),
           child: sponsorLogo != null && mainSponsorMode != 'text'
-              ? _logoChip(sponsorLogo, height: 46)
+              ? _logoChip(sponsorLogo, height: 46, mode: mainSponsor!.chip)
               : Text(
                   mainSponsor!.name,
                   maxLines: 1,
@@ -8615,7 +8538,11 @@ class _StartelfGraphic extends StatelessWidget {
                 if (TeamLogo.decode(s.logo) case final b?)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: _logoChip(b, height: compact ? 30 : 36),
+                    child: _logoChip(
+                      b,
+                      height: compact ? 30 : 36,
+                      mode: s.chip,
+                    ),
                   ),
             ],
           );
@@ -9036,7 +8963,7 @@ class _StartelfGraphic extends StatelessWidget {
         ),
         const SizedBox(width: 6),
         // Helle Logos automatisch auf dunklem Feld (siehe _logoChip).
-        _logoChip(logoBytes, height: compact ? 29 : 35),
+        _logoChip(logoBytes, height: compact ? 29 : 35, mode: s.chip),
       ],
     );
   }
@@ -9088,7 +9015,11 @@ class _StartelfGraphic extends StatelessWidget {
       children: [
         for (final s in barSponsors)
           if (TeamLogo.decode(s.logo) != null)
-            _logoChip(TeamLogo.decode(s.logo)!, height: compact ? 26 : 32),
+            _logoChip(
+              TeamLogo.decode(s.logo)!,
+              height: compact ? 26 : 32,
+              mode: s.chip,
+            ),
       ],
     );
     // Gezogene Größe: Logos verteilen/umbrechen sich in der neuen Breite.
@@ -9103,97 +9034,13 @@ class _StartelfGraphic extends StatelessWidget {
     return Container(padding: pad, decoration: deco, child: logos);
   }
 
+  /// Logo-Feld (siehe [LogoChip]); [mode] = Sponsor-Einstellung oder 'auto'.
   Widget _logoChip(
     Uint8List bytes, {
     required double height,
     bool circle = false,
-  }) {
-    // Helle/goldene Logos sind auf Weiß kaum lesbar → automatisch dunkles Feld
-    // (weißer Bildhintergrund wird dabei transparent).
-    final fix = logoContrastFix(bytes);
-    if (fix.dark) {
-      return _darkLogoChip(fix.bytes, height: height, circle: circle);
-    }
-    // Leichter 3D-/Erhebungs-Effekt: Schlagschatten unten.
-    final shadow = [
-      BoxShadow(
-        color: Colors.black.withValues(alpha: 0.55),
-        blurRadius: 12,
-        offset: const Offset(0, 5),
-      ),
-    ];
-    if (circle) {
-      // Rundes weißes Feld (quadratisch, Logo zentriert).
-      return Container(
-        width: height,
-        height: height,
-        padding: const EdgeInsets.all(6),
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          shape: BoxShape.circle,
-          boxShadow: shadow,
-        ),
-        child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
-      );
-    }
-    return Container(
-      height: height,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(6),
-        boxShadow: shadow,
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.9),
-          width: 0.5,
-        ),
-      ),
-      child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
-    );
-  }
-
-  /// Dunkles Logo-Feld (für helle Logos): fast schwarz, feiner heller Rand.
-  Widget _darkLogoChip(
-    Uint8List bytes, {
-    required double height,
-    bool circle = false,
-  }) {
-    final deco = BoxDecoration(
-      color: const Color(0xFF121212),
-      shape: circle ? BoxShape.circle : BoxShape.rectangle,
-      borderRadius: circle ? null : BorderRadius.circular(6),
-      border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.55),
-          blurRadius: 12,
-          offset: const Offset(0, 5),
-        ),
-      ],
-    );
-    final image = Image.memory(
-      bytes,
-      fit: BoxFit.contain,
-      gaplessPlayback: true,
-    );
-    if (circle) {
-      return Container(
-        width: height,
-        height: height,
-        padding: const EdgeInsets.all(6),
-        clipBehavior: Clip.antiAlias,
-        decoration: deco,
-        child: image,
-      );
-    }
-    return Container(
-      height: height,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-      decoration: deco,
-      child: image,
-    );
-  }
+    String mode = 'auto',
+  }) => LogoChip(bytes: bytes, height: height, circle: circle, mode: mode);
 }
 
 /// Lässt Treffer (Zeiger-Ereignisse) nur dort zu, wo [test] true liefert –

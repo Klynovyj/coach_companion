@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 67;
+  static const _dbVersion = 68;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -501,7 +501,9 @@ class AppDatabase {
     // v58 -> v59: Design-Modus (eigenes Branding-Design) + dunkles Logo +
     // Position des Info-Blocks.
     if (oldV < 59) {
-      await db.execute('ALTER TABLE graphic_settings ADD COLUMN logo_dark TEXT');
+      await db.execute(
+        'ALTER TABLE graphic_settings ADD COLUMN logo_dark TEXT',
+      );
       await db.execute(
         'ALTER TABLE graphic_settings ADD COLUMN design_mode INTEGER',
       );
@@ -550,6 +552,12 @@ class AppDatabase {
     // v66 -> v67: Designer („Meine Designs"): Titel, Vorlage, Vorschaubild.
     if (oldV < 67) {
       await _addDesignerColumns(db);
+    }
+    // v67 -> v68: Sponsor-Logo-Feld (auto/white/dark/none) für Grafiken.
+    if (oldV < 68) {
+      await db.execute(
+        "ALTER TABLE sponsors ADD COLUMN chip TEXT NOT NULL DEFAULT 'auto'",
+      );
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
@@ -858,7 +866,8 @@ class AppDatabase {
         logo TEXT,
         is_main INTEGER NOT NULL DEFAULT 0,
         sort_order INTEGER NOT NULL DEFAULT 0,
-        enabled INTEGER NOT NULL DEFAULT 1
+        enabled INTEGER NOT NULL DEFAULT 1,
+        chip TEXT NOT NULL DEFAULT 'auto'
       )
   ''';
 

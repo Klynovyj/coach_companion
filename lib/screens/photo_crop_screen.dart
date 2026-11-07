@@ -7,9 +7,18 @@ import 'package:flutter/material.dart';
 /// das Bild (Auswahlrahmen ziehen) und bestätigt mit „Übernehmen". Gibt die
 /// zugeschnittenen Bytes zurück, oder null bei Abbruch.
 class PhotoCropScreen extends StatefulWidget {
-  const PhotoCropScreen({super.key, required this.imageBytes});
+  const PhotoCropScreen({
+    super.key,
+    required this.imageBytes,
+    this.aspectRatio = 1,
+    this.title = 'Foto zuschneiden',
+  });
 
   final Uint8List imageBytes;
+
+  /// null = freies Format (z. B. für Logos).
+  final double? aspectRatio;
+  final String title;
 
   @override
   State<PhotoCropScreen> createState() => _PhotoCropScreenState();
@@ -37,7 +46,7 @@ class _PhotoCropScreenState extends State<PhotoCropScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Foto zuschneiden'),
+        title: Text(widget.title),
         actions: [
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -60,10 +69,17 @@ class _PhotoCropScreenState extends State<PhotoCropScreen> {
             child: Crop(
               image: widget.imageBytes,
               controller: _controller,
-              aspectRatio: 1,
+              aspectRatio: widget.aspectRatio,
               // Start-Rahmen etwas eingerückt, damit die Eck-Punkte nicht am
-              // Bildrand kleben und sich greifen lassen.
-              initialRectBuilder: InitialRectBuilder.withBuilder((viewport, _) {
+              // Bildrand kleben und sich greifen lassen. Freies Format: das
+              // ganze Bild (leicht eingerückt).
+              initialRectBuilder: InitialRectBuilder.withBuilder((
+                viewport,
+                imageRect,
+              ) {
+                if (widget.aspectRatio == null) {
+                  return imageRect.deflate(imageRect.shortestSide * 0.02);
+                }
                 final inset = viewport.shortestSide * 0.1;
                 final side = viewport.shortestSide - inset * 2;
                 return Rect.fromCenter(
@@ -77,13 +93,16 @@ class _PhotoCropScreenState extends State<PhotoCropScreen> {
               onCropped: _onCropped,
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 10, 16, 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
             child: Text(
-              'Rahmen ziehen bzw. Ecken anpassen – das Foto wird quadratisch '
-              'zugeschnitten. Dann „Übernehmen".',
+              widget.aspectRatio == null
+                  ? 'Ecken und Kanten ziehen – beliebiges Format. Dann '
+                        '„Übernehmen".'
+                  : 'Rahmen ziehen bzw. Ecken anpassen – das Foto wird '
+                        'quadratisch zugeschnitten. Dann „Übernehmen".',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white70, fontSize: 12),
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
             ),
           ),
         ],
