@@ -1239,7 +1239,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   bool _loading = true;
   bool _sharing = false;
   bool _aiBusy = false;
+  String _aiBusyLabel = 'KI arbeitet …';
   bool _bgBusy = false; // clientseitiges Hintergrund-Entfernen läuft
+
+  /// Text der Fortschrittsanzeige (null = nichts läuft).
+  String? get _busyText => _lookBusy
+      ? 'KI gestaltet den Look …'
+      : _aiBusy
+      ? _aiBusyLabel
+      : _bgBusy
+      ? 'Bild wird bearbeitet …'
+      : null;
   // Hinzugefügte Fotos (für alle Grafiktypen), transient. Hintergrund ODER
   // Foto-Bereich oben; mehrere möglich.
   final List<_GraphicPhoto> _photos = [];
@@ -3343,7 +3353,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (_aiBusy) return;
     final wish = await _askAiWish();
     if (wish == null || wish.prompt.trim().isEmpty || !mounted) return;
-    setState(() => _aiBusy = true);
+    setState(() {
+      _aiBusy = true;
+      _aiBusyLabel = 'KI gestaltet den Hintergrund …';
+    });
     final messenger = ScaffoldMessenger.of(context);
     try {
       final images = _bgReferenceImages();
@@ -3813,7 +3826,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     final subject = await _askCutoutSubject();
     if (subject == null || !mounted) return;
-    setState(() => _aiBusy = true);
+    setState(() {
+      _aiBusy = true;
+      _aiBusyLabel = 'KI stellt frei …';
+    });
     try {
       // Verkleinert + JPEG senden (schneller, unter allen Größen-Grenzen).
       final send = await compute(downscaleForAi, srcBytes);
@@ -5994,6 +6010,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             child: _graphic(backgroundOnly: true),
           ),
           lockForTap ? IgnorePointer(child: mainGraphic) : mainGraphic,
+          if (_aiBusy || _bgBusy) _busyOverlay(_busyText ?? 'Bitte warten …'),
         ],
       ),
     );
@@ -6001,6 +6018,60 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     return GestureDetector(
       onTap: () => setState(() => _fullEdit = true),
       child: stack,
+    );
+  }
+
+  /// Abgedunkelte Fläche mit Kreisel + Text über dem Canvas, solange KI bzw.
+  /// Bildbearbeitung läuft (blockiert Eingaben, liegt NICHT im Export).
+  Widget _busyOverlay(String text) {
+    return Positioned.fill(
+      child: AbsorbPointer(
+        child: ColoredBox(
+          color: Colors.black.withValues(alpha: 0.45),
+          child: Center(
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 30,
+                    height: 30,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 3,
+                      color: Colors.white,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    text,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (_aiBusy) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'dauert meist 10–30 Sekunden',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.75),
+                        fontSize: 10.5,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
@@ -6095,9 +6166,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           tooltip: 'Fertig',
           onPressed: _leaveEditor,
         ),
-        title: Text(_lookBusy ? 'KI gestaltet Look …' : 'Bearbeiten'),
-        // Läuft die KI (Look), zeigt ein Balken unter der Leiste den Fortschritt.
-        bottom: _lookBusy
+        title: Text(_busyText ?? 'Bearbeiten'),
+        // Läuft die KI (Look/Freistellen …), zeigt ein Balken den Fortschritt.
+        bottom: _busyText != null
             ? const PreferredSize(
                 preferredSize: Size.fromHeight(3),
                 child: LinearProgressIndicator(minHeight: 3),
