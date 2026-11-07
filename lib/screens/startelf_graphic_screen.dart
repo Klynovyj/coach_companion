@@ -163,10 +163,7 @@ const List<(String, Map<String, double>)> kGradePresets = [
       'vignette': 25,
     },
   ),
-  (
-    'Warm',
-    {'warmth': 30, 'saturation': 10, 'contrast': 8, 'vignette': 20},
-  ),
+  ('Warm', {'warmth': 30, 'saturation': 10, 'contrast': 8, 'vignette': 20}),
   (
     'Schwarz-Weiß',
     {'saturation': -100, 'contrast': 30, 'vignette': 30, 'grain': 20},
@@ -218,11 +215,33 @@ List<double> buildGradeMatrix({
   }
 
   // Gleiche Skalierung + Versatz auf R/G/B (Alpha unverändert).
-  List<double> lin(double s, double o, [double oR = 0, double oB = 0, double oG = 0]) => [
-    s, 0, 0, 0, o + oR,
-    0, s, 0, 0, o + oG,
-    0, 0, s, 0, o + oB,
-    0, 0, 0, 1, 0,
+  List<double> lin(
+    double s,
+    double o, [
+    double oR = 0,
+    double oB = 0,
+    double oG = 0,
+  ]) => [
+    s,
+    0,
+    0,
+    0,
+    o + oR,
+    0,
+    s,
+    0,
+    0,
+    o + oG,
+    0,
+    0,
+    s,
+    0,
+    o + oB,
+    0,
+    0,
+    0,
+    1,
+    0,
   ];
 
   // 1) Belichtung: ±1 Blende.
@@ -259,13 +278,26 @@ List<double> buildGradeMatrix({
     final a = hue * math.pi / 180;
     final co = math.cos(a), si = math.sin(a);
     m = mul([
-      0.213 + co * 0.787 - si * 0.213, 0.715 - co * 0.715 - si * 0.715,
-      0.072 - co * 0.072 + si * 0.928, 0, 0,
-      0.213 - co * 0.213 + si * 0.143, 0.715 + co * 0.285 + si * 0.140,
-      0.072 - co * 0.072 - si * 0.283, 0, 0,
-      0.213 - co * 0.213 - si * 0.787, 0.715 - co * 0.715 + si * 0.715,
-      0.072 + co * 0.928 + si * 0.072, 0, 0,
-      0, 0, 0, 1, 0,
+      0.213 + co * 0.787 - si * 0.213,
+      0.715 - co * 0.715 - si * 0.715,
+      0.072 - co * 0.072 + si * 0.928,
+      0,
+      0,
+      0.213 - co * 0.213 + si * 0.143,
+      0.715 + co * 0.285 + si * 0.140,
+      0.072 - co * 0.072 - si * 0.283,
+      0,
+      0,
+      0.213 - co * 0.213 - si * 0.787,
+      0.715 - co * 0.715 + si * 0.715,
+      0.072 + co * 0.928 + si * 0.072,
+      0,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
     ], m);
   }
   // 5) Sättigung (luminanzbasiert); Fade nimmt etwas Farbe raus.
@@ -273,10 +305,26 @@ List<double> buildGradeMatrix({
   const lr = 0.2126, lg = 0.7152, lb = 0.0722;
   final sr = (1 - sat) * lr, sg = (1 - sat) * lg, sb = (1 - sat) * lb;
   m = mul([
-    sr + sat, sg, sb, 0, 0,
-    sr, sg + sat, sb, 0, 0,
-    sr, sg, sb + sat, 0, 0,
-    0, 0, 0, 1, 0,
+    sr + sat,
+    sg,
+    sb,
+    0,
+    0,
+    sr,
+    sg + sat,
+    sb,
+    0,
+    0,
+    sr,
+    sg,
+    sb + sat,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
   ], m);
   return m;
 }
@@ -491,10 +539,7 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
         final p = im.getPixel(x, y);
         final origA = p.a.toInt();
         int na;
-        if (x < border ||
-            y < border ||
-            x >= w - border ||
-            y >= h - border) {
+        if (x < border || y < border || x >= w - border || y >= h - border) {
           na = origA;
         } else {
           final bn = blurred.getPixel(x, y).r / 255.0;
@@ -555,6 +600,99 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
   return Uint8List.fromList(img.encodePng(im));
 }
 
+final _logoFixCache = <String, ({bool dark, Uint8List bytes})>{};
+
+/// Logo-Kontrast: Ist die „Tinte" eines Logos (alle nicht-weißen, sichtbaren
+/// Pixel) auf Weiß schlecht lesbar (Kontrast < 3, z. B. Gold/Gelb/hell), wird
+/// `dark: true` geliefert. Hat das Logo einen weißen (undurchsichtigen)
+/// Hintergrund, wird der dabei transparent gemacht (weiche Kante), damit es
+/// auf dem dunklen Feld sauber steht. Ergebnis wird je Logo zwischengespeichert.
+({bool dark, Uint8List bytes}) logoContrastFix(Uint8List bytes) {
+  var h = bytes.length;
+  final step = math.max(1, bytes.length ~/ 64);
+  for (var i = 0; i < bytes.length; i += step) {
+    h = (h * 31 + bytes[i]) & 0x3fffffff;
+  }
+  final key = '${bytes.length}:$h';
+  final cached = _logoFixCache[key];
+  if (cached != null) return cached;
+  var res = (dark: false, bytes: bytes);
+  try {
+    final im = img.decodeImage(bytes);
+    if (im != null) {
+      final small = im.width > 96 || im.height > 96
+          ? img.copyResize(
+              im,
+              width: im.width >= im.height ? 96 : null,
+              height: im.height > im.width ? 96 : null,
+            )
+          : im;
+      var n = 0, transparent = 0;
+      var lum = 0.0;
+      double lin(num c) {
+        final v = c / 255.0;
+        return v <= 0.04045
+            ? v / 12.92
+            : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+      }
+
+      for (final p in small) {
+        final a = p.aNormalized;
+        if (a < 0.8) {
+          transparent++;
+          continue;
+        }
+        if (math.min(p.r, math.min(p.g, p.b)) >= 225) continue; // weiß
+        lum += 0.2126 * lin(p.r) + 0.7152 * lin(p.g) + 0.0722 * lin(p.b);
+        n++;
+      }
+      final total = small.width * small.height;
+      if (n > total * 0.01) {
+        final contrast = 1.05 / (lum / n + 0.05);
+        if (contrast < 3) {
+          var out = bytes;
+          if (transparent < total * 0.05) {
+            // Undurchsichtig mit weißem Grund → Weiß ausstanzen (max. 600 px).
+            final big = im.width > 600 || im.height > 600
+                ? img.copyResize(
+                    im,
+                    width: im.width >= im.height ? 600 : null,
+                    height: im.height > im.width ? 600 : null,
+                  )
+                : im.clone();
+            final rgba = big.numChannels == 4
+                ? big
+                : big.convert(numChannels: 4);
+            for (final p in rgba) {
+              final m = math.min(p.r, math.min(p.g, p.b));
+              if (m >= 200) {
+                // 200 → deckend … 245+ → transparent.
+                final t = ((m - 200) / 45).clamp(0.0, 1.0);
+                p.a = (p.a * (1 - t)).round();
+              }
+            }
+            out = Uint8List.fromList(img.encodePng(rgba));
+          }
+          res = (dark: true, bytes: out);
+        }
+      }
+    }
+  } catch (_) {}
+  _logoFixCache[key] = res;
+  return res;
+}
+
+/// Eintrag im Tore-Zeitstrahl (Position + Beschriftungs-Etage).
+typedef _TlEntry = ({
+  int minute,
+  String name,
+  String? photo,
+  double cx,
+  double left,
+  double lw,
+  int level,
+});
+
 /// ENDSTAND-Grafik: Kurzname eines Torschützen – „#7 Ben Kania" → „B. KANIA".
 /// Unbekannte Torschützen („Gegner", leer) → '' (es werden nur Minuten gezeigt).
 String scorerShortName(String raw) {
@@ -579,14 +717,14 @@ List<({String label, List<int> minutes})> groupScorers(
   final byLabel = <String, List<int>>{};
   for (final g in goals) {
     final label = scorerShortName(g.name);
-    byLabel.putIfAbsent(label, () {
-      order.add(label);
-      return <int>[];
-    }).add(g.minute);
+    byLabel
+        .putIfAbsent(label, () {
+          order.add(label);
+          return <int>[];
+        })
+        .add(g.minute);
   }
-  return [
-    for (final l in order) (label: l, minutes: byLabel[l]!..sort()),
-  ];
+  return [for (final l in order) (label: l, minutes: byLabel[l]!..sort())];
 }
 
 /// KI-Look: leere, einfarbige Leinwand im Zielformat (Gemini übernimmt das
@@ -703,7 +841,8 @@ Uint8List removeUniformBackground(Uint8List input) {
     final x = idx % w, y = idx ~/ w;
     final p = im.getPixel(x, y);
     final dr = p.r.toInt() - rr, dg = p.g.toInt() - gg, db = p.b.toInt() - bb;
-    if (dr * dr + dg * dg + db * db > tol2) continue; // Kante → nicht überqueren
+    if (dr * dr + dg * dg + db * db > tol2)
+      continue; // Kante → nicht überqueren
     im.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), 0);
     push(x + 1, y);
     push(x - 1, y);
@@ -842,9 +981,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   final Map<String, BuildContext> _stdNatCtx = {};
   String? _gTarget; // Element der laufenden Zieh-/Pinch-Geste
   Size? _rzStart; // Kasten-Ziehen: Größe beim Packen des Griffs
-  Offset _rzAcc = Offset.zero; // Kasten-Ziehen: aufsummiertes Delta (Kasten-Achsen)
+  Offset _rzAcc =
+      Offset.zero; // Kasten-Ziehen: aufsummiertes Delta (Kasten-Achsen)
   final Map<String, Map<String, double>> _posterScaleF = {};
-  final Map<String, Map<String, double>> _posterRotF = {}; // Drehung (rad) je Elem.
+  final Map<String, Map<String, double>> _posterRotF =
+      {}; // Drehung (rad) je Elem.
   final Map<String, List<String>> _posterOrderF = {};
   final Map<String, String?> _posterMainF = {};
   final Map<String, List<({String id, String dataUrl})>> _posterOverlaysF = {};
@@ -893,6 +1034,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ? Matrix4.fromList(m)
         : Matrix4.identity();
   }
+
   final Map<String, List<String>> _textIdsF = {};
   final Map<String, Map<String, String>> _textContentF = {};
   final Map<String, Map<String, String>> _textFontF = {};
@@ -905,8 +1047,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _posterPosF.putIfAbsent(_designKey, () => {});
   Set<String> get _posCentered =>
       _posCenteredF.putIfAbsent(_designKey, () => <String>{});
-  Map<String, Offset> get _stdOff =>
-      _stdOffF.putIfAbsent(_designKey, () => {});
+  Map<String, Offset> get _stdOff => _stdOffF.putIfAbsent(_designKey, () => {});
   Set<String> get _stdHidden =>
       _stdHiddenF.putIfAbsent(_designKey, () => <String>{});
   Map<String, double> get _posterScale =>
@@ -950,6 +1091,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   _Grade get _grade => _gradeF.putIfAbsent(_designKey, () => _Grade());
   bool _gradeBusy = false; // KI-Analyse läuft
   bool _fullEdit = false; // Vollbild-Editor (großes Canvas) offen?
+  // Zoom/Verschiebung des Canvas im Editor (nur Ansicht, nie im Export).
+  final _editZoom = TransformationController();
+  bool _editZoomed = false;
   // Freier Editor für ALLE Grafiktypen (Ankündigung/Ergebnis/Startelf); im
   // reinen Branding-Design-Modus deaktiviert (eigenes Layout).
   bool get _editable => !_settings.designMode;
@@ -965,11 +1109,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   DateTime _thumbAt = DateTime(2000);
   // Speichern des Ankündigungs-Designs je Spiel (lokal + Cloud).
   Timer? _saveTimer; // debounced Autosave
-  bool _designLoaded = false; // erst nach dem Laden speichern (nichts überschr.)
+  bool _designLoaded =
+      false; // erst nach dem Laden speichern (nichts überschr.)
   AppState? _appStateRef; // für Speichern in dispose (ohne context)
   final GlobalKey _posterCanvasKey = GlobalKey(); // Koord. für den Dreh-Griff
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
-  String _mainSponsorMode = 'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
+  String _mainSponsorMode =
+      'logo'; // 'logo' | 'text' – Hauptsponsor-Darstellung
   bool _showOtherSponsors = true; // weitere Sponsoren anzeigen (je Grafik)
   String _posterFont = 'standard'; // Schriftart der Poster-Texte
   List<Sponsor> _sponsors = [];
@@ -1130,6 +1276,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   @override
   void dispose() {
+    _editZoom.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _saveTimer?.cancel();
     _flushSave(); // letzten Stand beim Verlassen sichern
@@ -1338,9 +1485,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     return {
       'v': 1,
       'pos': offMap(_posterPosF),
-      'posC': {
-        for (final e in _posCenteredF.entries) e.key: e.value.toList(),
-      },
+      'posC': {for (final e in _posCenteredF.entries) e.key: e.value.toList()},
       'look': {for (final e in _lookF.entries) e.key: e.value.toJson()},
       'boxSize': {
         for (final e in _boxSizeF.entries)
@@ -1548,7 +1693,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (v is List) {
           for (final o in v) {
             if (o is Map && o['id'] != null && o['dataUrl'] != null) {
-              list.add((id: o['id'].toString(), dataUrl: o['dataUrl'].toString()));
+              list.add((
+                id: o['id'].toString(),
+                dataUrl: o['dataUrl'].toString(),
+              ));
             }
           }
         }
@@ -1656,7 +1804,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       case _PhotoPlace.band:
         return w / (h * 0.46);
       case _PhotoPlace.posterMain:
-        return w / (h * _kPosterMainHeightFactor); // Hochformat, unterer Bereich
+        return w /
+            (h * _kPosterMainHeightFactor); // Hochformat, unterer Bereich
       case _PhotoPlace.posterBadge:
         return 1.0; // quadratisch → Kreis
       default:
@@ -1888,64 +2037,64 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     bool hasExisting = false,
     bool allowKader = true,
   }) => showModalBottomSheet<String>(
-        context: context,
-        builder: (ctx) => SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Bildquelle',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                ),
+    context: context,
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                'Bildquelle',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
-              if (widget.teamId != null && allowKader)
-                ListTile(
-                  leading: const Icon(Icons.groups),
-                  title: const Text('Kader-Spieler wählen'),
-                  subtitle: const Text('Nimmt das gespeicherte Profilfoto'),
-                  onTap: () => Navigator.pop(ctx, 'kader'),
-                ),
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Aus Galerie'),
-                onTap: () => Navigator.pop(ctx, 'gallery'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo),
-                title: const Text('Google Fotos'),
-                subtitle: Text(
-                  Platform.isAndroid
-                      ? 'Im Foto-Picker auf Google Fotos wechseln'
-                      : 'Oeffnet Google Fotos im Browser zum Herunterladen',
-                ),
-                onTap: () => Navigator.pop(ctx, 'google'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.photo_camera),
-                title: const Text('Foto aufnehmen'),
-                onTap: () => Navigator.pop(ctx, 'camera'),
-              ),
-              if (hasExisting) ...[
-                const Divider(),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: const Text(
-                    'Entfernen',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                  onTap: () => Navigator.pop(ctx, 'remove'),
-                ),
-              ],
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
-        ),
-      );
+          if (widget.teamId != null && allowKader)
+            ListTile(
+              leading: const Icon(Icons.groups),
+              title: const Text('Kader-Spieler wählen'),
+              subtitle: const Text('Nimmt das gespeicherte Profilfoto'),
+              onTap: () => Navigator.pop(ctx, 'kader'),
+            ),
+          ListTile(
+            leading: const Icon(Icons.photo_library),
+            title: const Text('Aus Galerie'),
+            onTap: () => Navigator.pop(ctx, 'gallery'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo),
+            title: const Text('Google Fotos'),
+            subtitle: Text(
+              Platform.isAndroid
+                  ? 'Im Foto-Picker auf Google Fotos wechseln'
+                  : 'Oeffnet Google Fotos im Browser zum Herunterladen',
+            ),
+            onTap: () => Navigator.pop(ctx, 'google'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_camera),
+            title: const Text('Foto aufnehmen'),
+            onTap: () => Navigator.pop(ctx, 'camera'),
+          ),
+          if (hasExisting) ...[
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text(
+                'Entfernen',
+                style: TextStyle(color: Colors.red),
+              ),
+              onTap: () => Navigator.pop(ctx, 'remove'),
+            ),
+          ],
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
 
   /// Behandelt die Quelle 'google'. Auf Android identisch zu 'gallery' – der
   /// System-Foto-Picker zeigt Google Fotos als Cloud-Quelle. Auf Desktop gibt
@@ -2064,8 +2213,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final edited = await Navigator.push<Uint8List?>(
       context,
       MaterialPageRoute(
-        builder: (_) =>
-            PhotoEditorScreen(imageBytes: bytes, aspectRatio: _photoAspect(p.place)),
+        builder: (_) => PhotoEditorScreen(
+          imageBytes: bytes,
+          aspectRatio: _photoAspect(p.place),
+        ),
       ),
     );
     if (edited == null || !mounted) return;
@@ -2652,7 +2803,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         width: 80,
         child: Text(label, style: const TextStyle(fontSize: 12)),
       ),
-      Expanded(child: Slider(value: value, min: min, max: max, onChanged: onChanged)),
+      Expanded(
+        child: Slider(value: value, min: min, max: max, onChanged: onChanged),
+      ),
     ],
   );
 
@@ -3070,7 +3223,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       final vals = await CloudService.aiGrade(dataUrl);
       if (vals == null) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('Die KI hat keine Werte zurückgegeben.')),
+          const SnackBar(
+            content: Text('Die KI hat keine Werte zurückgegeben.'),
+          ),
         );
         return;
       }
@@ -3081,6 +3236,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (v is String) return double.tryParse(v) ?? 0;
         return 0;
       }
+
       setState(() {
         final g = _grade;
         g.brightness = num0('brightness').clamp(-100, 100).toDouble();
@@ -3092,7 +3248,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       });
       messenger.showSnackBar(
         const SnackBar(
-          content: Text('KI-Finish angewendet – mit den Reglern nachjustierbar.'),
+          content: Text(
+            'KI-Finish angewendet – mit den Reglern nachjustierbar.',
+          ),
           duration: Duration(seconds: 4),
         ),
       );
@@ -3213,46 +3371,120 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           ),
         ),
         group('Basis', open: true, [
-          slider('Helligkeit', g.brightness, -100, 100,
-              (v) => setState(() => g.brightness = v)),
-          slider('Kontrast', g.contrast, -100, 100,
-              (v) => setState(() => g.contrast = v)),
-          slider('Sättigung', g.saturation, -100, 100,
-              (v) => setState(() => g.saturation = v)),
-          slider('Wärme', g.warmth, -100, 100,
-              (v) => setState(() => g.warmth = v)),
+          slider(
+            'Helligkeit',
+            g.brightness,
+            -100,
+            100,
+            (v) => setState(() => g.brightness = v),
+          ),
+          slider(
+            'Kontrast',
+            g.contrast,
+            -100,
+            100,
+            (v) => setState(() => g.contrast = v),
+          ),
+          slider(
+            'Sättigung',
+            g.saturation,
+            -100,
+            100,
+            (v) => setState(() => g.saturation = v),
+          ),
+          slider(
+            'Wärme',
+            g.warmth,
+            -100,
+            100,
+            (v) => setState(() => g.warmth = v),
+          ),
         ]),
         group('Licht', [
-          slider('Belichtung', g.exposure, -100, 100,
-              (v) => setState(() => g.exposure = v)),
-          slider('Lichter', g.highlights, -100, 100,
-              (v) => setState(() => g.highlights = v)),
-          slider('Tiefen', g.shadows, -100, 100,
-              (v) => setState(() => g.shadows = v)),
+          slider(
+            'Belichtung',
+            g.exposure,
+            -100,
+            100,
+            (v) => setState(() => g.exposure = v),
+          ),
+          slider(
+            'Lichter',
+            g.highlights,
+            -100,
+            100,
+            (v) => setState(() => g.highlights = v),
+          ),
+          slider(
+            'Tiefen',
+            g.shadows,
+            -100,
+            100,
+            (v) => setState(() => g.shadows = v),
+          ),
         ]),
         group('Farbe', [
-          slider('Tönung (Gr↔Mag)', g.tint, -100, 100,
-              (v) => setState(() => g.tint = v)),
-          slider('Farbton', g.hue, -180, 180,
-              (v) => setState(() => g.hue = v), unit: '°'),
-          slider('Rot', g.red, -100, 100,
-              (v) => setState(() => g.red = v)),
-          slider('Grün', g.green, -100, 100,
-              (v) => setState(() => g.green = v)),
-          slider('Blau', g.blue, -100, 100,
-              (v) => setState(() => g.blue = v)),
+          slider(
+            'Tönung (Gr↔Mag)',
+            g.tint,
+            -100,
+            100,
+            (v) => setState(() => g.tint = v),
+          ),
+          slider(
+            'Farbton',
+            g.hue,
+            -180,
+            180,
+            (v) => setState(() => g.hue = v),
+            unit: '°',
+          ),
+          slider('Rot', g.red, -100, 100, (v) => setState(() => g.red = v)),
+          slider(
+            'Grün',
+            g.green,
+            -100,
+            100,
+            (v) => setState(() => g.green = v),
+          ),
+          slider('Blau', g.blue, -100, 100, (v) => setState(() => g.blue = v)),
         ]),
         group('Effekte', [
-          slider('Fade (matt)', g.fade, 0, 100,
-              (v) => setState(() => g.fade = v)),
-          slider('Körnung', g.grain, 0, 100,
-              (v) => setState(() => g.grain = v)),
-          slider('Vignette', g.vignette, 0, 100,
-              (v) => setState(() => g.vignette = v)),
-          slider('Vignette-Größe', g.vigSize, 0, 100,
-              (v) => setState(() => g.vigSize = v)),
-          slider('Vignette-Weichheit', g.vigSoft, 0, 100,
-              (v) => setState(() => g.vigSoft = v)),
+          slider(
+            'Fade (matt)',
+            g.fade,
+            0,
+            100,
+            (v) => setState(() => g.fade = v),
+          ),
+          slider(
+            'Körnung',
+            g.grain,
+            0,
+            100,
+            (v) => setState(() => g.grain = v),
+          ),
+          slider(
+            'Vignette',
+            g.vignette,
+            0,
+            100,
+            (v) => setState(() => g.vignette = v),
+          ),
+          slider(
+            'Vignette-Größe',
+            g.vigSize,
+            0,
+            100,
+            (v) => setState(() => g.vigSize = v),
+          ),
+          slider(
+            'Vignette-Weichheit',
+            g.vigSoft,
+            0,
+            100,
+            (v) => setState(() => g.vigSoft = v),
+          ),
         ]),
         Align(
           alignment: Alignment.centerRight,
@@ -3368,7 +3600,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       );
       return;
     }
-    final sel = _posterSel; // Ziel merken – Auswahl kann sich währenddessen ändern
+    final sel =
+        _posterSel; // Ziel merken – Auswahl kann sich währenddessen ändern
     final src = _selectedImageDataUrl();
     final srcBytes = src == null ? null : TeamLogo.decode(src);
     if (sel == null || srcBytes == null) {
@@ -3575,8 +3808,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         low.contains('permission_denied')) {
       return 'Gemini-Zugang abgelehnt – API-Key im Supabase-Secret prüfen.';
     }
-    if (low.contains('gemini_api_key fehlt') ||
-        low.contains('secret setzen')) {
+    if (low.contains('gemini_api_key fehlt') || low.contains('secret setzen')) {
       return 'Gemini ist noch nicht eingerichtet (Secret fehlt).';
     }
     if (low.contains('nicht freigeschaltet')) {
@@ -3595,7 +3827,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     // Unbekannter Fehler: kurzen Rohhinweis mitgeben, damit die echte Ursache
     // sichtbar ist (Function-/Gemini-Meldung), statt nur „später versuchen".
     final detail = s.replaceAll(RegExp(r'\s+'), ' ').trim();
-    final snippet = detail.length > 160 ? '${detail.substring(0, 160)}…' : detail;
+    final snippet = detail.length > 160
+        ? '${detail.substring(0, 160)}…'
+        : detail;
     return 'KI-Fehler: $snippet';
   }
 
@@ -3670,10 +3904,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             child: const Text('Abbrechen'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(
-              ctx,
-              (prompt: ctrl.text.trim(), mode: 'background'),
-            ),
+            onPressed: () => Navigator.pop(ctx, (
+              prompt: ctrl.text.trim(),
+              mode: 'background',
+            )),
             child: const Text('Erstellen'),
           ),
         ],
@@ -3791,10 +4025,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       // Finger-Delta in Kasten-Achsen (Drehung zurück, ÷ Skalierung).
       final lx = (delta.dx * c + delta.dy * sn) / sc;
       final ly = (-delta.dx * sn + delta.dy * c) / sc;
-      Size sizeFor(Offset a) => Size(
-        math.max(60, s0.width + a.dx),
-        math.max(40, s0.height + a.dy),
-      );
+      Size sizeFor(Offset a) =>
+          Size(math.max(60, s0.width + a.dx), math.max(40, s0.height + a.dy));
       final prev = sizeFor(_rzAcc);
       _rzAcc += Offset(w ? lx : 0, h ? ly : 0);
       final next = sizeFor(_rzAcc);
@@ -3812,9 +4044,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     resultLayout: _resultLayout,
     ftPhoto: _ftPhotoF[_designKey],
     ftController: _ftCtrl,
-    onFtPhotoChanged: () => setState(
-      () => _ftMatrixF[_designKey] = _ftCtrl.value.storage.toList(),
-    ),
+    onFtPhotoChanged: () =>
+        setState(() => _ftMatrixF[_designKey] = _ftCtrl.value.storage.toList()),
     ftSplit: _ftSplit,
     editing: _fullEdit,
     infoOverride: widget.designer?.infoLine,
@@ -3874,8 +4105,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final delLabel = id == 'player'
         ? 'Spielerbild entfernen'
         : (id.startsWith('overlay_') || id.startsWith('text_'))
-            ? 'Element löschen'
-            : 'Element ausblenden';
+        ? 'Element löschen'
+        : 'Element ausblenden';
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -3924,8 +4155,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             );
           }
 
-          final rotDeg =
-              ((_posterRot[id] ?? 0) * 180 / math.pi).clamp(-180.0, 180.0);
+          final rotDeg = ((_posterRot[id] ?? 0) * 180 / math.pi).clamp(
+            -180.0,
+            180.0,
+          );
           return SafeArea(
             child: Padding(
               padding: EdgeInsets.fromLTRB(
@@ -3955,25 +4188,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       (v) => apply(() => _posterScale[id] = v),
                       fmt: (v) => '${(v * 100).round()}%',
                     ),
-                    labeledSlider(
-                      'Drehung',
-                      rotDeg,
-                      -180,
-                      180,
-                      (v) {
-                        // Magnetisch bei 0° (Mitte) und ±90°/±180° einrasten,
-                        // damit sich das Objekt leicht gerade ausrichten lässt.
-                        var d = v;
-                        for (final s in const [-180.0, -90.0, 0.0, 90.0, 180.0]) {
-                          if ((v - s).abs() <= 6) {
-                            d = s;
-                            break;
-                          }
+                    labeledSlider('Drehung', rotDeg, -180, 180, (v) {
+                      // Magnetisch bei 0° (Mitte) und ±90°/±180° einrasten,
+                      // damit sich das Objekt leicht gerade ausrichten lässt.
+                      var d = v;
+                      for (final s in const [-180.0, -90.0, 0.0, 90.0, 180.0]) {
+                        if ((v - s).abs() <= 6) {
+                          d = s;
+                          break;
                         }
-                        apply(() => _posterRot[id] = d * math.pi / 180);
-                      },
-                      fmt: (v) => '${v.round()}°',
-                    ),
+                      }
+                      apply(() => _posterRot[id] = d * math.pi / 180);
+                    }, fmt: (v) => '${v.round()}°'),
                     if (isStd)
                       OutlinedButton.icon(
                         icon: const Icon(Icons.undo, size: 18),
@@ -4021,7 +4247,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       ),
                       Row(
                         children: [
-                          const Text('Schrift:', style: TextStyle(fontSize: 12)),
+                          const Text(
+                            'Schrift:',
+                            style: TextStyle(fontSize: 12),
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: DropdownButton<String>(
@@ -4043,31 +4272,31 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       ),
                     ],
                     if (!isStd)
-                    Row(
-                      children: [
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.flip_to_back, size: 18),
-                            label: const Text('Nach hinten'),
-                            onPressed: () {
-                              _reorderPoster(id, -1);
-                              setSheet(() {});
-                            },
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.flip_to_back, size: 18),
+                              label: const Text('Nach hinten'),
+                              onPressed: () {
+                                _reorderPoster(id, -1);
+                                setSheet(() {});
+                              },
+                            ),
                           ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.flip_to_front, size: 18),
-                            label: const Text('Nach vorne'),
-                            onPressed: () {
-                              _reorderPoster(id, 1);
-                              setSheet(() {});
-                            },
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.flip_to_front, size: 18),
+                              label: const Text('Nach vorne'),
+                              onPressed: () {
+                                _reorderPoster(id, 1);
+                                setSheet(() {});
+                              },
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                     if (isImage) ...[
                       const SizedBox(height: 4),
                       Row(
@@ -4152,7 +4381,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       const SizedBox(height: 6),
                       Row(
                         children: [
-                          const Text('Schrift:', style: TextStyle(fontSize: 12)),
+                          const Text(
+                            'Schrift:',
+                            style: TextStyle(fontSize: 12),
+                          ),
                           const SizedBox(width: 8),
                           Expanded(
                             child: DropdownButton<String>(
@@ -4210,10 +4442,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     ],
                     const SizedBox(height: 4),
                     TextButton.icon(
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        color: Colors.red,
-                      ),
+                      icon: const Icon(Icons.delete_outline, color: Colors.red),
                       label: Text(
                         delLabel,
                         style: const TextStyle(color: Colors.red),
@@ -4922,7 +5151,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                   onChanged: (_) => setLocal(() {}),
                   decoration: const InputDecoration(
                     labelText: 'Eigener Look / Vorlage anpassen',
-                    hintText: 'z. B. Derby gegen Benrath: rot-weiße Pyro, '
+                    hintText:
+                        'z. B. Derby gegen Benrath: rot-weiße Pyro, '
                         'Rauch und Funken',
                     border: OutlineInputBorder(),
                   ),
@@ -4982,7 +5212,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Erzeugt den KI-Look: leere Leinwand im Zielformat (Schwarz/Magenta) an
   /// Gemini (Modus `overlay`), Ergebnis in ein PNG mit Alpha umrechnen und als
   /// Deko-Ebene über die Grafik legen (je Format gespeichert).
-  Future<void> _createLook({required String theme, required String mode}) async {
+  Future<void> _createLook({
+    required String theme,
+    required String mode,
+  }) async {
     if (_lookBusy) return;
     setState(() => _lookBusy = true);
     final messenger = ScaffoldMessenger.of(context);
@@ -5021,10 +5254,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         );
         return;
       }
-      final png = await compute(
-        magenta ? chromaKeyMagenta : lumaKeyBlack,
-        out,
-      );
+      final png = await compute(magenta ? chromaKeyMagenta : lumaKeyBlack, out);
       if (!mounted) return;
       final keepOpacity = _look?.opacity ?? 1.0;
       setState(
@@ -5281,10 +5511,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                   const Divider(height: 24),
                   const Text(
                     'Überschrift, Schrift & Sponsoren',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
                   _headlineSponsorControls(setSheet),
@@ -5420,16 +5647,39 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Vollbild-Editor: das Canvas nimmt (fast) den ganzen Schirm; der
   /// „Hinzufügen & Hintergrund"-Button schwebt als FAB darüber. Hinzufügen geht
   /// zusätzlich per Langdruck auf den Hintergrund, Objekt-Optionen per Langdruck.
+  /// Editor-Zoom per Knopf: um die Mitte des sichtbaren Bereichs skalieren
+  /// (1×–5×); 1× = ganz zurück (keine Verschiebung).
+  void _zoomEditor(double factor, Size viewport) {
+    final m = _editZoom.value;
+    final cur = m.getMaxScaleOnAxis();
+    final next = (cur * factor).clamp(1.0, 5.0);
+    if (next <= 1.0001) {
+      _editZoom.value = Matrix4.identity();
+    } else {
+      final c = _editZoom.toScene(viewport.center(Offset.zero));
+      final f = next / cur;
+      _editZoom.value = m.clone()
+        ..translateByDouble(c.dx, c.dy, 0, 1)
+        ..scaleByDouble(f, f, 1, 1)
+        ..translateByDouble(-c.dx, -c.dy, 0, 1);
+    }
+    setState(() => _editZoomed = next > 1.0001);
+  }
+
+  void _leaveEditor() => setState(() {
+    _fullEdit = false;
+    _posterSel = null; // Auswahl aufheben → Hauptvorschau sauber
+    _editZoom.value = Matrix4.identity();
+    _editZoomed = false;
+  });
+
   Widget _buildEditor() {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
           icon: const Icon(Icons.check),
           tooltip: 'Fertig',
-          onPressed: () => setState(() {
-            _fullEdit = false;
-            _posterSel = null; // Auswahl aufheben → Hauptvorschau sauber
-          }),
+          onPressed: _leaveEditor,
         ),
         title: Text(_lookBusy ? 'KI gestaltet Look …' : 'Bearbeiten'),
         // Läuft die KI (Look), zeigt ein Balken unter der Leiste den Fortschritt.
@@ -5446,10 +5696,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             onPressed: _resetDesign,
           ),
           TextButton(
-            onPressed: () => setState(() {
-              _fullEdit = false;
-              _posterSel = null;
-            }),
+            onPressed: _leaveEditor,
+            style: TextButton.styleFrom(
+              foregroundColor:
+                  Theme.of(context).appBarTheme.foregroundColor ??
+                  Theme.of(context).colorScheme.onPrimary,
+            ),
             child: const Text('Fertig'),
           ),
         ],
@@ -5460,17 +5712,75 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         icon: const Icon(Icons.add),
         label: const Text('Hinzufügen & Hintergrund'),
       ),
-      // Canvas füllt den ganzen Body → maximal groß; der FAB liegt darüber.
+      // Canvas mittig im ganzen Body, mit zwei Fingern (auf freier Fläche bzw.
+      // ohne Auswahl) oder per Knopf zoom-/verschiebbar. Objekt-Gesten haben
+      // Vorrang (innere Erkenner gewinnen). Unten Platz für den FAB.
       body: SafeArea(
-        child: Align(
-          alignment: Alignment.topCenter,
-          child: Padding(
-            padding: const EdgeInsets.all(8),
-            child: FittedBox(
-              fit: BoxFit.contain,
-              child: _previewStack(interactive: true),
-            ),
-          ),
+        child: LayoutBuilder(
+          builder: (context, c) {
+            final viewport = Size(c.maxWidth, c.maxHeight);
+            return Stack(
+              children: [
+                Positioned.fill(
+                  child: InteractiveViewer(
+                    transformationController: _editZoom,
+                    minScale: 1,
+                    maxScale: 5,
+                    onInteractionEnd: (_) {
+                      final z = _editZoom.value.getMaxScaleOnAxis() > 1.0001;
+                      if (z != _editZoomed) setState(() => _editZoomed = z);
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 84),
+                      // Feste (tight) Größe → FittedBox skaliert das Canvas
+                      // auf den größtmöglichen Platz (auch hoch), mittig.
+                      child: SizedBox.expand(
+                        child: FittedBox(
+                          fit: BoxFit.contain,
+                          child: _previewStack(interactive: true),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Zoom-Knöpfe (rechts oben).
+                Positioned(
+                  right: 8,
+                  top: 8,
+                  child: Material(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surface.withValues(alpha: 0.92),
+                    elevation: 2,
+                    borderRadius: BorderRadius.circular(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Vergrößern',
+                          icon: const Icon(Icons.zoom_in),
+                          onPressed: () => _zoomEditor(1.5, viewport),
+                        ),
+                        IconButton(
+                          tooltip: 'Verkleinern',
+                          icon: const Icon(Icons.zoom_out),
+                          onPressed: _editZoomed
+                              ? () => _zoomEditor(1 / 1.5, viewport)
+                              : null,
+                        ),
+                        if (_editZoomed)
+                          IconButton(
+                            tooltip: 'Ganzes Bild',
+                            icon: const Icon(Icons.fit_screen),
+                            onPressed: () => _zoomEditor(0, viewport),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );
@@ -5801,7 +6111,11 @@ class _AiResultPreview extends StatelessWidget {
         child: InteractiveViewer(
           minScale: 0.5,
           maxScale: 4,
-          child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
+          child: Image.memory(
+            bytes,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+          ),
         ),
       ),
       bottomNavigationBar: SafeArea(
@@ -6017,7 +6331,8 @@ class _StartelfGraphic extends StatelessWidget {
   final String? photoBg; // Foto als Hintergrund (Data-URL), alle Typen
   final List<String> bandPhotos; // Fotos im Foto-Bereich oben (Data-URLs)
   final bool showPhotos; // Spielerfotos in der Ergebnis-Grafik
-  final TransformationController? photoController; // einzelnes Band-Foto zoom/pan
+  final TransformationController?
+  photoController; // einzelnes Band-Foto zoom/pan
   final bool designMode; // eigenes Branding-Design, nur Spiel-Infos drüber
   final Offset infoPos; // Position des Info-Blocks (0..1)
   final void Function(Offset pos)? onInfoMove; // Live-Verschieben
@@ -6063,7 +6378,7 @@ class _StartelfGraphic extends StatelessWidget {
   final void Function(String id, Size measured)? onBoxResizeStart;
   // Griff gezogen: Finger-Delta (Canvas-px) + welche Achsen (Breite/Höhe).
   final void Function(String id, Offset delta, bool width, bool height)?
-      onBoxResizeUpdate;
+  onBoxResizeUpdate;
   final String resultLayout; // Ergebnis: 'std' | 'photo' (ENDSTAND mit Foto)
   final String? ftPhoto; // ENDSTAND: Foto oben (Data-URL)
   final TransformationController? ftController; // Ausschnitt des Fotos
@@ -6078,12 +6393,19 @@ class _StartelfGraphic extends StatelessWidget {
   // Pinch/Drehen/Ziehen: Start legt das Ziel fest (null = keins) und merkt
   // Basiswerte, Update rechnet.
   final void Function(String? id)? onPosterGestureStart;
-  final void Function(String id, ScaleUpdateDetails details, double w, double h)?
-      onPosterGestureUpdate;
-  final void Function(String id)? onPosterLongPress; // Langdruck → Eigenschaften
+  final void Function(
+    String id,
+    ScaleUpdateDetails details,
+    double w,
+    double h,
+  )?
+  onPosterGestureUpdate;
+  final void Function(String id)?
+  onPosterLongPress; // Langdruck → Eigenschaften
   // Dreh-Griff an der Seite: setzt die Drehung absolut (Radiant) für [id].
   final void Function(String id, double angle)? onPosterRotateTo;
-  final VoidCallback? onBackgroundLongPress; // Langdruck leere Fläche → hinzufügen
+  final VoidCallback?
+  onBackgroundLongPress; // Langdruck leere Fläche → hinzufügen
   final VoidCallback? onBackgroundTap; // Tippen leere Fläche → Auswahl aufheben
   // Für Global→Local-Umrechnung des Dreh-Griffs (Zeiger im Canvas-Koordinaten).
   final GlobalKey? canvasKey;
@@ -6454,7 +6776,9 @@ class _StartelfGraphic extends StatelessWidget {
       return Offset(nat.dx * w + off.dx, nat.dy * h + off.dy);
     }
     final pos =
-        posterItemPos[sel] ?? _kCenteredItemDefaults[sel] ?? const Offset(0.5, 0.5);
+        posterItemPos[sel] ??
+        _kCenteredItemDefaults[sel] ??
+        const Offset(0.5, 0.5);
     return Offset(pos.dx * w, pos.dy * h);
   }
 
@@ -6652,7 +6976,8 @@ class _StartelfGraphic extends StatelessWidget {
               behavior: HitTestBehavior.translucent,
               onScaleStart: (d) {
                 var target = sel;
-                if (d.pointerCount < 2) target = hitAt(d.localFocalPoint) ?? sel;
+                if (d.pointerCount < 2)
+                  target = hitAt(d.localFocalPoint) ?? sel;
                 if (target != null && target != sel) {
                   onPosterSelect?.call(target);
                 }
@@ -7571,51 +7896,51 @@ class _StartelfGraphic extends StatelessWidget {
   /// Sponsoren (alle als eigene, frei gestaltbare Objekte).
   Widget _ftBottomColumn(Widget titleW, double gap, bool hasBar) {
     return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(child: _stdEl('std_ft_title', titleW)),
-              SizedBox(height: gap),
-              // Center → Balken nur so breit wie Logos + Ergebnis (Objekt-
-              // Rahmen/Griffe sitzen am Balken, nicht an der ganzen Zeile).
-              Center(
-                child: _boxSlot(
-                  'std_ft_banner',
-                  _ftBanner(),
-                  (s) => _ftBanner(size: s),
-                ),
-              ),
-              SizedBox(height: gap),
-              Expanded(
-                child: Align(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Center(child: _stdEl('std_ft_title', titleW)),
+        SizedBox(height: gap),
+        // Center → Balken nur so breit wie Logos + Ergebnis (Objekt-
+        // Rahmen/Griffe sitzen am Balken, nicht an der ganzen Zeile).
+        Center(
+          child: _boxSlot(
+            'std_ft_banner',
+            _ftBanner(),
+            (s) => _ftBanner(size: s),
+          ),
+        ),
+        SizedBox(height: gap),
+        Expanded(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: _boxSlot(
+              'std_ft_scorers',
+              LayoutBuilder(
+                builder: (_, c) => FittedBox(
+                  fit: BoxFit.scaleDown,
                   alignment: Alignment.topCenter,
-                  child: _boxSlot(
-                    'std_ft_scorers',
-                    LayoutBuilder(
-                      builder: (_, c) => FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topCenter,
-                        child: _ftScorersContent(c.maxWidth),
-                      ),
-                    ),
-                    (s) => _fixedBox(
-                      s,
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(),
-                      fillWidth: false,
-                      content: (w) => _ftScorersContent(w),
-                    ),
-                  ),
+                  child: _ftScorersContent(c.maxWidth),
                 ),
               ),
-              if (hasBar) ...[
-                SizedBox(height: compact ? 6 : 10),
-                _boxSlot(
-                  'std_ft_sponsorbar',
-                  _sponsorBar(),
-                  (s) => _sponsorBar(size: s),
-                ),
-              ],
-            ],
+              (s) => _fixedBox(
+                s,
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(),
+                fillWidth: false,
+                content: (w) => _ftScorersContent(w),
+              ),
+            ),
+          ),
+        ),
+        if (hasBar) ...[
+          SizedBox(height: compact ? 6 : 10),
+          _boxSlot(
+            'std_ft_sponsorbar',
+            _sponsorBar(),
+            (s) => _sponsorBar(size: s),
+          ),
+        ],
+      ],
     );
   }
 
@@ -7834,57 +8159,258 @@ class _StartelfGraphic extends StatelessWidget {
       );
     }
 
-    Widget line(
-      ({int minute, String name, String? photo}) g, {
-      required bool end,
-    }) {
-      final showPhoto = showPhotos && TeamLogo.decode(g.photo) != null;
-      const lineStyle = TextStyle(
-        color: Colors.white,
-        fontSize: 19,
-        fontWeight: FontWeight.w700,
+    // ── Zeitstrahl ────────────────────────────────────────────────────────
+    // Eine Linie 0'–90' (bei Verlängerung bis zur letzten Minute); eigene Tore
+    // als Punkte OBERHALB (Akzentfarbe), Gegentore UNTERHALB (weiß). Liegen
+    // Tore dicht beieinander, rücken die Beschriftungen eine Etage weiter weg.
+    final maxMin = [
+      90,
+      for (final g in ownGoals) g.minute,
+      for (final g in oppGoals) g.minute,
+    ].reduce(math.max);
+    final minuteStyle = posterFontStyle(
+      posterFont,
+      const TextStyle(fontSize: 21, fontWeight: FontWeight.w900, height: 1.1),
+    );
+    const nameStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 12.5,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 0.8,
+      height: 1.2,
+    );
+    double textW(String t, TextStyle s) {
+      final tp = TextPainter(
+        text: TextSpan(text: t, style: s),
+        textDirection: ui.TextDirection.ltr,
+        maxLines: 1,
+      )..layout();
+      final w = tp.width;
+      tp.dispose();
+      return w;
+    }
+
+    final ownLogoBytes = TeamLogo.decode(logo);
+    final oppLogoBytes = TeamLogo.decode(opponentLogo);
+    final hasLogos = ownLogoBytes != null || oppLogoBytes != null;
+
+    Widget timeline(double width) {
+      final x0 = hasLogos ? 40.0 : 14.0;
+      final x1 = width - 34.0;
+      final minLeft = hasLogos ? 32.0 : 0.0;
+
+      // Beschriftungen einer Seite platzieren (Etage je Überlappung).
+      List<_TlEntry> place(
+        List<({int minute, String name, String? photo})> goals,
+      ) {
+        final sorted = [...goals]..sort((a, b) => a.minute.compareTo(b.minute));
+        final rights = <double>[];
+        final out = <_TlEntry>[];
+        for (final g in sorted) {
+          final name = scorerShortName(g.name);
+          final photo = showPhotos && TeamLogo.decode(g.photo) != null;
+          final lw =
+              [
+                textW("${g.minute}'", minuteStyle),
+                if (name.isNotEmpty) textW(name, nameStyle),
+                if (photo) 30.0,
+              ].reduce(math.max) +
+              12;
+          final cx = x0 + (x1 - x0) * g.minute.clamp(0, maxMin) / maxMin;
+          final left = (cx - lw / 2)
+              .clamp(minLeft, math.max(minLeft, width - lw))
+              .toDouble();
+          var level = 0;
+          while (level < rights.length && left < rights[level] + 6) {
+            level++;
+          }
+          if (level == rights.length) rights.add(0);
+          rights[level] = left + lw;
+          out.add((
+            minute: g.minute,
+            name: name,
+            photo: photo ? g.photo : null,
+            cx: cx,
+            left: left,
+            lw: lw,
+            level: level,
+          ));
+        }
+        return out;
+      }
+
+      final above = place(ownGoals);
+      final below = place(oppGoals);
+      double labelH(List<_TlEntry> s) =>
+          26 +
+          (s.any((e) => e.name.isNotEmpty) ? 16 : 0) +
+          (s.any((e) => e.photo != null) ? 34 : 0);
+      int levels(List<_TlEntry> s) =>
+          s.isEmpty ? 0 : s.map((e) => e.level).reduce(math.max) + 1;
+      const stem = 14.0, gap = 4.0;
+      final lhA = labelH(above), lhB = labelH(below);
+      final nA = levels(above), nB = levels(below);
+      final hA = nA == 0 ? 22.0 : stem + nA * lhA + (nA - 1) * gap;
+      final hB = nB == 0 ? 22.0 : stem + nB * lhB + (nB - 1) * gap;
+      final lineY = hA + 8;
+      final height = hA + 16 + hB;
+
+      Color colorOf(bool own) => own ? _accent : Colors.white;
+
+      final stems = <Widget>[];
+      final dots = <Widget>[];
+      final labels = <Widget>[];
+      void addSide(List<_TlEntry> side, {required bool own}) {
+        final lh = own ? lhA : lhB;
+        final c = colorOf(own);
+        for (final e in side) {
+          final off = stem + e.level * (lh + gap);
+          final top = own ? lineY - off - lh : lineY + off;
+          final stemTop = own ? top + lh : lineY;
+          final stemH = own ? lineY - (top + lh) : top - lineY;
+          stems.add(
+            Positioned(
+              left: e.cx - 1,
+              top: stemTop,
+              width: 2,
+              height: stemH,
+              child: ColoredBox(color: c.withValues(alpha: 0.55)),
+            ),
+          );
+          dots.add(
+            Positioned(
+              left: e.cx - 7,
+              top: lineY - 7,
+              width: 14,
+              height: 14,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: c,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: own
+                        ? Colors.white
+                        : Colors.black.withValues(alpha: 0.35),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 8),
+                  ],
+                ),
+              ),
+            ),
+          );
+          final parts = <Widget>[
+            if (e.photo != null)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: avatar(e.photo),
+              ),
+            Text(
+              "${e.minute}'",
+              maxLines: 1,
+              softWrap: false,
+              style: minuteStyle.copyWith(color: c),
+            ),
+            if (e.name.isNotEmpty)
+              Text(e.name, maxLines: 1, softWrap: false, style: nameStyle),
+          ];
+          labels.add(
+            Positioned(
+              left: e.left,
+              top: top,
+              width: e.lw,
+              height: lh,
+              child: Column(
+                mainAxisAlignment: own
+                    ? MainAxisAlignment.end
+                    : MainAxisAlignment.start,
+                children: own ? parts : parts.reversed.toList(),
+              ),
+            ),
+          );
+        }
+      }
+
+      addSide(above, own: true);
+      addSide(below, own: false);
+
+      Widget miniLogo(Uint8List b) => Container(
+        width: 26,
+        height: 26,
+        padding: const EdgeInsets.all(2),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+        ),
+        child: ClipOval(child: Image.memory(b, fit: BoxFit.contain)),
       );
-      // Unbekannter Torschütze (z. B. „Gegner") → Ball-Symbol statt Wort.
-      final unknown = scorerShortName(g.name).isEmpty;
-      final children = <Widget>[
-        if (showPhoto) ...[avatar(g.photo), const SizedBox(width: 8)],
-        // Name immer vollständig (kein „…"): ist der Block zu breit, verkleinert
-        // ihn das umgebende FittedBox als Ganzes.
-        if (unknown) ...[
-          Text("${g.minute}'", maxLines: 1, softWrap: false, style: lineStyle),
-          const SizedBox(width: 8),
-          const Icon(Icons.sports_soccer, size: 19, color: Colors.white),
-        ] else
-          Text(
-            "${g.minute}'  ${g.name}",
-            textAlign: end ? TextAlign.right : TextAlign.left,
-            maxLines: 1,
-            softWrap: false,
-            style: lineStyle,
-          ),
-      ];
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: end
-              ? MainAxisAlignment.end
-              : MainAxisAlignment.start,
-          children: end ? children.reversed.toList() : children,
+
+      final xHalf = x0 + (x1 - x0) * 45 / maxMin;
+      return SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // Linie (links kräftiger → rechts) + Halbzeit-Markierung.
+            Positioned(
+              left: x0,
+              width: x1 - x0,
+              top: lineY - 1.5,
+              height: 3,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(2),
+                  gradient: LinearGradient(
+                    colors: [
+                      Colors.white.withValues(alpha: 0.25),
+                      Colors.white.withValues(alpha: 0.6),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: xHalf - 1,
+              top: lineY - 6,
+              width: 2,
+              height: 12,
+              child: ColoredBox(color: Colors.white.withValues(alpha: 0.6)),
+            ),
+            // Endmarke nur, wenn kein Tor kurz vor Schluss dort liegt.
+            if (![...ownGoals, ...oppGoals].any((g) => g.minute >= maxMin - 6))
+              Positioned(
+                left: x1 + 6,
+                top: lineY - 8,
+                child: Text(
+                  "$maxMin'",
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            if (ownLogoBytes != null && ownGoals.isNotEmpty)
+              Positioned(
+                left: 0,
+                top: lineY - 30,
+                child: miniLogo(ownLogoBytes),
+              ),
+            if (oppLogoBytes != null && oppGoals.isNotEmpty)
+              Positioned(
+                left: 0,
+                top: lineY + 4,
+                child: miniLogo(oppLogoBytes),
+              ),
+            ...stems,
+            ...dots,
+            ...labels,
+          ],
         ),
       );
     }
-
-    Widget col(
-      List<({int minute, String name, String? photo})> goals, {
-      required bool end,
-    }) => Column(
-      crossAxisAlignment: end
-          ? CrossAxisAlignment.end
-          : CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [for (final g in goals) line(g, end: end)],
-    );
 
     // Überschrift im Stil der Grafik (Schriftart + Akzentfarbe), immer oben.
     final header = Row(
@@ -7911,66 +8437,33 @@ class _StartelfGraphic extends StatelessWidget {
       color: Colors.black.withValues(alpha: 0.34),
       borderRadius: BorderRadius.circular(16),
     );
-    final both = ownGoals.isNotEmpty && oppGoals.isNotEmpty;
-
-    // Gezogene Größe: Kasten fest, Spalten rücken an die Ränder (spaceBetween).
-    // Mindestens so breit wie der Inhalt → zu schmal wird der GANZE Inhalt
-    // gleichmäßig verkleinert (beide Spalten gleich groß), nie „…".
+    // Gezogene Größe: Zeitstrahl so breit wie der Kasten (mind. 260, sonst
+    // wird der ganze Inhalt gleichmäßig verkleinert). „TORE" bleibt oben.
     if (size != null) {
       return _fixedBox(
         size,
         padding: pad,
         decoration: deco,
         fillWidth: false,
-        // Überschrift „TORE" bleibt oben, auch wenn der Kasten höher ist.
         alignment: Alignment.topCenter,
-        content: (w) => ConstrainedBox(
-          constraints: BoxConstraints(minWidth: w),
-          child: IntrinsicWidth(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                header,
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: both
-                      ? MainAxisAlignment.spaceBetween
-                      : MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (ownGoals.isNotEmpty) col(ownGoals, end: false),
-                    if (both) const SizedBox(width: 28),
-                    if (oppGoals.isNotEmpty) col(oppGoals, end: true),
-                  ],
-                ),
-              ],
-            ),
-          ),
+        content: (w) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            header,
+            const SizedBox(height: 10),
+            timeline(math.max(w, 260)),
+          ],
         ),
       );
     }
 
-    // Spalten nach Inhalt breit (kein festes 50/50, keine Maximalbreite) →
-    // lange eigene Namen bekommen den Platz, den kurze Gegner-Einträge nicht
-    // brauchen. Zu breit insgesamt → FittedBox(scaleDown) verkleinert.
+    // Feste Grundbreite; das umgebende FittedBox skaliert passend.
     return Container(
       padding: pad,
       decoration: deco,
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        children: [
-          header,
-          const SizedBox(height: 10),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (ownGoals.isNotEmpty) col(ownGoals, end: false),
-              if (both) const SizedBox(width: 28),
-              if (oppGoals.isNotEmpty) col(oppGoals, end: true),
-            ],
-          ),
-        ],
+        children: [header, const SizedBox(height: 10), timeline(520)],
       ),
     );
   }
@@ -8135,7 +8628,11 @@ class _StartelfGraphic extends StatelessWidget {
 
         // Bild mit optionalem Schlagschatten – gilt automatisch für JEDES Bild
         // (Spieler UND Overlays). Schatten-Silhouette (schwarz) hinter dem Bild.
-        Widget imageWithShadow(Uint8List bytes, {double? width, double? height}) {
+        Widget imageWithShadow(
+          Uint8List bytes, {
+          double? width,
+          double? height,
+        }) {
           Widget mk() => SizedBox(
             width: width,
             height: height,
@@ -8235,7 +8732,9 @@ class _StartelfGraphic extends StatelessWidget {
         Widget el(String id, Widget child) {
           final pos =
               posterItemPos[id] ??
-              (posterStyle ? _kPosterItemDefaults : _kCenteredItemDefaults)[id] ??
+              (posterStyle
+                  ? _kPosterItemDefaults
+                  : _kCenteredItemDefaults)[id] ??
               const Offset(0.5, 0.5);
           final scale = posterItemScale[id] ?? 1.0;
           final rot = posterItemRot[id] ?? 0.0;
@@ -8318,7 +8817,8 @@ class _StartelfGraphic extends StatelessWidget {
               behavior: HitTestBehavior.translucent,
               onScaleStart: (d) {
                 var target = sel;
-                if (d.pointerCount < 2) target = hitAt(d.localFocalPoint) ?? sel;
+                if (d.pointerCount < 2)
+                  target = hitAt(d.localFocalPoint) ?? sel;
                 if (target != null && target != sel) {
                   onPosterSelect?.call(target);
                 }
@@ -8480,7 +8980,16 @@ class _StartelfGraphic extends StatelessWidget {
     return Container(padding: pad, decoration: deco, child: logos);
   }
 
-  Widget _logoChip(Uint8List bytes, {required double height, bool circle = false}) {
+  Widget _logoChip(
+    Uint8List bytes, {
+    required double height,
+    bool circle = false,
+  }) {
+    // Helle/goldene Logos sind auf Weiß kaum lesbar → automatisch dunkles Feld
+    // (weißer Bildhintergrund wird dabei transparent).
+    final fix = logoContrastFix(bytes);
+    if (fix.dark)
+      return _darkLogoChip(fix.bytes, height: height, circle: circle);
     // Leichter 3D-/Erhebungs-Effekt: Schlagschatten unten.
     final shadow = [
       BoxShadow(
@@ -8519,6 +9028,48 @@ class _StartelfGraphic extends StatelessWidget {
       child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
     );
   }
+
+  /// Dunkles Logo-Feld (für helle Logos): fast schwarz, feiner heller Rand.
+  Widget _darkLogoChip(
+    Uint8List bytes, {
+    required double height,
+    bool circle = false,
+  }) {
+    final deco = BoxDecoration(
+      color: const Color(0xFF121212),
+      shape: circle ? BoxShape.circle : BoxShape.rectangle,
+      borderRadius: circle ? null : BorderRadius.circular(6),
+      border: Border.all(color: Colors.white.withValues(alpha: 0.35), width: 1),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.55),
+          blurRadius: 12,
+          offset: const Offset(0, 5),
+        ),
+      ],
+    );
+    final image = Image.memory(
+      bytes,
+      fit: BoxFit.contain,
+      gaplessPlayback: true,
+    );
+    if (circle) {
+      return Container(
+        width: height,
+        height: height,
+        padding: const EdgeInsets.all(6),
+        clipBehavior: Clip.antiAlias,
+        decoration: deco,
+        child: image,
+      );
+    }
+    return Container(
+      height: height,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: deco,
+      child: image,
+    );
+  }
 }
 
 /// Lässt Treffer (Zeiger-Ereignisse) nur dort zu, wo [test] true liefert –
@@ -8530,7 +9081,8 @@ class _HitWhere extends SingleChildRenderObjectWidget {
   final bool Function(Offset localPosition) test;
 
   @override
-  RenderObject createRenderObject(BuildContext context) => _HitWhereRender(test);
+  RenderObject createRenderObject(BuildContext context) =>
+      _HitWhereRender(test);
 
   @override
   void updateRenderObject(BuildContext context, _HitWhereRender renderObject) {
@@ -8601,7 +9153,12 @@ class _TrapezoidClipper extends CustomClipper<Path> {
       ..lineTo(s.width - r, 0)
       ..quadraticBezierTo(s.width, 0, s.width - r * 0.4, r)
       ..lineTo(s.width - inset, s.height - r)
-      ..quadraticBezierTo(s.width - inset - r * 0.2, s.height, s.width - inset - r, s.height)
+      ..quadraticBezierTo(
+        s.width - inset - r * 0.2,
+        s.height,
+        s.width - inset - r,
+        s.height,
+      )
       ..lineTo(inset + r, s.height)
       ..quadraticBezierTo(inset + r * 0.2, s.height, inset, s.height - r)
       ..lineTo(r * 0.4, r)

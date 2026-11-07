@@ -42,7 +42,10 @@ void main() {
       );
       expect(t.takeException(), isNull);
       expect(find.text('ENDSTAND'), findsOneWidget);
-      expect(find.text('6 - 2', findRichText: true), findsNothing); // Heim = Post SV
+      expect(
+        find.text('6 - 2', findRichText: true),
+        findsNothing,
+      ); // Heim = Post SV
       expect(find.text('2 - 6'), findsOneWidget);
       expect(find.text('B. KANIA'), findsOneWidget);
     });
@@ -66,7 +69,8 @@ void main() {
 
   // Wie in der App: Logos, Haupt- und weitere Sponsoren, Foto oben.
   String png(int w, int h) {
-    final im = img.Image(width: w, height: h)..clear(img.ColorRgb8(200, 30, 30));
+    final im = img.Image(width: w, height: h)
+      ..clear(img.ColorRgb8(200, 30, 30));
     return 'data:image/png;base64,${base64Encode(Uint8List.fromList(img.encodePng(im)))}';
   }
 
@@ -90,7 +94,9 @@ void main() {
                 logo: png(90, 30),
                 isMain: true,
               ),
-              barSponsors: [Sponsor(id: 'b', name: 'Prematch', logo: png(30, 30))],
+              barSponsors: [
+                Sponsor(id: 'b', name: 'Prematch', logo: png(30, 30)),
+              ],
               ftPhoto: png(120, 80),
             ),
             Size(360, story ? 640 : 360),
@@ -116,7 +122,10 @@ void main() {
     );
     expect(t.takeException(), isNull);
     // Sichtbarer gezogener Kasten + unsichtbarer Platzhalter (hält die Lücke).
-    expect(find.text("35'  #7 Ben Kania"), findsNWidgets(2));
+    // Zeitstrahl: Kania (2 Tore) + Trappen, je sichtbar + Platzhalter.
+    expect(find.text('B. KANIA'), findsNWidgets(4));
+    expect(find.text('P. TRAPPEN'), findsNWidgets(2));
+    expect(find.text("35'"), findsNWidgets(2));
   });
 
   testWidgets('Gezogene Kastengröße ohne Fehler', (t) async {
