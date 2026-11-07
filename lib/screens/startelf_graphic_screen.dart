@@ -435,6 +435,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Positionen (Align-Semantik) werden beim ersten Auswählen ohne Sprung
   // umgerechnet.
   final Map<String, Set<String>> _posCenteredF = {};
+  // Ergebnis/Startelf: feste Teile (std_*) bleiben an ihrer natürlichen Stelle im
+  // Layout und bekommen nur eine Verschiebung (logische px) obendrauf → das
+  // Startbild bleibt unverändert. Größe/Drehung liegen in _posterScale/_posterRot.
+  final Map<String, Map<String, Offset>> _stdOffF = {};
+  final Map<String, Set<String>> _stdHiddenF = {};
+  // Kontexte der festen Teile (innen = mit Transform → Treffer-Test; außen =
+  // natürliche Lage → Dreh-Griff). Werden beim Bauen der Grafik gefüllt.
+  final Map<String, BuildContext> _stdCtx = {};
+  final Map<String, BuildContext> _stdNatCtx = {};
+  String? _gTarget; // Element der laufenden Zieh-/Pinch-Geste
   final Map<String, Map<String, double>> _posterScaleF = {};
   final Map<String, Map<String, double>> _posterRotF = {}; // Drehung (rad) je Elem.
   final Map<String, List<String>> _posterOrderF = {};
@@ -452,6 +462,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _posterPosF.putIfAbsent(_designKey, () => {});
   Set<String> get _posCentered =>
       _posCenteredF.putIfAbsent(_designKey, () => <String>{});
+  Map<String, Offset> get _stdOff =>
+      _stdOffF.putIfAbsent(_designKey, () => {});
+  Set<String> get _stdHidden =>
+      _stdHiddenF.putIfAbsent(_designKey, () => <String>{});
   Map<String, double> get _posterScale =>
       _posterScaleF.putIfAbsent(_designKey, () => {});
   Map<String, double> get _posterRot =>
@@ -545,16 +559,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     return null;
   }
 
-  /// Aktuelle Poster-Überschrift aus Modus + Text.
+  /// Standard-Überschrift je Grafiktyp.
+  String get _defaultHeadline => widget.isAnnouncement
+      ? 'SPIELTAG'
+      : (widget.isResult ? 'ERGEBNIS' : 'STARTELF');
+
+  /// Aktuelle Überschrift aus Modus + Text (alle Grafiktypen).
   String get _posterHeadline {
     switch (_annHeadMode) {
       case 'auto':
         return widget.isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL';
       case 'custom':
         final t = _annHeadText.trim();
-        return t.isEmpty ? 'SPIELTAG' : t.toUpperCase();
+        return t.isEmpty ? _defaultHeadline : t.toUpperCase();
       default:
-        return 'SPIELTAG';
+        return _defaultHeadline;
     }
   }
 
@@ -634,6 +653,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _annHeadText = _defaultHeadline; // Vorbelegung „Eigener" je Grafiktyp
     _load();
   }
 
@@ -766,6 +786,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'posC': {
         for (final e in _posCenteredF.entries) e.key: e.value.toList(),
       },
+      'stdOff': offMap(_stdOffF),
+      'stdHidden': {
+        for (final e in _stdHiddenF.entries) e.key: e.value.toList(),
+      },
       'scale': dblMap(_posterScaleF),
       'rot': dblMap(_posterRotF),
       'order': {for (final e in _posterOrderF.entries) e.key: e.value},
@@ -871,6 +895,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         }
       });
     }
+    fillOff(_stdOffF, m['stdOff']);
+    _stdHiddenF.clear();
+    if (m['stdHidden'] is Map) {
+      (m['stdHidden'] as Map).forEach((k, v) {
+        if (v is List) {
+          _stdHiddenF[k.toString()] = v.map((e) => e.toString()).toSet();
+        }
+      });
+    }
     fillDbl(_posterScaleF, m['scale']);
     fillDbl(_posterRotF, m['rot']);
     _posterOrderF.clear();
@@ -931,6 +964,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     if (m['headMode'] is String) _annHeadMode = m['headMode'];
     if (m['headText'] is String) _annHeadText = m['headText'];
+    // Ältere Ergebnis/Startelf-Designs speicherten die Ankündigungs-Vorbelegung.
+    if (!widget.isAnnouncement &&
+        _annHeadMode != 'custom' &&
+        _annHeadText == 'SPIELTAG') {
+      _annHeadText = _defaultHeadline;
+    }
     if (m['logoDisc'] is bool) _posterLogoDisc = m['logoDisc'];
     if (m['shadow'] is bool) _posterShadow = m['shadow'];
     if (m['shadowStrength'] is num) {
@@ -2875,21 +2914,40 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       });
     },
     onPosterItemMove: (id, p) => setState(() => _posterPos[id] = p),
+    // Ziel der Geste wird beim Start festgelegt (null = nichts getroffen/gewählt
+    // → Geste ignorieren).
     onPosterGestureStart: (id) {
+      _gTarget = id;
+      if (id == null) return;
       _gScale0 = _posterScale[id] ?? 1.0;
       _gRot0 = _posterRot[id] ?? 0.0;
     },
-    onPosterGestureUpdate: (id, d, w, h) => setState(() {
-      final cur =
-          _posterPos[id] ?? _kCenteredItemDefaults[id] ?? const Offset(0.5, 0.5);
-      // Ein Finger = verschieben; zwei Finger = zusätzlich skalieren + drehen.
-      _posterPos[id] = Offset(
-        cur.dx + d.focalPointDelta.dx / w,
-        cur.dy + d.focalPointDelta.dy / h,
-      );
-      _posterScale[id] = (_gScale0 * d.scale).clamp(0.2, 6.0).toDouble();
-      _posterRot[id] = _gRot0 + d.rotation;
-    }),
+    onPosterGestureUpdate: (_, d, w, h) {
+      final id = _gTarget;
+      if (id == null) return;
+      setState(() {
+        // Ein Finger = verschieben; zwei Finger = zusätzlich skalieren + drehen.
+        if (id.startsWith('std_')) {
+          // Festes Teil: Verschiebung in logischen px (1:1 mit dem Finger).
+          _stdOff[id] = (_stdOff[id] ?? Offset.zero) + d.focalPointDelta;
+        } else {
+          final cur =
+              _posterPos[id] ??
+              _kCenteredItemDefaults[id] ??
+              const Offset(0.5, 0.5);
+          _posterPos[id] = Offset(
+            cur.dx + d.focalPointDelta.dx / w,
+            cur.dy + d.focalPointDelta.dy / h,
+          );
+        }
+        _posterScale[id] = (_gScale0 * d.scale).clamp(0.2, 6.0).toDouble();
+        _posterRot[id] = _gRot0 + d.rotation;
+      });
+    },
+    stdOffset: _stdOff,
+    stdHidden: _stdHidden,
+    stdCtx: _stdCtx,
+    stdNatCtx: _stdNatCtx,
     onPosterLongPress: _showElementProperties,
     onPosterRotateTo: (id, a) => setState(() => _posterRot[id] = a),
     onBackgroundLongPress: _showBackgroundMenu,
@@ -2936,6 +2994,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     setState(() => _posterSel = id);
     final isImage = id == 'player' || id.startsWith('overlay_');
     final isText = id.startsWith('text_') || id == 'info';
+    // Feste Teile (Ergebnis/Startelf) liegen im Layout – keine Ebenen-Reihenfolge.
+    final isStd = id.startsWith('std_');
     final delLabel = id == 'player'
         ? 'Spielerbild entfernen'
         : (id.startsWith('overlay_') || id.startsWith('text_'))
@@ -3039,6 +3099,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       },
                       fmt: (v) => '${v.round()}°',
                     ),
+                    if (isStd)
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.undo, size: 18),
+                        label: const Text('Position, Größe & Drehung zurück'),
+                        onPressed: () => apply(() {
+                          _stdOff.remove(id);
+                          _posterScale.remove(id);
+                          _posterRot.remove(id);
+                        }),
+                      ),
+                    if (!isStd)
                     Row(
                       children: [
                         Expanded(
@@ -3244,6 +3315,22 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         return 'Titel';
       case 'info':
         return 'Datum';
+      case 'std_logo':
+        return 'Vereinslogo';
+      case 'std_title':
+        return 'Überschrift';
+      case 'std_sponsor':
+        return 'Präsentiert von';
+      case 'std_info':
+        return 'Spielinfo';
+      case 'std_score':
+        return 'Ergebnis';
+      case 'std_scorers':
+        return 'Torschützen';
+      case 'std_lineup':
+        return 'Aufstellung';
+      case 'std_sponsorbar':
+        return 'Sponsoren';
       default:
         if (id.startsWith('overlay_')) return 'Bild';
         if (id.startsWith('text_')) return 'Text';
@@ -3308,9 +3395,64 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     });
   }
 
+  /// Ausgeblendete Grundteile dieses Formats (zum Wieder-Einblenden):
+  /// Ergebnis/Startelf = ausgeblendete feste Teile, Ankündigung = aus der
+  /// Ebenen-Liste entfernte Grundelemente.
+  List<String> get _hiddenItems => widget.isAnnouncement
+      ? [
+          for (final id in _kPosterBaseOrder)
+            if (!_posterOrder.contains(id)) id,
+        ]
+      : [
+          for (final id in _kStdOrder)
+            if (_stdHidden.contains(id)) id,
+        ];
+
+  // Feste Teile von Ergebnis/Startelf in Layout-Reihenfolge (für Listen).
+  static const List<String> _kStdOrder = [
+    'std_logo',
+    'std_title',
+    'std_sponsor',
+    'std_info',
+    'std_score',
+    'std_scorers',
+    'std_lineup',
+    'std_sponsorbar',
+  ];
+
+  /// Ein ausgeblendetes Grundteil wieder einblenden (Ankündigung: an seiner
+  /// ursprünglichen Ebenen-Position).
+  void _restoreHiddenItem(String id) {
+    setState(() {
+      if (id.startsWith('std_')) {
+        _stdHidden.remove(id);
+        return;
+      }
+      if (_posterOrder.contains(id)) return;
+      final base = _kPosterBaseOrder;
+      final bi = base.indexOf(id);
+      var insertAt = _posterOrder.length;
+      for (var i = bi + 1; i < base.length; i++) {
+        final j = _posterOrder.indexOf(base[i]);
+        if (j >= 0) {
+          insertAt = j;
+          break;
+        }
+      }
+      _posterOrder.insert(insertAt, id);
+    });
+  }
+
   /// Ein Overlay ODER Textfeld wieder entfernen (aktuelles Format).
   void _removePosterItem(String id) {
     setState(() {
+      if (id.startsWith('std_')) {
+        // Festes Teil: nur ausblenden (Platz bleibt), über das Menü
+        // „Hinzufügen & Hintergrund" wieder einblendbar.
+        _stdHidden.add(id);
+        if (_posterSel == id) _posterSel = null;
+        return;
+      }
       if (id == 'player') {
         // Spieler: nur das Bild entfernen (bleibt in der Reihenfolge, lässt sich
         // über „Spielerbild" wieder hinzufügen).
@@ -3388,7 +3530,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           children: [
             const Text('Überschrift:', style: TextStyle(fontSize: 12)),
             ChoiceChip(
-              label: const Text('SPIELTAG'),
+              label: Text(_defaultHeadline),
               selected: _annHeadMode == 'spieltag',
               onSelected: (_) => upd(() => _annHeadMode = 'spieltag'),
             ),
@@ -3410,10 +3552,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             child: TextFormField(
               initialValue: _annHeadText,
               textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isDense: true,
-                border: OutlineInputBorder(),
-                hintText: 'z. B. DERBY, TOPSPIEL',
+                border: const OutlineInputBorder(),
+                hintText: widget.isAnnouncement
+                    ? 'z. B. DERBY, TOPSPIEL'
+                    : 'z. B. ${_defaultHeadline == 'ERGEBNIS' ? 'AUSWÄRTSSIEG' : 'UNSERE ELF'}',
               ),
               onChanged: (v) => upd(() => _annHeadText = v),
             ),
@@ -3475,16 +3619,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           value: _showOtherSponsors,
           onChanged: (v) => upd(() => _showOtherSponsors = v),
         ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Logos auf hellem Kreis',
-            style: TextStyle(fontSize: 13),
+        // Ergebnis/Startelf haben dafür die Logo-Form unter „Hintergrund & Farben".
+        if (widget.isAnnouncement)
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text(
+              'Logos auf hellem Kreis',
+              style: TextStyle(fontSize: 13),
+            ),
+            value: _posterLogoDisc,
+            onChanged: (v) => upd(() => _posterLogoDisc = v),
           ),
-          value: _posterLogoDisc,
-          onChanged: (v) => upd(() => _posterLogoDisc = v),
-        ),
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
@@ -3599,19 +3745,40 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       ),
                     ],
                   ),
-                  const Divider(height: 24),
-                  if (widget.isAnnouncement) ...[
+                  if (_hiddenItems.isNotEmpty) ...[
+                    const SizedBox(height: 10),
                     const Text(
-                      'Überschrift, Schrift & Sponsoren',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      'Ausgeblendet – antippen zum Einblenden',
+                      style: TextStyle(fontSize: 12),
                     ),
                     const SizedBox(height: 4),
-                    _headlineSponsorControls(setSheet),
-                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        for (final id in _hiddenItems)
+                          ActionChip(
+                            avatar: const Icon(Icons.visibility, size: 16),
+                            label: Text(_posterItemLabel(id)),
+                            onPressed: () {
+                              _restoreHiddenItem(id);
+                              setSheet(() {});
+                            },
+                          ),
+                      ],
+                    ),
                   ],
+                  const Divider(height: 24),
+                  const Text(
+                    'Überschrift, Schrift & Sponsoren',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  _headlineSponsorControls(setSheet),
+                  const SizedBox(height: 6),
                   OutlinedButton.icon(
                     icon: const Icon(Icons.tune, size: 18),
                     label: const Text('Hintergrund & Farben'),
@@ -3693,6 +3860,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       final k = _designKey;
       _posterPosF.remove(k);
       _posCenteredF.remove(k);
+      _stdOffF.remove(k);
+      _stdHiddenF.remove(k);
       _posterScaleF.remove(k);
       _posterRotF.remove(k);
       _posterOrderF.remove(k);
@@ -4212,6 +4381,10 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterSelected,
     this.posterCentered = const {},
     this.onPosterAnchor,
+    this.stdOffset = const {},
+    this.stdHidden = const {},
+    this.stdCtx,
+    this.stdNatCtx,
     this.onPosterItemMove,
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
@@ -4280,9 +4453,18 @@ class _StartelfGraphic extends StatelessWidget {
   // Meldet die aktuelle sichtbare Mitte (0..1) eines Elements → Umstellung auf
   // Mittelpunkt-Position ohne Sprung.
   final void Function(String id, Offset relCenter)? onPosterAnchor;
+  // Ergebnis/Startelf: feste Teile (std_*) – Verschiebung (logische px) und
+  // ausgeblendete Teile. Größe/Drehung kommen aus posterItemScale/-Rot.
+  final Map<String, Offset> stdOffset;
+  final Set<String> stdHidden;
+  // Vom State gehaltene Kontexte der festen Teile (innen = mit Transform für
+  // den Treffer-Test, außen = natürliche Lage für den Dreh-Griff).
+  final Map<String, BuildContext>? stdCtx;
+  final Map<String, BuildContext>? stdNatCtx;
   final void Function(String id, Offset pos)? onPosterItemMove;
-  // Pinch/Drehen/Ziehen (zwei Finger): Start merkt Basiswerte, Update rechnet.
-  final void Function(String id)? onPosterGestureStart;
+  // Pinch/Drehen/Ziehen: Start legt das Ziel fest (null = keins) und merkt
+  // Basiswerte, Update rechnet.
+  final void Function(String? id)? onPosterGestureStart;
   final void Function(String id, ScaleUpdateDetails details, double w, double h)?
       onPosterGestureUpdate;
   final void Function(String id)? onPosterLongPress; // Langdruck → Eigenschaften
@@ -4383,7 +4565,8 @@ class _StartelfGraphic extends StatelessWidget {
   /// Sichtbare Mitte eines Elements relativ zum Canvas (0..1). Drehen/Skalieren
   /// erfolgen um die Mitte, daher bleibt sie unter den Transforms gleich.
   Offset? _relCenterOf(BuildContext? ectx) {
-    final eb = ectx?.findRenderObject();
+    if (ectx == null || !ectx.mounted) return null;
+    final eb = ectx.findRenderObject();
     final cb = canvasKey?.currentContext?.findRenderObject();
     if (eb is! RenderBox || cb is! RenderBox) return null;
     if (!eb.attached || !eb.hasSize || !cb.attached || !cb.hasSize) return null;
@@ -4421,17 +4604,138 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
+  /// Liegt der Canvas-Punkt [canvasPt] (logische px) im Element [c]? Beachtet
+  /// Verschiebung/Größe/Drehung (Umrechnung über die echten Transforms).
+  bool _hitsCtx(BuildContext? c, Offset canvasPt) {
+    if (c == null || !c.mounted) return false;
+    final b = c.findRenderObject();
+    final cb = canvasKey?.currentContext?.findRenderObject();
+    if (b is! RenderBox || cb is! RenderBox) return false;
+    if (!b.attached || !b.hasSize || !cb.attached) return false;
+    final local = b.globalToLocal(cb.localToGlobal(canvasPt));
+    return (Offset.zero & b.size).contains(local);
+  }
+
+  /// Feste Teile der Ergebnis-/Startelf-Grafik, oberstes zuerst (spätere im
+  /// Layout liegen beim Überlappen oben).
+  static const List<String> _kStdTopFirst = [
+    'std_sponsorbar',
+    'std_lineup',
+    'std_scorers',
+    'std_score',
+    'std_info',
+    'std_sponsor',
+    'std_title',
+    'std_logo',
+  ];
+
+  /// Oberstes festes Teil am Canvas-Punkt (oder null).
+  String? _stdHitAt(Offset canvasPt) {
+    for (final id in _kStdTopFirst) {
+      if (stdHidden.contains(id)) continue;
+      if (_hitsCtx(stdCtx?[id], canvasPt)) return id;
+    }
+    return null;
+  }
+
+  /// Festes Teil der Ergebnis-/Startelf-Grafik als frei gestaltbares Objekt:
+  /// bleibt an seiner natürlichen Stelle im Layout (Startbild unverändert) und
+  /// bekommt Verschiebung/Größe/Drehung obendrauf. Auswahl und Ziehen laufen
+  /// über den Treffer-Test im Editor (kein eigener GestureDetector → keine
+  /// Konflikte mit den Hintergrund-Gesten).
+  Widget _stdEl(String id, Widget child) {
+    if (stdHidden.contains(id)) {
+      stdCtx?.remove(id);
+      stdNatCtx?.remove(id);
+      // Platz bleibt erhalten → die übrigen Teile springen nicht.
+      return Visibility(
+        visible: false,
+        maintainSize: true,
+        maintainAnimation: true,
+        maintainState: true,
+        child: child,
+      );
+    }
+    final off = stdOffset[id] ?? Offset.zero;
+    final scale = posterItemScale[id] ?? 1.0;
+    final rot = posterItemRot[id] ?? 0.0;
+    final selected = posterSelected == id;
+    return Builder(
+      builder: (nctx) {
+        stdNatCtx?[id] = nctx;
+        return Transform.translate(
+          offset: off,
+          child: Transform.rotate(
+            angle: rot,
+            child: Transform.scale(
+              scale: scale,
+              child: Builder(
+                builder: (bctx) {
+                  stdCtx?[id] = bctx;
+                  // Rahmen nur als Vordergrund → Layout bleibt exakt gleich.
+                  return DecoratedBox(
+                    position: DecorationPosition.foreground,
+                    decoration: selected
+                        ? BoxDecoration(
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.9),
+                            ),
+                            borderRadius: BorderRadius.circular(4),
+                          )
+                        : const BoxDecoration(),
+                    child: child,
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// Sichtbare Mitte (logische px) des gewählten Elements für den Dreh-Griff.
+  Offset? _selCenterPx(String sel, double w, double h) {
+    if (sel.startsWith('std_')) {
+      // Natürliche Lage (ohne Transforms) + aktuelle Verschiebung.
+      final nat = _relCenterOf(stdNatCtx?[sel]);
+      if (nat == null) return null;
+      final off = stdOffset[sel] ?? Offset.zero;
+      return Offset(nat.dx * w + off.dx, nat.dy * h + off.dy);
+    }
+    final pos =
+        posterItemPos[sel] ?? _kCenteredItemDefaults[sel] ?? const Offset(0.5, 0.5);
+    return Offset(pos.dx * w, pos.dy * h);
+  }
+
   /// Dreh-Griff (Kreis mit Icon) an der Seite des gewählten Elements: packen und
   /// um die Mitte drehen. null, wenn nichts gewählt ist.
   Widget? _rotationHandle(String? sel, double w, double h) {
     if (sel == null) return null;
-    final pos =
-        posterItemPos[sel] ?? _kCenteredItemDefaults[sel] ?? const Offset(0.5, 0.5);
+    final c = _selCenterPx(sel, w, h);
+    if (c == null) return null;
     final rot = posterItemRot[sel] ?? 0.0;
-    final cx = pos.dx * w, cy = pos.dy * h;
-    const hd = 54.0; // Abstand des Griffs von der Mitte („nach oben")
-    final hx = cx + hd * math.sin(rot);
-    final hy = cy - hd * math.cos(rot);
+    final cx = c.dx, cy = c.dy;
+    // Abstand des Griffs von der Mitte: knapp ÜBER dem oberen Rand des Objekts
+    // (sonst läge er bei großen Objekten mitten drin und man dreht statt zu
+    // verschieben). Größe aus dem letzten Layout × Skalierung.
+    var hd = 54.0;
+    final ectx = stdCtx?[sel];
+    if (ectx != null && ectx.mounted) {
+      final b = ectx.findRenderObject();
+      if (b is RenderBox && b.hasSize) {
+        final s = posterItemScale[sel] ?? 1.0;
+        hd = math.max(54.0, b.size.height * s / 2 + 26);
+      }
+    }
+    var hx = cx + hd * math.sin(rot);
+    var hy = cy - hd * math.cos(rot);
+    // Läge der Griff außerhalb der Grafik → auf die Gegenseite (unten) legen.
+    final flip = hx < 18 || hx > w - 18 || hy < 18 || hy > h - 18;
+    if (flip) {
+      hx = cx - hd * math.sin(rot);
+      hy = cy + hd * math.cos(rot);
+    }
     return Positioned(
       left: hx - 18,
       top: hy - 18,
@@ -4442,7 +4746,10 @@ class _StartelfGraphic extends StatelessWidget {
               canvasKey?.currentContext?.findRenderObject() as RenderBox?;
           if (box == null) return;
           final local = box.globalToLocal(d.globalPosition);
-          final ang = math.atan2(local.dy - cy, local.dx - cx) + math.pi / 2;
+          // Griff oben: Richtung „nach oben" = Drehung; Griff unten: Gegenrichtung.
+          final ang =
+              math.atan2(local.dy - cy, local.dx - cx) +
+              (flip ? -math.pi / 2 : math.pi / 2);
           onPosterRotateTo?.call(sel, ang);
         },
         child: Container(
@@ -4534,6 +4841,7 @@ class _StartelfGraphic extends StatelessWidget {
                 child: Builder(
                   builder: (bctx) {
                     elCtx[id] = bctx;
+                    stdCtx?[id] = bctx; // Größe für den Dreh-Griff
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTapDown: (_) {
@@ -4569,37 +4877,76 @@ class _StartelfGraphic extends StatelessWidget {
         final sel = posterSelected;
         // Gewähltes, noch nicht umgerechnetes Element (z. B. per Code gewählt)
         // nach dem Frame auf Mittelpunkt-Position umstellen.
-        if (sel != null && !posterCentered.contains(sel)) {
+        if (sel != null &&
+            !sel.startsWith('std_') &&
+            !posterCentered.contains(sel)) {
           WidgetsBinding.instance.addPostFrameCallback((_) => anchor(sel));
         }
-        final Widget? dragLayer = sel == null
-            ? null
-            : Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  onScaleStart: (_) {
-                    anchor(sel);
-                    onPosterGestureStart?.call(sel);
-                  },
-                  onScaleUpdate: (d) =>
-                      onPosterGestureUpdate?.call(sel, d, w, h),
-                ),
-              );
+        // Oberstes Objekt am Punkt: freie Elemente (vorne zuerst), dann die
+        // festen Teile des Layouts.
+        String? hitAt(Offset p) {
+          for (final id in posterOrder.reversed) {
+            if (_hitsCtx(elCtx[id], p)) return id;
+          }
+          return _stdHitAt(p);
+        }
+
+        // Zieh-Ebene: ein Finger auf einem Objekt → dieses wählen und direkt
+        // ziehen; auf freier Fläche (oder mit zwei Fingern) wird das gewählte
+        // Objekt bewegt/gepincht. Ohne Auswahl greift sie NUR über Objekten –
+        // sonst bleibt z. B. das Foto im Foto-Bereich verschieb-/zoombar.
+        final dragLayer = Positioned.fill(
+          child: _HitWhere(
+            test: (p) => sel != null || hitAt(p) != null,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onScaleStart: (d) {
+                var target = sel;
+                if (d.pointerCount < 2) target = hitAt(d.localFocalPoint) ?? sel;
+                if (target != null && target != sel) {
+                  onPosterSelect?.call(target);
+                }
+                if (target != null && !target.startsWith('std_')) {
+                  anchor(target);
+                }
+                onPosterGestureStart?.call(target);
+              },
+              onScaleUpdate: (d) =>
+                  onPosterGestureUpdate?.call(sel ?? '', d, w, h),
+            ),
+          ),
+        );
         return Stack(
           key: canvasKey,
           fit: StackFit.expand,
           children: [
             base,
-            // Hintergrund-Gesten: Tippen = Auswahl weg, Langdruck = hinzufügen.
+            // Hintergrund-Gesten: Tippen auf ein festes Teil = auswählen, sonst
+            // Auswahl weg; Langdruck auf festes Teil = Eigenschaften, sonst
+            // Hinzufügen-Menü.
             Positioned.fill(
               child: GestureDetector(
                 behavior: HitTestBehavior.translucent,
-                onTap: onBackgroundTap,
-                onLongPress: onBackgroundLongPress,
+                onTapUp: (d) {
+                  final hit = _stdHitAt(d.localPosition);
+                  if (hit != null) {
+                    onPosterSelect?.call(hit);
+                  } else {
+                    onBackgroundTap?.call();
+                  }
+                },
+                onLongPressStart: (d) {
+                  final hit = _stdHitAt(d.localPosition);
+                  if (hit != null) {
+                    onPosterLongPress?.call(hit);
+                  } else {
+                    onBackgroundLongPress?.call();
+                  }
+                },
               ),
             ),
             ...layers,
-            ?dragLayer,
+            dragLayer,
             // Dreh-Griff (oben über allem, damit er die Geste bekommt).
             ?_rotationHandle(sel, w, h),
           ],
@@ -4783,39 +5130,52 @@ class _StartelfGraphic extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // Kompakte Kopfleiste (Logo + Titel + Sponsor in EINER Zeile).
+              // Jedes Teil ist ein eigenes, frei gestaltbares Objekt (_stdEl),
+              // startet aber exakt an seiner Stelle im Layout.
               _header(),
               SizedBox(height: compact ? 6 : 12),
-              if (announcement == null) _matchInfo(),
+              if (announcement == null) _stdEl('std_info', _matchInfo()),
               SizedBox(height: compact ? 7 : 18),
               _divider(),
               SizedBox(height: compact ? 7 : 16),
               if (result != null) ...[
                 // Spielstand groß & fix (der Blickfang) …
-                _scoreRow(),
+                _stdEl('std_score', _scoreRow()),
                 SizedBox(height: compact ? 10 : 14),
-                // … darunter die Torschützen (nur wenn aktiviert).
+                // … darunter die Torschützen (nur wenn aktiviert). Align + lose
+                // Grenzen ergeben dieselbe Größe/Lage wie zuvor, aber eine
+                // Trefferfläche nur so groß wie der Block.
                 Expanded(
                   child: showScorers
-                      ? FittedBox(
-                          fit: BoxFit.scaleDown,
+                      ? Align(
                           alignment: Alignment.topCenter,
-                          child: _scorersCardsBlock(),
+                          child: _stdEl(
+                            'std_scorers',
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.topCenter,
+                              child: _scorersCardsBlock(),
+                            ),
+                          ),
                         )
                       : const SizedBox.shrink(),
                 ),
               ] else
                 Expanded(
                   child: Center(
-                    child: FittedBox(
-                      fit: BoxFit.contain,
-                      alignment: Alignment.center,
-                      child: _lineupBlock(),
+                    child: _stdEl(
+                      'std_lineup',
+                      FittedBox(
+                        fit: BoxFit.contain,
+                        alignment: Alignment.center,
+                        child: _lineupBlock(),
+                      ),
                     ),
                   ),
                 ),
-              if (barSponsors.isNotEmpty) ...[
+              if (barSponsors.isNotEmpty && showOtherSponsors) ...[
                 SizedBox(height: compact ? 6 : 10),
-                _sponsorBar(),
+                _stdEl('std_sponsorbar', _sponsorBar()),
               ],
             ],
           ),
@@ -4897,89 +5257,104 @@ class _StartelfGraphic extends StatelessWidget {
     final sponsorLogo = mainSponsor == null
         ? null
         : TeamLogo.decode(mainSponsor!.logo);
-    final rubric = announcement != null
-        ? 'SPIELTAG'
-        : (result != null ? 'ERGEBNIS' : 'STARTELF');
+    // Überschrift: wählbar wie bei der Ankündigung (Standard/Eigener Text).
+    final rubric = posterHeadline;
+    final logoW = logoBytes != null
+        ? _logoChip(logoBytes, height: compact ? 52 : 66, circle: logoCircle)
+        : (logo != null
+              ? TeamLogo(logoPath: logo, size: compact ? 52 : 66)
+              : null);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        if (logoBytes != null) ...[
-          _logoChip(logoBytes, height: compact ? 52 : 66, circle: logoCircle),
-          const SizedBox(width: 12),
-        ] else if (logo != null) ...[
-          TeamLogo(logoPath: logo, size: compact ? 52 : 66),
+        if (logoW != null) ...[
+          _stdEl('std_logo', logoW),
           const SizedBox(width: 12),
         ],
+        // Align → Objekt nur so breit wie der Text (gleiche Lage wie zuvor).
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title.toUpperCase(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  fontSize: compact ? 12 : 15,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              // Überschrift automatisch verkleinern, falls sie nicht in die
-              // Breite passt → wird NIE abgeschnitten (z.B. „ERGEBNIS").
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  rubric,
-                  maxLines: 1,
-                  softWrap: false,
-                  style: TextStyle(
-                    color: _accent,
-                    fontSize: compact ? 26 : 32,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
-                    height: 1.0,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: _stdEl(
+              'std_title',
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    title.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontSize: compact ? 12 : 15,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
                   ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        // „präsentiert von [Sponsor]" rechts in derselben Leiste.
-        if (mainSponsor != null) ...[
-          const SizedBox(width: 10),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                'PRÄSENTIERT VON',
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  fontSize: compact ? 8 : 10,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.5,
-                ),
-              ),
-              SizedBox(height: compact ? 4 : 5),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: compact ? 130 : 168),
-                child: sponsorLogo != null
-                    ? _logoChip(sponsorLogo, height: compact ? 38 : 50)
-                    : Text(
-                        mainSponsor!.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: compact ? 16 : 21,
+                  // Überschrift automatisch verkleinern, falls sie nicht in die
+                  // Breite passt → wird NIE abgeschnitten (z.B. „ERGEBNIS").
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      rubric,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: posterFontStyle(
+                        posterFont,
+                        TextStyle(
+                          color: _accent,
+                          fontSize: compact ? 26 : 32,
                           fontWeight: FontWeight.w900,
+                          letterSpacing: 1.2,
+                          height: 1.0,
                         ),
                       ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
+          ),
+        ),
+        // „präsentiert von [Sponsor]" rechts in derselben Leiste (abschaltbar,
+        // als Logo oder Text – wie bei der Ankündigung).
+        if (mainSponsor != null && showMainSponsor) ...[
+          const SizedBox(width: 10),
+          _stdEl(
+            'std_sponsor',
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  'PRÄSENTIERT VON',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: compact ? 8 : 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                SizedBox(height: compact ? 4 : 5),
+                ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: compact ? 130 : 168),
+                  child: sponsorLogo != null && mainSponsorMode != 'text'
+                      ? _logoChip(sponsorLogo, height: compact ? 38 : 50)
+                      : Text(
+                          mainSponsor!.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: compact ? 16 : 21,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                ),
+              ],
+            ),
           ),
         ],
       ],
@@ -5554,6 +5929,7 @@ class _StartelfGraphic extends StatelessWidget {
                 child: Builder(
                   builder: (bctx) {
                     elCtx[id] = bctx;
+                    stdCtx?[id] = bctx; // Größe für den Dreh-Griff
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTapDown: (_) {
@@ -5596,36 +5972,42 @@ class _StartelfGraphic extends StatelessWidget {
         if (sel != null && !posterCentered.contains(sel)) {
           WidgetsBinding.instance.addPostFrameCallback((_) => anchor(sel));
         }
-        final Widget? dragLayer = sel == null
-            ? null
-            : Positioned.fill(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.translucent,
-                  // Ein Finger = verschieben; zwei Finger = zusätzlich pinchen
-                  // (skalieren) und drehen – wie gewohnt. KEINE Grenze.
-                  onScaleStart: (_) {
-                    anchor(sel);
-                    onPosterGestureStart?.call(sel);
-                  },
-                  onScaleUpdate: (d) =>
-                      onPosterGestureUpdate?.call(sel, d, w, h),
-                ),
-              );
+        // Oberstes Element am Punkt (vorne zuerst).
+        String? hitAt(Offset p) {
+          for (final id in posterOrder.reversed) {
+            if (_hitsCtx(elCtx[id], p)) return id;
+          }
+          return null;
+        }
+
+        // Zieh-Ebene: ein Finger auf einem Element → dieses wählen und direkt
+        // ziehen; auf freier Fläche (oder mit zwei Fingern) wird das gewählte
+        // Element bewegt/gepincht/gedreht. KEINE Grenze. Ohne Auswahl greift sie
+        // nur über Elementen (leere Fläche → Hintergrund-Gesten).
+        final dragLayer = Positioned.fill(
+          child: _HitWhere(
+            test: (p) => sel != null || hitAt(p) != null,
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onScaleStart: (d) {
+                var target = sel;
+                if (d.pointerCount < 2) target = hitAt(d.localFocalPoint) ?? sel;
+                if (target != null && target != sel) {
+                  onPosterSelect?.call(target);
+                }
+                if (target != null) anchor(target);
+                onPosterGestureStart?.call(target);
+              },
+              onScaleUpdate: (d) =>
+                  onPosterGestureUpdate?.call(sel ?? '', d, w, h),
+            ),
+          ),
+        );
 
         return Stack(
           key: canvasKey,
           fit: StackFit.expand,
           children: [
-            // Hintergrund-Gesten (unterste Ebene): Tippen auf leere Fläche =
-            // Auswahl aufheben, Langdruck = hinzufügen/Hintergrund-Menü. Elemente
-            // liegen darüber (opaque) und fangen ihre eigenen Gesten ab.
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: onBackgroundTap,
-                onLongPress: onBackgroundLongPress,
-              ),
-            ),
             _bgBase(radial: true),
             // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar.
             Align(
@@ -5647,8 +6029,18 @@ class _StartelfGraphic extends StatelessWidget {
                 ),
               ),
             ),
+            // Hintergrund-Gesten ÜBER Hintergrundbild und Scrim (die würden sie
+            // sonst abfangen): Tippen auf leere Fläche = Auswahl aufheben,
+            // Langdruck = Hinzufügen/Hintergrund-Menü. Elemente liegen darüber.
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: onBackgroundTap,
+                onLongPress: onBackgroundLongPress,
+              ),
+            ),
             ...layers,
-            ?dragLayer,
+            dragLayer,
             // Dreh-Griff (oben über allem, damit er die Geste bekommt).
             ?_rotationHandle(sel, w, h),
           ],
@@ -5790,5 +6182,34 @@ class _StartelfGraphic extends StatelessWidget {
       ),
       child: Image.memory(bytes, fit: BoxFit.contain, gaplessPlayback: true),
     );
+  }
+}
+
+/// Lässt Treffer (Zeiger-Ereignisse) nur dort zu, wo [test] true liefert –
+/// z. B. die Zieh-Ebene nur über Objekten, damit darunterliegende Gesten
+/// (Foto-Zoom im Foto-Bereich, Hintergrund-Tippen) frei bleiben.
+class _HitWhere extends SingleChildRenderObjectWidget {
+  const _HitWhere({required this.test, super.child});
+
+  final bool Function(Offset localPosition) test;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _HitWhereRender(test);
+
+  @override
+  void updateRenderObject(BuildContext context, _HitWhereRender renderObject) {
+    renderObject.test = test;
+  }
+}
+
+class _HitWhereRender extends RenderProxyBox {
+  _HitWhereRender(this.test);
+
+  bool Function(Offset localPosition) test;
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) {
+    if (!test(position)) return false;
+    return super.hitTest(result, position: position);
   }
 }
