@@ -160,10 +160,39 @@ Uint8List normalizeImageBytes(Map<String, dynamic> args) {
         ? img.copyResize(im, width: maxSize)
         : img.copyResize(im, height: maxSize);
   }
-  final alpha = keepAlpha && out.hasAlpha;
+  // PNG nur, wenn wirklich transparente Pixel da sind (Freisteller). Ein
+  // deckendes Foto als PNG ist ein Vielfaches größer als JPEG – das machte
+  // gespeicherte Designs riesig.
+  final alpha = keepAlpha && out.hasAlpha && hasTransparentPixels(out);
   return Uint8List.fromList(
-    alpha ? img.encodePng(out) : img.encodeJpg(out, quality: 92),
+    alpha ? img.encodePng(out) : img.encodeJpg(out, quality: 90),
   );
+}
+
+/// Bild für die KI vorbereiten (Isolate): längste Seite ≤ 1280 px, Transparenz
+/// auf Weiß gelegt, als JPEG – klein und schnell zu übertragen.
+Uint8List downscaleForAi(Uint8List input) {
+  final src = img.decodeImage(input);
+  if (src == null) return input;
+  final longer = math.max(src.width, src.height);
+  final im = longer > 1280
+      ? (src.width >= src.height
+            ? img.copyResize(src, width: 1280)
+            : img.copyResize(src, height: 1280))
+      : src;
+  final flat = img.Image(width: im.width, height: im.height)
+    ..clear(img.ColorRgb8(255, 255, 255));
+  img.compositeImage(flat, im);
+  return Uint8List.fromList(img.encodeJpg(flat, quality: 90));
+}
+
+/// Hat das Bild mindestens einen (fast) durchsichtigen Pixel?
+bool hasTransparentPixels(img.Image im) {
+  if (!im.hasAlpha) return false;
+  for (final p in im) {
+    if (p.a < 250) return true;
+  }
+  return false;
 }
 
 /// Bildeffekte für ein (freigestelltes) Bild, im Isolate:
@@ -264,6 +293,27 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
     }
   }
   return Uint8List.fromList(img.encodePng(im));
+}
+
+/// Teamname im Ergebnis-Balken: ab 10 Zeichen an einem Leerzeichen in zwei
+/// möglichst gleich lange Zeilen teilen („POST SV DÜSSELDORF" → „POST SV" /
+/// „DÜSSELDORF"); ohne Leerzeichen bzw. kurz unverändert.
+String balancedTwoLines(String s) {
+  final t = s.trim();
+  if (t.length < 10 || !t.contains(' ')) return t;
+  final words = t.split(RegExp(r'\s+'));
+  var best = t;
+  var bestLen = t.length;
+  for (var i = 1; i < words.length; i++) {
+    final a = words.sublist(0, i).join(' ');
+    final b = words.sublist(i).join(' ');
+    final longer = math.max(a.length, b.length);
+    if (longer < bestLen) {
+      bestLen = longer;
+      best = '$a\n$b';
+    }
+  }
+  return best;
 }
 
 /// ENDSTAND-Grafik: Kurzname eines Torschützen – „#7 Ben Kania" → „B. KANIA".
@@ -566,6 +616,29 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   final Map<String, String> _ftPhotoF = {};
   final Map<String, List<double>> _ftMatrixF = {};
   final TransformationController _ftCtrl = TransformationController();
+  // ENDSTAND: Anteil des Fotos an der Höhe (Trennlinie, im Editor ziehbar).
+  final Map<String, double> _ftSplitF = {};
+  double get _ftSplit => _ftSplitF[_designKey] ?? (_story ? 0.56 : 0.46);
+  // ENDSTAND: eigene Kurznamen im Ergebnis-Balken (z. B. „POST SV").
+  String? _ftHomeName;
+  String? _ftAwayName;
+
+  /// Foto-Größe (ENDSTAND) setzen – um die Mitte des Foto-Bereichs skalieren,
+  /// der bisherige Ausschnitt bleibt sonst erhalten.
+  void _setFtScale(double target) {
+    final m = _ftCtrl.value;
+    final cur = m.getMaxScaleOnAxis();
+    if (cur <= 0) return;
+    final f = target / cur;
+    final w = _story ? _storyW : _postW;
+    final areaH = (_story ? _storyH : _postH) * _ftSplit;
+    final cx = w / 2, cy = areaH / 2;
+    _ftCtrl.value = Matrix4.translationValues(cx, cy, 0)
+        .multiplied(Matrix4.diagonal3Values(f, f, 1))
+        .multiplied(Matrix4.translationValues(-cx, -cy, 0))
+        .multiplied(m);
+    _ftMatrixF[_designKey] = _ftCtrl.value.storage.toList();
+  }
 
   /// Ausschnitt des ENDSTAND-Fotos für das aktuelle Format in den Controller
   /// laden (nach Laden des Designs bzw. Formatwechsel – nie während build).
@@ -894,6 +967,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     _designLoaded = true;
   }
 
+  /// Aktuell angezeigtes Bild eines Bild-Elements ([id] = 'player' oder
+  /// Overlay-ID) im Format [designKey] – für den Original-Abgleich beim Speichern.
+  String? _currentImageOf(String designKey, String id) {
+    if (id == 'player') return _posterMainF[designKey];
+    for (final o in _posterOverlaysF[designKey] ?? const []) {
+      if (o.id == id) return o.dataUrl;
+    }
+    return null;
+  }
+
   /// Gesamten Editor-Zustand der Ankündigung als JSON (für Speichern je Spiel).
   Map<String, dynamic> _designToJson() {
     Map<String, dynamic> offMap(Map<String, Map<String, Offset>> m) => {
@@ -925,6 +1008,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'resLayout': _resultLayout,
       'ftPhoto': Map<String, String>.from(_ftPhotoF),
       'ftMatrix': {for (final e in _ftMatrixF.entries) e.key: e.value},
+      'ftSplit': Map<String, double>.from(_ftSplitF),
+      'ftHome': _ftHomeName,
+      'ftAway': _ftAwayName,
       'stdOff': offMap(_stdOffF),
       'stdHidden': {
         for (final e in _stdHiddenF.entries) e.key: e.value.toList(),
@@ -943,7 +1029,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'textContent': strMap(_textContentF),
       'textFont': strMap(_textFontF),
       'textColor': strMap(_textColorF),
-      'imgOrig': strMap(_imgOrigF),
+      // Original-Bilder NUR speichern, wenn sie sich vom angezeigten Bild
+      // unterscheiden (nach Weiche Kanten/Schatten). Sonst wäre jedes Bild
+      // doppelt drin – das machte Designs 8 MB groß und der Cloud-Upload
+      // scheiterte. Beim Laden wird das fehlende Original wieder ergänzt.
+      'imgOrig': {
+        for (final e in _imgOrigF.entries)
+          e.key: {
+            for (final i in e.value.entries)
+              if (i.value != _currentImageOf(e.key, i.key)) i.key: i.value,
+          },
+      },
+      // Fotos (Hintergrund / Foto-Bereich / Poster-Badge) mitspeichern.
+      'photos': [
+        for (final p in _photos) {'url': p.dataUrl, 'place': p.place.name},
+      ],
       'imgFeather': dblMap(_imgFeatherF),
       'imgInner': dblMap(_imgInnerF),
       'grade': {
@@ -1065,6 +1165,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (v is String && v.isNotEmpty) _ftPhotoF[k.toString()] = v;
       });
     }
+    _ftHomeName = m['ftHome'] is String ? m['ftHome'] as String : null;
+    _ftAwayName = m['ftAway'] is String ? m['ftAway'] as String : null;
+    _ftSplitF.clear();
+    if (m['ftSplit'] is Map) {
+      (m['ftSplit'] as Map).forEach((k, v) {
+        if (v is num) _ftSplitF[k.toString()] = v.toDouble().clamp(0.2, 0.85);
+      });
+    }
     _ftMatrixF.clear();
     if (m['ftMatrix'] is Map) {
       (m['ftMatrix'] as Map).forEach((k, v) {
@@ -1126,6 +1234,30 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     fillStr(_textFontF, m['textFont']);
     fillStr(_textColorF, m['textColor']);
     fillStr(_imgOrigF, m['imgOrig']);
+    // Nicht mitgespeicherte Originale (= unverändertes Bild) wieder ergänzen,
+    // damit Weiche Kanten/Schatten weiterhin vom Original aus rechnen.
+    for (final k in {..._posterMainF.keys, ..._posterOverlaysF.keys}) {
+      final orig = _imgOrigF.putIfAbsent(k, () => <String, String>{});
+      final main = _posterMainF[k];
+      if (main != null) orig.putIfAbsent('player', () => main);
+      for (final o in _posterOverlaysF[k] ?? const []) {
+        orig.putIfAbsent(o.id, () => o.dataUrl);
+      }
+    }
+    // Gespeicherte Fotos (Hintergrund / Foto-Bereich / Badge).
+    if (m['photos'] is List) {
+      _photos.clear();
+      for (final p in m['photos'] as List) {
+        if (p is! Map) continue;
+        final url = p['url'];
+        if (url is! String || url.isEmpty) continue;
+        final place = _PhotoPlace.values.firstWhere(
+          (e) => e.name == p['place'],
+          orElse: () => _PhotoPlace.background,
+        );
+        _photos.add(_GraphicPhoto(url, place));
+      }
+    }
     fillDbl(_imgFeatherF, m['imgFeather']);
     fillDbl(_imgInnerF, m['imgInner']);
     _gradeF.clear();
@@ -1408,7 +1540,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             edit: true,
             aspectRatio: aspect,
             keepAlpha: true, // transparente Freisteller-PNGs erhalten
-            maxSize: 2000, // höhere Auflösung fürs große Spielerbild
+            maxSize: 1600, // höhere Auflösung fürs große Spielerbild
           );
     if (url == null || !mounted) return;
     setState(() {
@@ -1551,7 +1683,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           imageBytes: bytes,
           aspectRatio: aspect,
           keepAlpha: true,
-          maxSize: 2000,
+          maxSize: 1600,
         ),
       ),
     );
@@ -2841,25 +2973,47 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Foto-Hintergrund, damit der Hintergrund dahinter erscheint.
   Future<void> _cutoutSelected() async {
     if (_aiBusy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    if (!context.read<AppState>().canAiImage) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Die Grafik-KI ist für dein Konto nicht freigeschaltet. Der '
+            'Team-Admin kann sie unter Einstellungen → KI-Berechtigungen '
+            'einschalten.',
+          ),
+          duration: Duration(seconds: 6),
+        ),
+      );
+      return;
+    }
+    final sel = _posterSel; // Ziel merken – Auswahl kann sich währenddessen ändern
     final src = _selectedImageDataUrl();
-    if (src == null || !src.contains('base64,')) {
-      ScaffoldMessenger.of(context).showSnackBar(
+    final srcBytes = src == null ? null : TeamLogo.decode(src);
+    if (sel == null || srcBytes == null) {
+      messenger.showSnackBar(
         const SnackBar(content: Text('Erst ein Bild auswählen (antippen).')),
       );
       return;
     }
+    final subject = await _askCutoutSubject();
+    if (subject == null || !mounted) return;
     setState(() => _aiBusy = true);
-    final messenger = ScaffoldMessenger.of(context);
     try {
+      // Verkleinert + JPEG senden (schneller, unter allen Größen-Grenzen).
+      final send = await compute(downscaleForAi, srcBytes);
       final out = await CloudService.aiImage(
         images: [
-          {'mime': _dataUrlMime(src), 'data': src, 'role': 'photo'},
+          {
+            'mime': 'image/jpeg',
+            'data': 'data:image/jpeg;base64,${base64Encode(send)}',
+            'role': 'photo',
+          },
         ],
-        prompt:
-            'Stelle die Person/das Motiv sauber frei und gib es auf '
-            'transparentem Hintergrund (PNG mit Alpha) zurück.',
+        prompt: subject,
         mode: 'cutout',
         aspect: _story ? '9:16' : '1:1',
+        key: 'magenta',
       );
       if (out == null) {
         messenger.showSnackBar(
@@ -2867,17 +3021,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         );
         return;
       }
+      // KI liefert das Motiv auf reinem Magenta → hier echt transparent machen.
+      final png = await compute(chromaKeyMagenta, out);
       if (!mounted) return;
-      setState(
-        () => _setSelectedImageDataUrl(
-          'data:image/png;base64,${base64Encode(out)}',
-        ),
-      );
+      final url = 'data:image/png;base64,${base64Encode(png)}';
+      setState(() {
+        _setImageById(sel, url);
+        _imgOrig[sel] = url;
+        _imgFeather[sel] = 0;
+        _imgInner[sel] = 0;
+      });
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
-            'Freigestellt. Falls noch Reste bleiben: eigenes transparentes PNG '
-            'nutzen.',
+            'Freigestellt. Reste am Rand? „Weiche Kanten" etwas erhöhen oder '
+            'mit genauerem Motiv erneut freistellen.',
           ),
           duration: Duration(seconds: 5),
         ),
@@ -2892,6 +3050,89 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     } finally {
       if (mounted) setState(() => _aiBusy = false);
     }
+  }
+
+  /// Abfrage vor dem KI-Freistellen: WELCHES Motiv bleiben soll (alles andere
+  /// wird entfernt). Vorschläge + freies Textfeld. null = abgebrochen.
+  Future<String?> _askCutoutSubject() async {
+    final ctrl = TextEditingController(
+      text: 'Den Spieler im Vordergrund (nur diese eine Person)',
+    );
+    const ideas = <String>[
+      'Den Spieler in der Mitte',
+      'Den Spieler im Vordergrund',
+      'Alle Personen',
+      'Die Person links',
+      'Die Person rechts',
+      'Den Spieler mit dem Ball',
+    ];
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: const Text('Was soll freigestellt werden?'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: StatefulBuilder(
+            builder: (ctx, setLocal) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Nur dieses Motiv bleibt – Wand, Boden, andere Personen und '
+                  'alles andere wird entfernt.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final s in ideas)
+                      ChoiceChip(
+                        label: Text(s),
+                        selected: ctrl.text == s,
+                        onSelected: (_) => setLocal(() {
+                          ctrl.text = s;
+                          ctrl.selection = TextSelection.collapsed(
+                            offset: s.length,
+                          );
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: ctrl,
+                  maxLines: 2,
+                  textCapitalization: TextCapitalization.sentences,
+                  onChanged: (_) => setLocal(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Motiv (frei beschreiben)',
+                    hintText: 'z. B. Spieler mit Nr. 7 im roten Trikot',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final t = ctrl.text.trim();
+              if (t.isEmpty) return;
+              Navigator.pop(ctx, t);
+            },
+            child: const Text('Freistellen'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Einfarbigen Hintergrund des GEWÄHLTEN Bildes clientseitig entfernen (ohne
@@ -3193,6 +3434,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     onFtPhotoChanged: () => setState(
       () => _ftMatrixF[_designKey] = _ftCtrl.value.storage.toList(),
     ),
+    ftSplit: _ftSplit,
+    editing: _fullEdit,
+    ftHomeName: (_ftHomeName ?? '').trim().isEmpty ? null : _ftHomeName,
+    ftAwayName: (_ftAwayName ?? '').trim().isEmpty ? null : _ftAwayName,
+    onFtSplitDrag: (dFrac) => setState(
+      () => _ftSplitF[_designKey] = (_ftSplit + dFrac).clamp(0.2, 0.85),
+    ),
     onPosterLongPress: _showElementProperties,
     onPosterRotateTo: (id, a) => setState(() => _posterRot[id] = a),
     onBackgroundLongPress: _showBackgroundMenu,
@@ -3357,6 +3605,37 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           _boxSize.remove(id); // gezogene Kastengröße
                         }),
                       ),
+                    // Ergebnis-Balken: eigene Kurznamen (Heim links, Gast rechts).
+                    if (id == 'std_ft_banner') ...[
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        initialValue: _ftHomeName ?? '',
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: const OutlineInputBorder(),
+                          labelText: 'Name links (Heim)',
+                          hintText: widget.isHome
+                              ? _title
+                              : widget.opponentName,
+                        ),
+                        onChanged: (v) => apply(() => _ftHomeName = v),
+                      ),
+                      const SizedBox(height: 8),
+                      TextFormField(
+                        initialValue: _ftAwayName ?? '',
+                        textCapitalization: TextCapitalization.characters,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: const OutlineInputBorder(),
+                          labelText: 'Name rechts (Gast)',
+                          hintText: widget.isHome
+                              ? widget.opponentName
+                              : _title,
+                        ),
+                        onChanged: (v) => apply(() => _ftAwayName = v),
+                      ),
+                    ],
                     // Überschrift-Objekt: Texte direkt hier bearbeiten.
                     if (id == 'std_title' || id == 'std_ft_title') ...[
                       const SizedBox(height: 8),
@@ -3684,7 +3963,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       source: src == 'camera' ? ImageSource.camera : ImageSource.gallery,
       edit: true,
       keepAlpha: true,
-      maxSize: 2000,
+      maxSize: 1600,
     );
     if (url == null || !mounted) return;
     final id = 'overlay_${_posterOverlaySeq++}';
@@ -4450,6 +4729,47 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         },
       );
 
+  /// ENDSTAND: Regler „Foto-Größe" (50–300 %) + Ausschnitt zurücksetzen.
+  /// [refresh] aktualisiert zusätzlich ein offenes Sheet.
+  Widget _ftPhotoScaleControls({VoidCallback? refresh}) {
+    final scale = _ftCtrl.value.getMaxScaleOnAxis().clamp(0.5, 3.0).toDouble();
+    return Row(
+      children: [
+        const Text('Foto-Größe', style: TextStyle(fontSize: 12)),
+        Expanded(
+          child: Slider(
+            value: scale,
+            min: 0.5,
+            max: 3.0,
+            onChanged: (v) {
+              setState(() => _setFtScale(v));
+              refresh?.call();
+            },
+          ),
+        ),
+        SizedBox(
+          width: 40,
+          child: Text(
+            '${(scale * 100).round()}%',
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+        IconButton(
+          tooltip: 'Ausschnitt zurücksetzen',
+          icon: const Icon(Icons.restart_alt, size: 20),
+          onPressed: () {
+            setState(() {
+              _ftCtrl.value = Matrix4.identity();
+              _ftMatrixF.remove(_designKey);
+            });
+            refresh?.call();
+          },
+        ),
+      ],
+    );
+  }
+
   /// ENDSTAND: Foto oben wählen/ändern/entfernen (je Format gespeichert). Freier
   /// Zuschnitt; den Ausschnitt legt der Nutzer im Editor per Ziehen/Zoomen fest.
   Future<void> _pickFtPhoto() async {
@@ -4592,10 +4912,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           _pickFtPhoto();
                         },
                       ),
+                      if (_ftPhotoF[_designKey] != null)
+                        _ftPhotoScaleControls(refresh: () => setSheet(() {})),
                       const SizedBox(height: 2),
                       const Text(
-                        'Das Foto im Editor mit Finger/Maus verschieben und '
-                        'mit zwei Fingern (Mausrad) zoomen.',
+                        'Foto im Editor mit Finger/Maus verschieben, mit zwei '
+                        'Fingern (Mausrad) zoomen. Die Trennlinie zwischen Foto '
+                        'und unten am Griff ↕ hoch-/runterziehen.',
                         style: TextStyle(fontSize: 12),
                       ),
                     ],
@@ -4722,9 +5045,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _stdOffF.remove(k);
       _stdHiddenF.remove(k);
       _lookF.remove(k);
+      _photos.clear(); // hinzugefügte Fotos gehören zum Design
       _boxSizeF.remove(k);
       _ftPhotoF.remove(k);
       _ftMatrixF.remove(k);
+      _ftSplitF.remove(k);
       _ftCtrl.value = Matrix4.identity();
       _posterScaleF.remove(k);
       _posterRotF.remove(k);
@@ -4877,6 +5202,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       ),
                       onPressed: _pickFtPhoto,
                     ),
+                  if (_ftLayout && _ftPhotoF[_designKey] != null)
+                    SizedBox(width: 420, child: _ftPhotoScaleControls()),
                 ],
               ),
             ),
@@ -5290,6 +5617,11 @@ class _StartelfGraphic extends StatelessWidget {
     this.ftPhoto,
     this.ftController,
     this.onFtPhotoChanged,
+    this.ftSplit = 0.56,
+    this.onFtSplitDrag,
+    this.editing = false,
+    this.ftHomeName,
+    this.ftAwayName,
     this.onPosterItemMove,
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
@@ -5377,6 +5709,13 @@ class _StartelfGraphic extends StatelessWidget {
   final String? ftPhoto; // ENDSTAND: Foto oben (Data-URL)
   final TransformationController? ftController; // Ausschnitt des Fotos
   final VoidCallback? onFtPhotoChanged; // Zoom/Verschieben beendet → merken
+  final double ftSplit; // ENDSTAND: Anteil des Fotos an der Höhe (0.2..0.85)
+  // ENDSTAND: Trennlinie gezogen (Delta als Anteil der Gesamthöhe).
+  final void Function(double deltaFraction)? onFtSplitDrag;
+  final bool editing; // im Vollbild-Editor (Bedien-Griffe zeigen)
+  // ENDSTAND: eigene (Kurz-)Namen im Ergebnis-Balken (null = Teamname).
+  final String? ftHomeName;
+  final String? ftAwayName;
   final void Function(String id, Offset pos)? onPosterItemMove;
   // Pinch/Drehen/Ziehen: Start legt das Ziel fest (null = keins) und merkt
   // Basiswerte, Update rechnet.
@@ -6002,6 +6341,55 @@ class _StartelfGraphic extends StatelessWidget {
             dragLayer,
             // Zieh-Griffe für Kästen (Breite/Höhe) über der Zieh-Ebene.
             ..._resizeHandles(sel),
+            // ENDSTAND: Trennlinie Foto/unten hoch- und runterziehen (nur im
+            // Editor und ohne Auswahl → nie im geteilten Bild).
+            if (editing &&
+                sel == null &&
+                result != null &&
+                resultLayout == 'photo' &&
+                onFtSplitDrag != null) ...[
+              Positioned(
+                left: 0,
+                right: 0,
+                top: ftSplit * h - 1,
+                height: 2,
+                child: IgnorePointer(
+                  child: ColoredBox(
+                    color: Colors.white.withValues(alpha: 0.55),
+                  ),
+                ),
+              ),
+              Positioned(
+                key: const ValueKey('ftSplitHandle'),
+                left: w / 2 - 34,
+                top: ftSplit * h - 13,
+                width: 68,
+                height: 26,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onVerticalDragUpdate: (d) =>
+                      onFtSplitDrag?.call(d.delta.dy / h),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(13),
+                      border: Border.all(color: Colors.black54, width: 1.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.3),
+                          blurRadius: 4,
+                        ),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.unfold_more,
+                      size: 18,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ),
+              ),
+            ],
             // Dreh-Griff (oben über allem, damit er die Geste bekommt).
             ?_rotationHandle(sel, w, h),
           ],
@@ -6746,66 +7134,49 @@ class _StartelfGraphic extends StatelessWidget {
       ),
     );
 
+    final gap = compact ? 8.0 : 14.0;
+    final hasBar = barSponsors.isNotEmpty && showOtherSponsors;
+    // Mindesthöhe für Überschrift + Balken (+ Sponsoren) + etwas Torschützen.
+    // Ist unten weniger Platz (z. B. Trennlinie weit unten), wird der ganze
+    // Block verkleinert statt überzulaufen.
+    final minNeeded =
+        (compact ? 34.0 : 46.0) +
+        2 * gap +
+        (boxSize['std_ft_banner']?.height ?? (compact ? 60.0 : 78.0)) +
+        36 +
+        (hasBar ? (compact ? 6 : 10) + (compact ? 26 : 32) + 22 : 0);
+
     final bottom = Stack(
       fit: StackFit.expand,
       children: [
         _bgBase(),
         Padding(
           padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 18, pad, pad),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(child: _stdEl('std_ft_title', titleW)),
-              SizedBox(height: compact ? 8 : 14),
-              _boxSlot(
-                'std_ft_banner',
-                _ftBanner(),
-                (s) => _ftBanner(size: s),
-              ),
-              SizedBox(height: compact ? 8 : 14),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.topCenter,
-                  child: _boxSlot(
-                    'std_ft_scorers',
-                    LayoutBuilder(
-                      builder: (_, c) => FittedBox(
-                        fit: BoxFit.scaleDown,
-                        alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          width: c.maxWidth,
-                          child: _ftScorersContent(),
-                        ),
-                      ),
-                    ),
-                    (s) => _fixedBox(
-                      s,
-                      padding: const EdgeInsets.all(6),
-                      decoration: const BoxDecoration(),
-                      content: (_) => _ftScorersContent(),
-                    ),
-                  ),
+          child: LayoutBuilder(
+            builder: (_, c) {
+              final col = _ftBottomColumn(titleW, gap, hasBar);
+              if (c.maxHeight >= minNeeded) return col;
+              return FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: c.maxWidth,
+                  height: minNeeded,
+                  child: col,
                 ),
-              ),
-              if (barSponsors.isNotEmpty && showOtherSponsors) ...[
-                SizedBox(height: compact ? 6 : 10),
-                _boxSlot(
-                  'std_ft_sponsorbar',
-                  _sponsorBar(),
-                  (s) => _sponsorBar(size: s),
-                ),
-              ],
-            ],
+              );
+            },
           ),
         ),
       ],
     );
 
+    final topFlex = (ftSplit.clamp(0.2, 0.85) * 1000).round();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          flex: 56,
+          flex: topFlex,
           child: Stack(
             fit: StackFit.expand,
             children: [
@@ -6833,8 +7204,58 @@ class _StartelfGraphic extends StatelessWidget {
             ],
           ),
         ),
-        Expanded(flex: 44, child: bottom),
+        Expanded(flex: 1000 - topFlex, child: bottom),
       ],
+    );
+  }
+
+  /// Unterer ENDSTAND-Block: Überschrift, Ergebnis-Balken, Torschützen,
+  /// Sponsoren (alle als eigene, frei gestaltbare Objekte).
+  Widget _ftBottomColumn(Widget titleW, double gap, bool hasBar) {
+    return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(child: _stdEl('std_ft_title', titleW)),
+              SizedBox(height: gap),
+              _boxSlot(
+                'std_ft_banner',
+                _ftBanner(),
+                (s) => _ftBanner(size: s),
+              ),
+              SizedBox(height: gap),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: _boxSlot(
+                    'std_ft_scorers',
+                    LayoutBuilder(
+                      builder: (_, c) => FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          width: c.maxWidth,
+                          child: _ftScorersContent(),
+                        ),
+                      ),
+                    ),
+                    (s) => _fixedBox(
+                      s,
+                      padding: const EdgeInsets.all(6),
+                      decoration: const BoxDecoration(),
+                      content: (_) => _ftScorersContent(),
+                    ),
+                  ),
+                ),
+              ),
+              if (hasBar) ...[
+                SizedBox(height: compact ? 6 : 10),
+                _boxSlot(
+                  'std_ft_sponsorbar',
+                  _sponsorBar(),
+                  (s) => _sponsorBar(size: s),
+                ),
+              ],
+            ],
     );
   }
 
@@ -6843,23 +7264,27 @@ class _StartelfGraphic extends StatelessWidget {
   /// Größe (Breite = Balkenbreite, Höhe = Höhe des Ergebnis-Felds).
   Widget _ftBanner({Size? size}) {
     final sd = _ftSides();
-    final badgeH = size?.height ?? (compact ? 60.0 : 78.0);
-    final pillH = badgeH / 1.35;
-    final logoH = badgeH * 0.95;
-    final badgeW = badgeH * 1.9;
+    final badgeH = size?.height ?? (compact ? 56.0 : 70.0);
+    final pillH = badgeH / 1.3;
+    final logoH = badgeH * 0.82;
+    final badgeW = badgeH * 1.45;
     final nameStyle = TextStyle(
       color: const Color(0xFF111111),
-      fontSize: pillH * 0.36,
+      fontSize: pillH * 0.32,
       fontWeight: FontWeight.w900,
-      letterSpacing: 0.4,
+      letterSpacing: 0.3,
+      height: 1.05,
     );
-    Widget name(String n, Alignment a) => FittedBox(
+    // Lange Namen zweizeilig (an einem Leerzeichen, möglichst ausgeglichen),
+    // dann passend verkleinert – nie „…".
+    Widget name(String n, Alignment a, TextAlign ta) => FittedBox(
       fit: BoxFit.scaleDown,
       alignment: a,
       child: Text(
-        n.toUpperCase(),
-        maxLines: 1,
+        balancedTwoLines(n.toUpperCase()),
+        maxLines: 2,
         softWrap: false,
+        textAlign: ta,
         style: nameStyle,
       ),
     );
@@ -6875,8 +7300,9 @@ class _StartelfGraphic extends StatelessWidget {
         // Weiße Leiste (Logos ragen über die Enden).
         Container(
           height: pillH,
-          margin: EdgeInsets.symmetric(horizontal: logoH * 0.45),
-          padding: EdgeInsets.symmetric(horizontal: logoH * 0.62),
+          // Logo ragt 0,7 × logoH in die Leiste → Text erst danach beginnen.
+          margin: EdgeInsets.symmetric(horizontal: logoH * 0.3),
+          padding: EdgeInsets.symmetric(horizontal: logoH * 0.78),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(pillH),
@@ -6890,9 +7316,21 @@ class _StartelfGraphic extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Expanded(child: name(sd.homeName, Alignment.centerLeft)),
-              SizedBox(width: badgeW + 12),
-              Expanded(child: name(sd.awayName, Alignment.centerRight)),
+              Expanded(
+                child: name(
+                  ftHomeName ?? sd.homeName,
+                  Alignment.centerLeft,
+                  TextAlign.left,
+                ),
+              ),
+              SizedBox(width: badgeW + 10),
+              Expanded(
+                child: name(
+                  ftAwayName ?? sd.awayName,
+                  Alignment.centerRight,
+                  TextAlign.right,
+                ),
+              ),
             ],
           ),
         ),
@@ -7824,3 +8262,45 @@ class _TrapezoidClipper extends CustomClipper<Path> {
   @override
   bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
+
+/// Nur für Tests: rendert die Grafik ohne Screen/State (z. B. die ENDSTAND-
+/// Variante), damit Layout-Fehler im Test sichtbar werden.
+@visibleForTesting
+Widget debugGraphicForTest({
+  required ResultData result,
+  bool compact = false,
+  String resultLayout = 'photo',
+  Map<String, Size> boxSize = const {},
+  bool isHome = false,
+  String? logo,
+  String? opponentLogo,
+  Sponsor? mainSponsor,
+  List<Sponsor> barSponsors = const [],
+  String? ftPhoto,
+  bool logoCircle = false,
+}) => _StartelfGraphic(
+  title: 'Garather SV',
+  logo: logo,
+  starters: const [],
+  benchNames: const [],
+  mainSponsor: mainSponsor,
+  barSponsors: barSponsors,
+  ftPhoto: ftPhoto,
+  logoCircle: logoCircle,
+  bgImage: null,
+  gradTop: const Color(0xFF0B3D2A),
+  gradBottom: const Color(0xFF145A3C),
+  overlayOpacity: 0.5,
+  matchDate: DateTime(2026, 10, 25, 15),
+  isHome: isHome,
+  opponentName: 'Post SV Düsseldorf',
+  opponentLogo: opponentLogo,
+  compact: compact,
+  result: result,
+  resultLayout: resultLayout,
+  posterHeadline: resultLayout == 'photo' ? 'ENDSTAND' : 'ERGEBNIS',
+  boxSize: boxSize,
+  canvasKey: GlobalKey(),
+  stdCtx: <String, BuildContext>{},
+  stdNatCtx: <String, BuildContext>{},
+);

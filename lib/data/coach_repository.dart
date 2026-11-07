@@ -143,6 +143,20 @@ class CoachRepository {
     });
   }
 
+  /// Zeitstempel (UTC) der lokal gespeicherten Design-Version (oder null).
+  Future<DateTime?> getAnnouncementDesignUpdatedAt(String id) async {
+    final db = await _db;
+    final rows = await db.query(
+      'announcement_designs',
+      columns: ['updated_at'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return DateTime.tryParse(rows.first['updated_at'] as String? ?? '');
+  }
+
   /// Liefert das gespeicherte Design-JSON eines Spiels (oder null).
   Future<String?> getAnnouncementDesign(String id) async {
     final db = await _db;

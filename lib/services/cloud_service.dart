@@ -535,17 +535,36 @@ class CloudService {
     Map<String, dynamic> row, {
     String? onConflict,
   }) async {
-    try {
-      await _c.from(table).upsert(row, onConflict: onConflict);
-    } on PostgrestException catch (e) {
-      final msg = e.message.toLowerCase();
-      if (row.containsKey('updated_at') && msg.contains('updated_at')) {
-        final fallback = Map<String, dynamic>.from(row)..remove('updated_at');
-        await _c.from(table).upsert(fallback, onConflict: onConflict);
-      } else {
-        rethrow;
+    // Fehlt in der Cloud eine (neuere) Spalte, weil eine Migration noch nicht
+    // ausgeführt wurde, scheiterte bisher die GANZE Zeile still – z. B. alle
+    // Sponsor-Änderungen ohne `sponsors.enabled`. Jetzt wird die unbekannte
+    // Spalte weggelassen und erneut versucht; der Rest synchronisiert weiter.
+    var payload = Map<String, dynamic>.from(row);
+    for (var attempt = 0; attempt < 6; attempt++) {
+      try {
+        await _c.from(table).upsert(payload, onConflict: onConflict);
+        return;
+      } on PostgrestException catch (e) {
+        final missing = _missingColumn(e.message, payload);
+        if (missing == null) rethrow;
+        payload = Map<String, dynamic>.from(payload)..remove(missing);
       }
     }
+  }
+
+  /// Name einer in der Cloud fehlenden Spalte aus der Fehlermeldung (z. B.
+  /// „Could not find the 'enabled' column of 'sponsors' in the schema cache"),
+  /// sofern sie im [payload] steckt – sonst null.
+  static String? _missingColumn(String message, Map<String, dynamic> payload) {
+    final m = RegExp(r"'([A-Za-z0-9_]+)' column").firstMatch(message);
+    final col = m?.group(1);
+    if (col != null && payload.containsKey(col)) return col;
+    // Älteres Format ohne Spaltennamen: nur `updated_at` gezielt weglassen.
+    if (payload.containsKey('updated_at') &&
+        message.toLowerCase().contains('updated_at')) {
+      return 'updated_at';
+    }
+    return null;
   }
 
   /// Löscht Cloud-Zeilen anhand eines Spalten-Filters (z.B. {id: …} oder

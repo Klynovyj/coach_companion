@@ -192,6 +192,15 @@ class AppState extends ChangeNotifier {
     for (final table in _auxTables) {
       try {
         final rows = await CloudService.fetchForTeam(table, teamId);
+        // Grafik-Designs: nur NEUERE Cloud-Stände übernehmen, lokale nie
+        // überschreiben oder löschen (ein gescheiterter Upload darf keine
+        // Arbeit vernichten).
+        if (table == 'announcement_designs' && !replace) {
+          for (final r in rows) {
+            await _mergeCloudDesign(Map<String, Object?>.from(r));
+          }
+          continue;
+        }
         final ids = <String>[];
         for (final r in rows) {
           final map = Map<String, Object?>.from(r);
@@ -292,15 +301,57 @@ class AppState extends ChangeNotifier {
         'announcement_designs',
         teamId,
       );
+      var foundInCloud = false;
       for (final r in rows) {
         if (r['id'] != id) continue;
-        final map = Map<String, Object?>.from(r)..remove('team_id');
-        try {
-          await _repo.upsertRawById('announcement_designs', map);
-        } catch (_) {}
+        foundInCloud = true;
+        await _mergeCloudDesign(Map<String, Object?>.from(r));
       }
+      // Lokal vorhanden, aber nie in der Cloud angekommen → jetzt nachschieben.
+      if (!foundInCloud) await _pushLocalDesign(id, teamId);
     } catch (_) {
       // Tabelle fehlt/nicht erreichbar – lokal weiterarbeiten.
+    }
+  }
+
+  /// Cloud-Design nur übernehmen, wenn es NEUER ist als das lokale. Ist das
+  /// lokale neuer (z. B. weil sein Upload scheiterte), bleibt es erhalten und
+  /// wird erneut hochgeladen – nie wird ein neuerer Stand überschrieben.
+  Future<void> _mergeCloudDesign(Map<String, Object?> cloudRow) async {
+    final id = cloudRow['id'] as String?;
+    if (id == null) return;
+    cloudRow.remove('team_id');
+    final cloudAt = DateTime.tryParse(cloudRow['updated_at']?.toString() ?? '');
+    final localAt = await _repo.getAnnouncementDesignUpdatedAt(id);
+    final cloudNewer =
+        localAt == null || (cloudAt != null && cloudAt.isAfter(localAt));
+    if (cloudNewer) {
+      try {
+        await _repo.upsertRawById('announcement_designs', cloudRow);
+      } catch (_) {}
+      return;
+    }
+    final teamId = _activeCloudTeamId;
+    if (teamId != null && (cloudAt == null || localAt.isAfter(cloudAt))) {
+      await _pushLocalDesign(id, teamId);
+    }
+  }
+
+  /// Lokales Design [id] (falls vorhanden) in die Cloud hochladen.
+  Future<void> _pushLocalDesign(String id, String teamId) async {
+    try {
+      final data = await _repo.getAnnouncementDesign(id);
+      if (data == null) return;
+      final at = await _repo.getAnnouncementDesignUpdatedAt(id);
+      await CloudService.upsertRow('announcement_designs', {
+        'id': id,
+        'match_id': id.split(':').first,
+        'data': data,
+        'updated_at': (at ?? DateTime.now().toUtc()).toIso8601String(),
+        'team_id': teamId,
+      });
+    } catch (_) {
+      // Upload fehlgeschlagen (Netz/Größe) – lokal bleibt alles erhalten.
     }
   }
 
@@ -764,6 +815,9 @@ class AppState extends ChangeNotifier {
           case 'opponent_teams':
           case 'opponent_players':
             await _pullOpponentsFromCloud(teamId);
+          case 'announcement_designs':
+            // Grafik-Design: nur übernehmen, wenn neuer als der lokale Stand.
+            await _mergeCloudDesign(Map<String, Object?>.from(record));
           default:
             // Bereichstabellen (Nominierung, Karten, Notizen, …).
             final map = Map<String, Object?>.from(record);

@@ -60,6 +60,20 @@ function guardText(
       "professioneller Poster-Look. Thema/Motiv: "
     );
   }
+  if (mode === "cutout" && key === "magenta") {
+    // Gemini kann keine echte Transparenz liefern → Motiv auf reines Magenta,
+    // die App macht Magenta danach transparent (zuverlaessig, auch fuer Haare).
+    return (
+      "Bildbearbeitung (Freistellen): Behalte im beiliegenden Foto NUR das " +
+      "folgende Motiv und entferne ALLES andere (Wand, Boden, Himmel, Zaun, " +
+      "andere Personen, Gegenstaende). Ersetze den kompletten restlichen " +
+      "Bereich durch exakt einfarbiges, reines MAGENTA (#FF00FF) – ohne " +
+      "Verlauf, ohne Schatten, ohne Boden. Das Motiv bleibt EXAKT unveraendert " +
+      "(gleiche Pose, Kleidung, Gesicht, Haare, Farben, Groesse und Position " +
+      "im Bild, gleiches Seitenverhaeltnis). Saubere, praezise Kanten. Keine " +
+      "Magenta-Toene im Motiv selbst. Freizustellendes Motiv: "
+    );
+  }
   if (mode === "cutout") {
     return (
       "Stelle die auf dem beiliegenden Bild gezeigte Person (Fussballspieler) " +
