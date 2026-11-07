@@ -7590,6 +7590,14 @@ class _StartelfGraphic extends StatelessWidget {
           if (g.label.isNotEmpty) ...[
             Text(g.label, style: labelStyle),
             const SizedBox(width: 12),
+          ] else ...[
+            // Unbekannter Torschütze → Ball-Symbol statt „Gegner".
+            Icon(
+              Icons.sports_soccer,
+              size: (minStyle.fontSize ?? 17) + 1,
+              color: Colors.white,
+            ),
+            const SizedBox(width: 8),
           ],
           Text(g.minutes.map((m) => "$m'").join('  '), style: minStyle),
         ],
@@ -7696,21 +7704,29 @@ class _StartelfGraphic extends StatelessWidget {
       required bool end,
     }) {
       final showPhoto = showPhotos && TeamLogo.decode(g.photo) != null;
+      const lineStyle = TextStyle(
+        color: Colors.white,
+        fontSize: 19,
+        fontWeight: FontWeight.w700,
+      );
+      // Unbekannter Torschütze (z. B. „Gegner") → Ball-Symbol statt Wort.
+      final unknown = scorerShortName(g.name).isEmpty;
       final children = <Widget>[
         if (showPhoto) ...[avatar(g.photo), const SizedBox(width: 8)],
         // Name immer vollständig (kein „…"): ist der Block zu breit, verkleinert
         // ihn das umgebende FittedBox als Ganzes.
-        Text(
-          "${g.minute}'  ${g.name}",
-          textAlign: end ? TextAlign.right : TextAlign.left,
-          maxLines: 1,
-          softWrap: false,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 19,
-            fontWeight: FontWeight.w700,
+        if (unknown) ...[
+          Text("${g.minute}'", maxLines: 1, softWrap: false, style: lineStyle),
+          const SizedBox(width: 8),
+          const Icon(Icons.sports_soccer, size: 19, color: Colors.white),
+        ] else
+          Text(
+            "${g.minute}'  ${g.name}",
+            textAlign: end ? TextAlign.right : TextAlign.left,
+            maxLines: 1,
+            softWrap: false,
+            style: lineStyle,
           ),
-        ),
       ];
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4),
@@ -7735,18 +7751,22 @@ class _StartelfGraphic extends StatelessWidget {
       children: [for (final g in goals) line(g, end: end)],
     );
 
+    // Überschrift im Stil der Grafik (Schriftart + Akzentfarbe), immer oben.
     final header = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(Icons.sports_soccer, size: 16, color: _accent),
-        const SizedBox(width: 6),
+        Icon(Icons.sports_soccer, size: 18, color: _accent),
+        const SizedBox(width: 7),
         Text(
           'TORE',
-          style: TextStyle(
-            color: _accent,
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 2,
+          style: posterFontStyle(
+            posterFont,
+            TextStyle(
+              color: _accent,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2.5,
+            ),
           ),
         ),
       ],
@@ -7767,6 +7787,8 @@ class _StartelfGraphic extends StatelessWidget {
         padding: pad,
         decoration: deco,
         fillWidth: false,
+        // Überschrift „TORE" bleibt oben, auch wenn der Kasten höher ist.
+        alignment: Alignment.topCenter,
         content: (w) => ConstrainedBox(
           constraints: BoxConstraints(minWidth: w),
           child: IntrinsicWidth(
