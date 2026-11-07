@@ -288,9 +288,39 @@ class AppState extends ChangeNotifier {
   /// Spiel UND Grafiktyp eindeutig), [matchId] die Spiel-ID (Spalte match_id).
   Future<void> saveAnnouncementDesign(
     String id,
-    String matchId,
-    String data,
-  ) => _repo.saveAnnouncementDesign(id, matchId, data);
+    String? matchId,
+    String data, {
+    String? title,
+    String? kind,
+    String? thumb,
+  }) async {
+    await _repo.saveAnnouncementDesign(
+      id,
+      matchId,
+      data,
+      title: title,
+      kind: kind,
+      thumb: thumb,
+    );
+    // Designer-Liste („Meine Designs") aktuell halten.
+    if (id.startsWith('designer:')) notifyListeners();
+  }
+
+  /// „Meine Designs": Designer-Grafiken (ohne das große JSON), neueste zuerst.
+  Future<List<Map<String, Object?>>> designerDesigns() =>
+      _repo.listDesignerDesigns();
+
+  /// Designer-Design umbenennen.
+  Future<void> renameAnnouncementDesign(String id, String title) async {
+    await _repo.renameAnnouncementDesign(id, title);
+    notifyListeners();
+  }
+
+  /// Ein Design löschen (lokal + Cloud).
+  Future<void> deleteAnnouncementDesign(String id) async {
+    await _repo.deleteAnnouncementDesign(id);
+    notifyListeners();
+  }
 
   /// Lädt das gespeicherte Design-JSON (lokal) zur [id], oder null.
   Future<String?> loadAnnouncementDesign(String id) =>
@@ -367,14 +397,12 @@ class AppState extends ChangeNotifier {
   /// Lokales Design [id] (falls vorhanden) in die Cloud hochladen.
   Future<void> _pushLocalDesign(String id, String teamId) async {
     try {
-      final data = await _repo.getAnnouncementDesign(id);
-      if (data == null) return;
-      final at = await _repo.getAnnouncementDesignUpdatedAt(id);
+      final row = await _repo.getAnnouncementDesignRow(id);
+      if (row == null || row['data'] == null) return;
       await CloudService.upsertRow('announcement_designs', {
-        'id': id,
-        'match_id': id.split(':').first,
-        'data': data,
-        'updated_at': (at ?? DateTime.now().toUtc()).toIso8601String(),
+        ...row,
+        'updated_at':
+            row['updated_at'] ?? DateTime.now().toUtc().toIso8601String(),
         'team_id': teamId,
       });
     } catch (_) {

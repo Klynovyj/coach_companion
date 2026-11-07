@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 66;
+  static const _dbVersion = 67;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -547,6 +547,10 @@ class AppDatabase {
         'ALTER TABLE sponsors ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1',
       );
     }
+    // v66 -> v67: Designer („Meine Designs"): Titel, Vorlage, Vorschaubild.
+    if (oldV < 67) {
+      await _addDesignerColumns(db);
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -567,6 +571,14 @@ class AppDatabase {
   // Spielankündigung: gespeichertes Design je Spiel (JSON in `data`). Team-weit
   // geteilt; lokal ohne team_id (die Cloud-Zeile bekommt es beim Push). PK = id
   // = match.id → ein Design pro Spiel.
+  /// Designer-Spalten der Design-Tabelle (Titel, Vorlage, Vorschaubild als
+  /// kleine JPEG-Data-URL) – für die Liste „Meine Designs" ohne das große JSON.
+  static Future<void> _addDesignerColumns(Database db) async {
+    for (final c in const ['title', 'kind', 'thumb']) {
+      await db.execute('ALTER TABLE announcement_designs ADD COLUMN $c TEXT');
+    }
+  }
+
   static const _announcementDesignsTableSql = '''
       CREATE TABLE announcement_designs (
         id TEXT PRIMARY KEY,
@@ -1167,6 +1179,7 @@ class AppDatabase {
       'CREATE INDEX idx_session_items_session ON session_items (session_id)',
     );
     await db.execute(_announcementDesignsTableSql);
+    await _addDesignerColumns(db);
 
     await db.execute('''
       CREATE TABLE settings (

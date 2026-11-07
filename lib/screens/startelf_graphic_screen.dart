@@ -16,6 +16,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
+import '../models/designer_data.dart';
 import '../models/graphic_preset.dart';
 import '../models/graphic_settings.dart';
 import '../models/sponsor.dart';
@@ -559,7 +560,10 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
 String scorerShortName(String raw) {
   final n = raw.trim().replaceFirst(RegExp(r'^#\d+\s*'), '').trim();
   final low = n.toLowerCase();
-  if (n.isEmpty || low == 'gegner' || low == 'unbekannt') return '';
+  // „Gegner" / „Tor" (eigenes Tor ohne Schützen) / leer → unbekannt.
+  if (n.isEmpty || low == 'gegner' || low == 'unbekannt' || low == 'tor') {
+    return '';
+  }
   final parts = n.split(RegExp(r'\s+'));
   if (parts.length == 1) return parts.first.toUpperCase();
   final last = parts.sublist(1).join(' ').toUpperCase();
@@ -765,7 +769,13 @@ class StartelfGraphicScreen extends StatefulWidget {
     this.announcement,
     this.teamId,
     this.matchId,
+    this.designer,
   });
+
+  /// Gesetzt → Grafik aus dem zentralen Designer (Tor, Spieler des Spiels,
+  /// Anlass, frei). Läuft im freien Poster-Editor; gespeichert unter
+  /// [DesignerData.id] (auch ohne Spiel).
+  final DesignerData? designer;
 
   /// Default-Titel (offizieller Teamname) und Default-Logo – werden genutzt,
   /// solange in den Grafik-Einstellungen nichts Eigenes hinterlegt ist.
@@ -945,7 +955,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   bool get _editable => !_settings.designMode;
   // Speicher-ID je Spiel UND Grafiktyp (sonst würden sich Ankündigung/Ergebnis/
   // Startelf desselben Spiels überschreiben). match_id-Spalte bleibt die Spiel-ID.
-  String get _designStorageId => '${widget.matchId}:$_kind';
+  String get _designStorageId =>
+      widget.designer?.id ?? '${widget.matchId}:$_kind';
+  // Hat dieses Design einen Speicherplatz? (Spiel-Grafik oder Designer)
+  bool get _hasStorage => widget.designer != null || widget.matchId != null;
+  // Designer: anzeigbarer Titel (umbenennbar) + kleines Vorschaubild.
+  late String _designerTitle = widget.designer?.title ?? '';
+  String? _thumb;
+  DateTime _thumbAt = DateTime(2000);
   // Speichern des Ankündigungs-Designs je Spiel (lokal + Cloud).
   Timer? _saveTimer; // debounced Autosave
   bool _designLoaded = false; // erst nach dem Laden speichern (nichts überschr.)
@@ -993,7 +1010,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   }
 
   /// Standard-Überschrift je Grafiktyp.
-  String get _defaultHeadline => widget.isAnnouncement
+  String get _defaultHeadline => widget.designer != null
+      ? widget.designer!.headline
+      : widget.isAnnouncement
       ? 'SPIELTAG'
       : (widget.isResult
             ? (_resultLayout == 'photo' ? 'ENDSTAND' : 'ERGEBNIS')
@@ -1014,6 +1033,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   /// Automatische Datum/Ort-Zeile (Vorbelegung für den editierbaren Datum-Text).
   String get _autoInfoLine {
+    if (widget.designer != null) return widget.designer!.infoLine;
     final a = widget.announcement;
     final parts = <String>[];
     final d = widget.matchDate;
@@ -1128,16 +1148,90 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// bevor das Laden fertig ist (sonst würde leer gespeichert).
   void _flushSave() {
     _saveTimer?.cancel();
-    final id = widget.matchId;
-    if (id == null || !_editable || !_designLoaded) return;
+    if (!_hasStorage || !_editable || !_designLoaded) return;
+    final d = widget.designer;
     try {
       _appStateRef?.saveAnnouncementDesign(
         _designStorageId,
-        id,
+        widget.matchId ?? d?.matchId,
         jsonEncode(_designToJson()),
+        title: d == null ? null : _designerTitle,
+        kind: d?.template,
+        thumb: d == null ? null : _thumb,
       );
     } catch (_) {
       // Speichern fehlgeschlagen – nächste Änderung versucht es erneut.
+    }
+    // Designer: Vorschaubild für „Meine Designs" höchstens alle 5 s auffrischen.
+    if (d != null &&
+        mounted &&
+        DateTime.now().difference(_thumbAt) > const Duration(seconds: 5)) {
+      _thumbAt = DateTime.now();
+      unawaited(_refreshThumb());
+    }
+  }
+
+  /// Designer: Titel des Designs ändern (für „Meine Designs").
+  Future<void> _renameDesign() async {
+    final ctrl = TextEditingController(text: _designerTitle);
+    final t = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Design umbenennen'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (t == null || t.trim().isEmpty || !mounted) return;
+    setState(() => _designerTitle = t.trim());
+    _flushSave();
+  }
+
+  /// Kleines Vorschaubild (JPEG ~220 px) der aktuellen Grafik für die Liste
+  /// „Meine Designs" – direkt aus der RepaintBoundary, ohne die Auswahl zu
+  /// verändern. Danach erneut speichern (nur wenn sich etwas geändert hat).
+  Future<void> _refreshThumb() async {
+    try {
+      final boundary =
+          _boundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final logicalWidth = _story ? _storyW : _postW;
+      final image = await boundary.toImage(pixelRatio: 220 / logicalWidth);
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data == null) return;
+      final url = await compute(_rgbaToJpegDataUrl, <String, Object>{
+        'w': image.width,
+        'h': image.height,
+        'px': data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      });
+      if (!mounted || url == _thumb) return;
+      _thumb = url;
+      _appStateRef?.saveAnnouncementDesign(
+        _designStorageId,
+        widget.matchId ?? widget.designer?.matchId,
+        jsonEncode(_designToJson()),
+        title: _designerTitle,
+        kind: widget.designer?.template,
+        thumb: url,
+      );
+    } catch (_) {
+      // Vorschau ist optional – Design ist ohnehin gespeichert.
     }
   }
 
@@ -1158,13 +1252,28 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     state.pushGraphicSettingsToCloud();
     // Gespeichertes Ankündigungs-Design dieses Spiels laden (erst Cloud→lokal
     // frisch ziehen, dann lokal lesen). Danach ist Autosave scharf.
-    final mid = widget.matchId;
-    if (_editable && mid != null) {
+    if (_editable && _hasStorage) {
       final sid = _designStorageId;
       await state.refreshAnnouncementDesign(sid);
       final json = await state.loadAnnouncementDesign(sid);
       if (!mounted) return;
-      if (json != null && json.isNotEmpty) {
+      final designer = widget.designer;
+      if (designer != null) {
+        // Designer: gezielt geöffnetes Design → ohne Rückfrage weitermachen;
+        // neu angelegt → Startfoto (z. B. Kader-Foto) als Spielerbild.
+        if (json != null && json.isNotEmpty) {
+          try {
+            _applyDesignJson(jsonDecode(json) as Map<String, dynamic>);
+          } catch (_) {}
+        } else if (designer.playerPhoto != null) {
+          for (final k in const ['s', 'p']) {
+            _posterMainF[k] = designer.playerPhoto;
+            _imgOrigF.putIfAbsent(k, () => {})['player'] =
+                designer.playerPhoto!;
+          }
+        }
+        if (mounted) setState(() {});
+      } else if (json != null && json.isNotEmpty) {
         // Es gibt ein gespeichertes Design → fragen: weiterbearbeiten oder neu.
         final keep = await showDialog<bool>(
           context: context,
@@ -1292,6 +1401,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'showOthers': _showOtherSponsors,
       'story': _story,
       'ovSeq': _posterOverlaySeq,
+      // Designer: Vorlage/Titel/Vorgaben zum Wiederöffnen.
+      if (widget.designer != null)
+        'designer': widget.designer!.copyWith(title: _designerTitle).toJson(),
       'txtSeq': _textSeq,
     };
   }
@@ -1511,6 +1623,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (m['ovSeq'] is num) _posterOverlaySeq = (m['ovSeq'] as num).toInt();
     if (m['txtSeq'] is num) _textSeq = (m['txtSeq'] as num).toInt();
     _syncFtCtrl(); // gespeicherten Foto-Ausschnitt (ENDSTAND) übernehmen
+    // Designer-Titel kommt aus der Liste (widget.designer) – nur wenn dort
+    // keiner ist, den im Design gespeicherten nehmen.
+    final dj = DesignerData.fromJson(m['designer']);
+    if (_designerTitle.isEmpty && dj != null && dj.title.isNotEmpty) {
+      _designerTitle = dj.title;
+    }
   }
 
   // Effektive Anzeige-Werte (Einstellung überschreibt die Defaults).
@@ -2751,7 +2869,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     return boundary.toImage(pixelRatio: widthPx / logicalWidth);
   }
 
-  String get _kind => widget.isAnnouncement
+  String get _kind => widget.designer != null
+      ? widget.designer!.templateLabel
+      : widget.isAnnouncement
       ? 'Spieltag'
       : (widget.isResult ? 'Ergebnis' : 'Startelf');
 
@@ -3697,6 +3817,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     ),
     ftSplit: _ftSplit,
     editing: _fullEdit,
+    infoOverride: widget.designer?.infoLine,
     onFtSplitDrag: (dFrac) => setState(
       () => _ftSplitF[_designKey] = (_ftSplit + dFrac).clamp(0.2, 0.85),
     ),
@@ -5362,20 +5483,31 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     // Jede Änderung (rebuild) stößt debounced das Speichern an – so bleibt immer
     // der letzte Stand je Spiel erhalten.
-    if (_editable && widget.matchId != null && _designLoaded) {
+    if (_editable && _hasStorage && _designLoaded) {
       _scheduleSave();
     }
     if (_editable && _fullEdit) return _buildEditor();
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          widget.isAnnouncement
+          widget.designer != null
+              ? (_designerTitle.isEmpty
+                    ? widget.designer!.templateLabel
+                    : _designerTitle)
+              : widget.isAnnouncement
               ? 'Spielankündigung'
               : widget.isResult
               ? 'Ergebnis-Grafik'
               : 'Startelf-Grafik',
+          overflow: TextOverflow.ellipsis,
         ),
         actions: [
+          if (widget.designer != null)
+            IconButton(
+              tooltip: 'Umbenennen',
+              icon: const Icon(Icons.drive_file_rename_outline),
+              onPressed: _renameDesign,
+            ),
           IconButton(
             tooltip: 'Fotos / Bilder',
             icon: Icon(
@@ -5848,6 +5980,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.ftSplit = 0.56,
     this.onFtSplitDrag,
     this.editing = false,
+    this.infoOverride,
     this.onPosterItemMove,
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
@@ -5939,6 +6072,8 @@ class _StartelfGraphic extends StatelessWidget {
   // ENDSTAND: Trennlinie gezogen (Delta als Anteil der Gesamthöhe).
   final void Function(double deltaFraction)? onFtSplitDrag;
   final bool editing; // im Vollbild-Editor (Bedien-Griffe zeigen)
+  // Designer: eigene Infozeile statt Datum/Ort (null = automatisch).
+  final String? infoOverride;
   final void Function(String id, Offset pos)? onPosterItemMove;
   // Pinch/Drehen/Ziehen: Start legt das Ziel fest (null = keins) und merkt
   // Basiswerte, Update rechnet.
@@ -7902,7 +8037,8 @@ class _StartelfGraphic extends StatelessWidget {
     if (address.isNotEmpty && address.toLowerCase() != venue.toLowerCase()) {
       parts.add(address.toUpperCase());
     }
-    final infoLine = parts.join(' | ');
+    // Designer-Grafiken bringen ihre eigene Infozeile mit (z. B. Torschütze).
+    final infoLine = infoOverride ?? parts.join(' | ');
 
     // Einzelne, frei verschieb- und skalierbare Elemente.
     final Widget? sponsorW = mainSponsor == null
@@ -7935,20 +8071,24 @@ class _StartelfGraphic extends StatelessWidget {
                   ),
             ],
           );
+    // Ohne Gegner (z. B. Designer: Anlass/frei) nur das eigene Logo – ohne
+    // Trennstrich.
     final Widget logosW = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         side(ownLogo),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Container(
-            width: 1.5,
-            height: logoH * 0.7,
-            color: Colors.white.withValues(alpha: 0.5),
+        if (oppLogo != null) ...[
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Container(
+              width: 1.5,
+              height: logoH * 0.7,
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
           ),
-        ),
-        side(oppLogo),
+          side(oppLogo),
+        ],
       ],
     );
     final Widget headlineW = Text(

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../state/app_state.dart';
 import 'cards_suspensions_screen.dart';
+import 'designer_screen.dart';
 import 'material_duty_screen.dart';
 import 'nachholen_screen.dart';
 import 'player_of_month_screen.dart';
@@ -126,6 +127,15 @@ class MoreScreen extends StatelessWidget {
             label: 'Sponsoring',
             screen: const SponsorsScreen(),
           ),
+          // Zentraler Designer (Tor, Spieler des Spiels, Anlass, frei) –
+          // Speichern ist Trainern vorbehalten.
+          if (isTrainer)
+            _tile(
+              context,
+              icon: Icons.brush_outlined,
+              label: 'Designer',
+              screen: const DesignerScreen(),
+            ),
           const Divider(),
           _tile(
             context,

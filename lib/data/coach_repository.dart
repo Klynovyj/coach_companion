@@ -132,15 +132,61 @@ class CoachRepository {
   /// die Cloud gespiegelt (team-weit via `_upsertById`). [id] = `match.id`.
   Future<void> saveAnnouncementDesign(
     String id,
-    String matchId,
-    String data,
-  ) async {
+    String? matchId,
+    String data, {
+    String? title,
+    String? kind,
+    String? thumb,
+  }) async {
     await _upsertById('announcement_designs', {
       'id': id,
       'match_id': matchId,
       'data': data,
       'updated_at': DateTime.now().toUtc().toIso8601String(),
+      // Designer-Felder nur mitschreiben, wenn gesetzt (sonst bleiben sie).
+      'title': ?title,
+      'kind': ?kind,
+      'thumb': ?thumb,
     });
+  }
+
+  /// Komplette lokale Design-Zeile (für das erneute Hochladen), oder null.
+  Future<Map<String, Object?>?> getAnnouncementDesignRow(String id) async {
+    final db = await _db;
+    final rows = await db.query(
+      'announcement_designs',
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isEmpty ? null : Map<String, Object?>.from(rows.first);
+  }
+
+  /// „Meine Designs": alle Designer-Grafiken (id beginnt mit `designer:`),
+  /// neueste zuerst – OHNE das große Design-JSON.
+  Future<List<Map<String, Object?>>> listDesignerDesigns() async {
+    final db = await _db;
+    return db.query(
+      'announcement_designs',
+      columns: ['id', 'match_id', 'title', 'kind', 'thumb', 'updated_at'],
+      where: "id LIKE 'designer:%'",
+      orderBy: 'updated_at DESC',
+    );
+  }
+
+  /// Designer-Design umbenennen (nur Titel + Zeitstempel; lokal + Cloud).
+  Future<void> renameAnnouncementDesign(String id, String title) =>
+      _upsertById('announcement_designs', {
+        'id': id,
+        'title': title,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+  /// Design löschen (lokal + Cloud).
+  Future<void> deleteAnnouncementDesign(String id) async {
+    final db = await _db;
+    await db.delete('announcement_designs', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('announcement_designs', {'id': id});
   }
 
   /// Zeitstempel (UTC) der lokal gespeicherten Design-Version (oder null).
