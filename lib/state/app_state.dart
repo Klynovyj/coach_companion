@@ -191,16 +191,22 @@ class AppState extends ChangeNotifier {
     if (!CloudService.ready || !CloudService.signedIn) return;
     for (final table in _auxTables) {
       try {
-        final rows = await CloudService.fetchForTeam(table, teamId);
         // Grafik-Designs: nur NEUERE Cloud-Stände übernehmen, lokale nie
         // überschreiben oder löschen (ein gescheiterter Upload darf keine
-        // Arbeit vernichten).
+        // Arbeit vernichten). Erst nur id/updated_at laden (Designs sind groß),
+        // die Daten nur für tatsächlich neuere Cloud-Versionen.
         if (table == 'announcement_designs' && !replace) {
-          for (final r in rows) {
-            await _mergeCloudDesign(Map<String, Object?>.from(r));
+          final metas = await CloudService.fetchColumnsForTeam(
+            table,
+            teamId,
+            'id,updated_at',
+          );
+          for (final m in metas) {
+            await _mergeDesignMeta(m);
           }
           continue;
         }
+        final rows = await CloudService.fetchForTeam(table, teamId);
         final ids = <String>[];
         for (final r in rows) {
           final map = Map<String, Object?>.from(r);
@@ -297,20 +303,40 @@ class AppState extends ChangeNotifier {
     final teamId = _activeCloudTeamId;
     if (teamId == null || !CloudService.ready || !CloudService.signedIn) return;
     try {
-      final rows = await CloudService.fetchForTeam(
+      // Erst NUR den Zeitstempel holen (Designs enthalten MB an Bilddaten);
+      // die Daten selbst nur laden, wenn die Cloud-Version neuer ist.
+      final meta = await CloudService.fetchRowById(
         'announcement_designs',
-        teamId,
+        id,
+        columns: 'id,updated_at',
       );
-      var foundInCloud = false;
-      for (final r in rows) {
-        if (r['id'] != id) continue;
-        foundInCloud = true;
-        await _mergeCloudDesign(Map<String, Object?>.from(r));
+      if (meta == null) {
+        // Lokal vorhanden, aber nie in der Cloud angekommen → im Hintergrund
+        // nachschieben (das Öffnen der Grafik wartet NICHT auf den Upload).
+        unawaited(_pushLocalDesign(id, teamId));
+        return;
       }
-      // Lokal vorhanden, aber nie in der Cloud angekommen → jetzt nachschieben.
-      if (!foundInCloud) await _pushLocalDesign(id, teamId);
+      await _mergeDesignMeta(meta);
     } catch (_) {
       // Tabelle fehlt/nicht erreichbar – lokal weiterarbeiten.
+    }
+  }
+
+  /// Abgleich anhand von id + updated_at: Cloud neuer → volle Zeile laden und
+  /// übernehmen; lokal neuer → im Hintergrund hochladen.
+  Future<void> _mergeDesignMeta(Map<String, dynamic> meta) async {
+    final id = meta['id'] as String?;
+    if (id == null) return;
+    final cloudAt = DateTime.tryParse(meta['updated_at']?.toString() ?? '');
+    final localAt = await _repo.getAnnouncementDesignUpdatedAt(id);
+    if (localAt == null || (cloudAt != null && cloudAt.isAfter(localAt))) {
+      final full = await CloudService.fetchRowById('announcement_designs', id);
+      if (full != null) await _mergeCloudDesign(Map<String, Object?>.from(full));
+      return;
+    }
+    final teamId = _activeCloudTeamId;
+    if (teamId != null && (cloudAt == null || localAt.isAfter(cloudAt))) {
+      unawaited(_pushLocalDesign(id, teamId));
     }
   }
 
@@ -333,7 +359,8 @@ class AppState extends ChangeNotifier {
     }
     final teamId = _activeCloudTeamId;
     if (teamId != null && (cloudAt == null || localAt.isAfter(cloudAt))) {
-      await _pushLocalDesign(id, teamId);
+      // Im Hintergrund hochladen – niemand soll auf den Upload warten.
+      unawaited(_pushLocalDesign(id, teamId));
     }
   }
 

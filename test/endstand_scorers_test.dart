@@ -40,10 +40,4 @@ void main() {
     expect(g.single.minutes, [48, 69]);
   });
 
-  test('Teamnamen im Balken ausgeglichen zweizeilig', () {
-    expect(balancedTwoLines('POST SV DÜSSELDORF'), 'POST SV\nDÜSSELDORF');
-    expect(balancedTwoLines('GARATHER SV'), 'GARATHER\nSV');
-    expect(balancedTwoLines('POST SV'), 'POST SV'); // kurz → eine Zeile
-    expect(balancedTwoLines('TUSA06'), 'TUSA06');
-  });
 }

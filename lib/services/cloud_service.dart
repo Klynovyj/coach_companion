@@ -589,6 +589,28 @@ class CloudService {
     return List<Map<String, dynamic>>.from(rows);
   }
 
+  /// Nur bestimmte Spalten aller Team-Zeilen (z. B. 'id,updated_at') – für
+  /// den schnellen Abgleich großer Zeilen, ohne deren Daten zu laden.
+  static Future<List<Map<String, dynamic>>> fetchColumnsForTeam(
+    String table,
+    String teamId,
+    String columns,
+  ) async {
+    final rows = await _c.from(table).select(columns).eq('team_id', teamId);
+    return List<Map<String, dynamic>>.from(rows);
+  }
+
+  /// Eine Zeile per id (optional nur [columns]); null, wenn es sie nicht gibt.
+  static Future<Map<String, dynamic>?> fetchRowById(
+    String table,
+    String id, {
+    String columns = '*',
+  }) async {
+    final rows = await _c.from(table).select(columns).eq('id', id).limit(1);
+    final list = List<Map<String, dynamic>>.from(rows);
+    return list.isEmpty ? null : list.first;
+  }
+
   // ------------------------------------------------------------ Ereignisse
   static Future<List<Map<String, dynamic>>> events(String matchId) async {
     final rows = await _c

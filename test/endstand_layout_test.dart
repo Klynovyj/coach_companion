@@ -6,10 +6,14 @@ import 'package:coach_companion/screens/startelf_graphic_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
+import 'package:intl/date_symbol_data_local.dart';
 
 /// Die ENDSTAND-Grafik muss in Story und Post ohne Layout-Fehler rendern und
 /// Überschrift, Ergebnis und Torschützen zeigen.
 void main() {
+  // Standard-Layout formatiert das Datum deutsch (wie in der App).
+  setUpAll(() => initializeDateFormatting('de_DE'));
+
   const result = ResultData(
     ownScore: 6,
     oppScore: 2,
@@ -99,6 +103,21 @@ void main() {
       );
     }
   }
+
+  testWidgets('Standard: schmal gezogener Tore-Kasten ohne Fehler', (t) async {
+    await pump(
+      t,
+      debugGraphicForTest(
+        result: result,
+        resultLayout: 'std',
+        boxSize: const {'std_scorers': Size(140, 110)},
+      ),
+      const Size(360, 640),
+    );
+    expect(t.takeException(), isNull);
+    // Sichtbarer gezogener Kasten + unsichtbarer Platzhalter (hält die Lücke).
+    expect(find.text("35'  #7 Ben Kania"), findsNWidgets(2));
+  });
 
   testWidgets('Gezogene Kastengröße ohne Fehler', (t) async {
     await pump(

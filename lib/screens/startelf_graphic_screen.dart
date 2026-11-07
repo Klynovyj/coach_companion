@@ -28,15 +28,274 @@ import 'photo_editor_screen.dart';
 
 /// Globale Bildkorrektur („Profi-Finish") über der fertigen Grafik: wirkt nur
 /// auf das Gesamtbild (Ton/Tiefe), verändert KEINE Elemente/Positionen/Inhalte.
-/// Werte brightness/contrast/saturation/warmth −100..100, vignette 0..100.
+/// Regler −100..100 (Farbton −180..180°), Vignette/Fade/Körnung 0..100,
+/// Vignetten-Größe/-Weichheit 0..100 (50 = Standard).
 class _Grade {
   bool on = false;
+  // Basis
   double brightness = 0;
   double contrast = 0;
   double saturation = 0;
   double warmth = 0;
+  // Licht
+  double exposure = 0;
+  double highlights = 0;
+  double shadows = 0;
+  // Farbe
+  double tint = 0;
+  double hue = 0;
+  double red = 0;
+  double green = 0;
+  double blue = 0;
+  // Effekte
+  double fade = 0;
+  double grain = 0;
   double vignette = 0;
+  double vigSize = 50;
+  double vigSoft = 50;
+
+  /// Alle Regler auf neutral (An/Aus bleibt).
+  void resetValues() => applyValues(const {});
+
+  /// Werte setzen; nicht genannte Regler werden neutral.
+  void applyValues(Map<String, double> v) {
+    brightness = v['brightness'] ?? 0;
+    contrast = v['contrast'] ?? 0;
+    saturation = v['saturation'] ?? 0;
+    warmth = v['warmth'] ?? 0;
+    exposure = v['exposure'] ?? 0;
+    highlights = v['highlights'] ?? 0;
+    shadows = v['shadows'] ?? 0;
+    tint = v['tint'] ?? 0;
+    hue = v['hue'] ?? 0;
+    red = v['red'] ?? 0;
+    green = v['green'] ?? 0;
+    blue = v['blue'] ?? 0;
+    fade = v['fade'] ?? 0;
+    grain = v['grain'] ?? 0;
+    vignette = v['vignette'] ?? 0;
+    vigSize = v['vigSize'] ?? 50;
+    vigSoft = v['vigSoft'] ?? 50;
+  }
+
+  /// Eine Farb-Matrix für alle linearen Regler (live + Export).
+  List<double> matrix() => buildGradeMatrix(
+    brightness: brightness,
+    contrast: contrast,
+    saturation: saturation,
+    warmth: warmth,
+    exposure: exposure,
+    highlights: highlights,
+    shadows: shadows,
+    tint: tint,
+    hue: hue,
+    red: red,
+    green: green,
+    blue: blue,
+    fade: fade,
+  );
+
+  Map<String, Object> toJson() => {
+    'on': on,
+    'b': brightness,
+    'c': contrast,
+    's': saturation,
+    'w': warmth,
+    'vig': vignette,
+    'exp': exposure,
+    'hl': highlights,
+    'sh': shadows,
+    'tint': tint,
+    'hue': hue,
+    'r': red,
+    'g': green,
+    'bl': blue,
+    'fade': fade,
+    'grain': grain,
+    'vigSize': vigSize,
+    'vigSoft': vigSoft,
+  };
+
+  static _Grade fromJson(Map v) {
+    double d(String k, [double def = 0]) => (v[k] as num?)?.toDouble() ?? def;
+    return _Grade()
+      ..on = v['on'] == true
+      ..brightness = d('b')
+      ..contrast = d('c')
+      ..saturation = d('s')
+      ..warmth = d('w')
+      ..vignette = d('vig')
+      ..exposure = d('exp')
+      ..highlights = d('hl')
+      ..shadows = d('sh')
+      ..tint = d('tint')
+      ..hue = d('hue')
+      ..red = d('r')
+      ..green = d('g')
+      ..blue = d('bl')
+      ..fade = d('fade')
+      ..grain = d('grain')
+      ..vigSize = d('vigSize', 50)
+      ..vigSoft = d('vigSoft', 50);
+  }
 }
+
+/// Look-Vorlagen fürs Profi-Finish (Name → Regler; fehlende = neutral).
+const List<(String, Map<String, double>)> kGradePresets = [
+  (
+    'Matchday kräftig',
+    {
+      'contrast': 25,
+      'saturation': 20,
+      'highlights': -12,
+      'shadows': -8,
+      'vignette': 35,
+    },
+  ),
+  (
+    'Kühl & modern',
+    {
+      'warmth': -28,
+      'tint': 6,
+      'contrast': 15,
+      'saturation': -8,
+      'vignette': 25,
+    },
+  ),
+  (
+    'Warm',
+    {'warmth': 30, 'saturation': 10, 'contrast': 8, 'vignette': 20},
+  ),
+  (
+    'Schwarz-Weiß',
+    {'saturation': -100, 'contrast': 30, 'vignette': 30, 'grain': 20},
+  ),
+  (
+    'Film-Look',
+    {
+      'fade': 35,
+      'grain': 35,
+      'saturation': -15,
+      'warmth': 10,
+      'contrast': -8,
+      'vignette': 25,
+    },
+  ),
+];
+
+/// Alle linearen Profi-Finish-Regler als EINE 4×5-Farbmatrix (für
+/// `ColorFilter.matrix`). Reihenfolge: Belichtung → Tiefen/Lichter/Fade →
+/// Kontrast/Helligkeit/Wärme/Tönung/RGB → Farbton → Sättigung.
+List<double> buildGradeMatrix({
+  double brightness = 0,
+  double contrast = 0,
+  double saturation = 0,
+  double warmth = 0,
+  double exposure = 0,
+  double highlights = 0,
+  double shadows = 0,
+  double tint = 0,
+  double hue = 0,
+  double red = 0,
+  double green = 0,
+  double blue = 0,
+  double fade = 0,
+}) {
+  // a ∘ b (erst b, dann a) für 4×5-Matrizen (Zeile r: a[r*5 .. r*5+4]).
+  List<double> mul(List<double> a, List<double> b) {
+    final out = List<double>.filled(20, 0);
+    for (var r = 0; r < 4; r++) {
+      for (var c = 0; c < 5; c++) {
+        var v = 0.0;
+        for (var k = 0; k < 4; k++) {
+          v += a[r * 5 + k] * b[k * 5 + c];
+        }
+        out[r * 5 + c] = v + (c == 4 ? a[r * 5 + 4] : 0);
+      }
+    }
+    return out;
+  }
+
+  // Gleiche Skalierung + Versatz auf R/G/B (Alpha unverändert).
+  List<double> lin(double s, double o, [double oR = 0, double oB = 0, double oG = 0]) => [
+    s, 0, 0, 0, o + oR,
+    0, s, 0, 0, o + oG,
+    0, 0, s, 0, o + oB,
+    0, 0, 0, 1, 0,
+  ];
+
+  // 1) Belichtung: ±1 Blende.
+  var m = lin(math.pow(2, exposure / 100).toDouble(), 0);
+  // 2) Tiefen: + hebt Schwarz an, − vertieft (Weiß bleibt).
+  final s = shadows / 100 * 0.22;
+  m = mul(
+    s >= 0 ? lin(1 - s, 255 * s) : lin(1 / (1 + s), 255 * s / (1 + s)),
+    m,
+  );
+  //    Lichter: + hellt helle Bereiche auf, − dämpft sie (Schwarz bleibt).
+  final h = highlights / 100 * 0.22;
+  m = mul(lin(h >= 0 ? 1 / (1 - h) : 1 + h, 0), m);
+  //    Fade: matter Film-Look (Schwarz angehoben, Weiß leicht gedämpft).
+  final f = fade / 100;
+  m = mul(lin(1 - 0.24 * f, 255 * 0.18 * f), m);
+  // 3) Kontrast/Helligkeit (um Mittelgrau) + Wärme, Tönung, RGB-Balance.
+  final c = 1 + (contrast / 100) * 0.9;
+  final t = 128 * (1 - c) + (brightness / 100) * 70;
+  final w = (warmth / 100) * 22;
+  final ti = tint / 100;
+  m = mul(
+    lin(
+      c,
+      t,
+      w + ti * 10 + red / 100 * 28,
+      -w + ti * 10 + blue / 100 * 28,
+      -ti * 20 + green / 100 * 28,
+    ),
+    m,
+  );
+  // 4) Farbton-Drehung (luminanzerhaltend, wie SVG hueRotate).
+  if (hue != 0) {
+    final a = hue * math.pi / 180;
+    final co = math.cos(a), si = math.sin(a);
+    m = mul([
+      0.213 + co * 0.787 - si * 0.213, 0.715 - co * 0.715 - si * 0.715,
+      0.072 - co * 0.072 + si * 0.928, 0, 0,
+      0.213 - co * 0.213 + si * 0.143, 0.715 + co * 0.285 + si * 0.140,
+      0.072 - co * 0.072 - si * 0.283, 0, 0,
+      0.213 - co * 0.213 - si * 0.787, 0.715 - co * 0.715 + si * 0.715,
+      0.072 + co * 0.928 + si * 0.072, 0, 0,
+      0, 0, 0, 1, 0,
+    ], m);
+  }
+  // 5) Sättigung (luminanzbasiert); Fade nimmt etwas Farbe raus.
+  final sat = ((1 + (saturation / 100) * 0.9) * (1 - 0.25 * f)).clamp(0.0, 2.0);
+  const lr = 0.2126, lg = 0.7152, lb = 0.0722;
+  final sr = (1 - sat) * lr, sg = (1 - sat) * lg, sb = (1 - sat) * lb;
+  m = mul([
+    sr + sat, sg, sb, 0, 0,
+    sr, sg + sat, sb, 0, 0,
+    sr, sg, sb + sat, 0, 0,
+    0, 0, 0, 1, 0,
+  ], m);
+  return m;
+}
+
+/// Kachelbares Filmkorn (RGBA-PNG): helle/dunkle Körner mit geringer Deckkraft
+/// – wirkt per normalem Überlagern (ohne Mischmodus, überall gleich).
+final Uint8List kGrainTile = () {
+  final rnd = math.Random(7);
+  final im = img.Image(width: 192, height: 192, numChannels: 4);
+  for (final p in im) {
+    final light = rnd.nextBool();
+    final v = light ? 255 : 0;
+    p
+      ..r = v
+      ..g = v
+      ..b = v
+      ..a = rnd.nextInt(70);
+  }
+  return Uint8List.fromList(img.encodePng(im));
+}();
 
 /// Ein Spieler in der Startelf-Grafik (Nummer + Anzeigename, optional eine
 /// Positionsangabe – z.B. „Torwart").
@@ -293,27 +552,6 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
     }
   }
   return Uint8List.fromList(img.encodePng(im));
-}
-
-/// Teamname im Ergebnis-Balken: ab 10 Zeichen an einem Leerzeichen in zwei
-/// möglichst gleich lange Zeilen teilen („POST SV DÜSSELDORF" → „POST SV" /
-/// „DÜSSELDORF"); ohne Leerzeichen bzw. kurz unverändert.
-String balancedTwoLines(String s) {
-  final t = s.trim();
-  if (t.length < 10 || !t.contains(' ')) return t;
-  final words = t.split(RegExp(r'\s+'));
-  var best = t;
-  var bestLen = t.length;
-  for (var i = 1; i < words.length; i++) {
-    final a = words.sublist(0, i).join(' ');
-    final b = words.sublist(i).join(' ');
-    final longer = math.max(a.length, b.length);
-    if (longer < bestLen) {
-      bestLen = longer;
-      best = '$a\n$b';
-    }
-  }
-  return best;
 }
 
 /// ENDSTAND-Grafik: Kurzname eines Torschützen – „#7 Ben Kania" → „B. KANIA".
@@ -619,9 +857,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // ENDSTAND: Anteil des Fotos an der Höhe (Trennlinie, im Editor ziehbar).
   final Map<String, double> _ftSplitF = {};
   double get _ftSplit => _ftSplitF[_designKey] ?? (_story ? 0.56 : 0.46);
-  // ENDSTAND: eigene Kurznamen im Ergebnis-Balken (z. B. „POST SV").
-  String? _ftHomeName;
-  String? _ftAwayName;
 
   /// Foto-Größe (ENDSTAND) setzen – um die Mitte des Foto-Bereichs skalieren,
   /// der bisherige Ausschnitt bleibt sonst erhalten.
@@ -1009,8 +1244,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'ftPhoto': Map<String, String>.from(_ftPhotoF),
       'ftMatrix': {for (final e in _ftMatrixF.entries) e.key: e.value},
       'ftSplit': Map<String, double>.from(_ftSplitF),
-      'ftHome': _ftHomeName,
-      'ftAway': _ftAwayName,
       'stdOff': offMap(_stdOffF),
       'stdHidden': {
         for (final e in _stdHiddenF.entries) e.key: e.value.toList(),
@@ -1046,17 +1279,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       ],
       'imgFeather': dblMap(_imgFeatherF),
       'imgInner': dblMap(_imgInnerF),
-      'grade': {
-        for (final e in _gradeF.entries)
-          e.key: {
-            'on': e.value.on,
-            'b': e.value.brightness,
-            'c': e.value.contrast,
-            's': e.value.saturation,
-            'w': e.value.warmth,
-            'vig': e.value.vignette,
-          },
-      },
+      'grade': {for (final e in _gradeF.entries) e.key: e.value.toJson()},
       'headMode': _annHeadMode,
       'headText': _annHeadText,
       'logoDisc': _posterLogoDisc,
@@ -1165,8 +1388,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (v is String && v.isNotEmpty) _ftPhotoF[k.toString()] = v;
       });
     }
-    _ftHomeName = m['ftHome'] is String ? m['ftHome'] as String : null;
-    _ftAwayName = m['ftAway'] is String ? m['ftAway'] as String : null;
     _ftSplitF.clear();
     if (m['ftSplit'] is Map) {
       (m['ftSplit'] as Map).forEach((k, v) {
@@ -1263,15 +1484,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     _gradeF.clear();
     if (m['grade'] is Map) {
       (m['grade'] as Map).forEach((k, v) {
-        if (v is Map) {
-          _gradeF[k.toString()] = _Grade()
-            ..on = v['on'] == true
-            ..brightness = (v['b'] as num?)?.toDouble() ?? 0
-            ..contrast = (v['c'] as num?)?.toDouble() ?? 0
-            ..saturation = (v['s'] as num?)?.toDouble() ?? 0
-            ..warmth = (v['w'] as num?)?.toDouble() ?? 0
-            ..vignette = (v['vig'] as num?)?.toDouble() ?? 0;
-        }
+        if (v is Map) _gradeF[k.toString()] = _Grade.fromJson(v);
       });
     }
     if (m['headMode'] is String) _annHeadMode = m['headMode'];
@@ -2420,33 +2633,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Die aktuell angezeigte Grafik als PNG-Bytes aufnehmen (1080 px breit).
   /// Ton-Matrix: Helligkeit (Offset), Kontrast (Skalierung um 128), Wärme
   /// (R leicht hoch, B leicht runter). Muster wie `_previewMatrix` im Editor.
-  List<double> _toneMatrix(_Grade g) {
-    final c = 1 + (g.contrast / 100) * 0.9; // 0.1 .. 1.9
-    final b = (g.brightness / 100) * 70; // Offset in 0..255
-    final t = 128 * (1 - c) + b;
-    final wr = (g.warmth / 100) * 22; // wärmer: R hoch, B runter
-    final wb = -(g.warmth / 100) * 22;
-    return [
-      c, 0, 0, 0, t + wr,
-      0, c, 0, 0, t,
-      0, 0, c, 0, t + wb,
-      0, 0, 0, 1, 0,
-    ];
-  }
-
-  /// Sättigungs-Matrix (luminanzbasiert). s=1 neutral.
-  List<double> _satMatrix(_Grade g) {
-    final s = (1 + (g.saturation / 100) * 0.9).clamp(0.0, 2.0);
-    const lr = 0.2126, lg = 0.7152, lb = 0.0722;
-    final sr = (1 - s) * lr, sg = (1 - s) * lg, sb = (1 - s) * lb;
-    return [
-      sr + s, sg, sb, 0, 0,
-      sr, sg + s, sb, 0, 0,
-      sr, sg, sb + s, 0, 0,
-      0, 0, 0, 1, 0,
-    ];
-  }
-
   /// Legt das Profi-Finish (globale Korrektur) um die fertige Grafik. Wirkt nur
   /// aufs Gesamtbild – Elemente/Positionen/Inhalte bleiben unverändert. Liegt in
   /// der RepaintBoundary → live sichtbar UND im Export enthalten.
@@ -2454,31 +2640,44 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final g = _grade;
     if (!g.on) return child;
     Widget out = ColorFiltered(
-      colorFilter: ColorFilter.matrix(_satMatrix(g)),
-      child: ColorFiltered(
-        colorFilter: ColorFilter.matrix(_toneMatrix(g)),
-        child: child,
-      ),
+      colorFilter: ColorFilter.matrix(g.matrix()),
+      child: child,
     );
-    if (g.vignette > 0) {
+    if (g.vignette > 0 || g.grain > 0) {
       out = Stack(
         fit: StackFit.expand,
         children: [
           out,
-          IgnorePointer(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: RadialGradient(
-                  radius: 0.95,
-                  colors: [
-                    Colors.transparent,
-                    Colors.black.withValues(alpha: (g.vignette / 100) * 0.6),
-                  ],
-                  stops: const [0.55, 1.0],
+          // Filmkorn: kachelbares Korn, Stärke über die Deckkraft.
+          if (g.grain > 0)
+            IgnorePointer(
+              child: Opacity(
+                opacity: (g.grain / 100).clamp(0.0, 1.0),
+                child: Image.memory(
+                  kGrainTile,
+                  repeat: ImageRepeat.repeat,
+                  scale: 2,
+                  filterQuality: FilterQuality.none,
+                  gaplessPlayback: true,
                 ),
               ),
             ),
-          ),
+          // Vignette: Größe = wie weit sie hereinreicht, Weichheit = Übergang.
+          if (g.vignette > 0)
+            IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    radius: 0.65 + g.vigSize * 0.006,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: (g.vignette / 100) * 0.6),
+                    ],
+                    stops: [(0.9 - g.vigSoft * 0.007).clamp(0.05, 0.95), 1.0],
+                  ),
+                ),
+              ),
+            ),
         ],
       );
     }
@@ -2799,12 +2998,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       double value,
       double min,
       double max,
-      ValueChanged<double> onCh,
-    ) {
+      ValueChanged<double> onCh, {
+      String unit = '',
+    }) {
       return Row(
         children: [
           SizedBox(
-            width: 96,
+            width: 118,
             child: Text(label, style: const TextStyle(fontSize: 13)),
           ),
           Expanded(
@@ -2816,9 +3016,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             ),
           ),
           SizedBox(
-            width: 34,
+            width: 40,
             child: Text(
-              value.round().toString(),
+              '${value.round()}$unit',
               textAlign: TextAlign.right,
               style: const TextStyle(fontSize: 12),
             ),
@@ -2826,6 +3026,22 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ],
       );
     }
+
+    // Aufklappbare Regler-Gruppe (Basis offen, Rest zu – übersichtlich).
+    Widget group(String title, List<Widget> children, {bool open = false}) =>
+        ExpansionTile(
+          title: Text(
+            title,
+            style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+          ),
+          initiallyExpanded: open,
+          dense: true,
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: EdgeInsets.zero,
+          shape: const Border(),
+          collapsedShape: const Border(),
+          children: children,
+        );
 
     return ExpansionTile(
       leading: const Icon(Icons.auto_fix_high),
@@ -2856,28 +3072,73 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               label: Text(_gradeBusy ? 'KI analysiert …' : 'Mit KI optimieren'),
             ),
           ),
-        const SizedBox(height: 4),
-        slider('Helligkeit', g.brightness, -100, 100,
-            (v) => setState(() => g.brightness = v)),
-        slider('Kontrast', g.contrast, -100, 100,
-            (v) => setState(() => g.contrast = v)),
-        slider('Sättigung', g.saturation, -100, 100,
-            (v) => setState(() => g.saturation = v)),
-        slider('Wärme', g.warmth, -100, 100,
-            (v) => setState(() => g.warmth = v)),
-        slider('Tiefe (Vignette)', g.vignette, 0, 100,
-            (v) => setState(() => g.vignette = v)),
+        const SizedBox(height: 8),
+        // Look-Vorlagen: ein Tipp setzt alle Regler (danach nachjustierbar).
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              for (final p in kGradePresets)
+                ActionChip(
+                  avatar: const Icon(Icons.palette_outlined, size: 16),
+                  label: Text(p.$1),
+                  onPressed: () => setState(() {
+                    g.applyValues(p.$2);
+                    g.on = true;
+                  }),
+                ),
+            ],
+          ),
+        ),
+        group('Basis', open: true, [
+          slider('Helligkeit', g.brightness, -100, 100,
+              (v) => setState(() => g.brightness = v)),
+          slider('Kontrast', g.contrast, -100, 100,
+              (v) => setState(() => g.contrast = v)),
+          slider('Sättigung', g.saturation, -100, 100,
+              (v) => setState(() => g.saturation = v)),
+          slider('Wärme', g.warmth, -100, 100,
+              (v) => setState(() => g.warmth = v)),
+        ]),
+        group('Licht', [
+          slider('Belichtung', g.exposure, -100, 100,
+              (v) => setState(() => g.exposure = v)),
+          slider('Lichter', g.highlights, -100, 100,
+              (v) => setState(() => g.highlights = v)),
+          slider('Tiefen', g.shadows, -100, 100,
+              (v) => setState(() => g.shadows = v)),
+        ]),
+        group('Farbe', [
+          slider('Tönung (Gr↔Mag)', g.tint, -100, 100,
+              (v) => setState(() => g.tint = v)),
+          slider('Farbton', g.hue, -180, 180,
+              (v) => setState(() => g.hue = v), unit: '°'),
+          slider('Rot', g.red, -100, 100,
+              (v) => setState(() => g.red = v)),
+          slider('Grün', g.green, -100, 100,
+              (v) => setState(() => g.green = v)),
+          slider('Blau', g.blue, -100, 100,
+              (v) => setState(() => g.blue = v)),
+        ]),
+        group('Effekte', [
+          slider('Fade (matt)', g.fade, 0, 100,
+              (v) => setState(() => g.fade = v)),
+          slider('Körnung', g.grain, 0, 100,
+              (v) => setState(() => g.grain = v)),
+          slider('Vignette', g.vignette, 0, 100,
+              (v) => setState(() => g.vignette = v)),
+          slider('Vignette-Größe', g.vigSize, 0, 100,
+              (v) => setState(() => g.vigSize = v)),
+          slider('Vignette-Weichheit', g.vigSoft, 0, 100,
+              (v) => setState(() => g.vigSoft = v)),
+        ]),
         Align(
           alignment: Alignment.centerRight,
           child: TextButton(
-            onPressed: () => setState(() {
-              g.brightness = 0;
-              g.contrast = 0;
-              g.saturation = 0;
-              g.warmth = 0;
-              g.vignette = 0;
-            }),
-            child: const Text('Zurücksetzen'),
+            onPressed: () => setState(g.resetValues),
+            child: const Text('Alles zurücksetzen'),
           ),
         ),
       ],
@@ -3436,8 +3697,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     ),
     ftSplit: _ftSplit,
     editing: _fullEdit,
-    ftHomeName: (_ftHomeName ?? '').trim().isEmpty ? null : _ftHomeName,
-    ftAwayName: (_ftAwayName ?? '').trim().isEmpty ? null : _ftAwayName,
     onFtSplitDrag: (dFrac) => setState(
       () => _ftSplitF[_designKey] = (_ftSplit + dFrac).clamp(0.2, 0.85),
     ),
@@ -3605,37 +3864,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           _boxSize.remove(id); // gezogene Kastengröße
                         }),
                       ),
-                    // Ergebnis-Balken: eigene Kurznamen (Heim links, Gast rechts).
-                    if (id == 'std_ft_banner') ...[
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        initialValue: _ftHomeName ?? '',
-                        textCapitalization: TextCapitalization.characters,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: const OutlineInputBorder(),
-                          labelText: 'Name links (Heim)',
-                          hintText: widget.isHome
-                              ? _title
-                              : widget.opponentName,
-                        ),
-                        onChanged: (v) => apply(() => _ftHomeName = v),
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        initialValue: _ftAwayName ?? '',
-                        textCapitalization: TextCapitalization.characters,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: const OutlineInputBorder(),
-                          labelText: 'Name rechts (Gast)',
-                          hintText: widget.isHome
-                              ? widget.opponentName
-                              : _title,
-                        ),
-                        onChanged: (v) => apply(() => _ftAwayName = v),
-                      ),
-                    ],
                     // Überschrift-Objekt: Texte direkt hier bearbeiten.
                     if (id == 'std_title' || id == 'std_ft_title') ...[
                       const SizedBox(height: 8),
@@ -5620,8 +5848,6 @@ class _StartelfGraphic extends StatelessWidget {
     this.ftSplit = 0.56,
     this.onFtSplitDrag,
     this.editing = false,
-    this.ftHomeName,
-    this.ftAwayName,
     this.onPosterItemMove,
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
@@ -5713,9 +5939,6 @@ class _StartelfGraphic extends StatelessWidget {
   // ENDSTAND: Trennlinie gezogen (Delta als Anteil der Gesamthöhe).
   final void Function(double deltaFraction)? onFtSplitDrag;
   final bool editing; // im Vollbild-Editor (Bedien-Griffe zeigen)
-  // ENDSTAND: eigene (Kurz-)Namen im Ergebnis-Balken (null = Teamname).
-  final String? ftHomeName;
-  final String? ftAwayName;
   final void Function(String id, Offset pos)? onPosterItemMove;
   // Pinch/Drehen/Ziehen: Start legt das Ziel fest (null = keins) und merkt
   // Basiswerte, Update rechnet.
@@ -7142,7 +7365,7 @@ class _StartelfGraphic extends StatelessWidget {
     final minNeeded =
         (compact ? 34.0 : 46.0) +
         2 * gap +
-        (boxSize['std_ft_banner']?.height ?? (compact ? 60.0 : 78.0)) +
+        (boxSize['std_ft_banner']?.height ?? (compact ? 60.0 : 74.0)) +
         36 +
         (hasBar ? (compact ? 6 : 10) + (compact ? 26 : 32) + 22 : 0);
 
@@ -7217,10 +7440,14 @@ class _StartelfGraphic extends StatelessWidget {
             children: [
               Center(child: _stdEl('std_ft_title', titleW)),
               SizedBox(height: gap),
-              _boxSlot(
-                'std_ft_banner',
-                _ftBanner(),
-                (s) => _ftBanner(size: s),
+              // Center → Balken nur so breit wie Logos + Ergebnis (Objekt-
+              // Rahmen/Griffe sitzen am Balken, nicht an der ganzen Zeile).
+              Center(
+                child: _boxSlot(
+                  'std_ft_banner',
+                  _ftBanner(),
+                  (s) => _ftBanner(size: s),
+                ),
               ),
               SizedBox(height: gap),
               Expanded(
@@ -7232,17 +7459,15 @@ class _StartelfGraphic extends StatelessWidget {
                       builder: (_, c) => FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.topCenter,
-                        child: SizedBox(
-                          width: c.maxWidth,
-                          child: _ftScorersContent(),
-                        ),
+                        child: _ftScorersContent(c.maxWidth),
                       ),
                     ),
                     (s) => _fixedBox(
                       s,
                       padding: const EdgeInsets.all(6),
                       decoration: const BoxDecoration(),
-                      content: (_) => _ftScorersContent(),
+                      fillWidth: false,
+                      content: (w) => _ftScorersContent(w),
                     ),
                   ),
                 ),
@@ -7259,35 +7484,17 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Ergebnis-Balken: weiße Leiste mit Teamnamen, mittig das Ergebnis-Feld
-  /// (Trapez, ragt oben/unten heraus), Logos an den Enden. [size] = gezogene
-  /// Größe (Breite = Balkenbreite, Höhe = Höhe des Ergebnis-Felds).
+  /// Ergebnis-Balken: Heim-Logo · Ergebnis-Feld (Trapez) · Gast-Logo auf einer
+  /// weißen Leiste – ohne Vereinsnamen (die Logos reichen). [size] = gezogene
+  /// Größe (Breite = Abstand der Logos, Höhe = Höhe des Ergebnis-Felds).
   Widget _ftBanner({Size? size}) {
     final sd = _ftSides();
-    final badgeH = size?.height ?? (compact ? 56.0 : 70.0);
+    final badgeH = size?.height ?? (compact ? 60.0 : 74.0);
     final pillH = badgeH / 1.3;
-    final logoH = badgeH * 0.82;
-    final badgeW = badgeH * 1.45;
-    final nameStyle = TextStyle(
-      color: const Color(0xFF111111),
-      fontSize: pillH * 0.32,
-      fontWeight: FontWeight.w900,
-      letterSpacing: 0.3,
-      height: 1.05,
-    );
-    // Lange Namen zweizeilig (an einem Leerzeichen, möglichst ausgeglichen),
-    // dann passend verkleinert – nie „…".
-    Widget name(String n, Alignment a, TextAlign ta) => FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: a,
-      child: Text(
-        balancedTwoLines(n.toUpperCase()),
-        maxLines: 2,
-        softWrap: false,
-        textAlign: ta,
-        style: nameStyle,
-      ),
-    );
+    final logoH = badgeH;
+    final badgeW = badgeH * 1.5;
+    final gap = badgeH * 0.45;
+    final width = size?.width ?? (badgeW + 2 * gap + 2 * logoH);
     Widget logoW(Uint8List? b) => b == null
         ? SizedBox(width: logoH, height: logoH)
         : _logoChip(b, height: logoH, circle: logoCircle);
@@ -7297,41 +7504,24 @@ class _StartelfGraphic extends StatelessWidget {
       alignment: Alignment.center,
       clipBehavior: Clip.none,
       children: [
-        // Weiße Leiste (Logos ragen über die Enden).
-        Container(
+        // Weiße Leiste von Logo-Mitte zu Logo-Mitte.
+        Positioned(
+          left: logoH / 2,
+          right: logoH / 2,
+          top: (badgeH - pillH) / 2,
           height: pillH,
-          // Logo ragt 0,7 × logoH in die Leiste → Text erst danach beginnen.
-          margin: EdgeInsets.symmetric(horizontal: logoH * 0.3),
-          padding: EdgeInsets.symmetric(horizontal: logoH * 0.78),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(pillH),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.35),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: name(
-                  ftHomeName ?? sd.homeName,
-                  Alignment.centerLeft,
-                  TextAlign.left,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(pillH),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.35),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
                 ),
-              ),
-              SizedBox(width: badgeW + 10),
-              Expanded(
-                child: name(
-                  ftAwayName ?? sd.awayName,
-                  Alignment.centerRight,
-                  TextAlign.right,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
         // Ergebnis-Feld (Trapez, oben breiter – wie die Vorlage).
@@ -7371,12 +7561,12 @@ class _StartelfGraphic extends StatelessWidget {
         ),
       ],
     );
-    return size == null ? banner : SizedBox(width: size.width, child: banner);
+    return SizedBox(width: width, height: badgeH, child: banner);
   }
 
   /// Torschützen je Seite, je Spieler gruppiert („B. KANIA 35' 40' 54' 60'").
-  /// Links Heim, rechts Gast; Spalten bis an die Ränder (volle Breite nötig).
-  Widget _ftScorersContent() {
+  /// Links Heim, rechts Gast; Spalten bis an die Ränder von [width].
+  Widget _ftScorersContent(double width) {
     final sd = _ftSides();
     final home = groupScorers(sd.homeGoals);
     final away = groupScorers(sd.awayGoals);
@@ -7413,26 +7603,21 @@ class _StartelfGraphic extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [for (final g in list) line(g)],
         );
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.topLeft,
-            child: col(home, false),
-          ),
+    // Mindestens [width] breit (Spalten an die Ränder), sonst so breit wie der
+    // Inhalt – das umgebende FittedBox verkleinert dann BEIDE Spalten gleich.
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: width),
+      child: IntrinsicWidth(
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            col(home, false),
+            const SizedBox(width: 24),
+            col(away, true),
+          ],
         ),
-        const SizedBox(width: 16),
-        Flexible(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            alignment: Alignment.topRight,
-            child: col(away, true),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -7452,15 +7637,25 @@ class _StartelfGraphic extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(child: Center(child: side(ownLogo))),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          child: Text(
-            '${r.ownScore} : ${r.oppScore}',
-            style: TextStyle(
-              color: _accent,
-              fontSize: compact ? 52 : 68,
-              fontWeight: FontWeight.w900,
-              height: 1.0,
+        // Flexible + FittedBox: auch zweistellige Stände („10 : 12") passen
+        // immer – verkleinern statt überlaufen.
+        Flexible(
+          flex: 2,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                '${r.ownScore} : ${r.oppScore}',
+                maxLines: 1,
+                softWrap: false,
+                style: TextStyle(
+                  color: _accent,
+                  fontSize: compact ? 52 : 68,
+                  fontWeight: FontWeight.w900,
+                  height: 1.0,
+                ),
+              ),
             ),
           ),
         ),
@@ -7563,44 +7758,37 @@ class _StartelfGraphic extends StatelessWidget {
     );
     final both = ownGoals.isNotEmpty && oppGoals.isNotEmpty;
 
-    // Gezogene Größe: Kasten fest, Spalten rücken an die Ränder (spaceBetween);
-    // zu schmal → jede Spalte verkleinert sich, nie „…".
+    // Gezogene Größe: Kasten fest, Spalten rücken an die Ränder (spaceBetween).
+    // Mindestens so breit wie der Inhalt → zu schmal wird der GANZE Inhalt
+    // gleichmäßig verkleinert (beide Spalten gleich groß), nie „…".
     if (size != null) {
       return _fixedBox(
         size,
         padding: pad,
         decoration: deco,
-        content: (_) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            header,
-            const SizedBox(height: 10),
-            Row(
-              mainAxisAlignment: both
-                  ? MainAxisAlignment.spaceBetween
-                  : MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
+        fillWidth: false,
+        content: (w) => ConstrainedBox(
+          constraints: BoxConstraints(minWidth: w),
+          child: IntrinsicWidth(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                if (ownGoals.isNotEmpty)
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.topLeft,
-                      child: col(ownGoals, end: false),
-                    ),
-                  ),
-                if (both) const SizedBox(width: 16),
-                if (oppGoals.isNotEmpty)
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      alignment: Alignment.topRight,
-                      child: col(oppGoals, end: true),
-                    ),
-                  ),
+                header,
+                const SizedBox(height: 10),
+                Row(
+                  mainAxisAlignment: both
+                      ? MainAxisAlignment.spaceBetween
+                      : MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (ownGoals.isNotEmpty) col(ownGoals, end: false),
+                    if (both) const SizedBox(width: 28),
+                    if (oppGoals.isNotEmpty) col(oppGoals, end: true),
+                  ],
+                ),
               ],
             ),
-          ],
+          ),
         ),
       );
     }
