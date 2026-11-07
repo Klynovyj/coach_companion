@@ -684,7 +684,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final settings = await state.graphicSettings();
     if (!mounted) return;
     setState(() {
-      _sponsors = sponsors;
+      // Deaktivierte Sponsoren erscheinen auf keiner Grafik.
+      _sponsors = sponsors.where((s) => s.enabled).toList();
       _settings = settings;
       _loading = false;
     });

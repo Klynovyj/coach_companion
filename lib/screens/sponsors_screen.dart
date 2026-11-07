@@ -234,7 +234,8 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
                   padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Text(
                     'Diese Logos erscheinen automatisch auf der Startelf-Grafik. '
-                    'Ziehen zum Sortieren – Haupt-Sponsor bleibt oben.',
+                    'Ziehen zum Sortieren – Haupt-Sponsor bleibt oben. Mit dem '
+                    'Schalter deaktivierte Sponsoren erscheinen auf keiner Grafik.',
                     style: TextStyle(fontSize: 12.5, color: Colors.grey),
                   ),
                 ),
@@ -266,6 +267,16 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
     await _app.reorderSponsors(list);
   }
 
+  /// Schaltet einen Sponsor aktiv/inaktiv. Deaktivierte erscheinen auf keiner
+  /// Grafik, bleiben aber in der Liste erhalten.
+  Future<void> _toggleEnabled(Sponsor s, bool v) async {
+    setState(() {
+      final i = _sponsors.indexWhere((e) => e.id == s.id);
+      if (i >= 0) _sponsors[i] = _sponsors[i].copyWith(enabled: v);
+    });
+    await _app.saveSponsor(s.copyWith(enabled: v));
+  }
+
   Widget _row(Sponsor s, int index) {
     final handle = s.isMain
         ? Icon(Icons.push_pin, size: 18, color: Theme.of(context).hintColor)
@@ -273,30 +284,50 @@ class _SponsorsScreenState extends State<SponsorsScreen> {
             index: index,
             child: Icon(Icons.drag_handle, color: Theme.of(context).hintColor),
           );
+    final dim = s.enabled ? 1.0 : 0.4;
+    final Widget? subtitle = !s.enabled
+        ? Text(
+            'Deaktiviert · erscheint auf keiner Grafik',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          )
+        : (s.isMain ? const Text('Haupt-Sponsor · Präsentiert von') : null);
     return ListTile(
       key: ValueKey(s.id),
-      leading: SizedBox(
-        width: 44,
-        height: 44,
-        child: s.logo != null
-            ? TeamLogo(logoPath: s.logo, size: 44)
-            : Icon(Icons.business, color: Theme.of(context).hintColor),
+      leading: Opacity(
+        opacity: dim,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: s.logo != null
+              ? TeamLogo(logoPath: s.logo, size: 44)
+              : Icon(Icons.business, color: Theme.of(context).hintColor),
+        ),
       ),
-      title: Text(s.name),
-      subtitle: s.isMain ? const Text('Haupt-Sponsor · Präsentiert von') : null,
+      title: Opacity(opacity: dim, child: Text(s.name)),
+      subtitle: subtitle,
       onTap: () => _editSponsor(existing: s),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Switch(
+            value: s.enabled,
+            onChanged: (v) => _toggleEnabled(s, v),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
           handle,
           PopupMenuButton<String>(
             onSelected: (v) {
               if (v == 'edit') _editSponsor(existing: s);
+              if (v == 'toggle') _toggleEnabled(s, !s.enabled);
               if (v == 'delete') _delete(s);
             },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
-              PopupMenuItem(value: 'delete', child: Text('Löschen')),
+            itemBuilder: (_) => [
+              const PopupMenuItem(value: 'edit', child: Text('Bearbeiten')),
+              PopupMenuItem(
+                value: 'toggle',
+                child: Text(s.enabled ? 'Deaktivieren' : 'Aktivieren'),
+              ),
+              const PopupMenuItem(value: 'delete', child: Text('Löschen')),
             ],
           ),
         ],

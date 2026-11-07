@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 65;
+  static const _dbVersion = 66;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -540,6 +540,13 @@ class AppDatabase {
     if (oldV < 65) {
       await db.execute(_announcementDesignsTableSql);
     }
+    // v65 -> v66: Sponsoren einzeln deaktivierbar (deaktivierte erscheinen auf
+    // keiner Grafik).
+    if (oldV < 66) {
+      await db.execute(
+        'ALTER TABLE sponsors ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -838,7 +845,8 @@ class AppDatabase {
         name TEXT NOT NULL,
         logo TEXT,
         is_main INTEGER NOT NULL DEFAULT 0,
-        sort_order INTEGER NOT NULL DEFAULT 0
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        enabled INTEGER NOT NULL DEFAULT 1
       )
   ''';
 
