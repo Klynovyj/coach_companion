@@ -744,7 +744,9 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
     }
     final bl = img.gaussianBlur(ext, radius: radius);
     final fade = 0.15 + rim / 100 * 0.55; // Durchsicht am Umriss
-    final dark = 0.1 + rim / 100 * 0.45; // Abdunkeln am Umriss
+    // Kaum abdunkeln – sonst entsteht ein schwarzer Ring um den Spieler; das
+    // Verschmelzen kommt aus dem weichen Ausblenden.
+    final dark = rim / 100 * 0.06;
     for (var y = 0; y < h; y++) {
       for (var x = 0; x < w; x++) {
         final p = im.getPixel(x, y);
@@ -1019,20 +1021,110 @@ void _despillMagentaEdges(img.Image im, {int? radius}) {
     visit(x, y + 1);
     visit(x, y - 1);
   }
+  // Verunreinigung (0..1) eines Pixels mit Magenta.
+  double taint(img.Pixel p) {
+    final pr = p.r.toDouble(), pg = p.g.toDouble(), pb = p.b.toDouble();
+    final hi = math.max(pr, pb);
+    if (hi <= 0) return 0;
+    final sp = math.min(pr, pb) - pg;
+    return sp <= 0 ? 0 : (sp / (0.22 * hi)).clamp(0.0, 1.0);
+  }
+
+  // Rosa, das ZUSAMMENHÄNGEND mit dem freigestellten Hintergrund verbunden ist
+  // (Flecken/Strähnen in Locken), egal wie tief – ein rosa Detail mitten im
+  // Trikot ist nicht verbunden und bleibt.
+  final linked = Uint8List(w * h);
+  final q2 = <int>[];
+  for (var i = 0; i < w * h; i++) {
+    if (dist[i] == 0) q2.add(i);
+  }
+  var h2 = 0;
+  while (h2 < q2.length) {
+    final i = q2[h2++];
+    final x = i % w, y = i ~/ w;
+    void visit(int nx, int ny) {
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+      final j = ny * w + nx;
+      if (linked[j] != 0 || dist[j] == 0) return;
+      if (taint(im.getPixel(nx, ny)) < 0.3) return;
+      linked[j] = 1;
+      q2.add(j);
+    }
+
+    visit(x + 1, y);
+    visit(x - 1, y);
+    visit(x, y + 1);
+    visit(x, y - 1);
+  }
+
+  // „Saubere" Nachbarfarbe (Haare/Haut ohne Magenta-Stich) je Pixel: Summen
+  // über ein Fenster per Integralbild → verunreinigte Pixel bekommen die
+  // Farbe ihrer Umgebung statt eines rötlichen Rests.
+  final k = math.max(4, r ~/ 3);
+  final w1 = w + 1;
+  final sR = Int32List(w1 * (h + 1)), sG = Int32List(w1 * (h + 1));
+  final sB = Int32List(w1 * (h + 1)), sN = Int32List(w1 * (h + 1));
+  for (var y = 0; y < h; y++) {
+    var rowR = 0, rowG = 0, rowB = 0, rowN = 0;
+    for (var x = 0; x < w; x++) {
+      final p = im.getPixel(x, y);
+      final pr = p.r.toInt(), pg = p.g.toInt(), pb = p.b.toInt();
+      if (p.a >= 200 && math.min(pr, pb) - pg <= 4) {
+        rowR += pr;
+        rowG += pg;
+        rowB += pb;
+        rowN++;
+      }
+      final i = (y + 1) * w1 + x + 1, up = y * w1 + x + 1;
+      sR[i] = sR[up] + rowR;
+      sG[i] = sG[up] + rowG;
+      sB[i] = sB[up] + rowB;
+      sN[i] = sN[up] + rowN;
+    }
+  }
+  int boxSum(Int32List s, int x0, int y0, int x1, int y1) =>
+      s[y1 * w1 + x1] - s[y0 * w1 + x1] - s[y1 * w1 + x0] + s[y0 * w1 + x0];
+
   for (final p in im) {
     if (p.a == 0) continue;
-    final d = dist[p.y * w + p.x];
-    if (d == 0 || d > rr0) continue;
+    final idx = p.y * w + p.x;
+    final d = dist[idx];
+    if (d == 0) continue;
+    // Wie stark ist der Pixel mit Magenta verunreinigt (0..1)? Haare/Haut
+    // haben Blau ≤ Grün → kein Spill; Rosa-Reste in Locken dagegen schon.
+    final t = taint(p);
+    // Mit dem Hintergrund verbundenes Rosa → behandeln, egal wie tief; sonst
+    // nur der Randstreifen (Lippen/rote Trikot-Details innen bleiben).
+    final isLinked = linked[idx] != 0;
+    if (d > rr0 && !isLinked) continue;
     final rr = p.r.toDouble(), g = p.g.toDouble(), b = p.b.toDouble();
     final lo = math.min(rr, b), hi = math.max(rr, b);
     final spill = lo - g;
     if (spill <= 0) continue;
-    // Entfärben: Rot/Blau um den Magenta-Anteil senken (Richtung neutral).
+    // Entfärben: Rot/Blau um den Magenta-Anteil senken (Richtung neutral) …
+    var nr = rr - spill, ng = g, nb = b - spill;
+    // … und je nach Verunreinigung zur sauberen Umgebungsfarbe ziehen.
+    final x0 = math.max(0, p.x - k), y0 = math.max(0, p.y - k);
+    final x1 = math.min(w, p.x + k + 1), y1 = math.min(h, p.y + k + 1);
+    final n = boxSum(sN, x0, y0, x1, y1);
+    if (n > 0) {
+      final cr = boxSum(sR, x0, y0, x1, y1) / n;
+      final cg = boxSum(sG, x0, y0, x1, y1) / n;
+      final cb = boxSum(sB, x0, y0, x1, y1) / n;
+      nr += (cr - nr) * t;
+      ng += (cg - ng) * t;
+      nb += (cb - nb) * t;
+    }
     p
-      ..r = (rr - spill).clamp(0, 255)
-      ..b = (b - spill).clamp(0, 255);
-    // Direkt an der Kante + deutlich magenta → leicht ausdünnen (Saum weg).
-    if (d <= 2 && hi > 0 && spill / hi > 0.2) {
+      ..r = nr.clamp(0, 255)
+      ..g = ng.clamp(0, 255)
+      ..b = nb.clamp(0, 255);
+    // Stark rosa und mit dem Hintergrund verbunden (Fleck auf/über den
+    // Haaren) → ausblenden.
+    if (t > 0.5 && (isLinked || d <= rr0 ~/ 2)) {
+      p.a = (p.a * (1 - (t - 0.5) * 1.8)).round().clamp(0, 255);
+    } else if (d <= 2 && hi > 0 && spill / hi > 0.2) {
+      // Direkt an der Kante + deutlich magenta → leicht ausdünnen (Saum weg).
       p.a = (p.a * (d == 1 ? 0.35 : 0.7)).round();
     }
   }
@@ -4441,7 +4533,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   Future<void> _removePinkSelected() async {
     if (_bgBusy) return;
     final sel = _posterSel;
-    final src = _selectedImageDataUrl();
+    // Vom ORIGINAL (ohne eingebackene Kanten-Effekte wie einen dunklen Ring)
+    // ausgehen, sonst bleiben alte Effekte im Bild.
+    final src = (sel == null ? null : _imgOrig[sel]) ?? _selectedImageDataUrl();
     final bytes = src == null ? null : TeamLogo.decode(src);
     if (sel == null || bytes == null) {
       ScaffoldMessenger.of(context).showSnackBar(
