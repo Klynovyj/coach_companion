@@ -521,19 +521,26 @@ Uint8List normalizeImageBytes(Map<String, dynamic> args) {
 
 /// Bild für die KI vorbereiten (Isolate): längste Seite ≤ 1280 px, Transparenz
 /// auf Weiß gelegt, als JPEG – klein und schnell zu übertragen.
-Uint8List downscaleForAi(Uint8List input) {
+Uint8List downscaleForAi(Uint8List input) => _downscaleJpeg(input, 1280, 90);
+
+/// Fürs Freistellen kleiner (1024 px, Q85): schnellerer Upload und kürzere
+/// KI-Laufzeit → weniger Abbrüche unterwegs; die Qualität reicht für FuPa.
+Uint8List downscaleForCutout(Uint8List input) =>
+    _downscaleJpeg(input, 1024, 85);
+
+Uint8List _downscaleJpeg(Uint8List input, int maxSide, int quality) {
   final src = img.decodeImage(input);
   if (src == null) return input;
   final longer = math.max(src.width, src.height);
-  final im = longer > 1280
+  final im = longer > maxSide
       ? (src.width >= src.height
-            ? img.copyResize(src, width: 1280)
-            : img.copyResize(src, height: 1280))
+            ? img.copyResize(src, width: maxSide)
+            : img.copyResize(src, height: maxSide))
       : src;
   final flat = img.Image(width: im.width, height: im.height)
     ..clear(img.ColorRgb8(255, 255, 255));
   img.compositeImage(flat, im);
-  return Uint8List.fromList(img.encodeJpg(flat, quality: 90));
+  return Uint8List.fromList(img.encodeJpg(flat, quality: quality));
 }
 
 /// Hat das Bild mindestens einen (fast) durchsichtigen Pixel?
@@ -4087,16 +4094,23 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     });
     try {
       // Verkleinert + JPEG senden (schneller, unter allen Größen-Grenzen).
-      final send = await compute(downscaleForAi, srcBytes);
-      // Bis zu 2 Versuche: Hat die KI den Hintergrund NICHT ersetzt (Bild
+      final send = await compute(downscaleForCutout, srcBytes);
+      // Bis zu 3 Versuche: Hat die KI den Hintergrund NICHT ersetzt (Bild
       // praktisch unverändert) oder ist die Anfrage abgebrochen (Zeitlimit,
       // Server kurz weg), wird automatisch einmal mit einer kürzeren,
       // eindeutigeren Anweisung neu versucht.
       Uint8List? png;
       Object? lastError;
-      for (var attempt = 0; attempt < 2 && png == null; attempt++) {
+      var unchanged = 0; // Antworten ohne entfernten Hintergrund
+      for (var attempt = 0; attempt < 3 && png == null; attempt++) {
+        // „Nichts freigestellt" höchstens 2× versuchen (kostet KI-Guthaben).
+        if (unchanged >= 2) break;
         if (attempt > 0 && mounted) {
-          setState(() => _aiBusyLabel = 'KI stellt frei … (2. Versuch)');
+          setState(
+            () => _aiBusyLabel = 'KI stellt frei … (${attempt + 1}. Versuch)',
+          );
+          // Kurz durchatmen – hilft bei kurzer Überlast/Netzwackler.
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
         }
         try {
           final out = await CloudService.aiImage(
@@ -4111,14 +4125,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             mode: 'cutout',
             aspect: _aiAspect,
             key: 'magenta',
-            retry: attempt > 0,
+            retry: unchanged > 0,
           );
-          if (out == null) continue;
+          if (out == null) {
+            unchanged++;
+            continue;
+          }
           // KI liefert das Motiv auf Magenta → transparent machen; hält sie
           // sich nicht daran (anderer Grund), wird die Randfarbe entfernt.
           final keyed = await compute(cutoutFinish, out);
           // Erfolg nur, wenn wirklich Hintergrund weg ist (Rand durchsichtig).
-          if (await compute(cutoutLooksDone, keyed)) png = keyed;
+          if (await compute(cutoutLooksDone, keyed)) {
+            png = keyed;
+          } else {
+            unchanged++;
+          }
         } catch (e) {
           lastError = e;
           // Nur vorübergehende Fehler erneut versuchen.
@@ -4362,6 +4383,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     ].any(low.contains);
   }
 
+  /// Kurzer, einzeiliger Auszug einer Fehlermeldung (für Diagnose).
+  String _errSnippet(String s, int max) {
+    final d = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return d.length > max ? '${d.substring(0, max)}…' : d;
+  }
+
   String _aiErrorMessage(Object e) {
     final s = e.toString();
     final low = s.toLowerCase();
@@ -4407,8 +4434,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (low.contains('socketexception') ||
         low.contains('clientexception') ||
         low.contains('connection')) {
-      return 'Verbindung zur KI abgebrochen (z. B. schwaches Netz unterwegs) '
-          '– bitte erneut versuchen.';
+      return 'Verbindung zur KI abgebrochen – bitte erneut versuchen. '
+          '(${_errSnippet(s, 90)})';
     }
     // Unbekannter Fehler: kurzen Rohhinweis mitgeben, damit die echte Ursache
     // sichtbar ist (Function-/Gemini-Meldung), statt nur „später versuchen".

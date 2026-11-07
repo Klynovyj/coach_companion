@@ -203,17 +203,35 @@ Deno.serve(async (req) => {
     const url =
       `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}` +
       `:generateContent?key=${GEMINI_API_KEY}`;
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts }],
-        // Freistellen: immer ein Bild zurueck (keine reine Text-Antwort).
-        ...(mode === "cutout"
-          ? { generationConfig: { responseModalities: ["IMAGE"] } }
-          : {}),
-      }),
-    });
+    // Zeitlimit: lieber sauber mit 504 antworten, als dass die Verbindung
+    // (Function-Limit) hart abbricht und die App nur „Verbindung weg" sieht.
+    let resp: Response;
+    try {
+      resp = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        signal: AbortSignal.timeout(110_000),
+        body: JSON.stringify({
+          contents: [{ role: "user", parts }],
+          // Freistellen: immer ein Bild zurueck (keine reine Text-Antwort).
+          ...(mode === "cutout"
+            ? { generationConfig: { responseModalities: ["IMAGE"] } }
+            : {}),
+        }),
+      });
+    } catch (e) {
+      const name = (e as Error)?.name ?? "";
+      if (name === "TimeoutError" || name === "AbortError") {
+        return new Response(
+          "timeout: Die KI hat nicht rechtzeitig geantwortet",
+          { status: 504 },
+        );
+      }
+      return new Response(
+        "Gemini nicht erreichbar: " + ((e as Error)?.message ?? e),
+        { status: 503 },
+      );
+    }
     if (!resp.ok) {
       const t = await resp.text();
       return new Response("Gemini-Fehler: " + t, { status: 502 });
