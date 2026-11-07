@@ -121,6 +121,18 @@ class _DesignerScreenState extends State<DesignerScreen> {
       ),
     };
     if (d == null || !mounted) return;
+    // FuPa: EIN Design je Spieler – gibt es schon eins, dieses öffnen statt
+    // ein zweites, leeres anzulegen.
+    if (template == 'fupa') {
+      final rows = await _app.designerDesigns();
+      if (!mounted) return;
+      for (final r in rows) {
+        if (r['kind'] == 'fupa' && (r['title'] as String?) == d.title) {
+          await _openSaved(r);
+          return;
+        }
+      }
+    }
     await _openEditor(d);
   }
 

@@ -200,12 +200,12 @@ const List<(String, Map<String, double>)> kGradePresets = [
     kFupaStyleName,
     {
       'warmth': 4,
-      'contrast': 12,
+      'contrast': 10,
       'saturation': 8,
-      'highlights': -4,
-      'vignette': 35,
-      'vigSize': 55,
-      'vigSoft': 75,
+      // Vignette nur ganz außen – Logo/Hintergrund-Details bleiben hell.
+      'vignette': 12,
+      'vigSize': 80,
+      'vigSoft': 80,
       'glow': 60,
       'match': 25,
       'shade': 40,
@@ -1635,6 +1635,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   Timer? _saveTimer; // debounced Autosave
   bool _designLoaded =
       false; // erst nach dem Laden speichern (nichts überschr.)
+  // Zuletzt gespeicherter/geladener Stand – nur ECHTE Änderungen speichern
+  // (bloßes Öffnen darf nie eine neuere Cloud-Version überschreiben).
+  String? _lastSavedJson;
+  // FuPa: eigener Hintergrund JE DESIGN (Kopie der Team-Vorlage beim Anlegen).
+  // Spätere Änderungen der Team-Vorlage verändern fertige Designs nicht.
+  Map<String, Object?>? _fupaBgSnap;
   AppState? _appStateRef; // für Speichern in dispose (ohne context)
   final GlobalKey _posterCanvasKey = GlobalKey(); // Koord. für den Dreh-Griff
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
@@ -1871,11 +1877,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     _saveTimer?.cancel();
     if (!_hasStorage || !_editable || !_designLoaded) return;
     final d = widget.designer;
+    final String data;
+    try {
+      data = jsonEncode(_designToJson());
+    } catch (_) {
+      return;
+    }
+    if (data == _lastSavedJson) return; // nichts geändert → nicht speichern
+    _lastSavedJson = data;
     try {
       _appStateRef?.saveAnnouncementDesign(
         _designStorageId,
         widget.matchId ?? d?.matchId,
-        jsonEncode(_designToJson()),
+        data,
         title: d == null ? null : _designerTitle,
         kind: d?.template,
         thumb: d == null ? null : _thumb,
@@ -1986,16 +2000,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     // frisch ziehen, dann lokal lesen). Danach ist Autosave scharf.
     if (_editable && _hasStorage) {
       final sid = _designStorageId;
-      // Schlechtes Netz darf das Öffnen nicht blockieren: nach 8 s mit dem
-      // lokalen Stand weiterarbeiten (Abgleich läuft im Hintergrund weiter).
-      try {
-        await state
-            .refreshAnnouncementDesign(sid)
-            .timeout(const Duration(seconds: 8));
-      } catch (_) {}
+      final designer = widget.designer;
+      // Designer: lokalen Stand SOFORT zeigen, Cloud-Abgleich danach im
+      // Hintergrund (sonst wartet man bei schlechtem Netz lange auf das Bild).
+      // Andere Grafiken: wie bisher erst abgleichen.
+      if (designer == null) {
+        try {
+          await state.refreshAnnouncementDesign(sid);
+        } catch (_) {}
+      }
       final json = await state.loadAnnouncementDesign(sid);
       if (!mounted) return;
-      final designer = widget.designer;
       if (designer != null) {
         // Designer: gezielt geöffnetes Design → ohne Rückfrage weitermachen;
         // neu angelegt → Startfoto (z. B. Kader-Foto) als Spielerbild.
@@ -2014,21 +2029,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 designer.playerPhoto!;
           }
         }
-        // FuPa-Foto ist IMMER 4:5 mit nur dem Spieler – unabhängig davon, was
-        // gespeichert wurde (Absicherung: liegt das Foto in einem anderen
-        // Format, wird es übernommen).
-        if (_isFupa) {
-          _format = 'f';
-          _posterOrderF.putIfAbsent('f', () => ['player']);
-          if (_posterMainF['f'] == null) {
-            final alt = _posterMainF['s'] ?? _posterMainF['p'];
-            if (alt != null) {
-              _posterMainF['f'] = alt;
-              _imgOrigF.putIfAbsent('f', () => {})['player'] = alt;
-            }
-          }
-        }
+        _fupaAfterLoad(isNew: json == null || json.isEmpty);
         if (mounted) setState(() {});
+        _refreshBgDark();
+        _designLoaded = true;
+        _lastSavedJson = jsonEncode(_designToJson());
+        unawaited(_refreshDesignInBackground(sid, json));
+        return;
       } else if (json != null && json.isNotEmpty) {
         // Es gibt ein gespeichertes Design → fragen: weiterbearbeiten oder neu.
         final keep = await showDialog<bool>(
@@ -2064,7 +2071,64 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         // „Neu beginnen" → nichts anwenden; mit dem Standard-Layout starten.
       }
     }
+    if (_hasStorage) _lastSavedJson = jsonEncode(_designToJson());
     _designLoaded = true;
+  }
+
+  /// FuPa-Absicherungen nach dem Laden: immer 4:5 mit nur dem Spieler; Foto
+  /// aus einem anderen Format übernehmen; Hintergrund je Design festhalten.
+  void _fupaAfterLoad({required bool isNew}) {
+    if (!_isFupa) return;
+    _format = 'f';
+    _posterOrderF.putIfAbsent('f', () => ['player']);
+    if (_posterMainF['f'] == null) {
+      final alt = _posterMainF['s'] ?? _posterMainF['p'];
+      if (alt != null) {
+        _posterMainF['f'] = alt;
+        _imgOrigF.putIfAbsent('f', () => {})['player'] = alt;
+      }
+    }
+    // Neues Design: aktuelle Team-Vorlage als EIGENEN Hintergrund kopieren.
+    if (isNew && _fupaBgSnap == null) _fupaBgSnap = _currentFupaBg().toMap();
+  }
+
+  /// Aktueller FuPa-Hintergrund (aus den angezeigten Einstellungen).
+  GraphicPreset _currentFupaBg() => GraphicPreset(
+    id: _kFupaBgId,
+    name: 'FuPa-Hintergrund',
+    bgImage: _settings.bgImage,
+    gradTop: _settings.gradTop,
+    gradBottom: _settings.gradBottom,
+    overlayOpacity: _settings.overlayOpacity,
+    bgOpacity: _settings.bgOpacity,
+    bgBlend: _settings.bgBlend,
+    accent: _settings.accent,
+    createdAt: DateTime.now().toIso8601String(),
+  );
+
+  /// Cloud-Abgleich im Hintergrund (Designer). Kam eine NEUERE Version und
+  /// wurde noch nichts geändert → nachladen.
+  Future<void> _refreshDesignInBackground(String sid, String? loaded) async {
+    final state = _appStateRef;
+    if (state == null) return;
+    try {
+      await state.refreshAnnouncementDesign(sid);
+    } catch (_) {
+      return; // offline → lokaler Stand bleibt, nichts speichern
+    }
+    if (!mounted) return;
+    final json = await state.loadAnnouncementDesign(sid);
+    if (!mounted) return;
+    final untouched = jsonEncode(_designToJson()) == _lastSavedJson;
+    if (untouched && json != null && json.isNotEmpty && json != loaded) {
+      try {
+        _applyDesignJson(jsonDecode(json) as Map<String, dynamic>);
+        _fupaAfterLoad(isNew: false);
+        setState(() {});
+        _refreshBgDark();
+        _lastSavedJson = jsonEncode(_designToJson());
+      } catch (_) {}
+    }
   }
 
   /// Aktuell angezeigtes Bild eines Bild-Elements ([id] = 'player' oder
@@ -2162,6 +2226,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       if (widget.designer != null)
         'designer': widget.designer!.copyWith(title: _designerTitle).toJson(),
       'txtSeq': _textSeq,
+      'fupaBg': ?_fupaBgSnap,
     };
   }
 
@@ -2406,6 +2471,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     if (m['ovSeq'] is num) _posterOverlaySeq = (m['ovSeq'] as num).toInt();
     if (m['txtSeq'] is num) _textSeq = (m['txtSeq'] as num).toInt();
+    // FuPa: der im Design gespeicherte Hintergrund gilt (nicht die aktuelle
+    // Team-Vorlage).
+    if (_isFupa && m['fupaBg'] is Map) {
+      try {
+        final snap = Map<String, Object?>.from(m['fupaBg'] as Map);
+        _settings = _withPreset(_settings, GraphicPreset.fromMap(snap));
+        _fupaBgSnap = snap;
+      } catch (_) {}
+    }
     _syncFtCtrl(); // gespeicherten Foto-Ausschnitt (ENDSTAND) übernehmen
     // Designer-Titel kommt aus der Liste (widget.designer) – nur wenn dort
     // keiner ist, den im Design gespeicherten nehmen.
@@ -3349,22 +3423,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     // Speichern + in die Cloud spiegeln. (state = oben gelesener AppState)
     if (!mounted) return;
     if (_isFupa) {
-      // FuPa: NUR den eigenen FuPa-Hintergrund sichern (team-weit, synchron)
-      // – die Einstellungen der anderen Grafiken bleiben unberührt.
-      await state.saveGraphicPreset(
-        GraphicPreset(
-          id: _kFupaBgId,
-          name: 'FuPa-Hintergrund',
-          bgImage: _settings.bgImage,
-          gradTop: _settings.gradTop,
-          gradBottom: _settings.gradBottom,
-          overlayOpacity: _settings.overlayOpacity,
-          bgOpacity: _settings.bgOpacity,
-          bgBlend: _settings.bgBlend,
-          accent: _settings.accent,
-          createdAt: DateTime.now().toIso8601String(),
-        ),
-      );
+      // FuPa: Hintergrund gehört zu DIESEM Design. Zusätzlich als Team-Vorlage
+      // für NEUE FuPa-Fotos sichern – fertige Designs bleiben unverändert.
+      final bg = _currentFupaBg();
+      setState(() => _fupaBgSnap = bg.toMap());
+      await state.saveGraphicPreset(bg);
       return;
     }
     await state.saveGraphicSettings(_settings);
