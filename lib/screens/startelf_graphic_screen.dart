@@ -266,6 +266,73 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
   return Uint8List.fromList(img.encodePng(im));
 }
 
+/// KI-Look: leere, einfarbige Leinwand im Zielformat (Gemini übernimmt das
+/// Format eines mitgeschickten Bildes). [a] = {'w', 'h', 'magenta'}.
+Uint8List lookCanvasPng(Map<String, Object> a) {
+  final im = img.Image(width: a['w'] as int, height: a['h'] as int);
+  final magenta = a['magenta'] == true;
+  im.clear(magenta ? img.ColorRgb8(255, 0, 255) : img.ColorRgb8(0, 0, 0));
+  return Uint8List.fromList(img.encodePng(im));
+}
+
+/// KI-Look „Leuchtend": schwarzer Grund → transparent (Luma-Key). Helle Deko
+/// bleibt deckend, dunkle wird durchscheinend – wirkt wie eine Screen-Mischung,
+/// ist aber ein echtes PNG mit Alpha (funktioniert über allen Ebenen/Export).
+Uint8List lumaKeyBlack(Uint8List input) {
+  final src = img.decodeImage(input);
+  if (src == null) return input;
+  final im = src.convert(numChannels: 4);
+  for (final p in im) {
+    final r = p.r.toDouble(), g = p.g.toDouble(), b = p.b.toDouble();
+    final m = math.max(r, math.max(g, b));
+    if (m <= 12) {
+      // Fast-Schwarz (inkl. Kompressionsrauschen) komplett weg.
+      p.a = 0;
+      continue;
+    }
+    // Deckkraft = Helligkeit; Farbe „entmultipliziert" → gleiche Wirkung.
+    final alpha = m / 255.0;
+    p
+      ..r = (r / alpha).clamp(0, 255)
+      ..g = (g / alpha).clamp(0, 255)
+      ..b = (b / alpha).clamp(0, 255)
+      ..a = m;
+  }
+  return Uint8List.fromList(img.encodePng(im));
+}
+
+/// KI-Look „Freigestellt": Magenta-Grund (#FF00FF) → transparent. Globaler
+/// Farbabstand mit weicher Kante + Entfärben des Magenta-Saums (Despill).
+/// Anders als [removeUniformBackground] auch für eingeschlossene Flächen.
+Uint8List chromaKeyMagenta(Uint8List input) {
+  final src = img.decodeImage(input);
+  if (src == null) return input;
+  final im = src.convert(numChannels: 4);
+  const inner = 70.0; // bis hier: komplett transparent
+  const outer = 150.0; // ab hier: voll deckend
+  for (final p in im) {
+    final r = p.r.toDouble(), g = p.g.toDouble(), b = p.b.toDouble();
+    final dr = 255 - r, db = 255 - b;
+    final dist = math.sqrt(dr * dr + g * g + db * db);
+    if (dist <= inner) {
+      p.a = 0;
+      continue;
+    }
+    if (dist < outer) {
+      // Kante: teiltransparent + Magenta-Stich entfernen.
+      final t = (dist - inner) / (outer - inner);
+      final spill = math.min(r, b) - g;
+      if (spill > 0) {
+        p
+          ..r = (r - spill).clamp(0, 255)
+          ..b = (b - spill).clamp(0, 255);
+      }
+      p.a = (t * 255).round();
+    }
+  }
+  return Uint8List.fromList(img.encodePng(im));
+}
+
 Uint8List removeUniformBackground(Uint8List input) {
   final src = img.decodeImage(input);
   if (src == null) return input;
@@ -450,6 +517,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   final Map<String, List<String>> _posterOrderF = {};
   final Map<String, String?> _posterMainF = {};
   final Map<String, List<({String id, String dataUrl})>> _posterOverlaysF = {};
+  // KI-Look (Deko-Overlay über der ganzen Grafik) je Format.
+  final Map<String, _AiLook> _lookF = {};
+  _AiLook? get _look => _lookF[_designKey];
+  bool _lookBusy = false; // KI erzeugt gerade einen Look
   final Map<String, List<String>> _textIdsF = {};
   final Map<String, Map<String, String>> _textContentF = {};
   final Map<String, Map<String, String>> _textFontF = {};
@@ -786,6 +857,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'posC': {
         for (final e in _posCenteredF.entries) e.key: e.value.toList(),
       },
+      'look': {for (final e in _lookF.entries) e.key: e.value.toJson()},
       'stdOff': offMap(_stdOffF),
       'stdHidden': {
         for (final e in _stdHiddenF.entries) e.key: e.value.toList(),
@@ -893,6 +965,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (v is List) {
           _posCenteredF[k.toString()] = v.map((e) => e.toString()).toSet();
         }
+      });
+    }
+    _lookF.clear();
+    if (m['look'] is Map) {
+      (m['look'] as Map).forEach((k, v) {
+        final l = _AiLook.fromJson(v);
+        if (l != null) _lookF[k.toString()] = l;
       });
     }
     fillOff(_stdOffF, m['stdOff']);
@@ -3779,6 +3858,421 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   /// Langdruck auf den leeren Hintergrund → Objekte hinzufügen + zentrale
   /// Hintergrund-Eigenschaften (wie moderne Design-Apps).
+  // KI-Look-Vorlagen: Gruppe → (Name, Motiv-Beschreibung für die KI).
+  static const Map<String, List<(String, String)>> _kLookPresets = {
+    'Feiertage': [
+      (
+        'Karneval',
+        'Karneval/Fasching: bunte Luftschlangen, Konfetti, Narrenkappen-Zacken, '
+            'kleine Sterne und Luftballons in Rot, Gelb, Grün und Blau',
+      ),
+      (
+        'Weihnachten',
+        'Weihnachten: goldene Lichterketten, Christbaumkugeln, Tannenzweige, '
+            'Schneeflocken und warmes Funkeln',
+      ),
+      (
+        'Ostern',
+        'Ostern: Frühlingsblüten, bunte Ostereier, Pastellfarben, Gräser und '
+            'kleine Schmetterlinge',
+      ),
+      (
+        'Silvester',
+        'Silvester/Neujahr: Feuerwerk, goldene Funken, Sektperlen, Glitzer und '
+            'Lichtstreifen',
+      ),
+      (
+        'Halloween',
+        'Halloween: Kürbisse, Fledermäuse, Spinnweben, orange-violettes '
+            'Leuchten und Nebelschwaden',
+      ),
+    ],
+    'Spiel-Anlässe': [
+      (
+        'Derby',
+        'Derby-Stimmung: lodernde Flammen, Funkenflug, Rauchschwaden und '
+            'Pyro-Leuchten in den Vereinsfarben',
+      ),
+      (
+        'Pokalspiel',
+        'Pokalspiel: goldene Lichtstrahlen, Glanz, Funkeln und edle '
+            'Goldakzente wie bei einem Finale',
+      ),
+      (
+        'Saisonstart',
+        'Saisonstart: dynamische Speed-Lines, Lichtblitze und Energie-Streifen '
+            'in den Vereinsfarben',
+      ),
+      (
+        'Flutlicht',
+        'Topspiel unter Flutlicht: helle Flutlicht-Strahlen von oben, '
+            'Lichtkegel, Lens-Flares und leichter Dunst',
+      ),
+    ],
+    'Feiern': [
+      (
+        'Sieg',
+        'Siegesfeier: Konfetti-Regen, Goldglitzer, Luftschlangen und '
+            'Jubel-Lichteffekte',
+      ),
+      (
+        'Aufstieg',
+        'Aufstiegsfeier: goldenes Konfetti, Feuerwerk, Sektspritzer und '
+            'Lichtstrahlen nach oben',
+      ),
+      (
+        'Meisterschaft',
+        'Meisterschaft: goldene Sterne, Lorbeerzweige, Konfetti und edler '
+            'Goldglanz',
+      ),
+      (
+        'Jubiläum',
+        'Vereinsjubiläum: elegante Goldornamente, Sterne, Lichterglanz und '
+            'festliches Funkeln',
+      ),
+    ],
+    'Wetter & Stimmung': [
+      (
+        'Herbst',
+        'Herbst: fallende bunte Blätter in Rot, Orange und Gelb, warmes '
+            'Gegenlicht',
+      ),
+      (
+        'Winter',
+        'Winter: Schneefall, Eiskristalle, Frost an den Rändern, kühles '
+            'Glitzern',
+      ),
+      (
+        'Sommer',
+        'Sommer: Sonnenstrahlen, Lens-Flares, warmes goldenes Licht und '
+            'Hitzeflimmern',
+      ),
+      (
+        'Regen & Nebel',
+        'Regen und Nebel: Regentropfen, Regenschlieren, Nebelschwaden und '
+            'stimmungsvolles Gegenlicht',
+      ),
+    ],
+  };
+
+  /// Kurzname eines Looks (Vorlagen-Name oder Anfang des eigenen Textes).
+  String _lookName(_AiLook l) {
+    for (final group in _kLookPresets.values) {
+      for (final p in group) {
+        if (p.$2 == l.theme) return p.$1;
+      }
+    }
+    final t = l.theme.trim();
+    return t.length > 32 ? '${t.substring(0, 32)} …' : t;
+  }
+
+  /// Abschnitt „KI-Look (Overlay)" im Menü „Hinzufügen & Hintergrund".
+  Widget _lookSection(BuildContext ctx, void Function(VoidCallback) setSheet) {
+    final look = _look;
+    void upd(VoidCallback fn) {
+      setState(fn);
+      setSheet(() {});
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.auto_awesome, size: 18),
+            SizedBox(width: 6),
+            Text(
+              'KI-Look (Overlay)',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        const Text(
+          'Deko über der Grafik (z. B. Karneval, Derby) – Texte, Logos und '
+          'Spieler bleiben unverändert.',
+          style: TextStyle(fontSize: 12),
+        ),
+        const SizedBox(height: 6),
+        if (look == null)
+          OutlinedButton.icon(
+            icon: _lookBusy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome, size: 18),
+            label: Text(_lookBusy ? 'KI gestaltet …' : 'KI-Look erstellen'),
+            onPressed: _lookBusy
+                ? null
+                : () {
+                    Navigator.pop(ctx);
+                    _openLookDialog();
+                  },
+          )
+        else ...[
+          Text(
+            'Aktiv: ${_lookName(look)} · '
+            '${look.mode == 'cutout' ? 'Freigestellt' : 'Leuchtend'}',
+            style: const TextStyle(fontSize: 13),
+          ),
+          Row(
+            children: [
+              const SizedBox(
+                width: 52,
+                child: Text('Stärke', style: TextStyle(fontSize: 12)),
+              ),
+              Expanded(
+                child: Slider(
+                  value: look.opacity.clamp(0.1, 1.0),
+                  min: 0.1,
+                  max: 1.0,
+                  onChanged: (v) => upd(() => look.opacity = v),
+                ),
+              ),
+              SizedBox(
+                width: 40,
+                child: Text(
+                  '${(look.opacity * 100).round()}%',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Neu erzeugen'),
+                onPressed: _lookBusy
+                    ? null
+                    : () {
+                        Navigator.pop(ctx);
+                        _createLook(theme: look.theme, mode: look.mode);
+                      },
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.edit, size: 18),
+                label: const Text('Ändern'),
+                onPressed: _lookBusy
+                    ? null
+                    : () {
+                        Navigator.pop(ctx);
+                        _openLookDialog(current: look);
+                      },
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                label: const Text(
+                  'Entfernen',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onPressed: () => upd(() => _lookF.remove(_designKey)),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Dialog „KI-Look erstellen": Vorlagen (füllen das Textfeld, frei
+  /// änderbar) oder eigener Text + Darstellung Leuchtend/Freigestellt.
+  Future<void> _openLookDialog({_AiLook? current}) async {
+    final ctrl = TextEditingController(text: current?.theme ?? '');
+    var mode = current?.mode ?? 'glow';
+    final res = await showDialog<({String theme, String mode})>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        scrollable: true,
+        title: const Text('KI-Look erstellen'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: StatefulBuilder(
+            builder: (ctx, setLocal) => Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Die KI malt nur eine Deko-Ebene an den Rändern. Deine '
+                  'Grafik darunter bleibt unverändert.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                for (final group in _kLookPresets.entries) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    group.key,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: [
+                      for (final p in group.value)
+                        ChoiceChip(
+                          label: Text(p.$1),
+                          selected: ctrl.text == p.$2,
+                          onSelected: (_) => setLocal(() {
+                            ctrl.text = p.$2;
+                            ctrl.selection = TextSelection.collapsed(
+                              offset: ctrl.text.length,
+                            );
+                          }),
+                        ),
+                    ],
+                  ),
+                ],
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
+                  onChanged: (_) => setLocal(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Eigener Look / Vorlage anpassen',
+                    hintText: 'z. B. Derby gegen Benrath: rot-weiße Pyro, '
+                        'Rauch und Funken',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text('Darstellung:', style: TextStyle(fontSize: 12)),
+                const SizedBox(height: 4),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(
+                      value: 'glow',
+                      label: Text('Leuchtend'),
+                      icon: Icon(Icons.flare),
+                    ),
+                    ButtonSegment(
+                      value: 'cutout',
+                      label: Text('Freigestellt'),
+                      icon: Icon(Icons.layers),
+                    ),
+                  ],
+                  selected: {mode},
+                  onSelectionChanged: (s) => setLocal(() => mode = s.first),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  mode == 'glow'
+                      ? 'Leuchtend: Licht, Funken, Konfetti, Schnee wirken '
+                            'strahlend; dunkle Deko-Teile verschwinden.'
+                      : 'Freigestellt: Farben exakt (auch dunkle Deko wie '
+                            'Tannenzweige); Ränder können leicht ausfransen.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final t = ctrl.text.trim();
+              if (t.isEmpty) return;
+              Navigator.pop(ctx, (theme: t, mode: mode));
+            },
+            child: const Text('Erstellen'),
+          ),
+        ],
+      ),
+    );
+    if (res == null || !mounted) return;
+    await _createLook(theme: res.theme, mode: res.mode);
+  }
+
+  /// Erzeugt den KI-Look: leere Leinwand im Zielformat (Schwarz/Magenta) an
+  /// Gemini (Modus `overlay`), Ergebnis in ein PNG mit Alpha umrechnen und als
+  /// Deko-Ebene über die Grafik legen (je Format gespeichert).
+  Future<void> _createLook({required String theme, required String mode}) async {
+    if (_lookBusy) return;
+    setState(() => _lookBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('KI gestaltet den Look …'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+    try {
+      final magenta = mode == 'cutout';
+      final canvas = await compute(lookCanvasPng, <String, Object>{
+        'w': _story ? 576 : 1024,
+        'h': 1024,
+        'magenta': magenta,
+      });
+      final prompt =
+          '$theme. Vereinsfarben als Akzent: ${_settings.gradTop}, '
+          '${_settings.gradBottom}.';
+      final out = await CloudService.aiImage(
+        images: [
+          {
+            'mime': 'image/png',
+            'data': 'data:image/png;base64,${base64Encode(canvas)}',
+            'role': 'canvas',
+          },
+        ],
+        prompt: prompt,
+        mode: 'overlay',
+        aspect: _story ? '9:16' : '1:1',
+        key: magenta ? 'magenta' : 'black',
+      );
+      if (out == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Die KI hat kein Bild zurückgegeben.')),
+        );
+        return;
+      }
+      final png = await compute(
+        magenta ? chromaKeyMagenta : lumaKeyBlack,
+        out,
+      );
+      if (!mounted) return;
+      final keepOpacity = _look?.opacity ?? 1.0;
+      setState(
+        () => _lookF[_designKey] = _AiLook(
+          dataUrl: 'data:image/png;base64,${base64Encode(png)}',
+          mode: mode,
+          theme: theme,
+          opacity: keepOpacity,
+        ),
+      );
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'KI-Look gesetzt – Stärke, Neu erzeugen oder Entfernen unter '
+            '„Hinzufügen & Hintergrund".',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(_aiErrorMessage(e)),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _lookBusy = false);
+    }
+  }
+
   void _showBackgroundMenu() {
     showModalBottomSheet<void>(
       context: context,
@@ -3860,6 +4354,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       ],
                     ),
                   ],
+                  // KI-Look: Deko-Ebene über der ganzen Grafik (alle Typen),
+                  // nur wenn die Grafik-KI (Gemini) freigeschaltet ist.
+                  if (context.read<AppState>().canAiImage) ...[
+                    const Divider(height: 24),
+                    _lookSection(ctx, setSheet),
+                  ],
                   const Divider(height: 24),
                   const Text(
                     'Überschrift, Schrift & Sponsoren',
@@ -3895,9 +4395,30 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   Widget _previewStack({required bool interactive}) {
     final w = _story ? _storyW : _postW;
     final h = _story ? _storyH : _postH;
+    final look = _look;
+    final lookBytes = look?.bytes;
     final mainGraphic = RepaintBoundary(
       key: _boundaryKey,
-      child: _gradeWrap(_graphic()),
+      // KI-Look liegt ÜBER allem (auch im Export), fängt aber keine Gesten ab.
+      // Die Grafik bleibt immer Kind 0 → wird beim Ein-/Ausblenden nicht neu
+      // aufgebaut.
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          _gradeWrap(_graphic()),
+          if (look != null && lookBytes != null)
+            IgnorePointer(
+              child: Opacity(
+                opacity: look.opacity.clamp(0.1, 1.0),
+                child: Image.memory(
+                  lookBytes,
+                  fit: BoxFit.cover,
+                  gaplessPlayback: true,
+                ),
+              ),
+            ),
+        ],
+      ),
     );
     // Alle editierbaren Grafiktypen öffnen beim Tippen den Vollbild-Editor;
     // der Band-Foto-Zoom lebt dann im Editor (interactive).
@@ -3954,6 +4475,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _posCenteredF.remove(k);
       _stdOffF.remove(k);
       _stdHiddenF.remove(k);
+      _lookF.remove(k);
       _posterScaleF.remove(k);
       _posterRotF.remove(k);
       _posterOrderF.remove(k);
@@ -3985,7 +4507,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             _posterSel = null; // Auswahl aufheben → Hauptvorschau sauber
           }),
         ),
-        title: const Text('Bearbeiten'),
+        title: Text(_lookBusy ? 'KI gestaltet Look …' : 'Bearbeiten'),
+        // Läuft die KI (Look), zeigt ein Balken unter der Leiste den Fortschritt.
+        bottom: _lookBusy
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(3),
+                child: LinearProgressIndicator(minHeight: 3),
+              )
+            : null,
         actions: [
           IconButton(
             tooltip: 'Design zurücksetzen',
@@ -5734,17 +6263,17 @@ class _StartelfGraphic extends StatelessWidget {
       final showPhoto = showPhotos && TeamLogo.decode(g.photo) != null;
       final children = <Widget>[
         if (showPhoto) ...[avatar(g.photo), const SizedBox(width: 8)],
-        Flexible(
-          child: Text(
-            "${g.minute}'  ${g.name}",
-            textAlign: end ? TextAlign.right : TextAlign.left,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 19,
-              fontWeight: FontWeight.w700,
-            ),
+        // Name immer vollständig (kein „…"): ist der Block zu breit, verkleinert
+        // ihn das umgebende FittedBox als Ganzes.
+        Text(
+          "${g.minute}'  ${g.name}",
+          textAlign: end ? TextAlign.right : TextAlign.left,
+          maxLines: 1,
+          softWrap: false,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 19,
+            fontWeight: FontWeight.w700,
           ),
         ),
       ];
@@ -5771,8 +6300,10 @@ class _StartelfGraphic extends StatelessWidget {
       children: [for (final g in goals) line(g, end: end)],
     );
 
+    // Spalten nach Inhalt breit (kein festes 50/50, keine Maximalbreite) →
+    // lange eigene Namen bekommen den Platz, den kurze Gegner-Einträge nicht
+    // brauchen. Zu breit insgesamt → FittedBox(scaleDown) verkleinert.
     return Container(
-      constraints: const BoxConstraints(maxWidth: 360),
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.34),
@@ -5799,11 +6330,13 @@ class _StartelfGraphic extends StatelessWidget {
           ),
           const SizedBox(height: 10),
           Row(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(child: col(ownGoals, end: false)),
-              const SizedBox(width: 16),
-              Expanded(child: col(oppGoals, end: true)),
+              if (ownGoals.isNotEmpty) col(ownGoals, end: false),
+              if (ownGoals.isNotEmpty && oppGoals.isNotEmpty)
+                const SizedBox(width: 28),
+              if (oppGoals.isNotEmpty) col(oppGoals, end: true),
             ],
           ),
         ],
@@ -6369,5 +6902,45 @@ class _HitWhereRender extends RenderProxyBox {
   bool hitTest(BoxHitTestResult result, {required Offset position}) {
     if (!test(position)) return false;
     return super.hitTest(result, position: position);
+  }
+}
+
+/// KI-Look: Deko-Ebene (PNG mit Alpha) über der ganzen Grafik.
+/// [mode] 'glow' = leuchtend (aus Schwarz), 'cutout' = freigestellt (aus
+/// Magenta). [theme] = Motiv-Text (für „Neu erzeugen"). [opacity] = Stärke.
+class _AiLook {
+  _AiLook({
+    required this.dataUrl,
+    required this.mode,
+    required this.theme,
+    this.opacity = 1.0,
+  });
+
+  final String dataUrl;
+  final String mode;
+  final String theme;
+  double opacity;
+
+  /// Einmal dekodiert (gleiche Bytes-Instanz → Bild-Cache greift beim Ziehen).
+  late final Uint8List? bytes = TeamLogo.decode(dataUrl);
+
+  Map<String, Object> toJson() => {
+    'url': dataUrl,
+    'mode': mode,
+    'theme': theme,
+    'op': opacity,
+  };
+
+  static _AiLook? fromJson(Object? v) {
+    if (v is! Map) return null;
+    final url = v['url'];
+    if (url is! String || url.isEmpty) return null;
+    final op = v['op'];
+    return _AiLook(
+      dataUrl: url,
+      mode: v['mode'] == 'cutout' ? 'cutout' : 'glow',
+      theme: v['theme']?.toString() ?? '',
+      opacity: op is num ? op.toDouble().clamp(0.1, 1.0) : 1.0,
+    );
   }
 }

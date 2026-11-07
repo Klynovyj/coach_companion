@@ -29,8 +29,37 @@ function stripDataUrl(s: string): { mime: string; data: string } {
 }
 
 // Leitplanken-Text je Modus. 'background' = nur kreativer Hintergrund (ohne
-// Logos/Text), 'compose' = ganze Grafik aus den mitgeschickten Bausteinen.
-function guardText(mode: string, aspect: string, roles: string[]): string {
+// Logos/Text), 'compose' = ganze Grafik aus den mitgeschickten Bausteinen,
+// 'overlay' = Deko-Ebene (KI-Look) auf Schwarz/Magenta (Body-Feld `key`),
+// 'cutout' = Person freistellen.
+function guardText(
+  mode: string,
+  aspect: string,
+  roles: string[],
+  key = "black",
+): string {
+  if (mode === "overlay") {
+    // Deko-Ebene („KI-Look") ueber einer fertigen Grafik. Die App legt sie
+    // darueber: bei Schwarz per Screen-Mischung (leuchtend), bei Magenta wird
+    // der Grund transparent gemacht (freigestellt).
+    const ground = key === "magenta"
+      ? "exakt einfarbig reines MAGENTA (#FF00FF). Verwende Magenta/Pink " +
+        "NIRGENDS in der Deko selbst"
+      : "exakt einfarbig reines SCHWARZ (#000000). Die Deko soll hell, " +
+        "farbig und leuchtend sein (dunkle Deko-Teile werden unsichtbar)";
+    return (
+      "Erzeuge NUR eine dekorative Overlay-Ebene fuer ein Fussball-Social-" +
+      "Media-Poster im Seitenverhaeltnis " + aspect + ". Die Deko liegt NUR " +
+      "an den Raendern und in den Ecken (Rahmen-Wirkung); die MITTE (ca. 60 % " +
+      "der Flaeche) bleibt KOMPLETT LEER, damit Spieler, Texte und Logos frei " +
+      "bleiben. KEINE Texte, Buchstaben, Zahlen, Logos, Wappen, Gesichter oder " +
+      "Personen. Der Hintergrund ist " + ground + " – ohne Verlauf, ohne " +
+      "Struktur, ohne Schatten auf dem Grund. Das beiliegende einfarbige Bild " +
+      "ist die LEERE LEINWAND: behalte exakt dieses Format und diese " +
+      "Grundfarbe bei und male die Deko darauf. Hochwertig, plakativ, " +
+      "professioneller Poster-Look. Thema/Motiv: "
+    );
+  }
   if (mode === "cutout") {
     return (
       "Stelle die auf dem beiliegenden Bild gezeigte Person (Fussballspieler) " +
@@ -127,12 +156,14 @@ Deno.serve(async (req) => {
     const prompt = String(body.prompt ?? "").trim();
     // Hintergrund-Modus darf OHNE Referenzbild laufen (reine Text-zu-Bild-
     // Gestaltung – keine Logos noetig). Andere Modi brauchen ein Bild.
-    if (imgs.length === 0 && mode !== "background") {
+    if (imgs.length === 0 && mode !== "background" && mode !== "overlay") {
       return new Response("kein Bild", { status: 400 });
     }
     if (!prompt) return new Response("kein Wunsch", { status: 400 });
 
-    const text = guardText(mode, aspect, imgs.map((i) => i.role)) + prompt;
+    const key = String(body.key ?? "black");
+    const text =
+      guardText(mode, aspect, imgs.map((i) => i.role), key) + prompt;
     const parts = [
       ...imgs.map((i) => ({
         inline_data: { mime_type: i.mime, data: i.data },
