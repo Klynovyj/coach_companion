@@ -792,7 +792,69 @@ Uint8List chromaKeyMagenta(Uint8List input) {
       p.a = (p.a * keep).round();
     }
   }
+  _despillMagentaEdges(im);
   return Uint8List.fromList(img.encodePng(im));
+}
+
+/// Rosa Saum an der Freistell-Kante entfernen (v. a. Haare): Alle sichtbaren
+/// Pixel bis [radius] px von einer durchsichtigen Stelle entfernt verlieren
+/// ihren Magenta-Stich (Rot/Blau über Grün → auf Grün-Niveau). Direkt an der
+/// Kante werden stark magentafarbene Pixel zusätzlich ausgedünnt. Pixel tief
+/// im Motiv (z. B. ein pinkes Trikot-Detail) bleiben unverändert.
+void _despillMagentaEdges(img.Image im, {int? radius}) {
+  final w = im.width, h = im.height;
+  if (w < 3 || h < 3) return;
+  // Radius mit der Bildgröße skalieren (~1024 px → 5 px).
+  final r = radius ?? math.max(3, (math.max(w, h) / 200).round());
+  final dist = Uint8List(w * h)..fillRange(0, w * h, 255);
+  final queue = <int>[];
+  for (var y = 0; y < h; y++) {
+    for (var x = 0; x < w; x++) {
+      if (im.getPixel(x, y).a < 128) {
+        final i = y * w + x;
+        dist[i] = 0;
+        queue.add(i);
+      }
+    }
+  }
+  if (queue.isEmpty) return;
+  // Breitensuche bis [r] (4er-Nachbarschaft).
+  var head = 0;
+  while (head < queue.length) {
+    final i = queue[head++];
+    final d = dist[i];
+    if (d >= r) continue;
+    final x = i % w, y = i ~/ w;
+    void visit(int nx, int ny) {
+      if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+      final j = ny * w + nx;
+      if (dist[j] <= d + 1) return;
+      dist[j] = d + 1;
+      queue.add(j);
+    }
+
+    visit(x + 1, y);
+    visit(x - 1, y);
+    visit(x, y + 1);
+    visit(x, y - 1);
+  }
+  for (final p in im) {
+    if (p.a == 0) continue;
+    final d = dist[p.y * w + p.x];
+    if (d == 0 || d > r) continue;
+    final rr = p.r.toDouble(), g = p.g.toDouble(), b = p.b.toDouble();
+    final lo = math.min(rr, b), hi = math.max(rr, b);
+    final spill = lo - g;
+    if (spill <= 0) continue;
+    // Entfärben: Rot/Blau um den Magenta-Anteil senken (Richtung neutral).
+    p
+      ..r = (rr - spill).clamp(0, 255)
+      ..b = (b - spill).clamp(0, 255);
+    // Direkt an der Kante + deutlich magenta → leicht ausdünnen (Saum weg).
+    if (d <= 2 && hi > 0 && spill / hi > 0.2) {
+      p.a = (p.a * (d == 1 ? 0.35 : 0.7)).round();
+    }
+  }
 }
 
 /// Anteil (fast) durchsichtiger Pixel (0..1) – prüft, ob das Freistellen

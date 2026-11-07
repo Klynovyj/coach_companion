@@ -118,6 +118,51 @@ void main() {
     expect(out.getPixel(15, 11).a, 255); // Haut
   });
 
+  test('Rosa Saum an Haarkanten wird entfärbt, Motiv-Innen bleibt', () {
+    // 60×60 Magenta-Grund, braune „Haare" (30×30) mit rosa Saum-Ring außen
+    // und einem pinken Detail tief innen.
+    final im = img.Image(width: 60, height: 60)
+      ..clear(img.ColorRgb8(255, 0, 255));
+    img.fillRect(
+      im,
+      x1: 13,
+      y1: 13,
+      x2: 46,
+      y2: 46,
+      color: img.ColorRgb8(200, 120, 170), // Saum: Haar + Magenta gemischt
+    );
+    img.fillRect(
+      im,
+      x1: 16,
+      y1: 16,
+      x2: 43,
+      y2: 43,
+      color: img.ColorRgb8(110, 70, 40), // Haare
+    );
+    img.fillRect(
+      im,
+      x1: 28,
+      y1: 28,
+      x2: 31,
+      y2: 31,
+      color: img.ColorRgb8(230, 80, 120), // rot-pinkes Detail innen
+    );
+    final out = img.decodePng(
+      chromaKeyMagenta(Uint8List.fromList(img.encodePng(im))),
+    )!;
+    expect(out.getPixel(2, 2).a, 0); // Grund weg
+    final fringe = out.getPixel(14, 30);
+    // Saum: kein Rosa-Stich mehr (Rot/Blau nicht mehr über Grün) oder weg.
+    expect(
+      fringe.a == 0 || (fringe.b <= fringe.g + 2 && fringe.r - fringe.g < 80),
+      isTrue,
+    );
+    final hair = out.getPixel(22, 22);
+    expect([hair.r, hair.g, hair.b, hair.a], [110, 70, 40, 255]);
+    final pink = out.getPixel(29, 29);
+    expect([pink.r, pink.g, pink.b, pink.a], [230, 80, 120, 255]);
+  });
+
   test('Erfolgsprüfung: unverändertes Foto hat ~0 % Durchsicht', () {
     // „KI hat nichts gemacht": Himmel oben, Straße unten, Person in der Mitte.
     final im = img.Image(width: 40, height: 40)
