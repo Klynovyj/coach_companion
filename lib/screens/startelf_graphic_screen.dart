@@ -407,7 +407,8 @@ const double _kPosterMainHeightFactor = 0.68;
 /// Standard-Positionen (normiert 0..1) der frei verschiebbaren Poster-Elemente.
 const Map<String, Offset> _kPosterItemDefaults = {
   'player': Offset(0.5, 0.72),
-  'sponsor': Offset(0.5, 0.08),
+  'sponsor': Offset(0.76, 0.08),
+  'sponsortext': Offset(0.3, 0.085),
   'logos': Offset(0.5, 0.18),
   'headline': Offset(0.5, 0.30),
   'info': Offset(0.5, 0.38),
@@ -418,7 +419,8 @@ const Map<String, Offset> _kPosterItemDefaults = {
 /// Spielerbild im Fokus).
 const Map<String, Offset> _kCenteredItemDefaults = {
   'player': Offset(0.5, 0.80),
-  'sponsor': Offset(0.5, 0.18),
+  'sponsor': Offset(0.76, 0.18),
+  'sponsortext': Offset(0.3, 0.185),
   'headline': Offset(0.5, 0.40),
   'logos': Offset(0.5, 0.56),
   'info': Offset(0.5, 0.72),
@@ -429,12 +431,20 @@ const Map<String, Offset> _kCenteredItemDefaults = {
 /// unten randlos, Texte oben über dem auslaufenden Fotorand – das Gesicht
 /// bleibt frei (Align-Semantik: 0 = oben bündig, 1 = unten bündig).
 const Map<String, Offset> _kBlendItemDefaults = {
-  'sponsor': Offset(0.5, 0.03),
+  'sponsor': Offset(0.76, 0.03),
+  'sponsortext': Offset(0.3, 0.04),
   'logos': Offset(0.5, 0.11),
   'headline': Offset(0.5, 0.255),
   'info': Offset(0.5, 0.345),
   'sponsorbar': Offset(0.5, 0.98),
 };
+
+/// „Präsentiert von"-Texte als eigene, editierbare Objekte.
+const List<String> _kSponsorTextIds = [
+  'sponsortext',
+  'std_sponsor_text',
+  'std_ft_sponsor_text',
+];
 
 /// Textfarben für eigene Textfelder (key → Anzeigename).
 const Map<String, String> _kTextColors = {
@@ -1323,6 +1333,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   static const List<String> _kPosterBaseOrder = [
     'player',
     'sponsor',
+    'sponsortext',
     'logos',
     'headline',
     'info',
@@ -1756,7 +1767,26 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (m['order'] is Map) {
       (m['order'] as Map).forEach((k, v) {
         if (v is List) {
-          _posterOrderF[k.toString()] = v.map((e) => e.toString()).toList();
+          final list = v.map((e) => e.toString()).toList();
+          // Ältere Designs: „Präsentiert von" war Teil des Sponsors → als
+          // eigenes Element direkt dahinter einblenden.
+          final si = list.indexOf('sponsor');
+          if (si >= 0 && !list.contains('sponsortext')) {
+            list.insert(si + 1, 'sponsortext');
+            // War der Sponsor verschoben, startet der Text einmalig links
+            // neben dem Logo (danach unabhängig).
+            final pos = _posterPosF[k.toString()];
+            final sp = pos?['sponsor'];
+            if (pos != null && sp != null) {
+              pos['sponsortext'] = Offset(
+                (sp.dx - 0.32).clamp(0.02, 0.98),
+                sp.dy,
+              );
+              final c = _posCenteredF[k.toString()];
+              if (c != null && c.contains('sponsor')) c.add('sponsortext');
+            }
+          }
+          _posterOrderF[k.toString()] = list;
         }
       });
     }
@@ -4201,8 +4231,22 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           font: _textFont['info'] ?? 'standard',
           color: _textColor['info'] ?? 'accent',
         ),
+      // „Präsentiert von"-Texte (Poster + feste Teile) mit eigenem Inhalt/Stil.
+      for (final id in _kSponsorTextIds)
+        if (_textContent.containsKey(id) ||
+            _textFont.containsKey(id) ||
+            _textColor.containsKey(id))
+          id: (
+            text: _textContent[id] ?? '',
+            font: _textFont[id] ?? 'standard',
+            color: _textColor[id] ?? 'white',
+          ),
     },
   );
+
+  /// Standardtext der „Präsentiert von"-Objekte.
+  String _sponsorTextDefault(String id) =>
+      id == 'sponsortext' ? 'Präsentiert von' : 'PRÄSENTIERT VON';
 
   /// Aktuelle Textfarbe eines Elements als Hex (Schlüssel aufgelöst).
   String _textColorHex(String id) {
@@ -4218,7 +4262,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   void _showElementProperties(String id) {
     setState(() => _posterSel = id);
     final isImage = id == 'player' || id.startsWith('overlay_');
-    final isText = id.startsWith('text_') || id == 'info';
+    final isSponsorText = _kSponsorTextIds.contains(id);
+    final isText = id.startsWith('text_') || id == 'info' || isSponsorText;
     // Feste Teile (Ergebnis/Startelf) liegen im Layout – keine Ebenen-Reihenfolge.
     final isStd = id.startsWith('std_');
     // Vereinsname geändert → beim Schließen teamweit speichern (nicht je Taste).
@@ -4491,6 +4536,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         key: ValueKey('sheettxt_${id}_$_editorSeq'),
                         initialValue: id == 'info'
                             ? (_textContent['info'] ?? _autoInfoLine)
+                            : isSponsorText
+                            ? (_textContent[id] ?? _sponsorTextDefault(id))
                             : (_textContent[id] ?? ''),
                         maxLines: null,
                         keyboardType: TextInputType.multiline,
@@ -4512,6 +4559,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                               _textFont.remove('info');
                               _textColor.remove('info');
                               _editorSeq++; // Feld mit Auto-Zeile neu aufbauen
+                            }),
+                          ),
+                        ),
+                      if (isSponsorText)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.restore, size: 16),
+                            label: const Text('Standard'),
+                            onPressed: () => apply(() {
+                              _textContent.remove(id);
+                              _textFont.remove(id);
+                              _textColor.remove(id);
+                              _editorSeq++;
                             }),
                           ),
                         ),
@@ -4609,7 +4670,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       case 'player':
         return 'Spieler';
       case 'sponsor':
-        return 'Sponsor';
+        return 'Sponsor-Logo';
+      case 'sponsortext':
+      case 'std_sponsor_text':
+      case 'std_ft_sponsor_text':
+        return '„Präsentiert von"';
       case 'sponsorbar':
         return 'Sponsoren';
       case 'logos':
@@ -4623,7 +4688,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       case 'std_title':
         return 'Überschrift';
       case 'std_sponsor':
-        return 'Präsentiert von';
+        return 'Sponsor-Logo';
       case 'std_info':
         return 'Datum & Uhrzeit';
       case 'std_vs':
@@ -4644,7 +4709,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       case 'std_ft_scorers':
         return 'Torschützen';
       case 'std_ft_sponsor':
-        return 'Präsentiert von';
+        return 'Sponsor-Logo';
       default:
         if (id.startsWith('overlay_')) return 'Bild';
         if (id.startsWith('text_')) return 'Text';
@@ -4726,6 +4791,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   static const List<String> _kStdOrder = [
     'std_logo',
     'std_title',
+    'std_sponsor_text',
     'std_sponsor',
     'std_info',
     'std_vs',
@@ -4733,6 +4799,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     'std_scorers',
     'std_lineup',
     'std_sponsorbar',
+    'std_ft_sponsor_text',
     'std_ft_sponsor',
     'std_ft_title',
     'std_ft_banner',
@@ -6711,6 +6778,7 @@ class _StartelfGraphic extends StatelessWidget {
   /// Feste Teile der Ergebnis-/Startelf-Grafik, oberstes zuerst (spätere im
   /// Layout liegen beim Überlappen oben).
   static const List<String> _kStdTopFirst = [
+    'std_ft_sponsor_text',
     'std_ft_sponsor',
     'std_ft_sponsorbar',
     'std_ft_scorers',
@@ -6722,6 +6790,7 @@ class _StartelfGraphic extends StatelessWidget {
     'std_score',
     'std_vs',
     'std_info',
+    'std_sponsor_text',
     'std_sponsor',
     'std_title',
     'std_logo',
@@ -7413,7 +7482,7 @@ class _StartelfGraphic extends StatelessWidget {
               if (!compact && _presentedByTopRow() != null) ...[
                 Align(
                   alignment: Alignment.centerRight,
-                  child: _stdEl('std_sponsor', _presentedByTopRow()!),
+                  child: _presentedByTopRow()!,
                 ),
                 const SizedBox(height: 8),
               ],
@@ -7619,87 +7688,123 @@ class _StartelfGraphic extends StatelessWidget {
         // (spart Höhe; die Breite reicht hier für Vereinsname + Überschrift).
         if (compact && _presentedByBlock() != null) ...[
           const SizedBox(width: 10),
-          _stdEl('std_sponsor', _presentedByBlock()!),
+          _presentedByBlock()!,
         ],
       ],
     );
   }
 
-  /// „Präsentiert von [Sponsor]" (Hauptsponsor; abschaltbar, als Logo oder
-  /// Text – wie bei der Ankündigung). null = kein/ausgeschalteter Sponsor.
-  Widget? _presentedByBlock() {
-    if (mainSponsor == null || !showMainSponsor) return null;
+  /// „Präsentiert von"-Text als eigenes Objekt: Inhalt/Schrift/Farbe über
+  /// [posterTexts] änderbar, sonst [fallback] im Standard-Stil [base].
+  Widget _sponsorLabel(String id, TextStyle base, String fallback) {
+    final o = posterTexts[id];
+    final text = (o != null && o.text.trim().isNotEmpty) ? o.text : fallback;
+    final style = o == null
+        ? base
+        : posterFontStyle(
+            o.font,
+            base.copyWith(color: _resolveTextColor(o.color)),
+          );
+    return Text(text, textAlign: TextAlign.center, style: style);
+  }
+
+  /// Sponsor-Logo (bzw. Name im Text-Modus) des Hauptsponsors.
+  Widget _mainSponsorMark({required double logoH, required double nameSize}) {
     final sponsorLogo = TeamLogo.decode(mainSponsor!.logo);
+    if (sponsorLogo != null && mainSponsorMode != 'text') {
+      return _logoChip(sponsorLogo, height: logoH, mode: mainSponsor!.chip);
+    }
+    return Text(
+      mainSponsor!.name,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: Colors.white,
+        fontSize: nameSize,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+
+  /// „Präsentiert von" + Sponsor (Post, untereinander). Text und Logo sind
+  /// ZWEI eigene Objekte ([id]_text und [id]). null = kein/aus.
+  Widget? _presentedByBlock({String id = 'std_sponsor'}) {
+    if (mainSponsor == null || !showMainSponsor) return null;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        Text(
-          'PRÄSENTIERT VON',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.9),
-            fontSize: compact ? 8 : 10,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
+        _stdEl(
+          '${id}_text',
+          _sponsorLabel(
+            '${id}_text',
+            TextStyle(
+              color: Colors.white.withValues(alpha: 0.9),
+              fontSize: compact ? 8 : 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 1.5,
+            ),
+            'PRÄSENTIERT VON',
           ),
         ),
         SizedBox(height: compact ? 4 : 5),
-        ConstrainedBox(
-          constraints: BoxConstraints(maxWidth: compact ? 130 : 168),
-          child: sponsorLogo != null && mainSponsorMode != 'text'
-              ? _logoChip(
-                  sponsorLogo,
-                  height: compact ? 38 : 50,
-                  mode: mainSponsor!.chip,
-                )
-              : Text(
-                  mainSponsor!.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: compact ? 16 : 21,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+        _stdEl(
+          id,
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: compact ? 130 : 168),
+            child: _mainSponsorMark(
+              logoH: compact ? 38 : 50,
+              nameSize: compact ? 16 : 21,
+            ),
+          ),
         ),
       ],
     );
   }
 
-  /// Story-Format: „Präsentiert von [Logo]" als eigene Zeile oben rechts –
-  /// so haben Überschrift und Spielinfo darunter die volle Breite.
-  Widget? _presentedByTopRow() {
+  /// Story: „Präsentiert von" + Logo nebeneinander – ebenfalls zwei eigene
+  /// Objekte. [scrim] = Text auf dunklem Feld (über Fotos lesbar).
+  Widget? _presentedByTopRow({String id = 'std_sponsor', bool scrim = false}) {
     if (mainSponsor == null || !showMainSponsor) return null;
-    final sponsorLogo = TeamLogo.decode(mainSponsor!.logo);
+    Widget label = _sponsorLabel(
+      '${id}_text',
+      TextStyle(
+        color: Colors.white.withValues(alpha: 0.9),
+        fontSize: 10,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 1.5,
+      ),
+      'PRÄSENTIERT VON',
+    );
+    if (scrim) {
+      label = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.45),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: label,
+      );
+    }
     return Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          'PRÄSENTIERT VON',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.9),
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 1.5,
+        // Längerer eigener Text bricht um statt die Zeile zu sprengen.
+        _stdEl(
+          '${id}_text',
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 150),
+            child: label,
           ),
         ),
         const SizedBox(width: 10),
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 190),
-          child: sponsorLogo != null && mainSponsorMode != 'text'
-              ? _logoChip(sponsorLogo, height: 46, mode: mainSponsor!.chip)
-              : Text(
-                  mainSponsor!.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 21,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
+        _stdEl(
+          id,
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 190),
+            child: _mainSponsorMark(logoH: 46, nameSize: 21),
+          ),
         ),
       ],
     );
@@ -7920,7 +8025,7 @@ class _StartelfGraphic extends StatelessWidget {
   Widget _endstandLayout() {
     final pad = compact ? 14.0 : 20.0;
     final photo = TeamLogo.decode(ftPhoto);
-    final sponsorTop = _presentedByTopRow();
+    final sponsorTop = _presentedByTopRow(id: 'std_ft_sponsor', scrim: true);
 
     final photoArea = ClipRect(
       child: photo == null
@@ -8024,24 +8129,7 @@ class _StartelfGraphic extends StatelessWidget {
               photoArea,
               // „Präsentiert von" oben rechts über dem Foto (lesbar auf Scrim).
               if (sponsorTop != null)
-                Positioned(
-                  top: pad * 0.6,
-                  right: pad * 0.6,
-                  child: _stdEl(
-                    'std_ft_sponsor',
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: sponsorTop,
-                    ),
-                  ),
-                ),
+                Positioned(top: pad * 0.6, right: pad * 0.6, child: sponsorTop),
             ],
           ),
         ),
@@ -8692,11 +8780,24 @@ class _StartelfGraphic extends StatelessWidget {
     final infoLine = infoOverride ?? parts.join(' | ');
 
     // Einzelne, frei verschieb- und skalierbare Elemente.
+    // Hauptsponsor: Logo (bzw. Name) und „Präsentiert von" als ZWEI Objekte.
     final Widget? sponsorW = mainSponsor == null
         ? null
-        : (mainSponsorMode == 'text'
-              ? _presentedByText(mainSponsor!.name)
-              : _presentedBy(mainSponsor!));
+        : _mainSponsorMark(
+            logoH: compact ? 29 : 35,
+            nameSize: compact ? 14 : 17,
+          );
+    final Widget? sponsorTextW = mainSponsor == null
+        ? null
+        : _sponsorLabel(
+            'sponsortext',
+            TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: compact ? 12 : 15,
+              fontWeight: FontWeight.w500,
+            ),
+            'Präsentiert von',
+          );
     final Widget? sponsorbarW = barSponsors.isEmpty
         ? null
         : Row(
@@ -8912,6 +9013,8 @@ class _StartelfGraphic extends StatelessWidget {
               );
             case 'sponsor':
               return showMainSponsor ? sponsorW : null;
+            case 'sponsortext':
+              return showMainSponsor ? sponsorTextW : null;
             case 'sponsorbar':
               return showOtherSponsors ? sponsorbarW : null;
             case 'logos':
@@ -9112,63 +9215,6 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  /// Hauptsponsor: „Präsentiert von" + Logo NEBENEINANDER (inline, weißer Chip)
-  /// falls Logo vorhanden, sonst als Text.
-  Widget _presentedBy(Sponsor s) {
-    final logoBytes = TeamLogo.decode(s.logo);
-    if (logoBytes == null) return _presentedByText(s.name);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Text(
-          'Präsentiert von ',
-          style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.85),
-            fontSize: compact ? 12 : 15,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-        const SizedBox(width: 6),
-        // Helle Logos automatisch auf dunklem Feld (siehe _logoChip).
-        _logoChip(logoBytes, height: compact ? 29 : 35, mode: s.chip),
-      ],
-    );
-  }
-
-  /// Hauptsponsor NUR als Text („Präsentiert von NAME"), ohne Logo.
-  Widget _presentedByText(String name) {
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(
-            text: 'Präsentiert von ',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: compact ? 12 : 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          TextSpan(
-            text: name.toUpperCase(),
-            style: posterFontStyle(
-              posterFont,
-              const TextStyle(
-                color: Colors.white,
-                fontSize: 16,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.5,
-              ),
-            ),
-          ),
-        ],
-      ),
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      textAlign: TextAlign.center,
-    );
-  }
-
   Widget _sponsorBar({Size? size}) {
     const pad = EdgeInsets.symmetric(vertical: 8, horizontal: 8);
     final deco = BoxDecoration(
@@ -9324,7 +9370,10 @@ Widget debugGraphicForTest({
   List<Sponsor> barSponsors = const [],
   String? ftPhoto,
   bool logoCircle = false,
+  Map<String, ({String text, String font, String color})> posterTexts =
+      const {},
 }) => _StartelfGraphic(
+  posterTexts: posterTexts,
   title: 'Garather SV',
   logo: logo,
   starters: const [],

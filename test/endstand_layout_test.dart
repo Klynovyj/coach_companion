@@ -128,6 +128,45 @@ void main() {
     expect(find.text("35'"), findsNWidgets(2));
   });
 
+  // „Präsentiert von" und Sponsor-Logo sind zwei eigene Objekte; der Text
+  // lässt sich ändern (Story/Post, Standard und ENDSTAND).
+  for (final layout in ['std', 'photo']) {
+    for (final story in [true, false]) {
+      testWidgets('Präsentiert-von-Text getrennt + änderbar ($layout, '
+          '${story ? 'Story' : 'Post'})', (t) async {
+        final id = layout == 'photo'
+            ? 'std_ft_sponsor_text'
+            : 'std_sponsor_text';
+        await pump(
+          t,
+          debugGraphicForTest(
+            result: result,
+            resultLayout: layout,
+            compact: !story,
+            mainSponsor: Sponsor(
+              id: 'm',
+              name: 'Husalt',
+              logo: png(90, 30),
+              isMain: true,
+            ),
+            posterTexts: {
+              id: (
+                text: 'Mit Unterstützung von',
+                font: 'standard',
+                color: 'white',
+              ),
+            },
+          ),
+          Size(360, story ? 640 : 360),
+        );
+        await t.pump();
+        expect(t.takeException(), isNull);
+        expect(find.text('Mit Unterstützung von'), findsOneWidget);
+        expect(find.text('PRÄSENTIERT VON'), findsNothing);
+      });
+    }
+  }
+
   testWidgets('Gezogene Kastengröße ohne Fehler', (t) async {
     await pump(
       t,
