@@ -40,6 +40,10 @@ typedef CloudSyncHook =
       Map<String, Object?>? deleteFilter,
     );
 
+/// `kind` eines gelöschten Grafik-Designs (Grabstein, damit andere Geräte es
+/// nicht wieder hochladen).
+const String kDeletedDesignKind = 'deleted';
+
 /// Einziger Zugang zur Persistenz. Gruppiert nach Entität; jede Entität
 /// hat ihr eigenes Datenmodell und ihre eigene Tabelle.
 class CoachRepository {
@@ -138,6 +142,9 @@ class CoachRepository {
     String? kind,
     String? thumb,
   }) async {
+    // Gelöschtes Design (Grabstein) nie durch ein noch offenes Fenster
+    // wiederbeleben.
+    if (await _isDeletedDesign(id)) return;
     await _upsertById('announcement_designs', {
       'id': id,
       'match_id': matchId,
@@ -169,9 +176,22 @@ class CoachRepository {
     return db.query(
       'announcement_designs',
       columns: ['id', 'match_id', 'title', 'kind', 'thumb', 'updated_at'],
-      where: "id LIKE 'designer:%'",
+      where:
+          "id LIKE 'designer:%' AND (kind IS NULL OR kind != '$kDeletedDesignKind')",
       orderBy: 'updated_at DESC',
     );
+  }
+
+  Future<bool> _isDeletedDesign(String id) async {
+    final db = await _db;
+    final rows = await db.query(
+      'announcement_designs',
+      columns: ['kind'],
+      where: 'id = ?',
+      whereArgs: [id],
+      limit: 1,
+    );
+    return rows.isNotEmpty && rows.first['kind'] == kDeletedDesignKind;
   }
 
   /// Designer-Design umbenennen (nur Titel + Zeitstempel; lokal + Cloud).
@@ -182,12 +202,19 @@ class CoachRepository {
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
 
-  /// Design löschen (lokal + Cloud).
-  Future<void> deleteAnnouncementDesign(String id) async {
-    final db = await _db;
-    await db.delete('announcement_designs', where: 'id = ?', whereArgs: [id]);
-    _syncDelete('announcement_designs', {'id': id});
-  }
+  /// Design löschen (lokal + Cloud) als „Grabstein": Bilddaten weg, Zeile als
+  /// gelöscht markiert und mit NEUEM Zeitstempel synchronisiert. Ein echtes
+  /// Löschen würde ein anderes Gerät mit älterer Kopie beim nächsten Abgleich
+  /// wieder hochladen (Design taucht wieder auf).
+  Future<void> deleteAnnouncementDesign(String id) =>
+      _upsertById('announcement_designs', {
+        'id': id,
+        'data': '',
+        'title': 'Gelöscht',
+        'kind': kDeletedDesignKind,
+        'thumb': null,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
 
   /// Zeitstempel (UTC) der lokal gespeicherten Design-Version (oder null).
   Future<DateTime?> getAnnouncementDesignUpdatedAt(String id) async {

@@ -55,6 +55,13 @@ class _Grade {
   double vignette = 0;
   double vigSize = 50;
   double vigSoft = 50;
+  // Spieler: warmes Licht hinter dem Hauptmotiv (Halo + Leuchtkante) und
+  // Farb-/Lichtangleichung des Spielers an den Hintergrund (0..100).
+  double glow = 0;
+  double match = 0;
+  double shade = 0; // Licht & Schatten (Modellierung) 0..100
+  double warm = 0; // Wärme/Farbe nur auf dem Spieler (Hautton) 0..100
+  double lightDir = -135; // Licht kommt aus dieser Richtung (Grad, -90 = oben)
 
   /// Alle Regler auf neutral (An/Aus bleibt).
   void resetValues() => applyValues(const {});
@@ -78,6 +85,12 @@ class _Grade {
     vignette = v['vignette'] ?? 0;
     vigSize = v['vigSize'] ?? 50;
     vigSoft = v['vigSoft'] ?? 50;
+    // Spieler-Anpassung gehört zum Spieler: andere Looks lassen sie stehen.
+    glow = v['glow'] ?? glow;
+    match = v['match'] ?? match;
+    shade = v['shade'] ?? shade;
+    warm = v['warm'] ?? warm;
+    lightDir = v['lightDir'] ?? lightDir;
   }
 
   /// Eine Farb-Matrix für alle linearen Regler (live + Export).
@@ -116,6 +129,11 @@ class _Grade {
     'grain': grain,
     'vigSize': vigSize,
     'vigSoft': vigSoft,
+    'glow': glow,
+    'match': match,
+    'shade': shade,
+    'warm': warm,
+    'lightDir': lightDir,
   };
 
   static _Grade fromJson(Map v) {
@@ -138,12 +156,62 @@ class _Grade {
       ..fade = d('fade')
       ..grain = d('grain')
       ..vigSize = d('vigSize', 50)
-      ..vigSoft = d('vigSoft', 50);
+      ..vigSoft = d('vigSoft', 50)
+      ..glow = d('glow')
+      ..match = d('match')
+      ..shade = d('shade')
+      ..warm = d('warm')
+      ..lightDir = d('lightDir', -135);
   }
+}
+
+const String kFupaStyleName = 'FuPa-Style';
+
+/// Farbmatrix, die ein Motiv an das Umgebungslicht [light] angleicht: ein Teil
+/// [k] (0..1) der Farbe wird durch „Helligkeit × Lichtfarbe" ersetzt → der
+/// Spieler bekommt den Farbstich der Szene (wirkt wie im selben Licht
+/// fotografiert). Die Lichtfarbe wird auf Luminanz 1 normiert und gedämpft.
+List<double> lightMatchMatrix(Color light, double k) {
+  const lr = 0.2126, lg = 0.7152, lb = 0.0722;
+  final r = light.r, g = light.g, b = light.b;
+  final lum = math.max(0.04, lr * r + lg * g + lb * b);
+  double norm(double c) => (1 + (c / lum - 1) * 0.45).clamp(0.4, 1.6);
+  final cr = norm(r), cg = norm(g), cb = norm(b);
+  final kk = k.clamp(0.0, 1.0);
+  // Belichtung: Richtung Szenenhelligkeit (dunkel 0.8 … hell 1.15).
+  final ex = 1 + kk * ((0.8 + 0.35 * lum.clamp(0.0, 1.0)) - 1);
+  List<double> row(double c, int self) => [
+    ex * ((self == 0 ? 1 - kk : 0) + kk * c * lr),
+    ex * ((self == 1 ? 1 - kk : 0) + kk * c * lg),
+    ex * ((self == 2 ? 1 - kk : 0) + kk * c * lb),
+    0,
+    0,
+  ];
+  return [...row(cr, 0), ...row(cg, 1), ...row(cb, 2), 0, 0, 0, 1, 0];
 }
 
 /// Look-Vorlagen fürs Profi-Finish (Name → Regler; fehlende = neutral).
 const List<(String, Map<String, double>)> kGradePresets = [
+  // Natürlicher, warmer Studio-Look, Spieler betont: weiches Licht auf der
+  // Wand hinter dem Spieler, Spieler leicht ans Licht der Szene angeglichen,
+  // warmes Führungslicht + warmer Hautton, dezente Vignette.
+  // Für jeden Spieler gleich anwendbar.
+  (
+    kFupaStyleName,
+    {
+      'warmth': 4,
+      'contrast': 12,
+      'saturation': 8,
+      'highlights': -4,
+      'vignette': 35,
+      'vigSize': 55,
+      'vigSoft': 75,
+      'glow': 60,
+      'match': 25,
+      'shade': 40,
+      'warm': 50,
+    },
+  ),
   (
     'Matchday kräftig',
     {
@@ -1570,6 +1638,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Ist der wirksame Hintergrund dunkel? → steuert die Auto-Logo-Variante.
   bool _bgDark = false;
   String? _bgDarkFor; // Für welchen Hintergrund zuletzt berechnet.
+  // Mittlere Farbe des Hintergrundbilds (null = Verlauf) → Licht-Angleichung.
+  Color? _bgAvg;
+
+  /// Umgebungslicht für den Spieler: mittlere Hintergrundfarbe.
+  Color get _playerLight =>
+      _bgAvg ??
+      Color.lerp(_hex(_settings.gradTop), _hex(_settings.gradBottom), 0.5)!;
 
   /// Hintergrundhelligkeit bestimmen (einmal je Hintergrund). Dunkel → helles/
   /// SW-Logo, hell → farbiges Logo.
@@ -1578,6 +1653,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (src == _bgDarkFor) return;
     _bgDarkFor = src;
     bool dark = true; // Default-Verlauf (dunkelgrün) → eher dunkel.
+    Color? avg;
     final bytes = TeamLogo.decode(src);
     if (bytes != null) {
       try {
@@ -1585,16 +1661,39 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (im != null) {
           final small = img.copyResize(im, width: 16);
           var tot = 0.0;
+          var sr = 0.0, sg = 0.0, sb = 0.0;
           var n = 0;
+          var m = 0;
           for (final p in small) {
             tot += 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
+            m++;
+            // Lichtfarbe aus dem Bereich HINTER dem Spieler (Mitte, ohne
+            // Ränder/Himmel ganz oben) – folgt jedem neuen Hintergrund.
+            final fx = p.x / small.width, fy = p.y / small.height;
+            if (fx < 0.2 || fx > 0.8 || fy < 0.15 || fy > 0.9) continue;
+            sr += p.r;
+            sg += p.g;
+            sb += p.b;
             n++;
           }
-          dark = n > 0 && (tot / n) < 115;
+          dark = m > 0 && (tot / m) < 115;
+          if (n > 0) {
+            avg = Color.fromARGB(
+              255,
+              (sr / n).round().clamp(0, 255),
+              (sg / n).round().clamp(0, 255),
+              (sb / n).round().clamp(0, 255),
+            );
+          }
         }
       } catch (_) {}
     }
-    if (mounted && dark != _bgDark) setState(() => _bgDark = dark);
+    if (mounted && (dark != _bgDark || avg != _bgAvg)) {
+      setState(() {
+        _bgDark = dark;
+        _bgAvg = avg;
+      });
+    }
   }
 
   /// Effektives Vereinslogo: auf dunklem Hintergrund das dunkel-Logo (sonst
@@ -1625,6 +1724,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _annHeadText = _defaultHeadline; // Vorbelegung „Eigener" je Grafiktyp
+    // FuPa-Foto sofort im 4:5-Hochformat mit nur dem Spieler – nicht erst,
+    // wenn der (evtl. langsame) Cloud-Abgleich fertig ist.
+    if (_isFupa) {
+      _format = 'f';
+      _posterOrderF['f'] = ['player'];
+    }
     _load();
   }
 
@@ -1782,7 +1887,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     // frisch ziehen, dann lokal lesen). Danach ist Autosave scharf.
     if (_editable && _hasStorage) {
       final sid = _designStorageId;
-      await state.refreshAnnouncementDesign(sid);
+      // Schlechtes Netz darf das Öffnen nicht blockieren: nach 8 s mit dem
+      // lokalen Stand weiterarbeiten (Abgleich läuft im Hintergrund weiter).
+      try {
+        await state
+            .refreshAnnouncementDesign(sid)
+            .timeout(const Duration(seconds: 8));
+      } catch (_) {}
       final json = await state.loadAnnouncementDesign(sid);
       if (!mounted) return;
       final designer = widget.designer;
@@ -3682,6 +3793,36 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
   }
 
+  /// Spieler automatisch an den Hintergrund anpassen: Farbe/Helligkeit
+  /// angleichen, Licht & Schatten aus der Lichtrichtung, weicher Schlagschatten
+  /// auf den Hintergrund (Gegenseite).
+  void _autoFitPlayerLight() {
+    final g = _grade;
+    g.match = 25;
+    g.shade = 40;
+    g.warm = 50;
+    _posterShadow = true;
+    _posterShadowStrength = 35;
+    _posterShadowAngle = (g.lightDir + 180) % 360;
+  }
+
+  /// Lesbare Lichtrichtung („von links oben" …) für den Regler.
+  String _lightDirLabel(double deg) {
+    // Woher das Licht kommt (kurz, passt in die Werte-Spalte).
+    const names = [
+      'rechts',
+      're. u.',
+      'unten',
+      'li. u.',
+      'links',
+      'li. o.',
+      'oben',
+      're. o.',
+    ];
+    final i = (((deg % 360) + 360 + 22.5) % 360 ~/ 45) % 8;
+    return names[i];
+  }
+
   /// „Mit KI optimieren": nimmt die fertige Grafik, lässt die Vision-KI globale
   /// Korrekturwerte (Helligkeit/Kontrast/Sättigung/Wärme/Tiefe) schätzen und
   /// wendet sie als Profi-Finish an. Verändert KEINE Inhalte, nur das Gesamtbild.
@@ -3833,11 +3974,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             children: [
               for (final p in kGradePresets)
                 ActionChip(
-                  avatar: const Icon(Icons.palette_outlined, size: 16),
+                  avatar: Icon(
+                    p.$1 == kFupaStyleName
+                        ? Icons.wb_sunny_outlined
+                        : Icons.palette_outlined,
+                    size: 16,
+                  ),
                   label: Text(p.$1),
                   onPressed: () => setState(() {
                     g.applyValues(p.$2);
                     g.on = true;
+                    // FuPa-Style: auch Schlagschatten passend zum Licht.
+                    if (p.$1 == kFupaStyleName) _autoFitPlayerLight();
                   }),
                 ),
             ],
@@ -4575,6 +4723,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     posterShadow: _posterShadow,
     posterBlend: _posterBlend && !_isFupa,
     fupaPlayer: _isFupa,
+    playerGlow: _grade.glow / 100,
+    playerMatch: _grade.match / 100,
+    playerShade: _grade.shade / 100,
+    playerWarm: _grade.warm / 100,
+    playerLightDir: _grade.lightDir * math.pi / 180,
+    playerLight: _playerLight,
     posterShadowStrength: _posterShadowStrength,
     posterShadowAngle: _posterShadowAngle,
     posterOrder: _posterOrder,
@@ -5001,6 +5155,80 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         (v) => apply(() => _imgRim[id] = v),
                         onEnd: (_) => _applyImageFx(id),
                       ),
+                      if (id == 'player') ...[
+                        const Divider(height: 20),
+                        const Text(
+                          'An Hintergrund anpassen',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.tonalIcon(
+                            icon: const Icon(Icons.wb_incandescent_outlined),
+                            label: const Text('Automatisch anpassen'),
+                            onPressed: () => apply(_autoFitPlayerLight),
+                          ),
+                        ),
+                        labeledSlider(
+                          'Licht angleichen',
+                          _grade.match,
+                          0,
+                          100,
+                          (v) => apply(() => _grade.match = v),
+                        ),
+                        labeledSlider(
+                          'Wärme',
+                          _grade.warm,
+                          0,
+                          100,
+                          (v) => apply(() => _grade.warm = v),
+                        ),
+                        labeledSlider(
+                          'Licht & Schatten',
+                          _grade.shade,
+                          0,
+                          100,
+                          (v) => apply(() => _grade.shade = v),
+                        ),
+                        labeledSlider(
+                          'Lichtrichtung',
+                          _grade.lightDir,
+                          -180,
+                          180,
+                          (v) => apply(() {
+                            _grade.lightDir = v;
+                            // Schlagschatten fällt auf die Gegenseite.
+                            _posterShadowAngle = (v + 180) % 360;
+                          }),
+                          fmt: (v) => _lightDirLabel(v),
+                        ),
+                        labeledSlider(
+                          'Licht hinter Spieler',
+                          _grade.glow,
+                          0,
+                          100,
+                          (v) => apply(() => _grade.glow = v),
+                        ),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          dense: true,
+                          title: const Text('Schatten auf den Hintergrund'),
+                          value: _posterShadow,
+                          onChanged: (v) => apply(() => _posterShadow = v),
+                        ),
+                        if (_posterShadow)
+                          labeledSlider(
+                            'Schattenstärke',
+                            _posterShadowStrength,
+                            0,
+                            100,
+                            (v) => apply(() => _posterShadowStrength = v),
+                          ),
+                      ],
                     ],
                     if (isText) ...[
                       const SizedBox(height: 4),
@@ -6336,6 +6564,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Hauptscreen: bei der Ankündigung nicht fummelig – Tippen öffnet stattdessen
   /// den Editor (Spieler-Ebene ignoriert Gesten).
   Widget _previewStack({required bool interactive}) {
+    // Hintergrund gewechselt (egal wo) → Licht/Logo-Variante neu bestimmen.
+    if ((_photoBg ?? _settings.bgImage) != _bgDarkFor) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _refreshBgDark();
+      });
+    }
     final w = _cw;
     final h = _ch;
     final look = _look;
@@ -7135,6 +7369,12 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterShadow = false,
     this.posterBlend = true,
     this.fupaPlayer = false,
+    this.playerGlow = 0,
+    this.playerMatch = 0,
+    this.playerShade = 0,
+    this.playerWarm = 0,
+    this.playerLightDir = -2.356,
+    this.playerLight = const Color(0xFF808080),
     this.posterShadowStrength = 45,
     this.posterShadowAngle = 45,
     this.posterOrder = const [],
@@ -7216,6 +7456,12 @@ class _StartelfGraphic extends StatelessWidget {
   final bool posterShadow; // Schlagschatten beim freigestellten Spieler
   final bool posterBlend; // Spielerfoto weich ins Bild einblenden
   final bool fupaPlayer; // FuPa-Foto: Spieler groß, unten bündig
+  final double playerGlow; // 0..1 warmes Gegenlicht hinter dem Spieler
+  final double playerMatch; // 0..1 Spieler ans Umgebungslicht angleichen
+  final double playerShade; // 0..1 Licht & Schatten auf dem Spieler
+  final double playerWarm; // 0..1 Wärme/Farbe nur auf dem Spieler
+  final double playerLightDir; // Richtung, aus der das Licht kommt (Radiant)
+  final Color playerLight; // Umgebungslicht (Hintergrund-Mittelfarbe)
   final double posterShadowStrength; // 0..100
   final double posterShadowAngle; // Richtung in Grad (0=rechts, 90=unten)
   final List<String> posterOrder; // Ebenen-Reihenfolge (hinten → vorne)
@@ -9524,6 +9770,60 @@ class _StartelfGraphic extends StatelessWidget {
       builder: (ctx, c) {
         final w = c.maxWidth, h = c.maxHeight;
 
+        // Spieler ans Umgebungslicht angleichen (Farbstich der Szene).
+        Widget lightMatched(Widget child) {
+          var out = child;
+          if (playerMatch > 0) {
+            out = ColorFiltered(
+              colorFilter: ColorFilter.matrix(
+                lightMatchMatrix(playerLight, playerMatch * 0.3),
+              ),
+              child: out,
+            );
+          }
+          // Warmer, lebendiger Hautton (nur Spieler, Hintergrund bleibt).
+          if (playerWarm > 0) {
+            out = ColorFiltered(
+              colorFilter: ColorFilter.matrix(
+                buildGradeMatrix(
+                  warmth: 30 * playerWarm,
+                  saturation: 14 * playerWarm,
+                  brightness: 5 * playerWarm,
+                  contrast: 8 * playerWarm,
+                ),
+              ),
+              child: out,
+            );
+          }
+          if (playerShade > 0) {
+            final dx = math.cos(playerLightDir), dy = math.sin(playerLightDir);
+            // Führungslicht: warm (Goldton), je nach Wärme.
+            final hi = Color.lerp(
+              Colors.white,
+              const Color(0xFFFFE2C4),
+              0.2 + 0.5 * playerWarm,
+            )!;
+            final sh = playerShade;
+            // srcATop: Licht/Schatten nur dort, wo der Spieler ist.
+            out = ShaderMask(
+              blendMode: BlendMode.srcATop,
+              shaderCallback: (r) => LinearGradient(
+                begin: Alignment(dx, dy),
+                end: Alignment(-dx, -dy),
+                colors: [
+                  hi.withValues(alpha: 0.2 * sh),
+                  hi.withValues(alpha: 0),
+                  Colors.black.withValues(alpha: 0),
+                  Colors.black.withValues(alpha: 0.35 * sh),
+                ],
+                stops: const [0, 0.42, 0.5, 1],
+              ).createShader(r),
+              child: out,
+            );
+          }
+          return out;
+        }
+
         // Bild mit optionalem Schlagschatten – gilt automatisch für JEDES Bild
         // (Spieler UND Overlays). Schatten-Silhouette (schwarz) hinter dem Bild.
         Widget imageWithShadow(
@@ -9531,8 +9831,9 @@ class _StartelfGraphic extends StatelessWidget {
           double? width,
           double? height,
           Alignment alignment = Alignment.center,
+          bool lit = false, // Hauptspieler: Licht angleichen + Leuchtkante
         }) {
-          Widget mk() => SizedBox(
+          Widget raw() => SizedBox(
             width: width,
             height: height,
             child: Image.memory(
@@ -9542,6 +9843,7 @@ class _StartelfGraphic extends StatelessWidget {
               gaplessPlayback: true,
             ),
           );
+          Widget mk() => lit ? lightMatched(raw()) : raw();
           if (!posterShadow) return mk();
           final dist = 6 + 22 * (posterShadowStrength / 100);
           return Stack(
@@ -9654,7 +9956,7 @@ class _StartelfGraphic extends StatelessWidget {
           switch (id) {
             case 'player':
               if (mainBytes == null) return null;
-              if (blendPlayer) return blendedPhoto(mainBytes);
+              if (blendPlayer) return lightMatched(blendedPhoto(mainBytes));
               // FuPa: Spieler füllt das Hochformat (volle Breite, ~95 % Höhe).
               if (fupaPlayer) {
                 return imageWithShadow(
@@ -9662,12 +9964,14 @@ class _StartelfGraphic extends StatelessWidget {
                   width: w,
                   height: h * 0.95,
                   alignment: Alignment.bottomCenter, // Spieler steht unten
+                  lit: true,
                 );
               }
               return imageWithShadow(
                 mainBytes,
                 width: w - 2 * pad,
                 height: h * 0.6,
+                lit: true,
               );
             case 'sponsor':
               return showMainSponsor ? sponsorW : null;
@@ -9714,6 +10018,48 @@ class _StartelfGraphic extends StatelessWidget {
           if (posterCentered.contains(id)) return;
           final r = _relCenterOf(elCtx[id]);
           if (r != null) onPosterAnchor?.call(id, r);
+        }
+
+        // Weiches Licht auf der Wand hinter dem Spieler (wie ein Studio-Spot)
+        // in der aufgehellten Hintergrundfarbe → trennt ihn natürlich vom
+        // Hintergrund. Folgt Position und Größe des Spielers.
+        Widget playerHalo() {
+          final sc = posterItemScale['player'] ?? 1.0;
+          final p = posterItemPos['player'];
+          final Offset c;
+          if (p != null && posterCentered.contains('player')) {
+            c = Offset(p.dx, p.dy - 0.13 * sc);
+          } else if (fupaPlayer) {
+            c = const Offset(0.5, 0.4);
+          } else {
+            final d =
+                p ?? _kPosterItemDefaults['player'] ?? const Offset(0.5, 0.6);
+            c = Offset(d.dx, d.dy - 0.1);
+          }
+          final g = playerGlow;
+          final spot = Color.lerp(
+            Color.lerp(playerLight, Colors.white, 0.35)!,
+            const Color(0xFFFFE2C4),
+            0.15 * playerWarm,
+          )!;
+          return Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: Alignment(c.dx * 2 - 1, c.dy * 2 - 1),
+                    radius: 1.0 * sc,
+                    colors: [
+                      spot.withValues(alpha: 0.6 * g),
+                      spot.withValues(alpha: 0.22 * g),
+                      spot.withValues(alpha: 0),
+                    ],
+                    stops: const [0, 0.45, 1],
+                  ),
+                ),
+              ),
+            ),
+          );
         }
 
         // Ein frei verschieb- und skalierbares Element (tippen = auswählen).
@@ -9786,7 +10132,9 @@ class _StartelfGraphic extends StatelessWidget {
         final layers = <Widget>[];
         for (final id in posterOrder) {
           final child = content(id);
-          if (child != null) layers.add(el(id, child));
+          if (child == null) continue;
+          if (id == 'player' && playerGlow > 0) layers.add(playerHalo());
+          layers.add(el(id, child));
         }
 
         // Zieh-Ebene ganz oben: bewegt das aktuell gewählte Element. Translucent →
