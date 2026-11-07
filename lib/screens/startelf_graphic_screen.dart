@@ -795,6 +795,42 @@ Uint8List chromaKeyMagenta(Uint8List input) {
   return Uint8List.fromList(img.encodePng(im));
 }
 
+/// Anteil (fast) durchsichtiger Pixel (0..1) – prüft, ob das Freistellen
+/// wirklich Hintergrund entfernt hat.
+double transparentFraction(Uint8List png) {
+  final im = img.decodeImage(png);
+  if (im == null || !im.hasAlpha) return 0;
+  final small = im.width > 200 ? img.copyResize(im, width: 200) : im;
+  var t = 0;
+  for (final p in small) {
+    if (p.a < 128) t++;
+  }
+  return t / (small.width * small.height);
+}
+
+/// Sieht das Freistellen gelungen aus? Ein echter Freisteller hat einen
+/// überwiegend durchsichtigen Bildrand (nur wo der Spieler den Rand berührt,
+/// z. B. unten, bleibt er deckend) und insgesamt genug Durchsicht.
+bool cutoutLooksDone(Uint8List png) {
+  final im = img.decodeImage(png);
+  if (im == null || !im.hasAlpha) return false;
+  var n = 0, clear = 0;
+  void count(int x, int y) {
+    n++;
+    if (im.getPixel(x, y).a < 128) clear++;
+  }
+
+  for (var x = 0; x < im.width; x++) {
+    count(x, 0);
+    count(x, im.height - 1);
+  }
+  for (var y = 1; y < im.height - 1; y++) {
+    count(0, y);
+    count(im.width - 1, y);
+  }
+  return n > 0 && clear / n >= 0.65 && transparentFraction(png) >= 0.08;
+}
+
 /// Nach dem KI-Freistellen: erst Magenta keyen; hat die KI einen ANDEREN
 /// Hintergrund geliefert (Rand danach noch überwiegend deckend), zusätzlich
 /// die Randfarbe entfernen ([keyBorderBackground]).
@@ -817,7 +853,41 @@ Uint8List cutoutFinish(Uint8List input) {
     count(im.width - 1, y);
   }
   if (n == 0 || opaque / n < 0.3) return keyed;
+  // Nur bei wirklich EINFARBIGEM Rand (z. B. brauner Studio-Grund) die
+  // Randfarbe entfernen – bei echten Fotos (Himmel/Wiese/Straße) würde das
+  // nur Teile wegschneiden.
+  if (!_borderIsUniform(im)) return keyed;
   return keyBorderBackground(keyed);
+}
+
+/// Sind ≥ 75 % der deckenden Randpixel nahe ihrer Median-Farbe?
+bool _borderIsUniform(img.Image im) {
+  final rs = <int>[], gs = <int>[], bs = <int>[];
+  void add(int x, int y) {
+    final p = im.getPixel(x, y);
+    if (p.a < 128) return;
+    rs.add(p.r.toInt());
+    gs.add(p.g.toInt());
+    bs.add(p.b.toInt());
+  }
+
+  for (var x = 0; x < im.width; x++) {
+    add(x, 0);
+    add(x, im.height - 1);
+  }
+  for (var y = 1; y < im.height - 1; y++) {
+    add(0, y);
+    add(im.width - 1, y);
+  }
+  if (rs.isEmpty) return false;
+  int med(List<int> v) => (List<int>.from(v)..sort())[v.length ~/ 2];
+  final mr = med(rs), mg = med(gs), mb = med(bs);
+  var near = 0;
+  for (var i = 0; i < rs.length; i++) {
+    final dr = rs[i] - mr, dg = gs[i] - mg, db = bs[i] - mb;
+    if (dr * dr + dg * dg + db * db <= 40 * 40) near++;
+  }
+  return near / rs.length >= 0.75;
 }
 
 /// Einfarbigen (auch leicht verlaufenden) Hintergrund entfernen: Referenz =
@@ -1561,6 +1631,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             _posterMainF[k] = designer.playerPhoto;
             _imgOrigF.putIfAbsent(k, () => {})['player'] =
                 designer.playerPhoto!;
+          }
+        }
+        // FuPa-Foto ist IMMER 4:5 mit nur dem Spieler – unabhängig davon, was
+        // gespeichert wurde (Absicherung: liegt das Foto in einem anderen
+        // Format, wird es übernommen).
+        if (_isFupa) {
+          _format = 'f';
+          _posterOrderF.putIfAbsent('f', () => ['player']);
+          if (_posterMainF['f'] == null) {
+            final alt = _posterMainF['s'] ?? _posterMainF['p'];
+            if (alt != null) {
+              _posterMainF['f'] = alt;
+              _imgOrigF.putIfAbsent('f', () => {})['player'] = alt;
+            }
           }
         }
         if (mounted) setState(() {});
@@ -3833,29 +3917,60 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     try {
       // Verkleinert + JPEG senden (schneller, unter allen Größen-Grenzen).
       final send = await compute(downscaleForAi, srcBytes);
-      final out = await CloudService.aiImage(
-        images: [
-          {
-            'mime': 'image/jpeg',
-            'data': 'data:image/jpeg;base64,${base64Encode(send)}',
-            'role': 'photo',
-          },
-        ],
-        prompt: subject,
-        mode: 'cutout',
-        aspect: _aiAspect,
-        key: 'magenta',
-      );
-      if (out == null) {
+      // Bis zu 2 Versuche: Hat die KI den Hintergrund NICHT ersetzt (Bild
+      // praktisch unverändert) oder ist die Anfrage abgebrochen (Zeitlimit,
+      // Server kurz weg), wird automatisch einmal mit einer kürzeren,
+      // eindeutigeren Anweisung neu versucht.
+      Uint8List? png;
+      Object? lastError;
+      for (var attempt = 0; attempt < 2 && png == null; attempt++) {
+        if (attempt > 0 && mounted) {
+          setState(() => _aiBusyLabel = 'KI stellt frei … (2. Versuch)');
+        }
+        try {
+          final out = await CloudService.aiImage(
+            images: [
+              {
+                'mime': 'image/jpeg',
+                'data': 'data:image/jpeg;base64,${base64Encode(send)}',
+                'role': 'photo',
+              },
+            ],
+            prompt: subject,
+            mode: 'cutout',
+            aspect: _aiAspect,
+            key: 'magenta',
+            retry: attempt > 0,
+          );
+          if (out == null) continue;
+          // KI liefert das Motiv auf Magenta → transparent machen; hält sie
+          // sich nicht daran (anderer Grund), wird die Randfarbe entfernt.
+          final keyed = await compute(cutoutFinish, out);
+          // Erfolg nur, wenn wirklich Hintergrund weg ist (Rand durchsichtig).
+          if (await compute(cutoutLooksDone, keyed)) png = keyed;
+        } catch (e) {
+          lastError = e;
+          // Nur vorübergehende Fehler erneut versuchen.
+          if (!_isTransientAiError(e)) rethrow;
+        }
+      }
+      if (!mounted) return;
+      if (png == null) {
         messenger.showSnackBar(
-          const SnackBar(content: Text('Die KI hat kein Bild zurückgegeben.')),
+          SnackBar(
+            content: Text(
+              lastError != null
+                  ? _aiErrorMessage(lastError)
+                  : 'Die KI hat den Hintergrund nicht entfernt – das Bild '
+                        'bleibt unverändert. Bitte erneut versuchen, evtl. '
+                        'mit genauerem Motiv (z. B. „der Spieler in der '
+                        'Mitte").',
+            ),
+            duration: const Duration(seconds: 7),
+          ),
         );
         return;
       }
-      // KI liefert das Motiv auf Magenta → transparent machen; hält sie sich
-      // nicht daran (anderer Grund), wird die Randfarbe entfernt.
-      final png = await compute(cutoutFinish, out);
-      if (!mounted) return;
       final url = 'data:image/png;base64,${base64Encode(png)}';
       setState(() {
         _setImageById(sel, url);
@@ -4048,6 +4163,28 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   /// Übersetzt die (oft sehr langen) Gemini-/Function-Fehler in eine kurze,
   /// verständliche Meldung für den Trainer.
+  /// Vorübergehender Fehler (Zeitlimit, Überlast, Verbindung kurz weg) → ein
+  /// automatischer zweiter Versuch lohnt sich.
+  bool _isTransientAiError(Object e) {
+    final low = e.toString().toLowerCase();
+    return const [
+      'timeout',
+      'timed out',
+      '502',
+      '503',
+      '504',
+      '546',
+      'wall clock',
+      'worker_limit',
+      'socketexception',
+      'clientexception',
+      'connection',
+      'kein bild von der ki',
+      'overloaded',
+      'unavailable',
+    ].any(low.contains);
+  }
+
   String _aiErrorMessage(Object e) {
     final s = e.toString();
     final low = s.toLowerCase();
@@ -4074,11 +4211,27 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (low.contains('kein bild von der ki')) {
       return 'Die KI hat kein Bild zurückgegeben – anderen Wunsch probieren.';
     }
+    // Zeitlimit/Server kurz überlastet ≠ kein Internet.
+    if (low.contains('timeout') ||
+        low.contains('timed out') ||
+        low.contains('504') ||
+        low.contains('503') ||
+        low.contains('546') ||
+        low.contains('wall clock') ||
+        low.contains('worker_limit')) {
+      return 'Die KI hat zu lange gebraucht bzw. war kurz überlastet – bitte '
+          'gleich noch mal versuchen.';
+    }
+    if (low.contains('failed host lookup') ||
+        low.contains('network is unreachable') ||
+        low.contains('no address associated')) {
+      return 'Keine Internetverbindung – Netz prüfen und erneut versuchen.';
+    }
     if (low.contains('socketexception') ||
-        low.contains('failed host lookup') ||
-        low.contains('timeout') ||
-        low.contains('clientexception')) {
-      return 'Keine Verbindung zur KI – Internet prüfen und erneut versuchen.';
+        low.contains('clientexception') ||
+        low.contains('connection')) {
+      return 'Verbindung zur KI abgebrochen (z. B. schwaches Netz unterwegs) '
+          '– bitte erneut versuchen.';
     }
     // Unbekannter Fehler: kurzen Rohhinweis mitgeben, damit die echte Ursache
     // sichtbar ist (Function-/Gemini-Meldung), statt nur „später versuchen".

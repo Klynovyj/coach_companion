@@ -37,6 +37,7 @@ function guardText(
   aspect: string,
   roles: string[],
   key = "black",
+  retry = false,
 ): string {
   if (mode === "overlay") {
     // Deko-Ebene („KI-Look") ueber einer fertigen Grafik. Die App legt sie
@@ -63,19 +64,28 @@ function guardText(
   if (mode === "cutout" && key === "magenta") {
     // Gemini kann keine echte Transparenz liefern → Motiv auf reines Magenta,
     // die App macht Magenta danach transparent (zuverlaessig, auch fuer Haare).
+    // Englisch: Bildbearbeitung folgt englischen Anweisungen zuverlaessiger.
+    if (retry) {
+      // Zweiter Versuch (erster hat den Hintergrund nicht ersetzt): kurz und
+      // unmissverstaendlich.
+      return (
+        "Edit this photo. Replace the ENTIRE background with one flat, solid " +
+        "pure magenta color (#FF00FF). Keep only the subject below exactly " +
+        "as it is. The output must clearly differ from the input: no trace " +
+        "of the original background may remain. Subject to keep: "
+      );
+    }
     return (
-      "Bildbearbeitung (Freistellen): Behalte im beiliegenden Foto NUR das " +
-      "folgende Motiv und entferne ALLES andere (Wand, Boden, Himmel, Zaun, " +
-      "andere Personen, Gegenstaende). Ersetze den kompletten restlichen " +
-      "Bereich durch exakt einfarbiges, reines MAGENTA (#FF00FF) – ohne " +
-      "Verlauf, ohne Schatten, ohne Boden – AUCH alle Luecken im Motiv " +
-      "(zwischen Armen und Koerper, zwischen den Beinen, zwischen Haaren) " +
-      "und der GESAMTE Bildrand muessen reines Magenta sein. Niemals Braun, " +
-      "Grau, Schwarz oder den alten Hintergrund stehen lassen. " +
-      "Das Motiv bleibt EXAKT unveraendert " +
-      "(gleiche Pose, Kleidung, Gesicht, Haare, Farben, Groesse und Position " +
-      "im Bild, gleiches Seitenverhaeltnis). Saubere, praezise Kanten. Keine " +
-      "Magenta-Toene im Motiv selbst. Freizustellendes Motiv: "
+      "Edit the attached photo: remove the background completely. Keep ONLY " +
+      "the subject described below, unchanged (same pose, face, hair, " +
+      "clothes, colors, size and position in the frame, same aspect ratio). " +
+      "Fill EVERYTHING else with one flat, solid, pure magenta color " +
+      "(#FF00FF, RGB 255/0/255) – also the gaps between arms and body, " +
+      "between the legs and around the hair, and the whole image border. " +
+      "No gradient, no shadow, no floor, nothing of the original background " +
+      "(sky, grass, street, wall, fence, other people) may remain. Clean, " +
+      "precise edges. Do not use magenta inside the subject. " +
+      "Subject to keep (German): "
     );
   }
   if (mode === "cutout") {
@@ -180,8 +190,9 @@ Deno.serve(async (req) => {
     if (!prompt) return new Response("kein Wunsch", { status: 400 });
 
     const key = String(body.key ?? "black");
+    const retry = body.retry === true;
     const text =
-      guardText(mode, aspect, imgs.map((i) => i.role), key) + prompt;
+      guardText(mode, aspect, imgs.map((i) => i.role), key, retry) + prompt;
     const parts = [
       ...imgs.map((i) => ({
         inline_data: { mime_type: i.mime, data: i.data },
@@ -197,6 +208,10 @@ Deno.serve(async (req) => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts }],
+        // Freistellen: immer ein Bild zurueck (keine reine Text-Antwort).
+        ...(mode === "cutout"
+          ? { generationConfig: { responseModalities: ["IMAGE"] } }
+          : {}),
       }),
     });
     if (!resp.ok) {

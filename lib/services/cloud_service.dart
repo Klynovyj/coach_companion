@@ -191,6 +191,7 @@ class CloudService {
     String mode = 'compose',
     String aspect = '9:16',
     String? key,
+    bool retry = false,
   }) async {
     final res = await _c.functions.invoke(
       'ai-image',
@@ -200,6 +201,7 @@ class CloudService {
         'mode': mode,
         'aspect': aspect,
         'key': ?key,
+        if (retry) 'retry': true,
       },
     );
     final data = res.data;
@@ -245,10 +247,7 @@ class CloudService {
   /// Ereignisse genau eines Spiels (für den Live-Poll, damit der Ticker auch
   /// ohne Realtime synchron bleibt).
   static Future<List<Map<String, dynamic>>> matchEvents(String matchId) async {
-    final rows = await _c
-        .from('match_events')
-        .select()
-        .eq('match_id', matchId);
+    final rows = await _c.from('match_events').select().eq('match_id', matchId);
     return List<Map<String, dynamic>>.from(rows);
   }
 

@@ -118,6 +118,46 @@ void main() {
     expect(out.getPixel(15, 11).a, 255); // Haut
   });
 
+  test('Erfolgsprüfung: unverändertes Foto hat ~0 % Durchsicht', () {
+    // „KI hat nichts gemacht": Himmel oben, Straße unten, Person in der Mitte.
+    final im = img.Image(width: 40, height: 40)
+      ..clear(img.ColorRgb8(120, 170, 230));
+    img.fillRect(
+      im,
+      x1: 0,
+      y1: 26,
+      x2: 39,
+      y2: 39,
+      color: img.ColorRgb8(130, 130, 125),
+    );
+    img.fillRect(
+      im,
+      x1: 14,
+      y1: 6,
+      x2: 26,
+      y2: 39,
+      color: img.ColorRgb8(20, 20, 25),
+    );
+    final out = cutoutFinish(Uint8List.fromList(img.encodePng(im)));
+    expect(cutoutLooksDone(out), isFalse);
+  });
+
+  test('Erfolgsprüfung: sauber freigestellt → deutlich durchsichtig', () {
+    final im = img.Image(width: 40, height: 40)
+      ..clear(img.ColorRgb8(255, 0, 255));
+    img.fillRect(
+      im,
+      x1: 14,
+      y1: 6,
+      x2: 26,
+      y2: 39,
+      color: img.ColorRgb8(20, 20, 25),
+    );
+    final out = cutoutFinish(Uint8List.fromList(img.encodePng(im)));
+    expect(transparentFraction(out), greaterThan(0.5));
+    expect(cutoutLooksDone(out), isTrue);
+  });
+
   test('Freistellen: sauberer Magenta-Grund bleibt beim reinen Key', () {
     final im = img.Image(width: 20, height: 20)
       ..clear(img.ColorRgb8(255, 0, 255));
