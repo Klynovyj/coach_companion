@@ -266,6 +266,37 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
   return Uint8List.fromList(img.encodePng(im));
 }
 
+/// ENDSTAND-Grafik: Kurzname eines Torschützen – „#7 Ben Kania" → „B. KANIA".
+/// Unbekannte Torschützen („Gegner", leer) → '' (es werden nur Minuten gezeigt).
+String scorerShortName(String raw) {
+  final n = raw.trim().replaceFirst(RegExp(r'^#\d+\s*'), '').trim();
+  final low = n.toLowerCase();
+  if (n.isEmpty || low == 'gegner' || low == 'unbekannt') return '';
+  final parts = n.split(RegExp(r'\s+'));
+  if (parts.length == 1) return parts.first.toUpperCase();
+  final last = parts.sublist(1).join(' ').toUpperCase();
+  return '${parts.first.substring(0, 1).toUpperCase()}. $last';
+}
+
+/// ENDSTAND-Grafik: Tore je Spieler zusammenfassen (Reihenfolge = erstes Tor),
+/// Minuten aufsteigend – z. B. („B. KANIA", [35, 40, 54, 60]).
+List<({String label, List<int> minutes})> groupScorers(
+  List<({int minute, String name, String? photo})> goals,
+) {
+  final order = <String>[];
+  final byLabel = <String, List<int>>{};
+  for (final g in goals) {
+    final label = scorerShortName(g.name);
+    byLabel.putIfAbsent(label, () {
+      order.add(label);
+      return <int>[];
+    }).add(g.minute);
+  }
+  return [
+    for (final l in order) (label: l, minutes: byLabel[l]!..sort()),
+  ];
+}
+
 /// KI-Look: leere, einfarbige Leinwand im Zielformat (Gemini übernimmt das
 /// Format eines mitgeschickten Bildes). [a] = {'w', 'h', 'magenta'}.
 Uint8List lookCanvasPng(Map<String, Object> a) {
@@ -512,6 +543,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   final Map<String, BuildContext> _stdCtx = {};
   final Map<String, BuildContext> _stdNatCtx = {};
   String? _gTarget; // Element der laufenden Zieh-/Pinch-Geste
+  Size? _rzStart; // Kasten-Ziehen: Größe beim Packen des Griffs
+  Offset _rzAcc = Offset.zero; // Kasten-Ziehen: aufsummiertes Delta (Kasten-Achsen)
   final Map<String, Map<String, double>> _posterScaleF = {};
   final Map<String, Map<String, double>> _posterRotF = {}; // Drehung (rad) je Elem.
   final Map<String, List<String>> _posterOrderF = {};
@@ -521,6 +554,27 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   final Map<String, _AiLook> _lookF = {};
   _AiLook? get _look => _lookF[_designKey];
   bool _lookBusy = false; // KI erzeugt gerade einen Look
+  // Ziehbare Kästen: feste Größe (logische px) je Element, je Format. Fehlt ein
+  // Eintrag, hat der Kasten seine natürliche Größe.
+  final Map<String, Map<String, Size>> _boxSizeF = {};
+  Map<String, Size> get _boxSize =>
+      _boxSizeF.putIfAbsent(_designKey, () => <String, Size>{});
+  // Ergebnis-Grafik: 'std' (Standard) | 'photo' (ENDSTAND mit Foto oben).
+  String _resultLayout = 'std';
+  bool get _ftLayout => widget.isResult && _resultLayout == 'photo';
+  // ENDSTAND: Foto oben je Format + Ausschnitt (Zoom/Position als 4×4-Matrix).
+  final Map<String, String> _ftPhotoF = {};
+  final Map<String, List<double>> _ftMatrixF = {};
+  final TransformationController _ftCtrl = TransformationController();
+
+  /// Ausschnitt des ENDSTAND-Fotos für das aktuelle Format in den Controller
+  /// laden (nach Laden des Designs bzw. Formatwechsel – nie während build).
+  void _syncFtCtrl() {
+    final m = _ftMatrixF[_designKey];
+    _ftCtrl.value = (m != null && m.length == 16)
+        ? Matrix4.fromList(m)
+        : Matrix4.identity();
+  }
   final Map<String, List<String>> _textIdsF = {};
   final Map<String, Map<String, String>> _textContentF = {};
   final Map<String, Map<String, String>> _textFontF = {};
@@ -633,7 +687,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Standard-Überschrift je Grafiktyp.
   String get _defaultHeadline => widget.isAnnouncement
       ? 'SPIELTAG'
-      : (widget.isResult ? 'ERGEBNIS' : 'STARTELF');
+      : (widget.isResult
+            ? (_resultLayout == 'photo' ? 'ENDSTAND' : 'ERGEBNIS')
+            : 'STARTELF');
 
   /// Aktuelle Überschrift aus Modus + Text (alle Grafiktypen).
   String get _posterHeadline {
@@ -750,6 +806,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     _saveTimer?.cancel();
     _flushSave(); // letzten Stand beim Verlassen sichern
     _photoCtrl.dispose();
+    _ftCtrl.dispose();
     super.dispose();
   }
 
@@ -858,6 +915,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         for (final e in _posCenteredF.entries) e.key: e.value.toList(),
       },
       'look': {for (final e in _lookF.entries) e.key: e.value.toJson()},
+      'boxSize': {
+        for (final e in _boxSizeF.entries)
+          e.key: {
+            for (final b in e.value.entries)
+              b.key: [b.value.width, b.value.height],
+          },
+      },
+      'resLayout': _resultLayout,
+      'ftPhoto': Map<String, String>.from(_ftPhotoF),
+      'ftMatrix': {for (final e in _ftMatrixF.entries) e.key: e.value},
       'stdOff': offMap(_stdOffF),
       'stdHidden': {
         for (final e in _stdHiddenF.entries) e.key: e.value.toList(),
@@ -974,6 +1041,40 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (l != null) _lookF[k.toString()] = l;
       });
     }
+    _boxSizeF.clear();
+    if (m['boxSize'] is Map) {
+      (m['boxSize'] as Map).forEach((k, v) {
+        final inner = <String, Size>{};
+        if (v is Map) {
+          v.forEach((id, s) {
+            if (s is List && s.length == 2 && s[0] is num && s[1] is num) {
+              inner[id.toString()] = Size(
+                (s[0] as num).toDouble(),
+                (s[1] as num).toDouble(),
+              );
+            }
+          });
+        }
+        _boxSizeF[k.toString()] = inner;
+      });
+    }
+    if (m['resLayout'] is String) _resultLayout = m['resLayout'];
+    _ftPhotoF.clear();
+    if (m['ftPhoto'] is Map) {
+      (m['ftPhoto'] as Map).forEach((k, v) {
+        if (v is String && v.isNotEmpty) _ftPhotoF[k.toString()] = v;
+      });
+    }
+    _ftMatrixF.clear();
+    if (m['ftMatrix'] is Map) {
+      (m['ftMatrix'] as Map).forEach((k, v) {
+        if (v is List && v.length == 16) {
+          _ftMatrixF[k.toString()] = [
+            for (final x in v) (x is num) ? x.toDouble() : 0.0,
+          ];
+        }
+      });
+    }
     fillOff(_stdOffF, m['stdOff']);
     _stdHiddenF.clear();
     if (m['stdHidden'] is Map) {
@@ -1064,6 +1165,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (m['story'] is bool) _story = m['story'];
     if (m['ovSeq'] is num) _posterOverlaySeq = (m['ovSeq'] as num).toInt();
     if (m['txtSeq'] is num) _textSeq = (m['txtSeq'] as num).toInt();
+    _syncFtCtrl(); // gespeicherten Foto-Ausschnitt (ENDSTAND) übernehmen
   }
 
   // Effektive Anzeige-Werte (Einstellung überschreibt die Defaults).
@@ -3053,6 +3155,44 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     stdHidden: _stdHidden,
     stdCtx: _stdCtx,
     stdNatCtx: _stdNatCtx,
+    boxSize: _boxSize,
+    onBoxResizeStart: (id, measured) {
+      _rzStart = _boxSize[id] ?? measured;
+      _rzAcc = Offset.zero;
+    },
+    onBoxResizeUpdate: (id, delta, w, h) {
+      final s0 = _rzStart;
+      if (s0 == null) return;
+      final rot = _posterRot[id] ?? 0.0;
+      final sc = _posterScale[id] ?? 1.0;
+      final c = math.cos(rot), sn = math.sin(rot);
+      // Finger-Delta in Kasten-Achsen (Drehung zurück, ÷ Skalierung).
+      final lx = (delta.dx * c + delta.dy * sn) / sc;
+      final ly = (-delta.dx * sn + delta.dy * c) / sc;
+      Size sizeFor(Offset a) => Size(
+        math.max(60, s0.width + a.dx),
+        math.max(40, s0.height + a.dy),
+      );
+      final prev = sizeFor(_rzAcc);
+      _rzAcc += Offset(w ? lx : 0, h ? ly : 0);
+      final next = sizeFor(_rzAcc);
+      // Kästen wachsen um ihre Mitte → Mitte um die halbe Änderung nachführen,
+      // damit die gegenüberliegende Kante stehen bleibt (Griff unterm Finger).
+      final hw = (next.width - prev.width) * sc / 2;
+      final hh = (next.height - prev.height) * sc / 2;
+      setState(() {
+        _boxSize[id] = next;
+        _stdOff[id] =
+            (_stdOff[id] ?? Offset.zero) +
+            Offset(hw * c - hh * sn, hw * sn + hh * c);
+      });
+    },
+    resultLayout: _resultLayout,
+    ftPhoto: _ftPhotoF[_designKey],
+    ftController: _ftCtrl,
+    onFtPhotoChanged: () => setState(
+      () => _ftMatrixF[_designKey] = _ftCtrl.value.storage.toList(),
+    ),
     onPosterLongPress: _showElementProperties,
     onPosterRotateTo: (id, a) => setState(() => _posterRot[id] = a),
     onBackgroundLongPress: _showBackgroundMenu,
@@ -3214,10 +3354,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           _stdOff.remove(id);
                           _posterScale.remove(id);
                           _posterRot.remove(id);
+                          _boxSize.remove(id); // gezogene Kastengröße
                         }),
                       ),
                     // Überschrift-Objekt: Texte direkt hier bearbeiten.
-                    if (id == 'std_title') ...[
+                    if (id == 'std_title' || id == 'std_ft_title') ...[
                       const SizedBox(height: 8),
                       TextFormField(
                         initialValue: _title,
@@ -3500,7 +3641,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       case 'std_lineup':
         return 'Aufstellung';
       case 'std_sponsorbar':
+      case 'std_ft_sponsorbar':
         return 'Sponsoren';
+      case 'std_ft_title':
+        return 'Überschrift';
+      case 'std_ft_banner':
+        return 'Ergebnis-Balken';
+      case 'std_ft_scorers':
+        return 'Torschützen';
+      case 'std_ft_sponsor':
+        return 'Präsentiert von';
       default:
         if (id.startsWith('overlay_')) return 'Bild';
         if (id.startsWith('text_')) return 'Text';
@@ -3589,6 +3739,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     'std_scorers',
     'std_lineup',
     'std_sponsorbar',
+    'std_ft_sponsor',
+    'std_ft_title',
+    'std_ft_banner',
+    'std_ft_scorers',
+    'std_ft_sponsorbar',
   ];
 
   /// Ein ausgeblendetes Grundteil wieder einblenden (Ankündigung: an seiner
@@ -4273,6 +4428,59 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
   }
 
+  /// Ergebnis-Layout: „Standard" oder „Mit Foto" (ENDSTAND).
+  Widget _resultLayoutToggle({VoidCallback? onChanged}) =>
+      SegmentedButton<String>(
+        segments: const [
+          ButtonSegment(value: 'std', label: Text('Standard')),
+          ButtonSegment(
+            value: 'photo',
+            label: Text('Mit Foto'),
+            icon: Icon(Icons.photo),
+          ),
+        ],
+        selected: {_resultLayout},
+        showSelectedIcon: false,
+        onSelectionChanged: (s) {
+          setState(() {
+            _resultLayout = s.first;
+            _posterSel = null; // andere Objekte im anderen Layout
+          });
+          onChanged?.call();
+        },
+      );
+
+  /// ENDSTAND: Foto oben wählen/ändern/entfernen (je Format gespeichert). Freier
+  /// Zuschnitt; den Ausschnitt legt der Nutzer im Editor per Ziehen/Zoomen fest.
+  Future<void> _pickFtPhoto() async {
+    final src0 = await _askPosterSource(
+      hasExisting: _ftPhotoF[_designKey] != null,
+      allowKader: false,
+    );
+    if (src0 == null || !mounted) return;
+    if (src0 == 'remove') {
+      setState(() {
+        _ftPhotoF.remove(_designKey);
+        _ftMatrixF.remove(_designKey);
+      });
+      _ftCtrl.value = Matrix4.identity();
+      return;
+    }
+    final src = await _resolveGoogleSource(src0);
+    if (src == null || !mounted) return;
+    final url = await _pickImage(
+      asBackground: true,
+      source: src == 'camera' ? ImageSource.camera : ImageSource.gallery,
+      edit: true,
+    );
+    if (url == null || !mounted) return;
+    setState(() {
+      _ftPhotoF[_designKey] = url;
+      _ftMatrixF.remove(_designKey); // neues Foto → Ausschnitt neu
+    });
+    _ftCtrl.value = Matrix4.identity();
+  }
+
   void _showBackgroundMenu() {
     showModalBottomSheet<void>(
       context: context,
@@ -4353,6 +4561,44 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           ),
                       ],
                     ),
+                  ],
+                  // Ergebnis: Layout „Standard / Mit Foto" + Foto oben.
+                  if (widget.isResult) ...[
+                    const Divider(height: 24),
+                    const Text(
+                      'Ergebnis-Layout',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Center(
+                      child: _resultLayoutToggle(
+                        onChanged: () => setSheet(() {}),
+                      ),
+                    ),
+                    if (_ftLayout) ...[
+                      const SizedBox(height: 6),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.add_photo_alternate, size: 18),
+                        label: Text(
+                          _ftPhotoF[_designKey] == null
+                              ? 'Foto oben wählen'
+                              : 'Foto oben ändern / entfernen',
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _pickFtPhoto();
+                        },
+                      ),
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Das Foto im Editor mit Finger/Maus verschieben und '
+                        'mit zwei Fingern (Mausrad) zoomen.',
+                        style: TextStyle(fontSize: 12),
+                      ),
+                    ],
                   ],
                   // KI-Look: Deko-Ebene über der ganzen Grafik (alle Typen),
                   // nur wenn die Grafik-KI (Gemini) freigeschaltet ist.
@@ -4476,6 +4722,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _stdOffF.remove(k);
       _stdHiddenF.remove(k);
       _lookF.remove(k);
+      _boxSizeF.remove(k);
+      _ftPhotoF.remove(k);
+      _ftMatrixF.remove(k);
+      _ftCtrl.value = Matrix4.identity();
       _posterScaleF.remove(k);
       _posterRotF.remove(k);
       _posterOrderF.remove(k);
@@ -4600,9 +4850,36 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               ],
               selected: {_story},
               showSelectedIcon: false,
-              onSelectionChanged: (s) => setState(() => _story = s.first),
+              onSelectionChanged: (s) {
+                setState(() => _story = s.first);
+                _syncFtCtrl(); // Foto-Ausschnitt des anderen Formats laden
+              },
             ),
           ),
+          // Ergebnis: Standard oder „Mit Foto" (ENDSTAND, Foto oben).
+          if (widget.isResult)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              child: Wrap(
+                alignment: WrapAlignment.center,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  _resultLayoutToggle(),
+                  if (_ftLayout)
+                    OutlinedButton.icon(
+                      icon: const Icon(Icons.add_photo_alternate, size: 18),
+                      label: Text(
+                        _ftPhotoF[_designKey] == null
+                            ? 'Foto oben wählen'
+                            : 'Foto oben ändern',
+                      ),
+                      onPressed: _pickFtPhoto,
+                    ),
+                ],
+              ),
+            ),
           Expanded(
             flex: 3,
             child: Align(
@@ -5006,6 +5283,13 @@ class _StartelfGraphic extends StatelessWidget {
     this.stdHidden = const {},
     this.stdCtx,
     this.stdNatCtx,
+    this.boxSize = const {},
+    this.onBoxResizeStart,
+    this.onBoxResizeUpdate,
+    this.resultLayout = 'std',
+    this.ftPhoto,
+    this.ftController,
+    this.onFtPhotoChanged,
     this.onPosterItemMove,
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
@@ -5082,6 +5366,17 @@ class _StartelfGraphic extends StatelessWidget {
   // den Treffer-Test, außen = natürliche Lage für den Dreh-Griff).
   final Map<String, BuildContext>? stdCtx;
   final Map<String, BuildContext>? stdNatCtx;
+  // Ziehbare Kästen: gezogene Größe (logische px) je Element.
+  final Map<String, Size> boxSize;
+  // Griff gepackt: [measured] = aktuelle (natürliche) Kastengröße als Start.
+  final void Function(String id, Size measured)? onBoxResizeStart;
+  // Griff gezogen: Finger-Delta (Canvas-px) + welche Achsen (Breite/Höhe).
+  final void Function(String id, Offset delta, bool width, bool height)?
+      onBoxResizeUpdate;
+  final String resultLayout; // Ergebnis: 'std' | 'photo' (ENDSTAND mit Foto)
+  final String? ftPhoto; // ENDSTAND: Foto oben (Data-URL)
+  final TransformationController? ftController; // Ausschnitt des Fotos
+  final VoidCallback? onFtPhotoChanged; // Zoom/Verschieben beendet → merken
   final void Function(String id, Offset pos)? onPosterItemMove;
   // Pinch/Drehen/Ziehen: Start legt das Ziel fest (null = keins) und merkt
   // Basiswerte, Update rechnet.
@@ -5135,6 +5430,10 @@ class _StartelfGraphic extends StatelessWidget {
       // Freier Editor für BEIDE Stile (Zentriert = anderes Default-Preset).
       // Auf den Grafik-Bereich beschneiden – nichts ragt nach außen.
       return ClipRect(child: _announcementPosterLayout());
+    }
+    // Ergebnis „Mit Foto" (ENDSTAND): eigenes Layout, gleiche Editor-Funktionen.
+    if (result != null && resultLayout == 'photo') {
+      return ClipRect(child: _freeOverlayWrap(_endstandLayout()));
     }
     // Ergebnis-/Startelf-Grafik: festes Layout + freie Nutzer-Elemente darüber.
     final content = _standardLayout();
@@ -5240,6 +5539,11 @@ class _StartelfGraphic extends StatelessWidget {
   /// Feste Teile der Ergebnis-/Startelf-Grafik, oberstes zuerst (spätere im
   /// Layout liegen beim Überlappen oben).
   static const List<String> _kStdTopFirst = [
+    'std_ft_sponsor',
+    'std_ft_sponsorbar',
+    'std_ft_scorers',
+    'std_ft_banner',
+    'std_ft_title',
     'std_sponsorbar',
     'std_lineup',
     'std_scorers',
@@ -5314,6 +5618,133 @@ class _StartelfGraphic extends StatelessWidget {
         );
       },
     );
+  }
+
+  /// Kästen, die sich in Breite/Höhe ziehen lassen.
+  static const Set<String> _kResizable = {
+    'std_scorers',
+    'std_lineup',
+    'std_sponsorbar',
+    'std_ft_banner',
+    'std_ft_scorers',
+    'std_ft_sponsorbar',
+  };
+
+  /// Platz für einen ziehbaren Kasten. Ohne gezogene Größe: der Kasten wie
+  /// bisher. Mit Größe: der Platz im Layout bleibt so groß wie der natürliche
+  /// Kasten (unsichtbar) – der gezogene Kasten liegt mittig darüber und darf
+  /// herausragen. So verrutscht beim Ziehen nichts anderes.
+  Widget _boxSlot(String id, Widget natural, Widget Function(Size s) sized) {
+    final s = boxSize[id];
+    if (s == null) return _stdEl(id, natural);
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.center,
+      children: [
+        Visibility(
+          visible: false,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: natural,
+        ),
+        Positioned.fill(
+          child: OverflowBox(
+            minWidth: 0,
+            minHeight: 0,
+            maxWidth: double.infinity,
+            maxHeight: double.infinity,
+            child: _stdEl(id, sized(s)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Kasten mit fester Größe [s]: nur der Kasten wächst, die Schrift bleibt
+  /// gleich groß. Passt der Inhalt nicht, wird er verkleinert (nie
+  /// abgeschnitten). [fillWidth]: Inhalt bekommt die volle Innenbreite (z. B.
+  /// Spalten rücken auseinander), sonst behält er seine natürliche Breite.
+  Widget _fixedBox(
+    Size s, {
+    required EdgeInsets padding,
+    required Decoration decoration,
+    required Widget Function(double innerWidth) content,
+    bool fillWidth = true,
+    Alignment alignment = Alignment.center,
+  }) {
+    return Container(
+      width: s.width,
+      height: s.height,
+      padding: padding,
+      decoration: decoration,
+      child: LayoutBuilder(
+        builder: (_, c) => FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: alignment,
+          child: fillWidth
+              ? SizedBox(width: c.maxWidth, child: content(c.maxWidth))
+              : content(c.maxWidth),
+        ),
+      ),
+    );
+  }
+
+  /// Zieh-Griffe des gewählten Kastens: rechte Kante (Breite), untere Kante
+  /// (Höhe), Ecke unten rechts (beides). Lage aus dem echten Kasten (beachtet
+  /// Verschiebung/Größe/Drehung).
+  List<Widget> _resizeHandles(String? sel) {
+    if (sel == null || !_kResizable.contains(sel)) return const [];
+    final ectx = stdCtx?[sel];
+    if (ectx == null || !ectx.mounted) return const [];
+    final eb = ectx.findRenderObject();
+    final cb = canvasKey?.currentContext?.findRenderObject();
+    if (eb is! RenderBox || cb is! RenderBox) return const [];
+    if (!eb.attached || !eb.hasSize || !cb.attached) return const [];
+    final sz = eb.size;
+    Offset toCanvas(Offset p) => cb.globalToLocal(eb.localToGlobal(p));
+
+    Widget handle(String key, Offset at, {required bool w, required bool h}) {
+      return Positioned(
+        key: ValueKey('rz_$key'),
+        left: at.dx - 12,
+        top: at.dy - 12,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onPanStart: (_) => onBoxResizeStart?.call(sel, sz),
+          onPanUpdate: (d) => onBoxResizeUpdate?.call(sel, d.delta, w, h),
+          child: Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: (w && h) ? BoxShape.rectangle : BoxShape.circle,
+              borderRadius: (w && h) ? BorderRadius.circular(5) : null,
+              border: Border.all(color: Colors.black54, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 4,
+                ),
+              ],
+            ),
+            child: Icon(
+              (w && h)
+                  ? Icons.open_in_full
+                  : (w ? Icons.swap_horiz : Icons.swap_vert),
+              size: 14,
+              color: Colors.black87,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return [
+      handle('w', toCanvas(Offset(sz.width, sz.height / 2)), w: true, h: false),
+      handle('h', toCanvas(Offset(sz.width / 2, sz.height)), w: false, h: true),
+      handle('wh', toCanvas(Offset(sz.width, sz.height)), w: true, h: true),
+    ];
   }
 
   /// Sichtbare Mitte (logische px) des gewählten Elements für den Dreh-Griff.
@@ -5569,6 +6000,8 @@ class _StartelfGraphic extends StatelessWidget {
             ),
             ...layers,
             dragLayer,
+            // Zieh-Griffe für Kästen (Breite/Höhe) über der Zieh-Ebene.
+            ..._resizeHandles(sel),
             // Dreh-Griff (oben über allem, damit er die Geste bekommt).
             ?_rotationHandle(sel, w, h),
           ],
@@ -5779,13 +6212,14 @@ class _StartelfGraphic extends StatelessWidget {
                   child: showScorers
                       ? Align(
                           alignment: Alignment.topCenter,
-                          child: _stdEl(
+                          child: _boxSlot(
                             'std_scorers',
                             FittedBox(
                               fit: BoxFit.scaleDown,
                               alignment: Alignment.topCenter,
                               child: _scorersCardsBlock(),
                             ),
+                            (s) => _scorersCardsBlock(size: s),
                           ),
                         )
                       : const SizedBox.shrink(),
@@ -5793,19 +6227,24 @@ class _StartelfGraphic extends StatelessWidget {
               ] else
                 Expanded(
                   child: Center(
-                    child: _stdEl(
+                    child: _boxSlot(
                       'std_lineup',
                       FittedBox(
                         fit: BoxFit.contain,
                         alignment: Alignment.center,
                         child: _lineupBlock(),
                       ),
+                      (s) => _lineupBlock(size: s),
                     ),
                   ),
                 ),
               if (barSponsors.isNotEmpty && showOtherSponsors) ...[
                 SizedBox(height: compact ? 6 : 10),
-                _stdEl('std_sponsorbar', _sponsorBar()),
+                _boxSlot(
+                  'std_sponsorbar',
+                  _sponsorBar(),
+                  (s) => _sponsorBar(size: s),
+                ),
               ],
             ],
           ),
@@ -6103,7 +6542,7 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  Widget _lineupBlock() {
+  Widget _lineupBlock({Size? size}) {
     final numStyle = TextStyle(
       color: _accent.withValues(alpha: 0.95),
       fontSize: 26,
@@ -6183,16 +6622,379 @@ class _StartelfGraphic extends StatelessWidget {
       ],
     );
     // Dunkler Scrim, damit der Kader auf Fotos/Verlauf klar im Fokus steht.
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 14 : 18,
-        vertical: compact ? 10 : 16,
+    final pad = EdgeInsets.symmetric(
+      horizontal: compact ? 14 : 18,
+      vertical: compact ? 10 : 16,
+    );
+    final deco = BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.32),
+      borderRadius: BorderRadius.circular(18),
+    );
+    // Gezogene Größe: Kasten fest, Kader behält seine Größe (mittig), wird nur
+    // bei Platzmangel verkleinert.
+    if (size != null) {
+      return _fixedBox(
+        size,
+        padding: pad,
+        decoration: deco,
+        fillWidth: false,
+        content: (_) => inner,
+      );
+    }
+    return Container(padding: pad, decoration: deco, child: inner);
+  }
+
+  // ------------------------------------------------ ENDSTAND (Ergebnis mit Foto)
+
+  /// Heim links / Gast rechts (wie üblich), unabhängig davon, wer „wir" sind.
+  ({
+    String homeName,
+    String awayName,
+    Uint8List? homeLogo,
+    Uint8List? awayLogo,
+    int homeScore,
+    int awayScore,
+    List<({int minute, String name, String? photo})> homeGoals,
+    List<({int minute, String name, String? photo})> awayGoals,
+  })
+  _ftSides() {
+    final r = result!;
+    final own = TeamLogo.decode(logo);
+    final opp = TeamLogo.decode(opponentLogo);
+    return isHome
+        ? (
+            homeName: title,
+            awayName: opponentName,
+            homeLogo: own,
+            awayLogo: opp,
+            homeScore: r.ownScore,
+            awayScore: r.oppScore,
+            homeGoals: r.ownGoals,
+            awayGoals: r.oppGoals,
+          )
+        : (
+            homeName: opponentName,
+            awayName: title,
+            homeLogo: opp,
+            awayLogo: own,
+            homeScore: r.oppScore,
+            awayScore: r.ownScore,
+            homeGoals: r.oppGoals,
+            awayGoals: r.ownGoals,
+          );
+  }
+
+  /// ENDSTAND-Layout: oben das (verschieb-/zoombare) Foto, unten auf dem
+  /// eingestellten Hintergrund Überschrift, Ergebnis-Balken und Torschützen.
+  /// Alle Teile sind eigene Objekte (std_ft_*), die Kästen in Breite/Höhe
+  /// ziehbar.
+  Widget _endstandLayout() {
+    final pad = compact ? 14.0 : 20.0;
+    final photo = TeamLogo.decode(ftPhoto);
+    final sponsorTop = _presentedByTopRow();
+
+    final photoArea = ClipRect(
+      child: photo == null
+          // Platzhalter ohne Foto: ruhiger Verlauf in den Vereinsfarben.
+          ? DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [gradTop, gradBottom],
+                ),
+              ),
+            )
+          : InteractiveViewer(
+              transformationController: ftController,
+              minScale: 0.5,
+              maxScale: 5,
+              boundaryMargin: const EdgeInsets.all(double.infinity),
+              clipBehavior: Clip.none,
+              onInteractionEnd: (_) => onFtPhotoChanged?.call(),
+              child: Image.memory(
+                photo,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+              ),
+            ),
+    );
+
+    final titleW = FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Text(
+        posterHeadline,
+        maxLines: 1,
+        softWrap: false,
+        style: posterFontStyle(
+          posterFont,
+          TextStyle(
+            color: Colors.white,
+            fontSize: compact ? 34 : 46,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2,
+            height: 1.0,
+            shadows: [
+              Shadow(
+                color: Colors.black.withValues(alpha: 0.45),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+        ),
       ),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.32),
-        borderRadius: BorderRadius.circular(18),
+    );
+
+    final bottom = Stack(
+      fit: StackFit.expand,
+      children: [
+        _bgBase(),
+        Padding(
+          padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 18, pad, pad),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(child: _stdEl('std_ft_title', titleW)),
+              SizedBox(height: compact ? 8 : 14),
+              _boxSlot(
+                'std_ft_banner',
+                _ftBanner(),
+                (s) => _ftBanner(size: s),
+              ),
+              SizedBox(height: compact ? 8 : 14),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: _boxSlot(
+                    'std_ft_scorers',
+                    LayoutBuilder(
+                      builder: (_, c) => FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.topCenter,
+                        child: SizedBox(
+                          width: c.maxWidth,
+                          child: _ftScorersContent(),
+                        ),
+                      ),
+                    ),
+                    (s) => _fixedBox(
+                      s,
+                      padding: const EdgeInsets.all(6),
+                      decoration: const BoxDecoration(),
+                      content: (_) => _ftScorersContent(),
+                    ),
+                  ),
+                ),
+              ),
+              if (barSponsors.isNotEmpty && showOtherSponsors) ...[
+                SizedBox(height: compact ? 6 : 10),
+                _boxSlot(
+                  'std_ft_sponsorbar',
+                  _sponsorBar(),
+                  (s) => _sponsorBar(size: s),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(
+          flex: 56,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              photoArea,
+              // „Präsentiert von" oben rechts über dem Foto (lesbar auf Scrim).
+              if (sponsorTop != null)
+                Positioned(
+                  top: pad * 0.6,
+                  right: pad * 0.6,
+                  child: _stdEl(
+                    'std_ft_sponsor',
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: sponsorTop,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(flex: 44, child: bottom),
+      ],
+    );
+  }
+
+  /// Ergebnis-Balken: weiße Leiste mit Teamnamen, mittig das Ergebnis-Feld
+  /// (Trapez, ragt oben/unten heraus), Logos an den Enden. [size] = gezogene
+  /// Größe (Breite = Balkenbreite, Höhe = Höhe des Ergebnis-Felds).
+  Widget _ftBanner({Size? size}) {
+    final sd = _ftSides();
+    final badgeH = size?.height ?? (compact ? 60.0 : 78.0);
+    final pillH = badgeH / 1.35;
+    final logoH = badgeH * 0.95;
+    final badgeW = badgeH * 1.9;
+    final nameStyle = TextStyle(
+      color: const Color(0xFF111111),
+      fontSize: pillH * 0.36,
+      fontWeight: FontWeight.w900,
+      letterSpacing: 0.4,
+    );
+    Widget name(String n, Alignment a) => FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: a,
+      child: Text(
+        n.toUpperCase(),
+        maxLines: 1,
+        softWrap: false,
+        style: nameStyle,
       ),
-      child: inner,
+    );
+    Widget logoW(Uint8List? b) => b == null
+        ? SizedBox(width: logoH, height: logoH)
+        : _logoChip(b, height: logoH, circle: logoCircle);
+    final scoreBg = Color.lerp(Colors.white, gradTop, 0.3)!;
+
+    final banner = Stack(
+      alignment: Alignment.center,
+      clipBehavior: Clip.none,
+      children: [
+        // Weiße Leiste (Logos ragen über die Enden).
+        Container(
+          height: pillH,
+          margin: EdgeInsets.symmetric(horizontal: logoH * 0.45),
+          padding: EdgeInsets.symmetric(horizontal: logoH * 0.62),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(pillH),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Expanded(child: name(sd.homeName, Alignment.centerLeft)),
+              SizedBox(width: badgeW + 12),
+              Expanded(child: name(sd.awayName, Alignment.centerRight)),
+            ],
+          ),
+        ),
+        // Ergebnis-Feld (Trapez, oben breiter – wie die Vorlage).
+        ClipPath(
+          clipper: _TrapezoidClipper(),
+          child: Container(
+            width: badgeW,
+            height: badgeH,
+            color: scoreBg,
+            alignment: Alignment.center,
+            padding: EdgeInsets.symmetric(horizontal: badgeW * 0.14),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                '${sd.homeScore} - ${sd.awayScore}',
+                style: TextStyle(
+                  color: const Color(0xFF101010),
+                  fontSize: badgeH * 0.6,
+                  fontWeight: FontWeight.w900,
+                  height: 1.0,
+                ),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          top: 0,
+          bottom: 0,
+          child: Center(child: logoW(sd.homeLogo)),
+        ),
+        Positioned(
+          right: 0,
+          top: 0,
+          bottom: 0,
+          child: Center(child: logoW(sd.awayLogo)),
+        ),
+      ],
+    );
+    return size == null ? banner : SizedBox(width: size.width, child: banner);
+  }
+
+  /// Torschützen je Seite, je Spieler gruppiert („B. KANIA 35' 40' 54' 60'").
+  /// Links Heim, rechts Gast; Spalten bis an die Ränder (volle Breite nötig).
+  Widget _ftScorersContent() {
+    final sd = _ftSides();
+    final home = groupScorers(sd.homeGoals);
+    final away = groupScorers(sd.awayGoals);
+    if (home.isEmpty && away.isEmpty) return const SizedBox.shrink();
+    final labelStyle = TextStyle(
+      color: Colors.white,
+      fontSize: compact ? 15 : 19,
+      fontWeight: FontWeight.w800,
+      letterSpacing: 1,
+    );
+    final minStyle = TextStyle(
+      color: Colors.white.withValues(alpha: 0.92),
+      fontSize: compact ? 15 : 19,
+      fontWeight: FontWeight.w700,
+    );
+    Widget line(({String label, List<int> minutes}) g) => Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (g.label.isNotEmpty) ...[
+            Text(g.label, style: labelStyle),
+            const SizedBox(width: 12),
+          ],
+          Text(g.minutes.map((m) => "$m'").join('  '), style: minStyle),
+        ],
+      ),
+    );
+    Widget col(List<({String label, List<int> minutes})> list, bool end) =>
+        Column(
+          crossAxisAlignment: end
+              ? CrossAxisAlignment.end
+              : CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [for (final g in list) line(g)],
+        );
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topLeft,
+            child: col(home, false),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Flexible(
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topRight,
+            child: col(away, true),
+          ),
+        ),
+      ],
     );
   }
 
@@ -6232,7 +7034,7 @@ class _StartelfGraphic extends StatelessWidget {
   /// Torschützen (NUR Tore – keine Karten): je Seite „Minute' Name" + optional
   /// Spielerfoto. Lesbar auf dunklem Scrim; der FittedBox im Layout skaliert bei
   /// vielen Einträgen herunter, bei wenigen bleibt es groß.
-  Widget _scorersCardsBlock() {
+  Widget _scorersCardsBlock({Size? size}) {
     final r = result!;
     final ownGoals = r.ownGoals;
     final oppGoals = r.oppGoals;
@@ -6300,42 +7102,88 @@ class _StartelfGraphic extends StatelessWidget {
       children: [for (final g in goals) line(g, end: end)],
     );
 
+    final header = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.sports_soccer, size: 16, color: _accent),
+        const SizedBox(width: 6),
+        Text(
+          'TORE',
+          style: TextStyle(
+            color: _accent,
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 2,
+          ),
+        ),
+      ],
+    );
+    const pad = EdgeInsets.symmetric(horizontal: 18, vertical: 14);
+    final deco = BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.34),
+      borderRadius: BorderRadius.circular(16),
+    );
+    final both = ownGoals.isNotEmpty && oppGoals.isNotEmpty;
+
+    // Gezogene Größe: Kasten fest, Spalten rücken an die Ränder (spaceBetween);
+    // zu schmal → jede Spalte verkleinert sich, nie „…".
+    if (size != null) {
+      return _fixedBox(
+        size,
+        padding: pad,
+        decoration: deco,
+        content: (_) => Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            header,
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: both
+                  ? MainAxisAlignment.spaceBetween
+                  : MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (ownGoals.isNotEmpty)
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topLeft,
+                      child: col(ownGoals, end: false),
+                    ),
+                  ),
+                if (both) const SizedBox(width: 16),
+                if (oppGoals.isNotEmpty)
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topRight,
+                      child: col(oppGoals, end: true),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
     // Spalten nach Inhalt breit (kein festes 50/50, keine Maximalbreite) →
     // lange eigene Namen bekommen den Platz, den kurze Gegner-Einträge nicht
     // brauchen. Zu breit insgesamt → FittedBox(scaleDown) verkleinert.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.34),
-        borderRadius: BorderRadius.circular(16),
-      ),
+      padding: pad,
+      decoration: deco,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.sports_soccer, size: 16, color: _accent),
-              const SizedBox(width: 6),
-              Text(
-                'TORE',
-                style: TextStyle(
-                  color: _accent,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                ),
-              ),
-            ],
-          ),
+          header,
           const SizedBox(height: 10),
           Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (ownGoals.isNotEmpty) col(ownGoals, end: false),
-              if (ownGoals.isNotEmpty && oppGoals.isNotEmpty)
-                const SizedBox(width: 28),
+              if (both) const SizedBox(width: 28),
               if (oppGoals.isNotEmpty) col(oppGoals, end: true),
             ],
           ),
@@ -6815,24 +7663,33 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
-  Widget _sponsorBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final s in barSponsors)
-            if (TeamLogo.decode(s.logo) != null)
-              _logoChip(TeamLogo.decode(s.logo)!, height: compact ? 26 : 32),
-        ],
-      ),
+  Widget _sponsorBar({Size? size}) {
+    const pad = EdgeInsets.symmetric(vertical: 8, horizontal: 8);
+    final deco = BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(8),
     );
+    final logos = Wrap(
+      alignment: WrapAlignment.center,
+      runAlignment: WrapAlignment.center,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final s in barSponsors)
+          if (TeamLogo.decode(s.logo) != null)
+            _logoChip(TeamLogo.decode(s.logo)!, height: compact ? 26 : 32),
+      ],
+    );
+    // Gezogene Größe: Logos verteilen/umbrechen sich in der neuen Breite.
+    if (size != null) {
+      return _fixedBox(
+        size,
+        padding: pad,
+        decoration: deco,
+        content: (_) => logos,
+      );
+    }
+    return Container(padding: pad, decoration: deco, child: logos);
   }
 
   Widget _logoChip(Uint8List bytes, {required double height, bool circle = false}) {
@@ -6943,4 +7800,27 @@ class _AiLook {
       opacity: op is num ? op.toDouble().clamp(0.1, 1.0) : 1.0,
     );
   }
+}
+
+/// Trapez (oben breiter als unten) für das Ergebnis-Feld der ENDSTAND-Grafik.
+class _TrapezoidClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size s) {
+    final inset = s.width * 0.1;
+    final r = s.height * 0.12; // leicht abgerundete Ecken
+    return Path()
+      ..moveTo(r, 0)
+      ..lineTo(s.width - r, 0)
+      ..quadraticBezierTo(s.width, 0, s.width - r * 0.4, r)
+      ..lineTo(s.width - inset, s.height - r)
+      ..quadraticBezierTo(s.width - inset - r * 0.2, s.height, s.width - inset - r, s.height)
+      ..lineTo(inset + r, s.height)
+      ..quadraticBezierTo(inset + r * 0.2, s.height, inset, s.height - r)
+      ..lineTo(r * 0.4, r)
+      ..quadraticBezierTo(0, 0, r, 0)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
