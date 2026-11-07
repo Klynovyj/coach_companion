@@ -439,6 +439,10 @@ const Map<String, Offset> _kBlendItemDefaults = {
   'sponsorbar': Offset(0.5, 0.98),
 };
 
+/// Startwerte nach dem Freistellen: weiche Kante + „Rand verschmelzen".
+const double _kCutoutFeather = 22;
+const double _kCutoutRim = 45;
+
 /// ID der team-weiten Hintergrund-Vorlage für FuPa-Fotos.
 const String _kFupaBgId = 'fupa-background';
 
@@ -544,13 +548,16 @@ bool hasTransparentPixels(img.Image im) {
 /// Bildeffekte für ein (freigestelltes) Bild, im Isolate:
 /// - weiche Kanten (Alpha schrumpfen + weichzeichnen, [feather] 0..100)
 /// - gerichteter innerer Schatten ([inner] 0..100, Richtung [angle] im Bogenmaß).
-/// [args] = {data: Uint8List, feather, inner, angle}.
+/// - Rand verschmelzen ([rim] 0..100): rundum weich ausblenden + leicht
+///   abdunkeln → das Motiv wirkt wie IM Hintergrund statt aufgeklebt.
+/// [args] = {data: Uint8List, feather, inner, angle, rim}.
 Uint8List applyImageFx(Map<String, dynamic> args) {
   final input = args['data'] as Uint8List;
   final feather = (args['feather'] as num).toDouble();
   final inner = (args['inner'] as num).toDouble();
   final angle = (args['angle'] as num).toDouble();
-  if (feather <= 0 && inner <= 0) return input;
+  final rim = ((args['rim'] as num?) ?? 0).toDouble();
+  if (feather <= 0 && inner <= 0 && rim <= 0) return input;
   final src = img.decodeImage(input);
   if (src == null) return input;
   final im = src.convert(numChannels: 4);
@@ -631,6 +638,50 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
           (p.g.toInt() * f).round().clamp(0, 255),
           (p.b.toInt() * f).round().clamp(0, 255),
           p.a.toInt(),
+        );
+      }
+    }
+  }
+  // 3) Rand verschmelzen: rundum (ohne Richtung) – je näher am Umriss, desto
+  //    durchsichtiger und dunkler. Der Bildrand (z. B. unten abgeschnittener
+  //    Körper) zählt nicht als Umriss.
+  if (rim > 0) {
+    final radius = (3 + rim / 100 * 22).round();
+    // Außen am Bildrand „deckend" annehmen → kein Effekt am Rechteck-Rand.
+    final pad = radius * 2;
+    final ext = img.Image(
+      width: w + 2 * pad,
+      height: h + 2 * pad,
+      numChannels: 1,
+    );
+    for (var y = 0; y < ext.height; y++) {
+      for (var x = 0; x < ext.width; x++) {
+        final sx = (x - pad).clamp(0, w - 1), sy = (y - pad).clamp(0, h - 1);
+        ext.setPixelR(x, y, aImg.getPixel(sx, sy).r);
+      }
+    }
+    final bl = img.gaussianBlur(ext, radius: radius);
+    final fade = 0.15 + rim / 100 * 0.55; // Durchsicht am Umriss
+    final dark = 0.1 + rim / 100 * 0.45; // Abdunkeln am Umriss
+    for (var y = 0; y < h; y++) {
+      for (var x = 0; x < w; x++) {
+        final p = im.getPixel(x, y);
+        final a = p.a.toInt();
+        if (a == 0) continue;
+        final b = bl.getPixel(x + pad, y + pad).r / 255.0;
+        // 0 tief im Motiv … 1 direkt am Umriss.
+        var e = (1 - b) * 2;
+        if (e <= 0) continue;
+        if (e > 1) e = 1;
+        e = e * e * (3 - 2 * e); // weicher Verlauf
+        final f = 1 - dark * e;
+        im.setPixelRgba(
+          x,
+          y,
+          (p.r.toInt() * f).round().clamp(0, 255),
+          (p.g.toInt() * f).round().clamp(0, 255),
+          (p.b.toInt() * f).round().clamp(0, 255),
+          (a * (1 - fade * e)).round().clamp(0, 255),
         );
       }
     }
@@ -792,8 +843,54 @@ Uint8List chromaKeyMagenta(Uint8List input) {
       p.a = (p.a * keep).round();
     }
   }
+  _removeSmallIslands(im);
   _despillMagentaEdges(im);
   return Uint8List.fromList(img.encodePng(im));
+}
+
+/// Kleine, abgetrennte Reste außerhalb des Motivs (z. B. ein rosa Fleck in
+/// der Ecke) entfernen: zusammenhängende sichtbare Flächen, die kleiner als
+/// 2 % der größten Fläche sind, werden durchsichtig.
+void _removeSmallIslands(img.Image im) {
+  final w = im.width, h = im.height;
+  final label = Int32List(w * h);
+  final sizes = <int>[0];
+  final stack = <int>[];
+  for (var start = 0; start < w * h; start++) {
+    if (label[start] != 0) continue;
+    if (im.getPixel(start % w, start ~/ w).a < 128) continue;
+    final id = sizes.length;
+    var count = 0;
+    label[start] = id;
+    stack.add(start);
+    while (stack.isNotEmpty) {
+      final i = stack.removeLast();
+      count++;
+      final x = i % w, y = i ~/ w;
+      void visit(int nx, int ny) {
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
+        final j = ny * w + nx;
+        if (label[j] != 0) return;
+        if (im.getPixel(nx, ny).a < 128) return;
+        label[j] = id;
+        stack.add(j);
+      }
+
+      visit(x + 1, y);
+      visit(x - 1, y);
+      visit(x, y + 1);
+      visit(x, y - 1);
+    }
+    sizes.add(count);
+  }
+  if (sizes.length <= 2) return; // höchstens eine Fläche
+  final biggest = sizes.reduce(math.max);
+  final minKeep = biggest * 0.02;
+  for (final p in im) {
+    if (p.a == 0) continue;
+    final l = label[p.y * w + p.x];
+    if (l != 0 && sizes[l] < minKeep) p.a = 0;
+  }
 }
 
 /// Rosa Saum an der Freistell-Kante entfernen (v. a. Haare): Alle sichtbaren
@@ -804,9 +901,11 @@ Uint8List chromaKeyMagenta(Uint8List input) {
 void _despillMagentaEdges(img.Image im, {int? radius}) {
   final w = im.width, h = im.height;
   if (w < 3 || h < 3) return;
-  // Radius mit der Bildgröße skalieren (~1024 px → 5 px).
-  final r = radius ?? math.max(3, (math.max(w, h) / 200).round());
+  // Radius mit der Bildgröße skalieren (~1024 px → 26 px): lockige Haare
+  // sind eine BREITE Kante mit vielen Magenta-Lücken.
+  final r = radius ?? math.max(6, (math.max(w, h) / 40).round());
   final dist = Uint8List(w * h)..fillRange(0, w * h, 255);
+  final rr0 = math.min(r, 250);
   final queue = <int>[];
   for (var y = 0; y < h; y++) {
     for (var x = 0; x < w; x++) {
@@ -823,7 +922,7 @@ void _despillMagentaEdges(img.Image im, {int? radius}) {
   while (head < queue.length) {
     final i = queue[head++];
     final d = dist[i];
-    if (d >= r) continue;
+    if (d >= rr0) continue;
     final x = i % w, y = i ~/ w;
     void visit(int nx, int ny) {
       if (nx < 0 || ny < 0 || nx >= w || ny >= h) return;
@@ -841,7 +940,7 @@ void _despillMagentaEdges(img.Image im, {int? radius}) {
   for (final p in im) {
     if (p.a == 0) continue;
     final d = dist[p.y * w + p.x];
-    if (d == 0 || d > r) continue;
+    if (d == 0 || d > rr0) continue;
     final rr = p.r.toDouble(), g = p.g.toDouble(), b = p.b.toDouble();
     final lo = math.min(rr, b), hi = math.max(rr, b);
     final spill = lo - g;
@@ -1325,6 +1424,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Weiche Kanten je Bild-Element: Original-Bild + Stärke (0..100), je Layout.
   final Map<String, Map<String, String>> _imgOrigF = {};
   final Map<String, Map<String, double>> _imgFeatherF = {};
+  // „Rand verschmelzen" je Bild-Element (0..100), je Layout.
+  final Map<String, Map<String, double>> _imgRimF = {};
   final Map<String, Map<String, double>> _imgInnerF = {};
   Map<String, String> get _imgOrig =>
       _imgOrigF.putIfAbsent(_designKey, () => {});
@@ -1332,6 +1433,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _imgFeatherF.putIfAbsent(_designKey, () => {});
   Map<String, double> get _imgInner =>
       _imgInnerF.putIfAbsent(_designKey, () => {});
+  Map<String, double> get _imgRim => _imgRimF.putIfAbsent(_designKey, () => {});
   bool _featherBusy = false;
   String? _fxPending; // während einer Bildeffekt-Berechnung angefragter Re-Run
   // Profi-Finish (globale Bildkorrektur) je Design; wirkt nur aufs Gesamtbild.
@@ -1823,6 +1925,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       ],
       'imgFeather': dblMap(_imgFeatherF),
       'imgInner': dblMap(_imgInnerF),
+      'imgRim': dblMap(_imgRimF),
       'grade': {for (final e in _gradeF.entries) e.key: e.value.toJson()},
       'headMode': _annHeadMode,
       'headText': _annHeadText,
@@ -2052,6 +2155,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     fillDbl(_imgFeatherF, m['imgFeather']);
     fillDbl(_imgInnerF, m['imgInner']);
+    fillDbl(_imgRimF, m['imgRim']);
     _gradeF.clear();
     if (m['grade'] is Map) {
       (m['grade'] as Map).forEach((k, v) {
@@ -2322,6 +2426,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         _imgOrig.remove('player');
         _imgFeather.remove('player');
         _imgInner.remove('player');
+        _imgRim.remove('player');
       });
       return;
     }
@@ -2345,6 +2450,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _imgOrig['player'] = url;
       _imgFeather['player'] = 0;
       _imgInner['player'] = 0;
+      _imgRim['player'] = 0;
     });
   }
 
@@ -3887,6 +3993,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     _imgOrig[sel] = url;
     _imgFeather[sel] = 0;
     _imgInner[sel] = 0;
+    _imgRim[sel] = 0;
   }
 
   /// Setzt nur das ANGEZEIGTE Bild eines Elements (ohne Original zu ändern).
@@ -3912,7 +4019,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (orig == null) return;
     final feather = _imgFeather[id] ?? 0;
     final inner = _imgInner[id] ?? 0;
-    if (feather <= 0 && inner <= 0) {
+    final rim = _imgRim[id] ?? 0;
+    if (feather <= 0 && inner <= 0 && rim <= 0) {
       setState(() => _setImageById(id, orig));
       return;
     }
@@ -3925,6 +4033,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         'feather': feather,
         'inner': inner,
         'angle': _posterShadowAngle * math.pi / 180,
+        'rim': rim,
       });
       if (!mounted) return;
       setState(
@@ -4037,9 +4146,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       setState(() {
         _setImageById(sel, url);
         _imgOrig[sel] = url;
-        _imgFeather[sel] = 0;
+        // Wirkt „im Bild" statt aufgeklebt: weiche Kante + Rand verschmelzen
+        // (Regler im Element-Menü zum Nachjustieren).
+        _imgFeather[sel] = _kCutoutFeather;
         _imgInner[sel] = 0;
+        _imgRim[sel] = _kCutoutRim;
       });
+      unawaited(_applyImageFx(sel));
       messenger.showSnackBar(
         const SnackBar(
           content: Text(
@@ -4169,9 +4282,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       setState(() {
         _setImageById(sel, url);
         _imgOrig[sel] = url;
-        _imgFeather[sel] = 0;
+        _imgFeather[sel] = _kCutoutFeather;
         _imgInner[sel] = 0;
+        _imgRim[sel] = _kCutoutRim;
       });
+      unawaited(_applyImageFx(sel));
       messenger.showSnackBar(
         const SnackBar(content: Text('Hintergrund-Reste entfernt.')),
       );
@@ -4851,6 +4966,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         (v) => apply(() => _imgInner[id] = v),
                         onEnd: (_) => _applyImageFx(id),
                       ),
+                      labeledSlider(
+                        'Rand verschmelzen',
+                        _imgRim[id] ?? 0,
+                        0,
+                        100,
+                        (v) => apply(() => _imgRim[id] = v),
+                        onEnd: (_) => _applyImageFx(id),
+                      ),
                     ],
                     if (isText) ...[
                       const SizedBox(height: 4),
@@ -5077,6 +5200,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _imgOrig[id] = url;
       _imgFeather[id] = 0;
       _imgInner[id] = 0;
+      _imgRim[id] = 0;
       _posterSel = id;
     });
   }
@@ -5169,6 +5293,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         _imgOrig.remove('player');
         _imgFeather.remove('player');
         _imgInner.remove('player');
+        _imgRim.remove('player');
         if (_posterSel == 'player') _posterSel = null;
         return;
       }
@@ -5185,6 +5310,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _imgOrig.remove(id);
       _imgFeather.remove(id);
       _imgInner.remove(id);
+      _imgRim.remove(id);
       if (_posterSel == id) _posterSel = null;
     });
   }
@@ -6339,6 +6465,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _imgOrigF.remove(k);
       _imgFeatherF.remove(k);
       _imgInnerF.remove(k);
+      _imgRimF.remove(k);
       _gradeF.remove(k);
       _posterSel = null;
     });

@@ -220,4 +220,90 @@ void main() {
     expect(out.getPixel(1, 1).a, 0);
     expect(out.getPixel(10, 10).a, 255); // Motiv NICHT als Grund entfernt
   });
+
+  test(
+    'Rand verschmelzen: Umriss weich + dunkler, Mitte und Bildrand bleiben',
+    () {
+      // 80×80 durchsichtig, Motiv 30×60 mittig, unten am Bildrand anliegend.
+      final im = img.Image(width: 80, height: 80, numChannels: 4)
+        ..clear(img.ColorRgba8(0, 0, 0, 0));
+      img.fillRect(
+        im,
+        x1: 25,
+        y1: 20,
+        x2: 54,
+        y2: 79,
+        color: img.ColorRgba8(200, 200, 200, 255),
+      );
+      final out = img.decodePng(
+        applyImageFx({
+          'data': Uint8List.fromList(img.encodePng(im)),
+          'feather': 0,
+          'inner': 0,
+          'angle': 0.0,
+          'rim': 60,
+        }),
+      )!;
+      final edge = out.getPixel(25, 50); // linker Umriss
+      expect(edge.a, lessThan(255));
+      expect(edge.r, lessThan(200));
+      final center = out.getPixel(40, 60);
+      expect(center.a, greaterThan(245)); // Mitte kaum berührt
+      final bottom = out.getPixel(40, 79); // Bildrand unten = kein Umriss
+      expect(bottom.a, greaterThan(200));
+    },
+  );
+
+  test('Kleine Inseln (z. B. Fleck in der Ecke) werden entfernt', () {
+    final im = img.Image(width: 60, height: 60)
+      ..clear(img.ColorRgb8(255, 0, 255));
+    img.fillRect(
+      im,
+      x1: 15,
+      y1: 10,
+      x2: 45,
+      y2: 59,
+      color: img.ColorRgb8(20, 20, 25),
+    );
+    img.fillRect(
+      im,
+      x1: 1,
+      y1: 1,
+      x2: 3,
+      y2: 3,
+      color: img.ColorRgb8(120, 60, 90), // kleiner Rest oben links
+    );
+    final out = img.decodePng(
+      chromaKeyMagenta(Uint8List.fromList(img.encodePng(im))),
+    )!;
+    expect(out.getPixel(2, 2).a, 0);
+    expect(out.getPixel(30, 40).a, 255);
+  });
+
+  test('Rosa in lockigen Haaren auch etwas tiefer im Umriss entfärbt', () {
+    // Breites Haar-Band mit rosa Strähne 12 px innerhalb des Umrisses.
+    final im = img.Image(width: 120, height: 120)
+      ..clear(img.ColorRgb8(255, 0, 255));
+    img.fillRect(
+      im,
+      x1: 20,
+      y1: 20,
+      x2: 99,
+      y2: 119,
+      color: img.ColorRgb8(110, 70, 40),
+    );
+    img.fillRect(
+      im,
+      x1: 30,
+      y1: 32,
+      x2: 90,
+      y2: 33,
+      color: img.ColorRgb8(190, 90, 150), // Magenta-Reflex in den Locken
+    );
+    final out = img.decodePng(
+      chromaKeyMagenta(Uint8List.fromList(img.encodePng(im))),
+    )!;
+    final strand = out.getPixel(60, 32);
+    expect(strand.b, lessThanOrEqualTo(strand.g + 2));
+  });
 }
