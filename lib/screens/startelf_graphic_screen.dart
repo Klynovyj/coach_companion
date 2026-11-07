@@ -424,6 +424,17 @@ const Map<String, Offset> _kCenteredItemDefaults = {
   'sponsorbar': Offset(0.5, 0.90),
 };
 
+/// Default-Positionen, wenn das Spielerfoto weich eingeblendet ist: Foto
+/// unten randlos, Texte oben über dem auslaufenden Fotorand – das Gesicht
+/// bleibt frei (Align-Semantik: 0 = oben bündig, 1 = unten bündig).
+const Map<String, Offset> _kBlendItemDefaults = {
+  'sponsor': Offset(0.5, 0.03),
+  'logos': Offset(0.5, 0.11),
+  'headline': Offset(0.5, 0.255),
+  'info': Offset(0.5, 0.345),
+  'sponsorbar': Offset(0.5, 0.98),
+};
+
 /// Textfarben für eigene Textfelder (key → Anzeigename).
 const Map<String, String> _kTextColors = {
   'white': 'Weiß',
@@ -682,6 +693,39 @@ final _logoFixCache = <String, ({bool dark, Uint8List bytes})>{};
   return res;
 }
 
+final _photoInfoCache = <String, ({double aspect, bool opaque})>{};
+
+/// Seitenverhältnis (Breite/Höhe) eines Fotos und ob es undurchsichtig ist
+/// (JPEG oder PNG ohne transparente Pixel → „rechteckiges Foto", das weich ins
+/// Bild eingeblendet werden kann). Zwischengespeichert je Bild.
+({double aspect, bool opaque}) photoInfo(Uint8List bytes) {
+  var h = bytes.length;
+  final step = math.max(1, bytes.length ~/ 64);
+  for (var i = 0; i < bytes.length; i += step) {
+    h = (h * 31 + bytes[i]) & 0x3fffffff;
+  }
+  final key = '${bytes.length}:$h';
+  final c = _photoInfoCache[key];
+  if (c != null) return c;
+  var res = (aspect: 0.75, opaque: false);
+  try {
+    final isJpeg = bytes.length > 2 && bytes[0] == 0xFF && bytes[1] == 0xD8;
+    if (isJpeg) {
+      final info = img.findDecoderForData(bytes)?.startDecode(bytes);
+      if (info != null && info.width > 0 && info.height > 0) {
+        res = (aspect: info.width / info.height, opaque: true);
+      }
+    } else {
+      final im = img.decodeImage(bytes);
+      if (im != null && im.width > 0 && im.height > 0) {
+        res = (aspect: im.width / im.height, opaque: !hasTransparentPixels(im));
+      }
+    }
+  } catch (_) {}
+  _photoInfoCache[key] = res;
+  return res;
+}
+
 /// Eintrag im Tore-Zeitstrahl (Position + Beschriftungs-Etage).
 typedef _TlEntry = ({
   int minute,
@@ -841,8 +885,9 @@ Uint8List removeUniformBackground(Uint8List input) {
     final x = idx % w, y = idx ~/ w;
     final p = im.getPixel(x, y);
     final dr = p.r.toInt() - rr, dg = p.g.toInt() - gg, db = p.b.toInt() - bb;
-    if (dr * dr + dg * dg + db * db > tol2)
+    if (dr * dr + dg * dg + db * db > tol2) {
       continue; // Kante → nicht überqueren
+    }
     im.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), 0);
     push(x + 1, y);
     push(x - 1, y);
@@ -960,6 +1005,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   String _annHeadText = 'SPIELTAG';
   bool _posterLogoDisc = true; // heller Kreis hinter den Logos (Sichtbarkeit)
   bool _posterShadow = false; // Schlagschatten beim freigestellten Spieler
+  // Spielerfoto (rechteckig) weich ins Bild einblenden statt als Kasten.
+  bool _posterBlend = true;
   double _posterShadowStrength = 45; // 0..100
   double _posterShadowAngle = 45; // Richtung in Grad (0=rechts, 90=unten)
   // Pro Format (Story/Post) ein EIGENES Layout: Spielerbild, Overlays, Texte und
@@ -1538,6 +1585,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'headText': _annHeadText,
       'logoDisc': _posterLogoDisc,
       'shadow': _posterShadow,
+      'blend': _posterBlend,
       'shadowStrength': _posterShadowStrength,
       'shadowAngle': _posterShadowAngle,
       'font': _posterFont,
@@ -1757,6 +1805,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     if (m['logoDisc'] is bool) _posterLogoDisc = m['logoDisc'];
     if (m['shadow'] is bool) _posterShadow = m['shadow'];
+    if (m['blend'] is bool) _posterBlend = m['blend'];
     if (m['shadowStrength'] is num) {
       _posterShadowStrength = (m['shadowStrength'] as num).toDouble();
     }
@@ -3960,6 +4009,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     posterBadge: _posterBadge,
     posterLogoDisc: _posterLogoDisc,
     posterShadow: _posterShadow,
+    posterBlend: _posterBlend,
     posterShadowStrength: _posterShadowStrength,
     posterShadowAngle: _posterShadowAngle,
     posterOrder: _posterOrder,
@@ -4814,6 +4864,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             value: _posterLogoDisc,
             onChanged: (v) => upd(() => _posterLogoDisc = v),
           ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Spielerfoto ins Bild einblenden',
+            style: TextStyle(fontSize: 13),
+          ),
+          subtitle: const Text(
+            'Randlos mit weichem Übergang (nur bei Fotos ohne Freistellung)',
+            style: TextStyle(fontSize: 10.5),
+          ),
+          value: _posterBlend,
+          onChanged: (v) => upd(() => _posterBlend = v),
+        ),
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
@@ -6270,6 +6334,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterBadge,
     this.posterLogoDisc = true,
     this.posterShadow = false,
+    this.posterBlend = true,
     this.posterShadowStrength = 45,
     this.posterShadowAngle = 45,
     this.posterOrder = const [],
@@ -6349,6 +6414,7 @@ class _StartelfGraphic extends StatelessWidget {
   final String? posterBadge; // rundes Zweit-Foto (Data-URL)
   final bool posterLogoDisc; // heller Kreis hinter den Poster-Logos
   final bool posterShadow; // Schlagschatten beim freigestellten Spieler
+  final bool posterBlend; // Spielerfoto weich ins Bild einblenden
   final double posterShadowStrength; // 0..100
   final double posterShadowAngle; // Richtung in Grad (0=rechts, 90=unten)
   final List<String> posterOrder; // Ebenen-Reihenfolge (hinten → vorne)
@@ -6976,8 +7042,9 @@ class _StartelfGraphic extends StatelessWidget {
               behavior: HitTestBehavior.translucent,
               onScaleStart: (d) {
                 var target = sel;
-                if (d.pointerCount < 2)
+                if (d.pointerCount < 2) {
                   target = hitAt(d.localFocalPoint) ?? sel;
+                }
                 if (target != null && target != sel) {
                   onPosterSelect?.call(target);
                 }
@@ -8548,19 +8615,7 @@ class _StartelfGraphic extends StatelessWidget {
                 if (TeamLogo.decode(s.logo) case final b?)
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 4),
-                    child: Container(
-                      padding: const EdgeInsets.all(5),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Image.memory(
-                        b,
-                        height: compact ? 22 : 28,
-                        fit: BoxFit.contain,
-                        gaplessPlayback: true,
-                      ),
-                    ),
+                    child: _logoChip(b, height: compact ? 30 : 36),
                   ),
             ],
           );
@@ -8673,11 +8728,88 @@ class _StartelfGraphic extends StatelessWidget {
           );
         }
 
+        // Rechteckiges Foto „wie vom Designer" ins Bild einblenden: randlos
+        // (volle Breite), oben lang und weich auslaufend, seitlich und unten
+        // sanft → Foto und Hintergrund verschmelzen, Texte liegen darüber.
+        final playerInfo = mainBytes == null ? null : photoInfo(mainBytes);
+        final blendPlayer =
+            posterBlend && playerInfo != null && playerInfo.opaque;
+        Size blendSize() {
+          // Mindestens volle Breite und ~¾ der Höhe (seitlich darf es
+          // anschneiden), höchstens 82 % der Höhe.
+          // Querformat: einfach volle Breite.
+          final a = playerInfo!.aspect;
+          if (a >= 1) return Size(w, w / a);
+          final ph = (w / a).clamp(h * 0.74, h * 0.82).toDouble();
+          return Size(ph * a, ph);
+        }
+
+        Widget blendedPhoto(Uint8List bytes) {
+          final s = blendSize();
+          final fullBleed = s.width >= w - 13;
+          LinearGradient fade(
+            Alignment begin,
+            Alignment end,
+            List<double> stops,
+          ) => LinearGradient(
+            begin: begin,
+            end: end,
+            colors: const [
+              Color(0x00000000),
+              Color(0xFF000000),
+              Color(0xFF000000),
+              Color(0x00000000),
+            ],
+            stops: stops,
+          );
+          // Breiter als das Canvas → seitlich überstehen lassen (nicht
+          // stauchen); sichtbar/greifbar bleibt die Canvas-Breite.
+          final masked = ShaderMask(
+            blendMode: BlendMode.dstIn,
+            shaderCallback: (r) => fade(
+              Alignment.topCenter,
+              Alignment.bottomCenter,
+              const [0, 0.34, 0.86, 1],
+            ).createShader(r),
+            child: ShaderMask(
+              blendMode: BlendMode.dstIn,
+              shaderCallback: (r) => fade(
+                Alignment.centerLeft,
+                Alignment.centerRight,
+                fullBleed ? const [0, 0.07, 0.93, 1] : const [0, 0.16, 0.84, 1],
+              ).createShader(r),
+              child: SizedBox(
+                width: s.width,
+                height: s.height,
+                child: Image.memory(
+                  bytes,
+                  fit: BoxFit.fill,
+                  gaplessPlayback: true,
+                ),
+              ),
+            ),
+          );
+          final vw = math.min(s.width, w - 12);
+          if (vw >= s.width) return masked;
+          return SizedBox(
+            width: vw,
+            height: s.height,
+            child: OverflowBox(
+              minWidth: s.width,
+              maxWidth: s.width,
+              minHeight: s.height,
+              maxHeight: s.height,
+              child: masked,
+            ),
+          );
+        }
+
         // Inhalt je Element-ID (null = nicht vorhanden → wird übersprungen).
         Widget? content(String id) {
           switch (id) {
             case 'player':
               if (mainBytes == null) return null;
+              if (blendPlayer) return blendedPhoto(mainBytes);
               return imageWithShadow(
                 mainBytes,
                 width: w - 2 * pad,
@@ -8730,8 +8862,16 @@ class _StartelfGraphic extends StatelessWidget {
 
         // Ein frei verschieb- und skalierbares Element (tippen = auswählen).
         Widget el(String id, Widget child) {
+          // Eingeblendetes Foto startet unten bündig (Unterkante = Bildrand).
+          final blendDefault = id == 'player' && blendPlayer
+              ? (posterCentered.contains(id)
+                    ? Offset(0.5, 1 - (blendSize().height / 2 + 6) / h)
+                    : const Offset(0.5, 1.0)) // Align: unten bündig
+              : null;
           final pos =
               posterItemPos[id] ??
+              blendDefault ??
+              (blendPlayer ? _kBlendItemDefaults[id] : null) ??
               (posterStyle
                   ? _kPosterItemDefaults
                   : _kCenteredItemDefaults)[id] ??
@@ -8817,8 +8957,9 @@ class _StartelfGraphic extends StatelessWidget {
               behavior: HitTestBehavior.translucent,
               onScaleStart: (d) {
                 var target = sel;
-                if (d.pointerCount < 2)
+                if (d.pointerCount < 2) {
                   target = hitAt(d.localFocalPoint) ?? sel;
+                }
                 if (target != null && target != sel) {
                   onPosterSelect?.call(target);
                 }
@@ -8894,26 +9035,8 @@ class _StartelfGraphic extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(5),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Image.memory(
-            logoBytes,
-            height: compact ? 22 : 28,
-            fit: BoxFit.contain,
-            gaplessPlayback: true,
-          ),
-        ),
+        // Helle Logos automatisch auf dunklem Feld (siehe _logoChip).
+        _logoChip(logoBytes, height: compact ? 29 : 35),
       ],
     );
   }
@@ -8988,8 +9111,9 @@ class _StartelfGraphic extends StatelessWidget {
     // Helle/goldene Logos sind auf Weiß kaum lesbar → automatisch dunkles Feld
     // (weißer Bildhintergrund wird dabei transparent).
     final fix = logoContrastFix(bytes);
-    if (fix.dark)
+    if (fix.dark) {
       return _darkLogoChip(fix.bytes, height: height, circle: circle);
+    }
     // Leichter 3D-/Erhebungs-Effekt: Schlagschatten unten.
     final shadow = [
       BoxShadow(
