@@ -481,6 +481,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   Map<String, double> get _imgInner =>
       _imgInnerF.putIfAbsent(_designKey, () => {});
   bool _featherBusy = false;
+  String? _fxPending; // während einer Bildeffekt-Berechnung angefragter Re-Run
   // Profi-Finish (globale Bildkorrektur) je Design; wirkt nur aufs Gesamtbild.
   final Map<String, _Grade> _gradeF = {};
   _Grade get _grade => _gradeF.putIfAbsent(_designKey, () => _Grade());
@@ -2533,6 +2534,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Bildeffekte (weiche Kanten + innerer Schatten) auf das Element [id]
   /// anwenden – immer aus dem Original neu berechnet (kein Verschlechtern).
   Future<void> _applyImageFx(String id) async {
+    // Läuft schon eine Berechnung? Wunsch merken und danach nachholen – die
+    // Regler bleiben dabei frei beweglich (keine Sperre mehr).
+    if (_featherBusy) {
+      _fxPending = id;
+      return;
+    }
     final orig = _imgOrig[id];
     if (orig == null) return;
     final feather = _imgFeather[id] ?? 0;
@@ -2559,6 +2566,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       // Bildeffekt fehlgeschlagen – Bild bleibt wie es war.
     } finally {
       if (mounted) setState(() => _featherBusy = false);
+      final pend = _fxPending;
+      if (pend != null && mounted) {
+        _fxPending = null;
+        _applyImageFx(pend);
+      }
     }
   }
 
@@ -3066,20 +3078,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         _imgFeather[id] ?? 0,
                         0,
                         100,
-                        _featherBusy
-                            ? (_) {}
-                            : (v) => apply(() => _imgFeather[id] = v),
-                        onEnd: _featherBusy ? null : (_) => _applyImageFx(id),
+                        (v) => apply(() => _imgFeather[id] = v),
+                        onEnd: (_) => _applyImageFx(id),
                       ),
                       labeledSlider(
                         'Innerer Schatten',
                         _imgInner[id] ?? 0,
                         0,
                         100,
-                        _featherBusy
-                            ? (_) {}
-                            : (v) => apply(() => _imgInner[id] = v),
-                        onEnd: _featherBusy ? null : (_) => _applyImageFx(id),
+                        (v) => apply(() => _imgInner[id] = v),
+                        onEnd: (_) => _applyImageFx(id),
                       ),
                     ],
                     if (isText) ...[
