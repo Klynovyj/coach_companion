@@ -42,6 +42,20 @@ void main() {
     expect(back.playerPhoto, isNull);
   });
 
+  test('FuPa-Foto: Vorlage + verknüpfter Spieler bleiben erhalten', () {
+    const d = DesignerData(
+      id: 'designer:f1',
+      template: 'fupa',
+      title: 'FuPa Ben Kania',
+      playerId: 'p-7',
+    );
+    final back = DesignerData.fromJson(d.toJson())!;
+    expect(back.template, 'fupa');
+    expect(back.playerId, 'p-7');
+    expect(back.templateLabel, 'FuPa-Foto');
+    expect(DesignerData.templates, contains('fupa'));
+  });
+
   test('Ungültiges JSON → null', () {
     expect(DesignerData.fromJson(null), isNull);
     expect(DesignerData.fromJson({'template': 'goal'}), isNull);

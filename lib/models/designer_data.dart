@@ -14,6 +14,7 @@ class DesignerData {
     this.opponentLogo,
     this.isHome = true,
     this.matchDate,
+    this.playerId,
   });
 
   /// Speicher-ID (`designer:<uuid>`).
@@ -42,13 +43,17 @@ class DesignerData {
   final bool isHome;
   final DateTime? matchDate;
 
-  static const templates = ['goal', 'motm', 'occasion', 'free'];
+  /// Verknüpfter Spieler (z. B. FuPa-Foto → als Spielerfoto übernehmen).
+  final String? playerId;
+
+  static const templates = ['goal', 'motm', 'occasion', 'fupa', 'free'];
 
   /// Lesbarer Name der Vorlage.
   static String labelOf(String template) => switch (template) {
     'goal' => 'Tor',
     'motm' => 'Spieler des Spiels',
     'occasion' => 'Anlass',
+    'fupa' => 'FuPa-Foto',
     _ => 'Freies Design',
   };
 
@@ -66,6 +71,7 @@ class DesignerData {
     opponentLogo: opponentLogo,
     isHome: isHome,
     matchDate: matchDate,
+    playerId: playerId,
   );
 
   /// Ohne Startbild (das liegt nach dem Anlegen ohnehin im Design selbst).
@@ -80,6 +86,7 @@ class DesignerData {
     'opponentLogo': opponentLogo,
     'isHome': isHome,
     'matchDate': matchDate?.toIso8601String(),
+    'playerId': playerId,
   };
 
   static DesignerData? fromJson(Object? v) {
@@ -99,6 +106,7 @@ class DesignerData {
       opponentLogo: v['opponentLogo'] as String?,
       isHome: v['isHome'] != false,
       matchDate: DateTime.tryParse(v['matchDate']?.toString() ?? ''),
+      playerId: v['playerId'] as String?,
     );
   }
 }

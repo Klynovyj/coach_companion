@@ -439,6 +439,22 @@ const Map<String, Offset> _kBlendItemDefaults = {
   'sponsorbar': Offset(0.5, 0.98),
 };
 
+/// ID der team-weiten Hintergrund-Vorlage für FuPa-Fotos.
+const String _kFupaBgId = 'fupa-background';
+
+/// Hintergrund einer Vorlage auf Grafik-Einstellungen legen (nur Look).
+GraphicSettings _withPreset(GraphicSettings s, GraphicPreset p) => s.copyWith(
+  bgImage: p.bgImage,
+  clearBgImage: p.bgImage == null,
+  gradTop: p.gradTop,
+  gradBottom: p.gradBottom,
+  overlayOpacity: p.overlayOpacity,
+  bgOpacity: p.bgOpacity,
+  bgBlend: p.bgBlend,
+  accent: p.accent,
+  clearAccent: p.accent == null,
+);
+
 /// „Präsentiert von"-Texte als eigene, editierbare Objekte.
 const List<String> _kSponsorTextIds = [
   'sponsortext',
@@ -1041,7 +1057,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     with WidgetsBindingObserver {
   final GlobalKey _boundaryKey = GlobalKey();
   final GlobalKey _bgBoundaryKey = GlobalKey(); // nur die Hintergrund-Ebene
-  bool _story = true; // true = Story 9:16, false = Post 1:1
+  // Format: 's' = Story 9:16, 'p' = Post 1:1, 'f' = FuPa-Spielerfoto 4:5.
+  String _format = 's';
+  bool get _story => _format == 's';
+  double get _cw =>
+      _format == 's' ? _storyW : (_format == 'f' ? _fupaW : _postW);
+  double get _ch =>
+      _format == 's' ? _storyH : (_format == 'f' ? _fupaH : _postH);
+  String get _aiAspect =>
+      _format == 's' ? '9:16' : (_format == 'f' ? '4:5' : '1:1');
+
+  /// Designer-Vorlage „FuPa-Foto" (960×1200, nur freigestellter Spieler).
+  bool get _isFupa => widget.designer?.template == 'fupa';
   // Spielankündigung: Überschrift-Modus & -Text. Transient je Grafik (kein Sync).
   String _annHeadMode = 'spieltag'; // 'spieltag' | 'auto' | 'custom'
   String _annHeadText = 'SPIELTAG';
@@ -1053,7 +1080,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   double _posterShadowAngle = 45; // Richtung in Grad (0=rechts, 90=unten)
   // Pro Format (Story/Post) ein EIGENES Layout: Spielerbild, Overlays, Texte und
   // Position/Größe/Reihenfolge getrennt (Key `_designKey`). Lazy via putIfAbsent.
-  String get _designKey => _story ? 's' : 'p';
+  String get _designKey => _format;
   final Map<String, Map<String, Offset>> _posterPosF = {};
   // Element-IDs, deren Position die MITTE angibt (1:1 verschiebbar). Ältere
   // Positionen (Align-Semantik) werden beim ersten Auswählen ohne Sprung
@@ -1105,8 +1132,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final cur = m.getMaxScaleOnAxis();
     if (cur <= 0) return;
     final f = target / cur;
-    final w = _story ? _storyW : _postW;
-    final areaH = (_story ? _storyH : _postH) * _ftSplit;
+    final w = _cw;
+    final areaH = _ch * _ftSplit;
     final cx = w / 2, cy = areaH / 2;
     _ftCtrl.value = Matrix4.translationValues(cx, cy, 0)
         .multiplied(Matrix4.diagonal3Values(f, f, 1))
@@ -1328,6 +1355,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Logische Zeichengrößen (× pixelRatio 3 = 1080×1920 bzw. 1080×1080).
   static const double _storyW = 360, _storyH = 640;
   static const double _postW = 360, _postH = 360;
+  // FuPa-Spielerfoto: 4:5 (Export 960×1200 wie bei FuPa).
+  static const double _fupaW = 360, _fupaH = 450;
 
   /// Standard-Ebenenreihenfolge (hinten → vorne).
   static const List<String> _kPosterBaseOrder = [
@@ -1448,7 +1477,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           _boundaryKey.currentContext?.findRenderObject()
               as RenderRepaintBoundary?;
       if (boundary == null) return;
-      final logicalWidth = _story ? _storyW : _postW;
+      final logicalWidth = _cw;
       final image = await boundary.toImage(pixelRatio: 220 / logicalWidth);
       final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (data == null) return;
@@ -1483,6 +1512,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _settings = settings;
       _loading = false;
     });
+    // FuPa: eigener, team-weiter Hintergrund (Vorlage „fupa-background").
+    if (_isFupa) {
+      final presets = await state.graphicPresets();
+      if (!mounted) return;
+      for (final p in presets) {
+        if (p.id == _kFupaBgId) {
+          setState(() => _settings = _withPreset(_settings, p));
+          break;
+        }
+      }
+    }
     _refreshBgDark();
     // Lokale Einstellung (evtl. vor Existenz der Cloud-Tabelle angelegt) in die
     // Cloud nachschieben, damit sie auf anderen Geräten erscheint.
@@ -1502,6 +1542,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           try {
             _applyDesignJson(jsonDecode(json) as Map<String, dynamic>);
           } catch (_) {}
+        } else if (_isFupa) {
+          // Neues FuPa-Foto: Hochformat, NUR der Spieler (kein Logo/Text).
+          _format = 'f';
+          _posterOrderF['f'] = ['player'];
         } else if (designer.playerPhoto != null) {
           for (final k in const ['s', 'p']) {
             _posterMainF[k] = designer.playerPhoto;
@@ -1636,6 +1680,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'mainMode': _mainSponsorMode,
       'showOthers': _showOtherSponsors,
       'story': _story,
+      'format': _format,
       'ovSeq': _posterOverlaySeq,
       // Designer: Vorlage/Titel/Vorgaben zum Wiederöffnen.
       if (widget.designer != null)
@@ -1878,7 +1923,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (m['showMain'] is bool) _showMainSponsor = m['showMain'];
     if (m['mainMode'] is String) _mainSponsorMode = m['mainMode'];
     if (m['showOthers'] is bool) _showOtherSponsors = m['showOthers'];
-    if (m['story'] is bool) _story = m['story'];
+    if (m['story'] is bool) _format = m['story'] ? 's' : 'p';
+    if (m['format'] is String && const ['s', 'p', 'f'].contains(m['format'])) {
+      _format = m['format'];
+    }
     if (m['ovSeq'] is num) _posterOverlaySeq = (m['ovSeq'] as num).toInt();
     if (m['txtSeq'] is num) _textSeq = (m['txtSeq'] as num).toInt();
     _syncFtCtrl(); // gespeicherten Foto-Ausschnitt (ENDSTAND) übernehmen
@@ -1909,12 +1957,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Seitenverhältnis des finalen Fotobereichs (für WYSIWYG-Zuschnitt): Band =
   /// volle Breite × 46 % Höhe; Hintergrund = volle Grafik. Nach aktuellem Format.
   double _photoAspect(_PhotoPlace place) {
-    final w = _story ? _storyW : _postW;
-    final h = _story ? _storyH : _postH;
+    final w = _cw;
+    final h = _ch;
     switch (place) {
       case _PhotoPlace.band:
         return w / (h * 0.46);
       case _PhotoPlace.posterMain:
+        // FuPa: Spieler füllt fast das ganze Hochformat.
+        if (_isFupa) return w / (h * 0.95);
         return w /
             (h * _kPosterMainHeightFactor); // Hochformat, unterer Bereich
       case _PhotoPlace.posterBadge:
@@ -2244,16 +2294,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       );
       return null;
     }
-    final id = await Navigator.push<String?>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => PlayerPickerPage(
-          players: players,
-          allowNone: false,
-          title: 'Spieler für das Bild',
-        ),
-      ),
-    );
+    // FuPa-Foto: direkt der verknüpfte Spieler (keine erneute Auswahl).
+    final linked = _isFupa ? widget.designer?.playerId : null;
+    final id = linked != null && players.any((p) => p.id == linked)
+        ? linked
+        : await Navigator.push<String?>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PlayerPickerPage(
+                players: players,
+                allowNone: false,
+                title: 'Spieler für das Bild',
+              ),
+            ),
+          );
     if (id == null || id == kPlayerPickNone || !mounted) return null;
     final player = players.firstWhere(
       (p) => p.id == id,
@@ -2485,56 +2539,73 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 controller: scroll,
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 children: [
-                  const Text(
-                    'Grafik anpassen',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 14),
-                  // Titel ------------------------------------------------
-                  TextField(
-                    controller: titleCtrl,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(
-                      labelText: 'Titel (Vereinsname)',
-                      hintText: widget.teamName,
-                      border: const OutlineInputBorder(),
+                  Text(
+                    _isFupa ? 'FuPa-Hintergrund' : 'Grafik anpassen',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
                     ),
-                    onChanged: (v) => apply(
-                      _settings.copyWith(
-                        title: v.trim(),
-                        clearTitle: v.trim().isEmpty,
+                  ),
+                  if (_isFupa)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 4),
+                      child: Text(
+                        'Gilt für ALLE FuPa-Fotos – die anderen Grafiken '
+                        'behalten ihren Hintergrund.',
+                        style: TextStyle(fontSize: 12),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-                  // Logo -------------------------------------------------
-                  _rowWithImage(
-                    label: 'Logo (hell)',
-                    preview: _settings.logo,
-                    onPick: () async {
-                      final url = await _pickImage(asBackground: false);
-                      if (url != null) apply(_settings.copyWith(logo: url));
-                    },
-                    onClear: _settings.logo == null
-                        ? null
-                        : () => apply(_settings.copyWith(clearLogo: true)),
-                    clearLabel: 'Team-Logo',
-                  ),
-                  const SizedBox(height: 10),
-                  // Logo für dunkle Hintergründe -------------------------
-                  _rowWithImage(
-                    label: 'Logo (dunkel)',
-                    preview: _settings.logoDark,
-                    onPick: () async {
-                      final url = await _pickImage(asBackground: false);
-                      if (url != null) apply(_settings.copyWith(logoDark: url));
-                    },
-                    onClear: _settings.logoDark == null
-                        ? null
-                        : () => apply(_settings.copyWith(clearLogoDark: true)),
-                    clearLabel: 'Entfernen',
-                  ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 14),
+                  // Titel ------------------------------------------------
+                  if (!_isFupa) ...[
+                    TextField(
+                      controller: titleCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: InputDecoration(
+                        labelText: 'Titel (Vereinsname)',
+                        hintText: widget.teamName,
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (v) => apply(
+                        _settings.copyWith(
+                          title: v.trim(),
+                          clearTitle: v.trim().isEmpty,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // Logo -------------------------------------------------
+                    _rowWithImage(
+                      label: 'Logo (hell)',
+                      preview: _settings.logo,
+                      onPick: () async {
+                        final url = await _pickImage(asBackground: false);
+                        if (url != null) apply(_settings.copyWith(logo: url));
+                      },
+                      onClear: _settings.logo == null
+                          ? null
+                          : () => apply(_settings.copyWith(clearLogo: true)),
+                      clearLabel: 'Team-Logo',
+                    ),
+                    const SizedBox(height: 10),
+                    // Logo für dunkle Hintergründe -------------------------
+                    _rowWithImage(
+                      label: 'Logo (dunkel)',
+                      preview: _settings.logoDark,
+                      onPick: () async {
+                        final url = await _pickImage(asBackground: false);
+                        if (url != null) {
+                          apply(_settings.copyWith(logoDark: url));
+                        }
+                      },
+                      onClear: _settings.logoDark == null
+                          ? null
+                          : () =>
+                                apply(_settings.copyWith(clearLogoDark: true)),
+                      clearLabel: 'Entfernen',
+                    ),
+                    const SizedBox(height: 10),
+                  ],
                   // Form des Logo-Hintergrunds (eckig/rund) -------------
                   Row(
                     children: [
@@ -2798,6 +2869,25 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     );
     // Speichern + in die Cloud spiegeln. (state = oben gelesener AppState)
     if (!mounted) return;
+    if (_isFupa) {
+      // FuPa: NUR den eigenen FuPa-Hintergrund sichern (team-weit, synchron)
+      // – die Einstellungen der anderen Grafiken bleiben unberührt.
+      await state.saveGraphicPreset(
+        GraphicPreset(
+          id: _kFupaBgId,
+          name: 'FuPa-Hintergrund',
+          bgImage: _settings.bgImage,
+          gradTop: _settings.gradTop,
+          gradBottom: _settings.gradBottom,
+          overlayOpacity: _settings.overlayOpacity,
+          bgOpacity: _settings.bgOpacity,
+          bgBlend: _settings.bgBlend,
+          accent: _settings.accent,
+          createdAt: DateTime.now().toIso8601String(),
+        ),
+      );
+      return;
+    }
     await state.saveGraphicSettings(_settings);
     await state.pushGraphicSettingsToCloud();
   }
@@ -3073,7 +3163,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   Future<Uint8List?> _capturePng(GlobalKey key) async {
     // Höhere Export-Auflösung (1440 px Breite → 1440×2560 bzw. 1440×1440).
-    final image = await _captureImage(key, 1440);
+    final image = await _captureImage(key, _format == 'f' ? 960 : 1440);
     if (image == null) return null;
     final data = await image.toByteData(format: ui.ImageByteFormat.png);
     return data?.buffer.asUint8List();
@@ -3129,7 +3219,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final boundary =
         key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
     if (boundary == null) return null;
-    final logicalWidth = _story ? _storyW : _postW;
+    final logicalWidth = _cw;
     return boundary.toImage(pixelRatio: widthPx / logicalWidth);
   }
 
@@ -3266,7 +3356,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         images: images,
         prompt: fullPrompt,
         mode: wish.mode,
-        aspect: _story ? '9:16' : '1:1',
+        aspect: _aiAspect,
       );
       if (out == null) {
         messenger.showSnackBar(
@@ -3737,7 +3827,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ],
         prompt: subject,
         mode: 'cutout',
-        aspect: _story ? '9:16' : '1:1',
+        aspect: _aiAspect,
         key: 'magenta',
       );
       if (out == null) {
@@ -4110,7 +4200,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     posterBadge: _posterBadge,
     posterLogoDisc: _posterLogoDisc,
     posterShadow: _posterShadow,
-    posterBlend: _posterBlend,
+    posterBlend: _posterBlend && !_isFupa,
+    fupaPlayer: _isFupa,
     posterShadowStrength: _posterShadowStrength,
     posterShadowAngle: _posterShadowAngle,
     posterOrder: _posterOrder,
@@ -4867,6 +4958,87 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     });
   }
 
+  /// FuPa: Foto aufnehmen/wählen (Kamera, Galerie, Kader) und direkt per KI
+  /// freistellen (Motiv-Abfrage wie gewohnt).
+  Future<void> _fupaTakePhoto() async {
+    final before = _posterMain;
+    await _addPosterMain();
+    if (!mounted || _posterMain == null || _posterMain == before) return;
+    setState(() => _posterSel = 'player');
+    await _cutoutSelected();
+  }
+
+  /// FuPa: fertiges Bild (Hochformat) als eigenes Spielerfoto im Kader
+  /// übernehmen – nach Rückfrage.
+  Future<void> _fupaAdoptAsPlayerPhoto() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final state = context.read<AppState>();
+    final pid = widget.designer?.playerId;
+    final teamId = widget.teamId;
+    if (pid == null || teamId == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Kein Spieler verknüpft.')),
+      );
+      return;
+    }
+    final players = await state.playersOf(teamId);
+    if (!mounted) return;
+    final player = players.where((p) => p.id == pid).firstOrNull;
+    if (player == null) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Spieler nicht mehr im Kader.')),
+      );
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Als Spielerfoto übernehmen?'),
+        content: Text(
+          'Das FuPa-Foto wird das Foto von ${player.fullName} in der App '
+          '(Kader, Grafiken). Das bisherige eigene Foto wird ersetzt.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Übernehmen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() => _sharing = true);
+    try {
+      final image = await _captureImage(_boundaryKey, 720); // 720×900
+      if (image == null) return;
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data == null) return;
+      final url = await compute(_rgbaToJpegDataUrl, <String, Object>{
+        'w': image.width,
+        'h': image.height,
+        'px': data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      });
+      await state.updatePlayer(
+        player.copyWith(customPhoto: url, useCustomPhoto: true),
+      );
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Als Spielerfoto von ${player.fullName} übernommen.'),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Übernehmen fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
   /// Schlanker Hauptscreen-Block: großer „Bearbeiten"-Button. Die element-
   /// schweren Werkzeuge stecken im Vollbild-Editor (_editTools).
   Widget _announcementControls() {
@@ -4875,6 +5047,30 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          if (_isFupa) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: _aiBusy ? null : _fupaTakePhoto,
+                    icon: const Icon(Icons.photo_camera),
+                    label: const Text('Foto + freistellen'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton.tonalIcon(
+                    onPressed: _sharing || _posterMain == null
+                        ? null
+                        : _fupaAdoptAsPlayerPhoto,
+                    icon: const Icon(Icons.how_to_reg),
+                    label: const Text('Als Spielerfoto'),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+          ],
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
@@ -5446,7 +5642,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     try {
       final magenta = mode == 'cutout';
       final canvas = await compute(lookCanvasPng, <String, Object>{
-        'w': _story ? 576 : 1024,
+        'w': _format == 's' ? 576 : (_format == 'f' ? 819 : 1024),
         'h': 1024,
         'magenta': magenta,
       });
@@ -5463,7 +5659,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ],
         prompt: prompt,
         mode: 'overlay',
-        aspect: _story ? '9:16' : '1:1',
+        aspect: _aiAspect,
         key: magenta ? 'magenta' : 'black',
       );
       if (out == null) {
@@ -5756,8 +5952,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Hauptscreen: bei der Ankündigung nicht fummelig – Tippen öffnet stattdessen
   /// den Editor (Spieler-Ebene ignoriert Gesten).
   Widget _previewStack({required bool interactive}) {
-    final w = _story ? _storyW : _postW;
-    final h = _story ? _storyH : _postH;
+    final w = _cw;
+    final h = _ch;
     final look = _look;
     final lookBytes = look?.bytes;
     final mainGraphic = RepaintBoundary(
@@ -6054,21 +6250,30 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: SegmentedButton<bool>(
-              segments: const [
-                ButtonSegment(value: true, label: Text('Story 9:16')),
-                ButtonSegment(value: false, label: Text('Post 1:1')),
-              ],
-              selected: {_story},
-              showSelectedIcon: false,
-              onSelectionChanged: (s) {
-                setState(() => _story = s.first);
-                _syncFtCtrl(); // Foto-Ausschnitt des anderen Formats laden
-              },
+          if (_isFupa)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: Text(
+                'FuPa-Spielerfoto · 960 × 1200 px (Hochformat 4:5)',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('Story 9:16')),
+                  ButtonSegment(value: false, label: Text('Post 1:1')),
+                ],
+                selected: {_story},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) {
+                  setState(() => _format = s.first ? 's' : 'p');
+                  _syncFtCtrl(); // Foto-Ausschnitt des anderen Formats laden
+                },
+              ),
             ),
-          ),
           // Ergebnis: Standard oder „Mit Foto" (ENDSTAND, Foto oben).
           if (widget.isResult)
             Padding(
@@ -6489,6 +6694,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterLogoDisc = true,
     this.posterShadow = false,
     this.posterBlend = true,
+    this.fupaPlayer = false,
     this.posterShadowStrength = 45,
     this.posterShadowAngle = 45,
     this.posterOrder = const [],
@@ -6569,6 +6775,7 @@ class _StartelfGraphic extends StatelessWidget {
   final bool posterLogoDisc; // heller Kreis hinter den Poster-Logos
   final bool posterShadow; // Schlagschatten beim freigestellten Spieler
   final bool posterBlend; // Spielerfoto weich ins Bild einblenden
+  final bool fupaPlayer; // FuPa-Foto: Spieler groß, unten bündig
   final double posterShadowStrength; // 0..100
   final double posterShadowAngle; // Richtung in Grad (0=rechts, 90=unten)
   final List<String> posterOrder; // Ebenen-Reihenfolge (hinten → vorne)
@@ -8883,6 +9090,7 @@ class _StartelfGraphic extends StatelessWidget {
           Uint8List bytes, {
           double? width,
           double? height,
+          Alignment alignment = Alignment.center,
         }) {
           Widget mk() => SizedBox(
             width: width,
@@ -8890,6 +9098,7 @@ class _StartelfGraphic extends StatelessWidget {
             child: Image.memory(
               bytes,
               fit: BoxFit.contain,
+              alignment: alignment,
               gaplessPlayback: true,
             ),
           );
@@ -9006,6 +9215,15 @@ class _StartelfGraphic extends StatelessWidget {
             case 'player':
               if (mainBytes == null) return null;
               if (blendPlayer) return blendedPhoto(mainBytes);
+              // FuPa: Spieler füllt das Hochformat (volle Breite, ~95 % Höhe).
+              if (fupaPlayer) {
+                return imageWithShadow(
+                  mainBytes,
+                  width: w,
+                  height: h * 0.95,
+                  alignment: Alignment.bottomCenter, // Spieler steht unten
+                );
+              }
               return imageWithShadow(
                 mainBytes,
                 width: w - 2 * pad,
@@ -9068,6 +9286,9 @@ class _StartelfGraphic extends StatelessWidget {
               : null;
           final pos =
               posterItemPos[id] ??
+              (fupaPlayer && id == 'player'
+                  ? const Offset(0.5, 1.0) // unten bündig
+                  : null) ??
               blendDefault ??
               (blendPlayer ? _kBlendItemDefaults[id] : null) ??
               (posterStyle

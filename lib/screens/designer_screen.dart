@@ -112,6 +112,7 @@ class _DesignerScreenState extends State<DesignerScreen> {
       'goal' => await _wizardGoal(),
       'motm' => await _wizardMotm(),
       'occasion' => await _wizardOccasion(),
+      'fupa' => await _wizardFupa(),
       _ => DesignerData(
         id: _newId(),
         template: 'free',
@@ -128,9 +129,7 @@ class _DesignerScreenState extends State<DesignerScreen> {
     if (match == null || !mounted) return null;
     final team = _app.ownTeam;
     final events = await _app.eventsOf(match.id);
-    final players = team == null
-        ? <Player>[]
-        : await _app.playersOf(team.id);
+    final players = team == null ? <Player>[] : await _app.playersOf(team.id);
     // Alle Tore nach Minute: wer hat getroffen (eigenes Team?).
     final goals = <({MatchEvent e, bool own})>[];
     for (final e in events) {
@@ -149,15 +148,15 @@ class _DesignerScreenState extends State<DesignerScreen> {
     if (!mounted) return null;
     if (ownGoalIdx.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('In diesem Spiel gibt es keine eigenen Tore.')),
+        const SnackBar(
+          content: Text('In diesem Spiel gibt es keine eigenen Tore.'),
+        ),
       );
       return null;
     }
     Player? playerOf(String? id) =>
         id == null ? null : players.where((p) => p.id == id).firstOrNull;
-    final scoreList = [
-      for (final g in goals) (minute: g.e.minute, own: g.own),
-    ];
+    final scoreList = [for (final g in goals) (minute: g.e.minute, own: g.own)];
     final picked = await showModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
@@ -196,7 +195,11 @@ class _DesignerScreenState extends State<DesignerScreen> {
     final name = p?.fullName ?? '';
     final edited = await _editFields(
       title: 'Tor – Angaben',
-      fields: {'Torschütze': name, 'Minute': '${g.e.minute}', 'Spielstand': stand},
+      fields: {
+        'Torschütze': name,
+        'Minute': '${g.e.minute}',
+        'Spielstand': stand,
+      },
     );
     if (edited == null) return null;
     final n = edited['Torschütze']!.trim();
@@ -222,6 +225,19 @@ class _DesignerScreenState extends State<DesignerScreen> {
   }
 
   /// Spieler des Spiels: Spiel wählen → Spieler wählen.
+  /// FuPa-Foto: Spieler wählen → Editor im FuPa-Format (960×1200), dort
+  /// Foto aufnehmen und freistellen; fertig → als Spielerfoto übernehmen.
+  Future<DesignerData?> _wizardFupa() async {
+    final p = await _pickPlayer(title: 'FuPa-Foto für');
+    if (p == null || !mounted) return null;
+    return DesignerData(
+      id: _newId(),
+      template: 'fupa',
+      title: 'FuPa ${p.fullName}',
+      playerId: p.id,
+    );
+  }
+
   Future<DesignerData?> _wizardMotm() async {
     final match = await _pickMatch(onlyWithGoals: false);
     if (match == null || !mounted) return null;
@@ -278,7 +294,9 @@ class _DesignerScreenState extends State<DesignerScreen> {
               ListTile(
                 leading: const Icon(Icons.celebration_outlined),
                 title: Text(o.$1),
-                subtitle: o.$2.isEmpty ? const Text('Überschrift selbst wählen') : Text(o.$2),
+                subtitle: o.$2.isEmpty
+                    ? const Text('Überschrift selbst wählen')
+                    : Text(o.$2),
                 onTap: () => Navigator.pop(ctx, o),
               ),
           ],
@@ -371,9 +389,10 @@ class _DesignerScreenState extends State<DesignerScreen> {
                   subtitle: Text(
                     [
                       if (m.kickoff != null)
-                        DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(
-                          m.kickoff!.toLocal(),
-                        ),
+                        DateFormat(
+                          'EEE, dd.MM.yyyy',
+                          'de_DE',
+                        ).format(m.kickoff!.toLocal()),
                       if (m.status != MatchStatus.scheduled)
                         '${m.ownScore}:${m.opponentScore}',
                     ].join(' · '),
@@ -395,9 +414,10 @@ class _DesignerScreenState extends State<DesignerScreen> {
     final team = _app.ownTeam;
     if (team == null) return null;
     final players =
-        (await _app.playersOf(team.id, onlyActive: true))
-            .where((p) => !p.isStaffOnly)
-            .toList()
+        (await _app.playersOf(
+            team.id,
+            onlyActive: true,
+          )).where((p) => !p.isStaffOnly).toList()
           ..sort((a, b) => a.fullName.compareTo(b.fullName));
     if (!mounted) return null;
     return showModalBottomSheet<Player>(
@@ -452,7 +472,8 @@ class _DesignerScreenState extends State<DesignerScreen> {
     required Map<String, String> fields,
   }) {
     final ctrls = {
-      for (final e in fields.entries) e.key: TextEditingController(text: e.value),
+      for (final e in fields.entries)
+        e.key: TextEditingController(text: e.value),
     };
     return showDialog<Map<String, String>>(
       context: context,
@@ -554,9 +575,30 @@ class _DesignerScreenState extends State<DesignerScreen> {
   Widget build(BuildContext context) {
     const templates = <(String, IconData, String, String)>[
       ('goal', Icons.sports_soccer, 'Tor', 'Foto + Torschütze, Minute, Stand'),
-      ('motm', Icons.emoji_events_outlined, 'Spieler des Spiels', 'Foto + Name, Ergebnis'),
-      ('occasion', Icons.celebration_outlined, 'Anlass', 'Geburtstag, Neuzugang …'),
-      ('free', Icons.brush_outlined, 'Freies Design', 'Eigenes Foto, eigene Texte'),
+      (
+        'motm',
+        Icons.emoji_events_outlined,
+        'Spieler des Spiels',
+        'Foto + Name, Ergebnis',
+      ),
+      (
+        'occasion',
+        Icons.celebration_outlined,
+        'Anlass',
+        'Geburtstag, Neuzugang …',
+      ),
+      (
+        'fupa',
+        Icons.portrait_outlined,
+        'FuPa-Foto',
+        'Spieler freistellen · 960×1200',
+      ),
+      (
+        'free',
+        Icons.brush_outlined,
+        'Freies Design',
+        'Eigenes Foto, eigene Texte',
+      ),
     ];
     return Scaffold(
       appBar: AppBar(title: const Text('Designer')),
@@ -655,9 +697,15 @@ class _DesignerScreenState extends State<DesignerScreen> {
               AspectRatio(
                 aspectRatio: 9 / 12,
                 child: thumb != null
-                    ? Image.memory(thumb, fit: BoxFit.cover, gaplessPlayback: true)
+                    ? Image.memory(
+                        thumb,
+                        fit: BoxFit.cover,
+                        gaplessPlayback: true,
+                      )
                     : ColoredBox(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerHighest,
                         child: const Icon(Icons.image_outlined, size: 40),
                       ),
               ),
@@ -699,7 +747,10 @@ class _DesignerScreenState extends State<DesignerScreen> {
                         if (v == 'delete') _deleteSaved(row);
                       },
                       itemBuilder: (_) => const [
-                        PopupMenuItem(value: 'rename', child: Text('Umbenennen')),
+                        PopupMenuItem(
+                          value: 'rename',
+                          child: Text('Umbenennen'),
+                        ),
                         PopupMenuItem(value: 'delete', child: Text('Löschen')),
                       ],
                     ),
