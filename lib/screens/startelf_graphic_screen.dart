@@ -431,6 +431,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Position/Größe/Reihenfolge getrennt (Key `_designKey`). Lazy via putIfAbsent.
   String get _designKey => _story ? 's' : 'p';
   final Map<String, Map<String, Offset>> _posterPosF = {};
+  // Element-IDs, deren Position die MITTE angibt (1:1 verschiebbar). Ältere
+  // Positionen (Align-Semantik) werden beim ersten Auswählen ohne Sprung
+  // umgerechnet.
+  final Map<String, Set<String>> _posCenteredF = {};
   final Map<String, Map<String, double>> _posterScaleF = {};
   final Map<String, Map<String, double>> _posterRotF = {}; // Drehung (rad) je Elem.
   final Map<String, List<String>> _posterOrderF = {};
@@ -446,6 +450,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
   Map<String, Offset> get _posterPos =>
       _posterPosF.putIfAbsent(_designKey, () => {});
+  Set<String> get _posCentered =>
+      _posCenteredF.putIfAbsent(_designKey, () => <String>{});
   Map<String, double> get _posterScale =>
       _posterScaleF.putIfAbsent(_designKey, () => {});
   Map<String, double> get _posterRot =>
@@ -757,6 +763,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     return {
       'v': 1,
       'pos': offMap(_posterPosF),
+      'posC': {
+        for (final e in _posCenteredF.entries) e.key: e.value.toList(),
+      },
       'scale': dblMap(_posterScaleF),
       'rot': dblMap(_posterRotF),
       'order': {for (final e in _posterOrderF.entries) e.key: e.value},
@@ -854,6 +863,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
 
     fillOff(_posterPosF, m['pos']);
+    _posCenteredF.clear();
+    if (m['posC'] is Map) {
+      (m['posC'] as Map).forEach((k, v) {
+        if (v is List) {
+          _posCenteredF[k.toString()] = v.map((e) => e.toString()).toSet();
+        }
+      });
+    }
     fillDbl(_posterScaleF, m['scale']);
     fillDbl(_posterRotF, m['rot']);
     _posterOrderF.clear();
@@ -2849,6 +2866,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     posterItemScale: _posterScale,
     posterItemRot: _posterRot,
     posterSelected: _posterSel,
+    posterCentered: _posCentered,
+    onPosterAnchor: (id, rel) {
+      if (!mounted || _posCentered.contains(id)) return;
+      setState(() {
+        _posterPos[id] = rel;
+        _posCentered.add(id);
+      });
+    },
     onPosterItemMove: (id, p) => setState(() => _posterPos[id] = p),
     onPosterGestureStart: (id) {
       _gScale0 = _posterScale[id] ?? 1.0;
@@ -3260,6 +3285,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _posterOverlays.add((id: id, dataUrl: url)); // nur aktuelles Format
       _posterOrder.add(id);
       _posterPos[id] = const Offset(0.5, 0.5);
+      _posCentered.add(id);
       _imgOrig[id] = url;
       _imgFeather[id] = 0;
       _imgInner[id] = 0;
@@ -3277,6 +3303,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _textColor[id] = 'white';
       _posterOrder.add(id);
       _posterPos[id] = const Offset(0.5, 0.5);
+      _posCentered.add(id);
       _posterSel = id;
     });
   }
@@ -3301,6 +3328,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _textColor.remove(id);
       _posterOrder.remove(id); // strukturelle Elemente werden ausgeblendet
       _posterPos.remove(id);
+      _posCentered.remove(id);
       _posterScale.remove(id);
       _posterRot.remove(id);
       _imgOrig.remove(id);
@@ -3664,6 +3692,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     setState(() {
       final k = _designKey;
       _posterPosF.remove(k);
+      _posCenteredF.remove(k);
       _posterScaleF.remove(k);
       _posterRotF.remove(k);
       _posterOrderF.remove(k);
@@ -4181,6 +4210,8 @@ class _StartelfGraphic extends StatelessWidget {
     this.posterItemScale = const {},
     this.posterItemRot = const {},
     this.posterSelected,
+    this.posterCentered = const {},
+    this.onPosterAnchor,
     this.onPosterItemMove,
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
@@ -4242,6 +4273,13 @@ class _StartelfGraphic extends StatelessWidget {
   final Map<String, double> posterItemScale; // Größe je Element
   final Map<String, double> posterItemRot; // Drehung je Element (Radiant)
   final String? posterSelected; // aktuell gewähltes Element
+  // IDs, deren Position den MITTELPUNKT angibt (1:1 mit dem Finger, auch groß).
+  // Alle anderen nutzen noch die alte Align-Semantik (bewegt sich bei großen
+  // Elementen nur um einen Bruchteil) und werden beim Auswählen umgerechnet.
+  final Set<String> posterCentered;
+  // Meldet die aktuelle sichtbare Mitte (0..1) eines Elements → Umstellung auf
+  // Mittelpunkt-Position ohne Sprung.
+  final void Function(String id, Offset relCenter)? onPosterAnchor;
   final void Function(String id, Offset pos)? onPosterItemMove;
   // Pinch/Drehen/Ziehen (zwei Finger): Start merkt Basiswerte, Update rechnet.
   final void Function(String id)? onPosterGestureStart;
@@ -4342,6 +4380,47 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
+  /// Sichtbare Mitte eines Elements relativ zum Canvas (0..1). Drehen/Skalieren
+  /// erfolgen um die Mitte, daher bleibt sie unter den Transforms gleich.
+  Offset? _relCenterOf(BuildContext? ectx) {
+    final eb = ectx?.findRenderObject();
+    final cb = canvasKey?.currentContext?.findRenderObject();
+    if (eb is! RenderBox || cb is! RenderBox) return null;
+    if (!eb.attached || !eb.hasSize || !cb.attached || !cb.hasSize) return null;
+    if (cb.size.width <= 0 || cb.size.height <= 0) return null;
+    final l = cb.globalToLocal(eb.localToGlobal(eb.size.center(Offset.zero)));
+    return Offset(l.dx / cb.size.width, l.dy / cb.size.height);
+  }
+
+  /// Positioniert ein freies Element. Mittelpunkt-Modus ([centered]): die Mitte
+  /// liegt genau bei [pos] → Verschieben folgt dem Finger 1:1, egal wie groß.
+  /// Sonst alte Align-Semantik (für noch nicht umgerechnete, gespeicherte
+  /// Positionen). Gleiche Widget-Struktur in beiden Modi, damit beim Umschalten
+  /// nichts neu aufgebaut wird (laufender Langdruck bleibt erhalten).
+  Widget _placeElement({
+    required Key key,
+    required Offset pos,
+    required bool centered,
+    required double w,
+    required double h,
+    required Widget child,
+  }) {
+    return Positioned.fill(
+      key: key,
+      child: Transform.translate(
+        offset: centered
+            ? Offset((pos.dx - 0.5) * w, (pos.dy - 0.5) * h)
+            : Offset.zero,
+        child: Align(
+          alignment: centered
+              ? Alignment.center
+              : Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   /// Dreh-Griff (Kreis mit Icon) an der Seite des gewählten Elements: packen und
   /// um die Mitte drehen. null, wenn nichts gewählt ist.
   Widget? _rotationHandle(String? sel, double w, double h) {
@@ -4426,6 +4505,14 @@ class _StartelfGraphic extends StatelessWidget {
           return _imageWithShadow(bytes, width: w * 0.4);
         }
 
+        // Kontexte der Elemente (zum Messen der sichtbaren Mitte).
+        final elCtx = <String, BuildContext>{};
+        void anchor(String id) {
+          if (posterCentered.contains(id)) return;
+          final r = _relCenterOf(elCtx[id]);
+          if (r != null) onPosterAnchor?.call(id, r);
+        }
+
         Widget el(String id, Widget child) {
           final pos =
               posterItemPos[id] ??
@@ -4434,29 +4521,40 @@ class _StartelfGraphic extends StatelessWidget {
           final scale = posterItemScale[id] ?? 1.0;
           final rot = posterItemRot[id] ?? 0.0;
           final selected = posterSelected == id;
-          return Align(
+          return _placeElement(
             key: ValueKey('ovlEl_$id'),
-            alignment: Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
+            pos: pos,
+            centered: posterCentered.contains(id),
+            w: w,
+            h: h,
             child: Transform.rotate(
               angle: rot,
               child: Transform.scale(
                 scale: scale,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapDown: (_) => onPosterSelect?.call(id),
-                  onLongPress: () => onPosterLongPress?.call(id),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: selected
-                        ? BoxDecoration(
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.9),
-                            ),
-                            borderRadius: BorderRadius.circular(4),
-                          )
-                        : null,
-                    child: child,
-                  ),
+                child: Builder(
+                  builder: (bctx) {
+                    elCtx[id] = bctx;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (_) {
+                        anchor(id);
+                        onPosterSelect?.call(id);
+                      },
+                      onLongPress: () => onPosterLongPress?.call(id),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: selected
+                            ? BoxDecoration(
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                              )
+                            : null,
+                        child: child,
+                      ),
+                    );
+                  },
                 ),
               ),
             ),
@@ -4469,12 +4567,20 @@ class _StartelfGraphic extends StatelessWidget {
           if (child != null) layers.add(el(id, child));
         }
         final sel = posterSelected;
+        // Gewähltes, noch nicht umgerechnetes Element (z. B. per Code gewählt)
+        // nach dem Frame auf Mittelpunkt-Position umstellen.
+        if (sel != null && !posterCentered.contains(sel)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => anchor(sel));
+        }
         final Widget? dragLayer = sel == null
             ? null
             : Positioned.fill(
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
-                  onScaleStart: (_) => onPosterGestureStart?.call(sel),
+                  onScaleStart: (_) {
+                    anchor(sel);
+                    onPosterGestureStart?.call(sel);
+                  },
                   onScaleUpdate: (d) =>
                       onPosterGestureUpdate?.call(sel, d, w, h),
                 ),
@@ -5415,6 +5521,14 @@ class _StartelfGraphic extends StatelessWidget {
           }
         }
 
+        // Kontexte der Elemente (zum Messen der sichtbaren Mitte).
+        final elCtx = <String, BuildContext>{};
+        void anchor(String id) {
+          if (posterCentered.contains(id)) return;
+          final r = _relCenterOf(elCtx[id]);
+          if (r != null) onPosterAnchor?.call(id, r);
+        }
+
         // Ein frei verschieb- und skalierbares Element (tippen = auswählen).
         Widget el(String id, Widget child) {
           final pos =
@@ -5427,30 +5541,41 @@ class _StartelfGraphic extends StatelessWidget {
           // Antippen = auswählen, Langdruck = Eigenschaften. Das VERSCHIEBEN/
           // SKALIEREN/DREHEN übernimmt eine Zieh-Ebene über allem (unten),
           // damit die Geste stabil bleibt – egal welche Größe/Ebene.
-          return Align(
+          return _placeElement(
             key: ValueKey('posterEl_$id'),
-            alignment: Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
+            pos: pos,
+            centered: posterCentered.contains(id),
+            w: w,
+            h: h,
             child: Transform.rotate(
               angle: rot,
               child: Transform.scale(
-              scale: scale,
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTapDown: (_) => onPosterSelect?.call(id),
-                onLongPress: () => onPosterLongPress?.call(id),
-                child: Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: selected
-                      ? BoxDecoration(
-                          border: Border.all(
-                            color: Colors.white.withValues(alpha: 0.9),
-                          ),
-                          borderRadius: BorderRadius.circular(4),
-                        )
-                      : null,
-                  child: child,
+                scale: scale,
+                child: Builder(
+                  builder: (bctx) {
+                    elCtx[id] = bctx;
+                    return GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTapDown: (_) {
+                        anchor(id);
+                        onPosterSelect?.call(id);
+                      },
+                      onLongPress: () => onPosterLongPress?.call(id),
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: selected
+                            ? BoxDecoration(
+                                border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                ),
+                                borderRadius: BorderRadius.circular(4),
+                              )
+                            : null,
+                        child: child,
+                      ),
+                    );
+                  },
                 ),
-              ),
               ),
             ),
           );
@@ -5466,6 +5591,11 @@ class _StartelfGraphic extends StatelessWidget {
         // Zieh-Ebene ganz oben: bewegt das aktuell gewählte Element. Translucent →
         // Tippen geht zu den Elementen durch (Auswahl), Ziehen bewegt das Gewählte.
         final sel = posterSelected;
+        // Gewähltes, noch nicht umgerechnetes Element (z. B. per Code gewählt)
+        // nach dem Frame auf Mittelpunkt-Position umstellen.
+        if (sel != null && !posterCentered.contains(sel)) {
+          WidgetsBinding.instance.addPostFrameCallback((_) => anchor(sel));
+        }
         final Widget? dragLayer = sel == null
             ? null
             : Positioned.fill(
@@ -5473,7 +5603,10 @@ class _StartelfGraphic extends StatelessWidget {
                   behavior: HitTestBehavior.translucent,
                   // Ein Finger = verschieben; zwei Finger = zusätzlich pinchen
                   // (skalieren) und drehen – wie gewohnt. KEINE Grenze.
-                  onScaleStart: (_) => onPosterGestureStart?.call(sel),
+                  onScaleStart: (_) {
+                    anchor(sel);
+                    onPosterGestureStart?.call(sel);
+                  },
                   onScaleUpdate: (d) =>
                       onPosterGestureUpdate?.call(sel, d, w, h),
                 ),
