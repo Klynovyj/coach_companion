@@ -508,7 +508,7 @@ const Map<String, Offset> _kBlendItemDefaults = {
 };
 
 /// Startwerte nach dem Freistellen: weiche Kante + „Rand verschmelzen".
-const double _kCutoutFeather = 22;
+const double _kCutoutFeather = 30;
 const double _kCutoutRim = 45;
 
 /// ID der team-weiten Hintergrund-Vorlage für FuPa-Fotos.
@@ -647,10 +647,16 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
   }
   // 1) Weiche Kanten: Alpha weichzeichnen + nach innen ziehen.
   if (feather > 0) {
-    final radius = (1 + feather / 100 * 8).round();
+    // Radius mit der Bildgröße skalieren (~1000 px: 30 → ~7 px, 100 → ~18 px),
+    // sonst wirkt die Kante bei großen Fotos hart wie ausgeschnitten.
+    final scale = math.max(w, h) / 1000;
+    final f = feather / 100;
+    final radius = math.max(1, ((2.5 + f * 16) * scale).round());
     final blurred = img.gaussianBlur(aImg, radius: radius);
-    final lo = 0.18 + feather / 100 * 0.22;
-    final hi = lo + 0.28;
+    // Leicht nach innen (helle Reste des alten Hintergrunds verschwinden) und
+    // ein BREITER, weicher Übergang statt einer scharfen Linie.
+    final lo = 0.12 + f * 0.18;
+    final hi = math.min(0.98, lo + 0.5 + f * 0.2);
     // Bildrand-Ring NICHT ausblenden – sonst würde der Rechteck-Rand (bzw. ein
     // am Rand anliegender Spieler) weich statt nur der echte, freigestellte Umriss.
     final border = radius + 1;
@@ -669,6 +675,7 @@ Uint8List applyImageFx(Map<String, dynamic> args) {
           } else if (t > 1) {
             t = 1;
           }
+          t = t * t * (3 - 2 * t); // natürlicher Verlauf (smoothstep)
           na = (t * 255).round();
         }
         im.setPixelRgba(x, y, p.r.toInt(), p.g.toInt(), p.b.toInt(), na);
