@@ -10068,32 +10068,39 @@ class _StartelfGraphic extends StatelessWidget {
         ],
       ),
     );
-    return SizedBox(
-      width: width,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          glowLine(),
-          SizedBox(height: compact ? 6 : 10),
-          IntrinsicHeight(
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (home.isNotEmpty) col(home, false),
-                if (home.isNotEmpty && away.isNotEmpty)
-                  Container(
-                    width: 2,
-                    margin: const EdgeInsets.symmetric(horizontal: 22),
-                    color: Colors.white.withValues(alpha: 0.7),
-                  ),
-                if (away.isNotEmpty) col(away, false),
-              ],
+    // Mindestens [width] breit; ist der Inhalt breiter, verkleinert das
+    // umgebende FittedBox alles gleichmäßig (kein Überlauf).
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: width),
+      child: IntrinsicWidth(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            glowLine(),
+            SizedBox(height: compact ? 6 : 10),
+            Center(
+              child: IntrinsicHeight(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (home.isNotEmpty) col(home, false),
+                    if (home.isNotEmpty && away.isNotEmpty)
+                      Container(
+                        width: 2,
+                        margin: const EdgeInsets.symmetric(horizontal: 22),
+                        color: Colors.white.withValues(alpha: 0.7),
+                      ),
+                    if (away.isNotEmpty) col(away, false),
+                  ],
+                ),
+              ),
             ),
-          ),
-          SizedBox(height: compact ? 6 : 10),
-          glowLine(),
-        ],
+            SizedBox(height: compact ? 6 : 10),
+            glowLine(),
+          ],
+        ),
       ),
     );
   }
