@@ -2257,7 +2257,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'stdOff': offMap(_stdOffF),
       // Startelf-Layout v2 (zentriert, Kader-Kasten) – ältere Verschiebungen
       // passen nicht mehr und werden beim Laden verworfen.
-      'stdV': 2,
+      'stdV': 3,
       'stdHidden': {
         for (final e in _stdHiddenF.entries) e.key: e.value.toList(),
       },
@@ -2428,8 +2428,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     fillOff(_stdOffF, m['stdOff']);
     // Startelf vor Layout v2: alte Verschiebungen/Größen der festen Teile
     // gehören zum alten Aufbau → verwerfen, damit alles wie vorgesehen sitzt.
+    // Ergebnis ab v3 neu aufgebaut (ohne Logo oben, Leuchtlinie, Tore-Kasten).
+    final stdV = (m['stdV'] as num?)?.toInt() ?? 0;
     final oldStartelf =
-        !widget.isResult && widget.announcement == null && m['stdV'] != 2;
+        widget.announcement == null && (widget.isResult ? stdV < 3 : stdV < 2);
     _stdHiddenF.clear();
     if (m['stdHidden'] is Map) {
       (m['stdHidden'] as Map).forEach((k, v) {
@@ -8737,10 +8739,19 @@ class _StartelfGraphic extends StatelessWidget {
               // Objekt (_stdEl) und startet an seiner Stelle im Layout.
               _header(),
               SizedBox(height: compact ? 6 : 12),
-              if (announcement == null) _infoRow(),
-              SizedBox(height: compact ? 7 : 18),
-              _divider(),
+              if (announcement == null)
+                Center(
+                  child: _stdEl(
+                    'std_info',
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: _startelfDateLine(),
+                    ),
+                  ),
+                ),
               SizedBox(height: compact ? 7 : 16),
+              _divider(),
+              SizedBox(height: compact ? 8 : 18),
               if (result != null) ...[
                 // Spielstand groß & fix (der Blickfang) …
                 _stdEl('std_score', _scoreRow()),
@@ -8793,6 +8804,33 @@ class _StartelfGraphic extends StatelessWidget {
     );
   }
 
+  /// Story-Ergebnis: schräger Balken in Vereinsfarbe hinter [child]
+  /// (Überschrift, Spielstand). Im Post-Format ohne Balken.
+  Widget _resultBand(Widget child) {
+    if (compact || result == null) return child;
+    return _slantBand(child);
+  }
+
+  /// Schräger Balken in Vereinsfarbe (Verlauf) hinter [child].
+  Widget _slantBand(Widget child) {
+    return ClipPath(
+      clipper: const _SlantClipper(),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(30, 4, 34, 4),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              _brandBright.withValues(alpha: 0.35),
+              _brandBright,
+              _brandBright.withValues(alpha: 0.5),
+            ],
+          ),
+        ),
+        child: child,
+      ),
+    );
+  }
+
   /// Kräftige Vereinsfarbe (aufgehellter Verlauf) für Balken und Rahmen.
   Color get _brandBright {
     final h = HSLColor.fromColor(gradTop);
@@ -8815,10 +8853,7 @@ class _StartelfGraphic extends StatelessWidget {
     final sponsor = mainSponsor != null && showMainSponsor
         ? ConstrainedBox(
             constraints: BoxConstraints(maxWidth: compact ? 90 : 150),
-            child: _mainSponsorMark(
-              logoH: logoH,
-              nameSize: compact ? 16 : 20,
-            ),
+            child: _mainSponsorMark(logoH: logoH, nameSize: compact ? 16 : 20),
           )
         : null;
     final topRow = Row(
@@ -8875,9 +8910,7 @@ class _StartelfGraphic extends StatelessWidget {
                 fontStyle: FontStyle.italic,
                 letterSpacing: 1,
                 height: 1.0,
-                shadows: const [
-                  Shadow(color: Colors.black54, blurRadius: 12),
-                ],
+                shadows: const [Shadow(color: Colors.black54, blurRadius: 12)],
               ),
             ),
           ),
@@ -8900,10 +8933,7 @@ class _StartelfGraphic extends StatelessWidget {
               Center(
                 child: _stdEl(
                   'std_info',
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: _startelfDateLine(),
-                  ),
+                  FittedBox(fit: BoxFit.scaleDown, child: _startelfDateLine()),
                 ),
               ),
               if (opponentName.isNotEmpty) ...[
@@ -9035,9 +9065,14 @@ class _StartelfGraphic extends StatelessWidget {
       return pos.contains('tor') || pos == 'tw' || pos.contains('keeper');
     }
 
-    final keepers = [for (final p in starters) if (isKeeper(p)) p];
-    final field = [for (final p in starters) if (!isKeeper(p)) p]
-      ..sort((a, b) => (a.number ?? 999).compareTo(b.number ?? 999));
+    final keepers = [
+      for (final p in starters)
+        if (isKeeper(p)) p,
+    ];
+    final field = [
+      for (final p in starters)
+        if (!isKeeper(p)) p,
+    ]..sort((a, b) => (a.number ?? 999).compareTo(b.number ?? 999));
     final ordered = [...keepers, ...field];
     const numStyle = TextStyle(
       color: Colors.white,
@@ -9061,36 +9096,36 @@ class _StartelfGraphic extends StatelessWidget {
       height: 1.1,
     );
     Widget row(StartelfPlayer p) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: IntrinsicHeight(
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 52,
-                    child: Text(
-                      p.number?.toString() ?? '',
-                      textAlign: TextAlign.center,
-                      style: numStyle,
-                    ),
-                  ),
-                  Container(
-                    width: 2,
-                    margin: const EdgeInsets.symmetric(horizontal: 14),
-                    color: Colors.white.withValues(alpha: 0.6),
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(p.name.toUpperCase(), style: nameStyle),
-                      if (isKeeper(p)) Text('TORWART', style: subStyle),
-                    ],
-                  ),
-                ],
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: 52,
+              child: Text(
+                p.number?.toString() ?? '',
+                textAlign: TextAlign.center,
+                style: numStyle,
               ),
             ),
-          );
+            Container(
+              width: 2,
+              margin: const EdgeInsets.symmetric(horizontal: 14),
+              color: Colors.white.withValues(alpha: 0.6),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(p.name.toUpperCase(), style: nameStyle),
+                if (isKeeper(p)) Text('TORWART', style: subStyle),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
     // Post (1:1) ist flach: Kader in zwei Spalten → deutlich größer lesbar.
     final twoCols = compact && ordered.length > 6;
     final half = (ordered.length + 1) ~/ 2;
@@ -9176,10 +9211,7 @@ class _StartelfGraphic extends StatelessWidget {
     final deco = BoxDecoration(
       color: Colors.black.withValues(alpha: 0.28),
       borderRadius: BorderRadius.circular(26),
-      border: Border.all(
-        color: _brandBright.withValues(alpha: 0.85),
-        width: 2,
-      ),
+      border: Border.all(color: _brandBright.withValues(alpha: 0.85), width: 2),
       boxShadow: [
         BoxShadow(
           color: _brandBright.withValues(alpha: 0.45),
@@ -9259,15 +9291,21 @@ class _StartelfGraphic extends StatelessWidget {
 
   /// Dünne Trennlinie zwischen Kopfbereich (Logo/Spielinfo) und Spielerliste.
   Widget _divider() => Container(
-    height: 1.5,
+    height: 2.5,
     decoration: BoxDecoration(
       borderRadius: BorderRadius.circular(1),
       gradient: LinearGradient(
+        stops: const [0, 0.2, 0.8, 1],
         colors: [
-          _accent.withValues(alpha: 0.55),
-          _accent.withValues(alpha: 0.08),
+          Colors.white.withValues(alpha: 0.1),
+          Colors.white.withValues(alpha: 0.9),
+          Colors.white.withValues(alpha: 0.9),
+          Colors.white.withValues(alpha: 0.1),
         ],
       ),
+      boxShadow: [
+        BoxShadow(color: _brandBright.withValues(alpha: 0.9), blurRadius: 10),
+      ],
     ),
   );
 
@@ -9283,17 +9321,18 @@ class _StartelfGraphic extends StatelessWidget {
         : (logo != null
               ? TeamLogo(logoPath: logo, size: compact ? 52 : 66)
               : null);
+    // Ergebnis: ohne Vereinslogo oben (steht groß beim Spielstand).
+    final showLogo = result == null && logoW != null;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        if (logoW != null) ...[
-          _stdEl('std_logo', logoW),
-          const SizedBox(width: 12),
-        ],
+        if (showLogo) ...[_stdEl('std_logo', logoW), const SizedBox(width: 12)],
         // Align → Objekt nur so breit wie der Text (gleiche Lage wie zuvor).
         Expanded(
           child: Align(
-            alignment: Alignment.centerLeft,
+            alignment: result != null && !compact
+                ? Alignment.center
+                : Alignment.centerLeft,
             child: _stdEl(
               'std_title',
               Column(
@@ -9309,10 +9348,10 @@ class _StartelfGraphic extends StatelessWidget {
                       maxLines: 1,
                       softWrap: false,
                       style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.9),
-                        fontSize: compact ? 12 : 15,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.5,
+                        color: Colors.white,
+                        fontSize: compact ? 13 : 17,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
                       ),
                     ),
                   ),
@@ -9321,18 +9360,24 @@ class _StartelfGraphic extends StatelessWidget {
                   FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerLeft,
-                    child: Text(
-                      rubric,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: posterFontStyle(
-                        posterFont,
-                        TextStyle(
-                          color: _accent,
-                          fontSize: compact ? 26 : 32,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 1.2,
-                          height: 1.0,
+                    child: _resultBand(
+                      Text(
+                        rubric,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: posterFontStyle(
+                          posterFont,
+                          TextStyle(
+                            color: Colors.white,
+                            fontSize: compact ? 36 : 46,
+                            fontWeight: FontWeight.w900,
+                            fontStyle: FontStyle.italic,
+                            letterSpacing: 1,
+                            height: 1.0,
+                            shadows: const [
+                              Shadow(color: Colors.black54, blurRadius: 10),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -9462,72 +9507,6 @@ class _StartelfGraphic extends StatelessWidget {
           ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 190),
             child: _mainSponsorMark(logoH: 46, nameSize: 21),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Unter der Kopfleiste: Datum/Uhrzeit und Gegner als ZWEI eigene Objekte.
-  Widget _infoRow() {
-    final showVs = result == null && opponentName.isNotEmpty;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _stdEl('std_info', _matchDateLine()),
-        // „vs GEGNER" nur bei Startelf/Spieltag – in der Ergebnis-Grafik steht
-        // der Gegner ohnehin groß mit Logo + Spielstand darunter.
-        if (showVs) ...[
-          const SizedBox(height: 4),
-          _stdEl('std_vs', _matchVsRow()),
-        ],
-      ],
-    );
-  }
-
-  /// Heim/Auswärts · Datum · Anstoßzeit.
-  Widget _matchDateLine() {
-    final line1 = <String>[isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL'];
-    if (matchDate != null) {
-      final local = matchDate!.toLocal();
-      line1.add(DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(local));
-      // Anstoßzeit anhängen, falls eine Uhrzeit gesetzt ist (nicht 00:00).
-      if (local.hour != 0 || local.minute != 0) {
-        line1.add('${DateFormat('HH:mm', 'de_DE').format(local)} Uhr');
-      }
-    }
-    return Text(
-      line1.join('  ·  '),
-      style: TextStyle(
-        color: _accent.withValues(alpha: 0.85),
-        fontSize: compact ? 10 : 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1,
-      ),
-    );
-  }
-
-  /// „vs GEGNER" mit optionalem Gegner-Logo (nur so breit wie der Inhalt).
-  Widget _matchVsRow() {
-    final oppBytes = TeamLogo.decode(opponentLogo);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (oppBytes != null) ...[
-          _logoChip(oppBytes, height: compact ? 20 : 24, circle: logoCircle),
-          const SizedBox(width: 8),
-        ],
-        Flexible(
-          child: Text(
-            'vs ${opponentName.toUpperCase()}',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: compact ? 13 : 15,
-              fontWeight: FontWeight.w800,
-            ),
           ),
         ),
       ],
@@ -9714,25 +9693,28 @@ class _StartelfGraphic extends StatelessWidget {
 
     final titleW = FittedBox(
       fit: BoxFit.scaleDown,
-      child: Text(
-        posterHeadline,
-        maxLines: 1,
-        softWrap: false,
-        style: posterFontStyle(
-          posterFont,
-          TextStyle(
-            color: Colors.white,
-            fontSize: compact ? 34 : 46,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2,
-            height: 1.0,
-            shadows: [
-              Shadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+      child: _slantBand(
+        Text(
+          posterHeadline,
+          maxLines: 1,
+          softWrap: false,
+          style: posterFontStyle(
+            posterFont,
+            TextStyle(
+              color: Colors.white,
+              fontSize: compact ? 34 : 50,
+              fontWeight: FontWeight.w900,
+              fontStyle: FontStyle.italic,
+              letterSpacing: 1,
+              height: 1.0,
+              shadows: [
+                Shadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -9744,38 +9726,74 @@ class _StartelfGraphic extends StatelessWidget {
     // Ist unten weniger Platz (z. B. Trennlinie weit unten), wird der ganze
     // Block verkleinert statt überzulaufen.
     final minNeeded =
-        (compact ? 34.0 : 46.0) +
+        (compact ? 42.0 : 58.0) +
         2 * gap +
-        (boxSize['std_ft_banner']?.height ?? (compact ? 60.0 : 74.0)) +
+        (boxSize['std_ft_banner']?.height ?? (compact ? 60.0 : 84.0)) +
         36 +
         (hasBar ? (compact ? 6 : 10) + (compact ? 26 : 32) + 22 : 0);
 
+    final bottomContent = Padding(
+      padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 18, pad, pad),
+      child: LayoutBuilder(
+        builder: (_, c) {
+          final col = _ftBottomColumn(titleW, gap, hasBar);
+          if (c.maxHeight >= minNeeded) return col;
+          return FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.topCenter,
+            child: SizedBox(width: c.maxWidth, height: minNeeded, child: col),
+          );
+        },
+      ),
+    );
     final bottom = Stack(
       fit: StackFit.expand,
-      children: [
-        _bgBase(),
-        Padding(
-          padding: EdgeInsets.fromLTRB(pad, compact ? 10 : 18, pad, pad),
-          child: LayoutBuilder(
-            builder: (_, c) {
-              final col = _ftBottomColumn(titleW, gap, hasBar);
-              if (c.maxHeight >= minNeeded) return col;
-              return FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.topCenter,
-                child: SizedBox(
-                  width: c.maxWidth,
-                  height: minNeeded,
-                  child: col,
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+      children: [_bgBase(), bottomContent],
     );
 
-    final topFlex = (ftSplit.clamp(0.2, 0.85) * 1000).round();
+    final split = ftSplit.clamp(0.2, 0.85);
+    final topFlex = (split * 1000).round();
+    // Post (1:1): Foto über die GANZE Fläche, ENDSTAND/Spielstand/Torschützen
+    // liegen unten auf einem Verlauf über dem Foto (wie im Vorbild).
+    if (compact) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          photoArea,
+          Positioned.fill(
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    stops: [
+                      (split - 0.18).clamp(0.0, 1.0),
+                      (split + 0.06).clamp(0.0, 1.0),
+                      1,
+                    ],
+                    colors: [
+                      gradBottom.withValues(alpha: 0),
+                      gradBottom.withValues(alpha: 0.82),
+                      gradBottom.withValues(alpha: 0.96),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(flex: topFlex, child: const SizedBox.shrink()),
+              Expanded(flex: 1000 - topFlex, child: bottomContent),
+            ],
+          ),
+          if (sponsorTop != null)
+            Positioned(top: pad * 0.6, right: pad * 0.6, child: sponsorTop),
+        ],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -9785,6 +9803,24 @@ class _StartelfGraphic extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               photoArea,
+              // Foto läuft unten weich in den Hintergrund aus.
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: compact ? 40 : 90,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [gradTop.withValues(alpha: 0), gradTop],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               // „Präsentiert von" oben rechts über dem Foto (lesbar auf Scrim).
               if (sponsorTop != null)
                 Positioned(top: pad * 0.6, right: pad * 0.6, child: sponsorTop),
@@ -9853,16 +9889,37 @@ class _StartelfGraphic extends StatelessWidget {
   /// Größe (Breite = Abstand der Logos, Höhe = Höhe des Ergebnis-Felds).
   Widget _ftBanner({Size? size}) {
     final sd = _ftSides();
-    final badgeH = size?.height ?? (compact ? 60.0 : 74.0);
-    final pillH = badgeH / 1.3;
-    final logoH = badgeH;
-    final badgeW = badgeH * 1.5;
+    final badgeH = size?.height ?? (compact ? 60.0 : 84.0);
+    final pillH = badgeH / 1.6;
+    final logoH = badgeH * 1.05;
+    final badgeW = badgeH * 1.9;
     final gap = badgeH * 0.45;
     final width = size?.width ?? (badgeW + 2 * gap + 2 * logoH);
     Widget logoW(Uint8List? b) => b == null
         ? SizedBox(width: logoH, height: logoH)
-        : _logoChip(b, height: logoH, circle: logoCircle);
-    final scoreBg = Color.lerp(Colors.white, gradTop, 0.3)!;
+        : Container(
+            width: logoH,
+            height: logoH,
+            padding: EdgeInsets.all(logoH * 0.09),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: Image.memory(
+                b,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+              ),
+            ),
+          );
 
     final banner = Stack(
       alignment: Alignment.center,
@@ -9876,8 +9933,17 @@ class _StartelfGraphic extends StatelessWidget {
           height: pillH,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(pillH),
+              // Silbrig glänzende Leiste.
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.white,
+                  const Color(0xFFD9DDE0),
+                  const Color(0xFFB8BEC2),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(4),
               boxShadow: [
                 BoxShadow(
                   color: Colors.black.withValues(alpha: 0.35),
@@ -9888,24 +9954,34 @@ class _StartelfGraphic extends StatelessWidget {
             ),
           ),
         ),
-        // Ergebnis-Feld (Trapez, oben breiter – wie die Vorlage).
+        // Ergebnis-Feld: schräg, in Vereinsfarbe, weiße Zahlen.
         ClipPath(
-          clipper: _TrapezoidClipper(),
+          clipper: const _SlantClipper(),
           child: Container(
             width: badgeW,
             height: badgeH,
-            color: scoreBg,
             alignment: Alignment.center,
-            padding: EdgeInsets.symmetric(horizontal: badgeW * 0.14),
+            padding: EdgeInsets.symmetric(horizontal: badgeW * 0.16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color.lerp(_brandBright, Colors.white, 0.15)!,
+                  Color.lerp(_brandBright, Colors.black, 0.35)!,
+                ],
+              ),
+            ),
             child: FittedBox(
               fit: BoxFit.scaleDown,
               child: Text(
                 '${sd.homeScore} - ${sd.awayScore}',
                 style: TextStyle(
-                  color: const Color(0xFF101010),
-                  fontSize: badgeH * 0.6,
+                  color: Colors.white,
+                  fontSize: badgeH * 0.62,
                   fontWeight: FontWeight.w900,
                   height: 1.0,
+                  shadows: const [Shadow(color: Colors.black45, blurRadius: 8)],
                 ),
               ),
             ),
@@ -9975,20 +10051,49 @@ class _StartelfGraphic extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [for (final g in list) line(g)],
         );
-    // Mindestens [width] breit (Spalten an die Ränder), sonst so breit wie der
-    // Inhalt – das umgebende FittedBox verkleinert dann BEIDE Spalten gleich.
-    return ConstrainedBox(
-      constraints: BoxConstraints(minWidth: width),
-      child: IntrinsicWidth(
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            col(home, false),
-            const SizedBox(width: 24),
-            col(away, true),
+    // Heim | Gast mittig mit Trennstrich, darüber und darunter eine
+    // leuchtende Linie. Das umgebende FittedBox verkleinert bei Platzmangel.
+    Widget glowLine() => Container(
+      height: 1.5,
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withValues(alpha: 0),
+            Colors.white.withValues(alpha: 0.75),
+            Colors.white.withValues(alpha: 0),
           ],
         ),
+        boxShadow: [
+          BoxShadow(color: _brandBright.withValues(alpha: 0.8), blurRadius: 8),
+        ],
+      ),
+    );
+    return SizedBox(
+      width: width,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          glowLine(),
+          SizedBox(height: compact ? 6 : 10),
+          IntrinsicHeight(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (home.isNotEmpty) col(home, false),
+                if (home.isNotEmpty && away.isNotEmpty)
+                  Container(
+                    width: 2,
+                    margin: const EdgeInsets.symmetric(horizontal: 22),
+                    color: Colors.white.withValues(alpha: 0.7),
+                  ),
+                if (away.isNotEmpty) col(away, false),
+              ],
+            ),
+          ),
+          SizedBox(height: compact ? 6 : 10),
+          glowLine(),
+        ],
       ),
     );
   }
@@ -9998,12 +10103,34 @@ class _StartelfGraphic extends StatelessWidget {
     final r = result!;
     final ownLogo = TeamLogo.decode(logo);
     final oppLogo = TeamLogo.decode(opponentLogo);
-    final logoH = compact ? 60.0 : 78.0;
+    final d = compact ? 84.0 : 118.0;
 
-    // Nur noch das Logo (Vereinsname entfällt – das Logo genügt), zentriert.
-    Widget side(Uint8List? bytes) => bytes != null
-        ? _logoChip(bytes, height: logoH, circle: logoCircle)
-        : SizedBox(height: logoH);
+    // Logo groß auf weißem Kreis (wie im Vorbild), zentriert.
+    Widget side(Uint8List? bytes) => bytes == null
+        ? SizedBox(height: d)
+        : Container(
+            width: d,
+            height: d,
+            padding: EdgeInsets.all(d * 0.09),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.4),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: Image.memory(
+                bytes,
+                fit: BoxFit.contain,
+                gaplessPlayback: true,
+              ),
+            ),
+          );
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
@@ -10017,15 +10144,23 @@ class _StartelfGraphic extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 10),
             child: FittedBox(
               fit: BoxFit.scaleDown,
-              child: Text(
-                '${r.ownScore} : ${r.oppScore}',
-                maxLines: 1,
-                softWrap: false,
-                style: TextStyle(
-                  color: _accent,
-                  fontSize: compact ? 52 : 68,
-                  fontWeight: FontWeight.w900,
-                  height: 1.0,
+              child: _resultBand(
+                Text(
+                  '${r.ownScore} : ${r.oppScore}',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: compact ? 64 : 96,
+                    fontWeight: FontWeight.w900,
+                    height: 1.0,
+                    shadows: [
+                      Shadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 16,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -10159,7 +10294,8 @@ class _StartelfGraphic extends StatelessWidget {
       final lineY = hA + 8;
       final height = hA + 16 + hB;
 
-      Color colorOf(bool own) => own ? _accent : Colors.white;
+      Color colorOf(bool own) => Colors.white;
+      final dotColor = Color.lerp(_brandBright, Colors.white, 0.25)!;
 
       final stems = <Widget>[];
       final dots = <Widget>[];
@@ -10178,7 +10314,7 @@ class _StartelfGraphic extends StatelessWidget {
               top: stemTop,
               width: 2,
               height: stemH,
-              child: ColoredBox(color: c.withValues(alpha: 0.55)),
+              child: ColoredBox(color: c.withValues(alpha: 0.8)),
             ),
           );
           dots.add(
@@ -10189,16 +10325,15 @@ class _StartelfGraphic extends StatelessWidget {
               height: 14,
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  color: c,
+                  color: Colors.white,
                   shape: BoxShape.circle,
-                  border: Border.all(
-                    color: own
-                        ? Colors.white
-                        : Colors.black.withValues(alpha: 0.35),
-                    width: 2,
-                  ),
+                  border: Border.all(color: dotColor, width: 3),
                   boxShadow: [
-                    BoxShadow(color: c.withValues(alpha: 0.5), blurRadius: 8),
+                    BoxShadow(
+                      color: dotColor.withValues(alpha: 0.9),
+                      blurRadius: 10,
+                      spreadRadius: 1,
+                    ),
                   ],
                 ),
               ),
@@ -10240,8 +10375,8 @@ class _StartelfGraphic extends StatelessWidget {
       addSide(below, own: false);
 
       Widget miniLogo(Uint8List b) => Container(
-        width: 26,
-        height: 26,
+        width: 30,
+        height: 30,
         padding: const EdgeInsets.all(2),
         decoration: const BoxDecoration(
           color: Colors.white,
@@ -10268,10 +10403,17 @@ class _StartelfGraphic extends StatelessWidget {
                   borderRadius: BorderRadius.circular(2),
                   gradient: LinearGradient(
                     colors: [
-                      Colors.white.withValues(alpha: 0.25),
-                      Colors.white.withValues(alpha: 0.6),
+                      dotColor.withValues(alpha: 0.35),
+                      dotColor,
+                      dotColor.withValues(alpha: 0.35),
                     ],
                   ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: dotColor.withValues(alpha: 0.6),
+                      blurRadius: 8,
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -10316,30 +10458,55 @@ class _StartelfGraphic extends StatelessWidget {
       );
     }
 
-    // Überschrift im Stil der Grafik (Schriftart + Akzentfarbe), immer oben.
-    final header = Row(
-      mainAxisSize: MainAxisSize.min,
+    // Überschrift „⚽ TORE" zwischen zwei Linien, immer oben.
+    final hLine = Expanded(
+      child: Container(height: 1.5, color: Colors.white.withValues(alpha: 0.6)),
+    );
+    Widget header = Row(
       children: [
-        Icon(Icons.sports_soccer, size: 18, color: _accent),
-        const SizedBox(width: 7),
+        hLine,
+        const SizedBox(width: 14),
+        const Icon(Icons.sports_soccer, size: 24, color: Colors.white),
+        const SizedBox(width: 8),
         Text(
           'TORE',
           style: posterFontStyle(
             posterFont,
-            TextStyle(
-              color: _accent,
-              fontSize: 17,
+            const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
               fontWeight: FontWeight.w900,
-              letterSpacing: 2.5,
+              letterSpacing: 3,
             ),
           ),
         ),
+        const SizedBox(width: 14),
+        hLine,
       ],
     );
-    const pad = EdgeInsets.symmetric(horizontal: 18, vertical: 14);
+    header = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 40),
+      child: header,
+    );
+    const pad = EdgeInsets.symmetric(horizontal: 18, vertical: 16);
     final deco = BoxDecoration(
-      color: Colors.black.withValues(alpha: 0.34),
-      borderRadius: BorderRadius.circular(16),
+      color: Colors.black.withValues(alpha: 0.25),
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(
+        color: Color.lerp(
+          _brandBright,
+          Colors.white,
+          0.2,
+        )!.withValues(alpha: 0.9),
+        width: 2,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: _brandBright.withValues(alpha: 0.5),
+          blurRadius: 18,
+          spreadRadius: 1,
+        ),
+      ],
     );
     // Gezogene Größe: Zeitstrahl so breit wie der Kasten (mind. 260, sonst
     // wird der ganze Inhalt gleichmäßig verkleinert). „TORE" bleibt oben.
@@ -10350,13 +10517,16 @@ class _StartelfGraphic extends StatelessWidget {
         decoration: deco,
         fillWidth: false,
         alignment: Alignment.topCenter,
-        content: (w) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            header,
-            const SizedBox(height: 10),
-            timeline(math.max(w, 260)),
-          ],
+        content: (w) => SizedBox(
+          width: math.max(w, 260),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              header,
+              const SizedBox(height: 12),
+              timeline(math.max(w, 260)),
+            ],
+          ),
         ),
       );
     }
@@ -10365,9 +10535,12 @@ class _StartelfGraphic extends StatelessWidget {
     return Container(
       padding: pad,
       decoration: deco,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [header, const SizedBox(height: 10), timeline(520)],
+      child: SizedBox(
+        width: 520,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [header, const SizedBox(height: 12), timeline(520)],
+        ),
       ),
     );
   }
@@ -11120,34 +11293,6 @@ class _AiLook {
       opacity: op is num ? op.toDouble().clamp(0.1, 1.0) : 1.0,
     );
   }
-}
-
-/// Trapez (oben breiter als unten) für das Ergebnis-Feld der ENDSTAND-Grafik.
-class _TrapezoidClipper extends CustomClipper<Path> {
-  @override
-  Path getClip(Size s) {
-    final inset = s.width * 0.1;
-    final r = s.height * 0.12; // leicht abgerundete Ecken
-    return Path()
-      ..moveTo(r, 0)
-      ..lineTo(s.width - r, 0)
-      ..quadraticBezierTo(s.width, 0, s.width - r * 0.4, r)
-      ..lineTo(s.width - inset, s.height - r)
-      ..quadraticBezierTo(
-        s.width - inset - r * 0.2,
-        s.height,
-        s.width - inset - r,
-        s.height,
-      )
-      ..lineTo(inset + r, s.height)
-      ..quadraticBezierTo(inset + r * 0.2, s.height, inset, s.height - r)
-      ..lineTo(r * 0.4, r)
-      ..quadraticBezierTo(0, 0, r, 0)
-      ..close();
-  }
-
-  @override
-  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
 /// Nur für Tests: rendert die Grafik ohne Screen/State (z. B. die ENDSTAND-
