@@ -201,7 +201,15 @@ class CoachRepository {
     final db = await _db;
     return db.query(
       'announcement_designs',
-      columns: ['id', 'match_id', 'title', 'kind', 'thumb', 'updated_at'],
+      columns: [
+        'id',
+        'match_id',
+        'title',
+        'kind',
+        'thumb',
+        'folder',
+        'updated_at',
+      ],
       where:
           "id LIKE 'designer:%' AND (kind IS NULL OR kind != '$kDeletedDesignKind')",
       orderBy: 'updated_at DESC',
@@ -225,6 +233,15 @@ class CoachRepository {
       _upsertById('announcement_designs', {
         'id': id,
         'title': title,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+  /// Designer-Design in einen eigenen Ordner legen ([folder] = null → zurück
+  /// in den automatischen Ordner seiner Vorlage).
+  Future<void> setAnnouncementDesignFolder(String id, String? folder) =>
+      _upsertById('announcement_designs', {
+        'id': id,
+        'folder': folder,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
 

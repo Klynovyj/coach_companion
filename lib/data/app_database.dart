@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 68;
+  static const _dbVersion = 69;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -557,6 +557,12 @@ class AppDatabase {
     if (oldV < 68) {
       await db.execute(
         "ALTER TABLE sponsors ADD COLUMN chip TEXT NOT NULL DEFAULT 'auto'",
+      );
+    }
+    // v68 -> v69: „Meine Designs" in eigene Ordner einsortieren.
+    if (oldV < 69) {
+      await db.execute(
+        'ALTER TABLE announcement_designs ADD COLUMN folder TEXT',
       );
     }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
@@ -1189,6 +1195,7 @@ class AppDatabase {
     );
     await db.execute(_announcementDesignsTableSql);
     await _addDesignerColumns(db);
+    await db.execute('ALTER TABLE announcement_designs ADD COLUMN folder TEXT');
 
     await db.execute('''
       CREATE TABLE settings (

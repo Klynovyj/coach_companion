@@ -316,6 +316,12 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Designer-Design in einen Ordner legen (null = automatischer Ordner).
+  Future<void> setDesignFolder(String id, String? folder) async {
+    await _repo.setAnnouncementDesignFolder(id, folder);
+    notifyListeners();
+  }
+
   /// Ein Design löschen (lokal + Cloud).
   Future<void> deleteAnnouncementDesign(String id) async {
     await _repo.deleteAnnouncementDesign(id);

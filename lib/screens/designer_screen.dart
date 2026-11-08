@@ -30,6 +30,10 @@ class _DesignerScreenState extends State<DesignerScreen> {
   List<Map<String, Object?>> _designs = [];
   bool _loading = true;
 
+  /// Geöffneter Ordner in „Meine Designs" (null = Ordner-Übersicht).
+  /// `f:<Name>` = eigener Ordner, `k:<Vorlage>` = automatischer Ordner.
+  String? _folder;
+
   @override
   void initState() {
     super.initState();
@@ -638,84 +642,421 @@ class _DesignerScreenState extends State<DesignerScreen> {
         'Eigenes Foto, eigene Texte',
       ),
     ];
-    return Scaffold(
-      appBar: AppBar(title: const Text('Designer')),
-      body: ListView(
-        padding: const EdgeInsets.all(12),
-        children: [
-          Text('Neu erstellen', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (ctx, c) {
-              final cols = c.maxWidth > 700 ? 4 : 2;
-              final w = (c.maxWidth - (cols - 1) * 10) / cols;
-              return Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: [
-                  for (final t in templates)
-                    SizedBox(
-                      width: w,
-                      child: Card(
-                        clipBehavior: Clip.antiAlias,
-                        child: InkWell(
-                          onTap: () => _create(t.$1),
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Icon(t.$2, size: 30),
-                                const SizedBox(height: 8),
-                                Text(
-                                  t.$3,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 15,
+    return PopScope(
+      // Zurück schließt erst den geöffneten Ordner.
+      canPop: _folder == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && _folder != null) setState(() => _folder = null);
+      },
+      child: Scaffold(
+        appBar: AppBar(title: const Text('Designer')),
+        body: ListView(
+          padding: const EdgeInsets.all(12),
+          children: [
+            Text(
+              'Neu erstellen',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            LayoutBuilder(
+              builder: (ctx, c) {
+                final cols = c.maxWidth > 700 ? 4 : 2;
+                final w = (c.maxWidth - (cols - 1) * 10) / cols;
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (final t in templates)
+                      SizedBox(
+                        width: w,
+                        child: Card(
+                          clipBehavior: Clip.antiAlias,
+                          child: InkWell(
+                            onTap: () => _create(t.$1),
+                            child: Padding(
+                              padding: const EdgeInsets.all(14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Icon(t.$2, size: 30),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    t.$3,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 15,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  t.$4,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Theme.of(ctx).hintColor,
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    t.$4,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(ctx).hintColor,
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 20),
-          Text('Meine Designs', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 8),
-          if (_loading)
-            const Center(child: CircularProgressIndicator())
-          else if (_designs.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Text(
-                'Noch keine Designs. Oben eine Vorlage wählen – fertige Grafiken '
-                'erscheinen hier und lassen sich jederzeit weiterbearbeiten.',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Theme.of(context).hintColor),
-              ),
-            )
-          else
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [for (final d in _designs) _designTile(d)],
+                  ],
+                );
+              },
             ),
+            const SizedBox(height: 20),
+            Text(
+              'Meine Designs',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            if (_loading)
+              const Center(child: CircularProgressIndicator())
+            else if (_designs.isEmpty)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Text(
+                  'Noch keine Designs. Oben eine Vorlage wählen – fertige Grafiken '
+                  'erscheinen hier und lassen sich jederzeit weiterbearbeiten.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Theme.of(context).hintColor),
+                ),
+              )
+            else
+              ..._designsSection(templates.map((t) => t.$1).toList()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------- Ordner
+
+  /// Eigene Ordner-Bezeichnung eines Designs (leer = keiner).
+  static String _customFolderOf(Map<String, Object?> row) =>
+      ((row['folder'] as String?) ?? '').trim();
+
+  /// Ordner-Schlüssel: eigener Ordner (`f:`) vor automatischem (`k:` Vorlage).
+  static String _folderKeyOf(Map<String, Object?> row) {
+    final f = _customFolderOf(row);
+    if (f.isNotEmpty) return 'f:$f';
+    return 'k:${(row['kind'] as String?) ?? 'free'}';
+  }
+
+  static const Map<String, String> _kKindFolderNames = {
+    'fupa': 'FuPa-Fotos',
+    'goal': 'Tore',
+    'motm': 'Spieler des Spiels',
+    'occasion': 'Anlässe',
+    'free': 'Freie Designs',
+  };
+
+  static String _folderLabel(String key) {
+    if (key.startsWith('f:')) return key.substring(2);
+    final kind = key.substring(2);
+    return _kKindFolderNames[kind] ?? DesignerData.labelOf(kind);
+  }
+
+  /// Alle eigenen Ordnernamen (alphabetisch).
+  List<String> get _customFolders {
+    final set = <String>{
+      for (final d in _designs)
+        if (_customFolderOf(d).isNotEmpty) _customFolderOf(d),
+    };
+    return set.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  /// „Meine Designs": Ordner-Übersicht oder Inhalt des geöffneten Ordners.
+  List<Widget> _designsSection(List<String> kindOrder) {
+    final groups = <String, List<Map<String, Object?>>>{};
+    for (final d in _designs) {
+      groups.putIfAbsent(_folderKeyOf(d), () => []).add(d);
+    }
+    final open = _folder;
+    if (open != null) {
+      final items = groups[open] ?? const [];
+      return [
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'Alle Ordner',
+              icon: const Icon(Icons.arrow_back),
+              onPressed: () => setState(() => _folder = null),
+            ),
+            Icon(
+              open.startsWith('f:') ? Icons.folder : Icons.folder_special,
+              size: 20,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                _folderLabel(open),
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+            if (open.startsWith('f:')) _customFolderMenu(open.substring(2)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        if (items.isEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24),
+            child: Text(
+              'Dieser Ordner ist leer.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Theme.of(context).hintColor),
+            ),
+          )
+        else
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [for (final d in items) _designTile(d)],
+          ),
+      ];
+    }
+    final keys = <String>[
+      for (final f in _customFolders) 'f:$f',
+      for (final k in kindOrder)
+        if (groups.containsKey('k:$k')) 'k:$k',
+      // Vorlagen, die oben nicht (mehr) stehen.
+      for (final k in groups.keys)
+        if (k.startsWith('k:') && !kindOrder.contains(k.substring(2))) k,
+    ];
+    return [
+      Wrap(
+        spacing: 10,
+        runSpacing: 10,
+        children: [for (final k in keys) _folderTile(k, groups[k] ?? const [])],
+      ),
+    ];
+  }
+
+  Widget _folderTile(String key, List<Map<String, Object?>> items) {
+    final custom = key.startsWith('f:');
+    final thumbs = [
+      for (final d in items.take(4)) TeamLogo.decode(d['thumb'] as String?),
+    ];
+    final scheme = Theme.of(context).colorScheme;
+    Widget cell(int i) {
+      final b = i < thumbs.length ? thumbs[i] : null;
+      return b != null
+          ? Image.memory(b, fit: BoxFit.cover, gaplessPlayback: true)
+          : ColoredBox(color: scheme.surfaceContainerHighest);
+    }
+
+    return SizedBox(
+      width: 150,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => setState(() => _folder = key),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Vorschau: bis zu 4 Designs als Raster.
+              AspectRatio(
+                aspectRatio: 1,
+                child: GridView.count(
+                  crossAxisCount: 2,
+                  mainAxisSpacing: 2,
+                  crossAxisSpacing: 2,
+                  physics: const NeverScrollableScrollPhysics(),
+                  padding: EdgeInsets.zero,
+                  children: [for (var i = 0; i < 4; i++) cell(i)],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 0, 6),
+                child: Row(
+                  children: [
+                    Icon(
+                      custom ? Icons.folder : Icons.folder_special,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _folderLabel(key),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          Text(
+                            items.length == 1
+                                ? '1 Design'
+                                : '${items.length} Designs',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context).hintColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (custom)
+                      _customFolderMenu(key.substring(2))
+                    else
+                      const SizedBox(height: 40),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Menü eines eigenen Ordners: umbenennen oder auflösen.
+  Widget _customFolderMenu(String name) => PopupMenuButton<String>(
+    padding: EdgeInsets.zero,
+    onSelected: (v) {
+      if (v == 'rename') _renameFolder(name);
+      if (v == 'dissolve') _dissolveFolder(name);
+    },
+    itemBuilder: (_) => const [
+      PopupMenuItem(value: 'rename', child: Text('Ordner umbenennen')),
+      PopupMenuItem(value: 'dissolve', child: Text('Ordner auflösen')),
+    ],
+  );
+
+  Future<String?> _askFolderName({String initial = '', String? title}) {
+    final ctrl = TextEditingController(text: initial);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title ?? 'Neuer Ordner'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: 'z. B. Saison 26/27',
+          ),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Speichern'),
+          ),
         ],
       ),
     );
+  }
+
+  /// Design in einen eigenen Ordner (oder zurück in den automatischen) legen.
+  Future<void> _moveToFolder(Map<String, Object?> row) async {
+    final current = _customFolderOf(row);
+    final kind = (row['kind'] as String?) ?? 'free';
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Text(
+                'In Ordner verschieben',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.create_new_folder_outlined),
+              title: const Text('Neuer Ordner …'),
+              onTap: () => Navigator.pop(ctx, '+new'),
+            ),
+            for (final f in _customFolders)
+              ListTile(
+                leading: const Icon(Icons.folder),
+                title: Text(f),
+                trailing: f == current ? const Icon(Icons.check) : null,
+                onTap: () => Navigator.pop(ctx, 'f:$f'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.folder_special),
+              title: Text('Automatisch: ${_folderLabel('k:$kind')}'),
+              trailing: current.isEmpty ? const Icon(Icons.check) : null,
+              onTap: () => Navigator.pop(ctx, '-'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    String? target;
+    if (choice == '+new') {
+      final n = (await _askFolderName())?.trim();
+      if (n == null || n.isEmpty) return;
+      target = n;
+    } else if (choice.startsWith('f:')) {
+      target = choice.substring(2);
+    }
+    if ((target ?? '') == current) return;
+    await _app.setDesignFolder(row['id'] as String, target);
+  }
+
+  Future<void> _renameFolder(String name) async {
+    final n = (await _askFolderName(
+      initial: name,
+      title: 'Ordner umbenennen',
+    ))?.trim();
+    if (n == null || n.isEmpty || n == name) return;
+    for (final d in _designs.where((d) => _customFolderOf(d) == name)) {
+      await _app.setDesignFolder(d['id'] as String, n);
+    }
+    if (mounted && _folder == 'f:$name') setState(() => _folder = 'f:$n');
+  }
+
+  /// Ordner auflösen: Designs bleiben erhalten und wandern zurück in die
+  /// automatischen Ordner ihrer Vorlage.
+  Future<void> _dissolveFolder(String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Ordner „$name" auflösen?'),
+        content: const Text(
+          'Die Designs bleiben erhalten und erscheinen wieder in den '
+          'automatischen Ordnern ihrer Vorlage.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Auflösen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    for (final d in _designs.where((d) => _customFolderOf(d) == name)) {
+      await _app.setDesignFolder(d['id'] as String, null);
+    }
+    if (mounted && _folder == 'f:$name') setState(() => _folder = null);
   }
 
   Widget _designTile(Map<String, Object?> row) {
@@ -782,12 +1123,17 @@ class _DesignerScreenState extends State<DesignerScreen> {
                       padding: EdgeInsets.zero,
                       onSelected: (v) {
                         if (v == 'rename') _renameSaved(row);
+                        if (v == 'move') _moveToFolder(row);
                         if (v == 'delete') _deleteSaved(row);
                       },
                       itemBuilder: (_) => const [
                         PopupMenuItem(
                           value: 'rename',
                           child: Text('Umbenennen'),
+                        ),
+                        PopupMenuItem(
+                          value: 'move',
+                          child: Text('In Ordner verschieben'),
                         ),
                         PopupMenuItem(value: 'delete', child: Text('Löschen')),
                       ],
