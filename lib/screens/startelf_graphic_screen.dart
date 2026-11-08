@@ -515,6 +515,9 @@ const double _kCutoutRim = 45;
 /// ID der team-weiten Hintergrund-Vorlage für FuPa-Fotos.
 const String _kFupaBgId = 'fupa-background';
 
+/// Zweiter FuPa-Hintergrund: Verlauf in den Vereinsfarben (ohne Bild).
+const String _kFupaBgClubId = 'fupa-background-club';
+
 /// Hintergrund einer Vorlage auf Grafik-Einstellungen legen (nur Look).
 GraphicSettings _withPreset(GraphicSettings s, GraphicPreset p) => s.copyWith(
   bgImage: p.bgImage,
@@ -1659,6 +1662,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // FuPa: eigener Hintergrund JE DESIGN (Kopie der Team-Vorlage beim Anlegen).
   // Spätere Änderungen der Team-Vorlage verändern fertige Designs nicht.
   Map<String, Object?>? _fupaBgSnap;
+  // FuPa: welcher der zwei Team-Hintergründe gilt für DIESES Design –
+  // 'image' (Bild wie bisher) oder 'club' (Verlauf in Vereinsfarben).
+  String _fupaBgVar = 'image';
+  // Grafik-Einstellungen des Teams (Vereinsfarben für den Verlauf).
+  GraphicSettings? _teamSettings;
   AppState? _appStateRef; // für Speichern in dispose (ohne context)
   final GlobalKey _posterCanvasKey = GlobalKey(); // Koord. für den Dreh-Griff
   bool _showMainSponsor = true; // Hauptsponsor anzeigen (je Grafik)
@@ -1997,6 +2005,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       // Deaktivierte Sponsoren erscheinen auf keiner Grafik.
       _sponsors = sponsors.where((s) => s.enabled).toList();
       _settings = settings;
+      _teamSettings = settings;
       _loading = false;
     });
     // FuPa: eigener, team-weiter Hintergrund (Vorlage „fupa-background").
@@ -2128,10 +2137,48 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (isNew && _fupaBgSnap == null) _fupaBgSnap = _currentFupaBg().toMap();
   }
 
+  /// FuPa: zwischen den zwei Team-Hintergründen wechseln. Der gewählte wird
+  /// (wie beim Anlegen) als eigener Hintergrund DIESES Designs festgehalten.
+  /// Fehlt die Vorlage „Vereinsverlauf" noch, entsteht sie aus den
+  /// Vereinsfarben der Grafik-Einstellungen.
+  Future<void> _switchFupaBg(String variant) async {
+    if (variant == _fupaBgVar) return;
+    final state = context.read<AppState>();
+    final presets = await state.graphicPresets();
+    if (!mounted) return;
+    final id = variant == 'club' ? _kFupaBgClubId : _kFupaBgId;
+    GraphicPreset? preset;
+    for (final p in presets) {
+      if (p.id == id) preset = p;
+    }
+    final team = _teamSettings ?? _settings;
+    preset ??= variant == 'club'
+        ? GraphicPreset(
+            id: _kFupaBgClubId,
+            name: 'FuPa-Hintergrund (Vereinsverlauf)',
+            gradTop: team.gradTop,
+            gradBottom: team.gradBottom,
+            overlayOpacity: 0,
+            bgOpacity: 100,
+            bgBlend: 'normal',
+            accent: team.accent,
+            createdAt: DateTime.now().toIso8601String(),
+          )
+        : null;
+    setState(() {
+      _fupaBgVar = variant;
+      if (preset != null) _settings = _withPreset(_settings, preset);
+      _fupaBgSnap = _currentFupaBg().toMap();
+    });
+    _refreshBgDark();
+  }
+
   /// Aktueller FuPa-Hintergrund (aus den angezeigten Einstellungen).
   GraphicPreset _currentFupaBg() => GraphicPreset(
-    id: _kFupaBgId,
-    name: 'FuPa-Hintergrund',
+    id: _fupaBgVar == 'club' ? _kFupaBgClubId : _kFupaBgId,
+    name: _fupaBgVar == 'club'
+        ? 'FuPa-Hintergrund (Vereinsverlauf)'
+        : 'FuPa-Hintergrund',
     bgImage: _settings.bgImage,
     gradTop: _settings.gradTop,
     gradBottom: _settings.gradBottom,
@@ -2263,6 +2310,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         'designer': widget.designer!.copyWith(title: _designerTitle).toJson(),
       'txtSeq': _textSeq,
       'fupaBg': ?_fupaBgSnap,
+      if (_isFupa) 'fupaBgVar': _fupaBgVar,
     };
   }
 
@@ -2509,6 +2557,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (m['txtSeq'] is num) _textSeq = (m['txtSeq'] as num).toInt();
     // FuPa: der im Design gespeicherte Hintergrund gilt (nicht die aktuelle
     // Team-Vorlage).
+    if (_isFupa) {
+      _fupaBgVar = m['fupaBgVar'] == 'club' ? 'club' : 'image';
+    }
     if (_isFupa && m['fupaBg'] is Map) {
       try {
         final snap = Map<String, Object?>.from(m['fupaBg'] as Map);
@@ -3147,12 +3198,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     ),
                   ),
                   if (_isFupa)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 4),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'Gilt für ALLE FuPa-Fotos – die anderen Grafiken '
-                        'behalten ihren Hintergrund.',
-                        style: TextStyle(fontSize: 12),
+                        '${_fupaBgVar == 'club' ? 'Vereinsverlauf' : 'Bild-Hintergrund'}'
+                        ': gilt für dieses Design und als Vorlage für neue '
+                        'FuPa-Fotos – die anderen Grafiken behalten ihren '
+                        'Hintergrund.',
+                        style: const TextStyle(fontSize: 12),
                       ),
                     ),
                   const SizedBox(height: 14),
@@ -5936,6 +5989,28 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                   ),
                 ),
               ],
+            ),
+            const SizedBox(height: 6),
+            // Zwei Hintergründe: Bild (wie bisher) oder Vereinsverlauf.
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<String>(
+                segments: const [
+                  ButtonSegment(
+                    value: 'image',
+                    icon: Icon(Icons.image_outlined),
+                    label: Text('Bild-Hintergrund'),
+                  ),
+                  ButtonSegment(
+                    value: 'club',
+                    icon: Icon(Icons.gradient),
+                    label: Text('Vereinsverlauf'),
+                  ),
+                ],
+                selected: {_fupaBgVar},
+                showSelectedIcon: false,
+                onSelectionChanged: (v) => _switchFupaBg(v.first),
+              ),
             ),
             const SizedBox(height: 6),
           ],
