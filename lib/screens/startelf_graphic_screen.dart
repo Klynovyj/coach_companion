@@ -2255,6 +2255,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'ftMatrix': {for (final e in _ftMatrixF.entries) e.key: e.value},
       'ftSplit': Map<String, double>.from(_ftSplitF),
       'stdOff': offMap(_stdOffF),
+      // Startelf-Layout v2 (zentriert, Kader-Kasten) – ältere Verschiebungen
+      // passen nicht mehr und werden beim Laden verworfen.
+      'stdV': 2,
       'stdHidden': {
         for (final e in _stdHiddenF.entries) e.key: e.value.toList(),
       },
@@ -2423,6 +2426,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       });
     }
     fillOff(_stdOffF, m['stdOff']);
+    // Startelf vor Layout v2: alte Verschiebungen/Größen der festen Teile
+    // gehören zum alten Aufbau → verwerfen, damit alles wie vorgesehen sitzt.
+    final oldStartelf =
+        !widget.isResult && widget.announcement == null && m['stdV'] != 2;
     _stdHiddenF.clear();
     if (m['stdHidden'] is Map) {
       (m['stdHidden'] as Map).forEach((k, v) {
@@ -2433,6 +2440,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     fillDbl(_posterScaleF, m['scale']);
     fillDbl(_posterRotF, m['rot']);
+    if (oldStartelf) {
+      _stdOffF.clear();
+      for (final mm in [..._posterScaleF.values, ..._posterRotF.values]) {
+        mm.removeWhere((k, _) => k.startsWith('std_'));
+      }
+      for (final mm in _boxSizeF.values) {
+        mm.removeWhere((k, _) => k.startsWith('std_'));
+      }
+    }
     _posterOrderF.clear();
     if (m['order'] is Map) {
       (m['order'] as Map).forEach((k, v) {
@@ -8697,6 +8713,7 @@ class _StartelfGraphic extends StatelessWidget {
 
   /// Standard-Layout (Startelf bzw. Ergebnis ohne eigenen Foto-Bereich).
   Widget _standardLayout() {
+    if (result == null && announcement == null) return _startelfLayout();
     final pad = compact ? 16.0 : 20.0;
     return Stack(
       fit: StackFit.expand,
@@ -8773,6 +8790,418 @@ class _StartelfGraphic extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+
+  /// Kräftige Vereinsfarbe (aufgehellter Verlauf) für Balken und Rahmen.
+  Color get _brandBright {
+    final h = HSLColor.fromColor(gradTop);
+    return h
+        .withLightness(h.lightness.clamp(0.36, 0.46))
+        .withSaturation(math.max(h.saturation, 0.62))
+        .toColor();
+  }
+
+  /// Startelf (zentriert): Logos · „— VEREIN —" · STARTELF · Spielinfo ·
+  /// Gegner-Balken · Kader-Kasten (Nr. | Name, darunter BANK) · Sponsoren.
+  /// Jedes Teil bleibt ein eigenes, frei gestaltbares Objekt.
+  Widget _startelfLayout() {
+    final pad = compact ? 10.0 : 20.0;
+    final logoBytes = TeamLogo.decode(logo);
+    final logoH = compact ? 32.0 : 62.0;
+    final Widget? clubLogo = logoBytes != null
+        ? _logoChip(logoBytes, height: logoH, circle: logoCircle)
+        : (logo != null ? TeamLogo(logoPath: logo, size: logoH) : null);
+    final sponsor = mainSponsor != null && showMainSponsor
+        ? ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: compact ? 90 : 150),
+            child: _mainSponsorMark(
+              logoH: logoH,
+              nameSize: compact ? 16 : 20,
+            ),
+          )
+        : null;
+    final topRow = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (clubLogo != null) _stdEl('std_logo', clubLogo),
+        if (clubLogo != null && sponsor != null)
+          Container(
+            width: 2,
+            height: logoH * 0.62,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            color: Colors.white.withValues(alpha: 0.75),
+          ),
+        if (sponsor != null) _stdEl('std_sponsor', sponsor),
+      ],
+    );
+    final line = Expanded(
+      child: Container(height: 1.5, color: Colors.white.withValues(alpha: 0.7)),
+    );
+    final titleBlock = Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            line,
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                title.toUpperCase(),
+                maxLines: 1,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: compact ? 10 : 18,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: compact ? 2.5 : 4.5,
+                ),
+              ),
+            ),
+            line,
+          ],
+        ),
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          child: Text(
+            posterHeadline,
+            maxLines: 1,
+            softWrap: false,
+            style: posterFontStyle(
+              posterFont,
+              TextStyle(
+                color: Colors.white,
+                fontSize: compact ? 36 : 66,
+                fontWeight: FontWeight.w900,
+                fontStyle: FontStyle.italic,
+                letterSpacing: 1,
+                height: 1.0,
+                shadows: const [
+                  Shadow(color: Colors.black54, blurRadius: 12),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        _bgBase(),
+        Padding(
+          padding: EdgeInsets.fromLTRB(pad, pad, pad, pad * 0.8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              topRow,
+              SizedBox(height: compact ? 4 : 14),
+              _stdEl('std_title', titleBlock),
+              SizedBox(height: compact ? 2 : 4),
+              Center(
+                child: _stdEl(
+                  'std_info',
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: _startelfDateLine(),
+                  ),
+                ),
+              ),
+              if (opponentName.isNotEmpty) ...[
+                SizedBox(height: compact ? 4 : 12),
+                Center(
+                  child: _stdEl(
+                    'std_vs',
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: _startelfVsBanner(),
+                    ),
+                  ),
+                ),
+              ],
+              SizedBox(height: compact ? 6 : 14),
+              Expanded(
+                child: Center(
+                  child: _boxSlot(
+                    'std_lineup',
+                    FittedBox(
+                      fit: BoxFit.contain,
+                      alignment: Alignment.topCenter,
+                      child: _startelfPanel(),
+                    ),
+                    (s) => _startelfPanel(size: s),
+                  ),
+                ),
+              ),
+              if (barSponsors.isNotEmpty && showOtherSponsors) ...[
+                SizedBox(height: compact ? 6 : 10),
+                _boxSlot(
+                  'std_sponsorbar',
+                  _sponsorBar(),
+                  (s) => _sponsorBar(size: s),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// „HEIMSPIEL · So., 08.11.2026 · 13:15 Uhr" – zentriert, weiß.
+  Widget _startelfDateLine() {
+    final parts = <String>[isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL'];
+    if (matchDate != null) {
+      final local = matchDate!.toLocal();
+      parts.add(DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(local));
+      if (local.hour != 0 || local.minute != 0) {
+        parts.add('${DateFormat('HH:mm', 'de_DE').format(local)} Uhr');
+      }
+    }
+    return Text(
+      parts.join('   ·   '),
+      maxLines: 1,
+      softWrap: false,
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: Colors.white.withValues(alpha: 0.95),
+        fontSize: compact ? 9 : 14,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 1.6,
+      ),
+    );
+  }
+
+  /// Schräger Balken in Vereinsfarbe: Gegner-Logo (weißer Kreis) + „vs …".
+  Widget _startelfVsBanner() {
+    final oppBytes = TeamLogo.decode(opponentLogo);
+    final h = compact ? 24.0 : 42.0;
+    return ClipPath(
+      clipper: const _SlantClipper(),
+      child: Container(
+        height: h,
+        padding: EdgeInsets.symmetric(horizontal: h * 1.1),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              _brandBright.withValues(alpha: 0.55),
+              _brandBright,
+              _brandBright.withValues(alpha: 0.55),
+            ],
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (oppBytes != null) ...[
+              Container(
+                width: h * 0.86,
+                height: h * 0.86,
+                padding: EdgeInsets.all(h * 0.08),
+                decoration: const BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                ),
+                child: ClipOval(
+                  child: Image.memory(
+                    oppBytes,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+            ],
+            Text(
+              'vs ${opponentName.toUpperCase()}',
+              maxLines: 1,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: compact ? 11 : 18,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Kader-Kasten: Torwart oben, dann nach Rückennummer; „Nr. | NAME" mit
+  /// Trennstrich, Torwart mit Zusatz; darunter Linie + BANK-Plakette.
+  Widget _startelfPanel({Size? size}) {
+    bool isKeeper(StartelfPlayer p) {
+      final pos = (p.position ?? '').toLowerCase();
+      return pos.contains('tor') || pos == 'tw' || pos.contains('keeper');
+    }
+
+    final keepers = [for (final p in starters) if (isKeeper(p)) p];
+    final field = [for (final p in starters) if (!isKeeper(p)) p]
+      ..sort((a, b) => (a.number ?? 999).compareTo(b.number ?? 999));
+    final ordered = [...keepers, ...field];
+    const numStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 26,
+      fontWeight: FontWeight.w900,
+      fontFeatures: [ui.FontFeature.tabularFigures()],
+      height: 1.1,
+    );
+    const nameStyle = TextStyle(
+      color: Colors.white,
+      fontSize: 26,
+      fontWeight: FontWeight.w900,
+      letterSpacing: 0.4,
+      height: 1.1,
+    );
+    final subStyle = TextStyle(
+      color: Colors.white.withValues(alpha: 0.85),
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.6,
+      height: 1.1,
+    );
+    Widget row(StartelfPlayer p) => Padding(
+            padding: const EdgeInsets.symmetric(vertical: 3),
+            child: IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: 52,
+                    child: Text(
+                      p.number?.toString() ?? '',
+                      textAlign: TextAlign.center,
+                      style: numStyle,
+                    ),
+                  ),
+                  Container(
+                    width: 2,
+                    margin: const EdgeInsets.symmetric(horizontal: 14),
+                    color: Colors.white.withValues(alpha: 0.6),
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(p.name.toUpperCase(), style: nameStyle),
+                      if (isKeeper(p)) Text('TORWART', style: subStyle),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+    // Post (1:1) ist flach: Kader in zwei Spalten → deutlich größer lesbar.
+    final twoCols = compact && ordered.length > 6;
+    final half = (ordered.length + 1) ~/ 2;
+    Widget col(List<StartelfPlayer> list) => Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [for (final p in list) row(p)],
+    );
+    final rows = twoCols
+        ? Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              col(ordered.sublist(0, half)),
+              const SizedBox(width: 30),
+              col(ordered.sublist(half)),
+            ],
+          )
+        : col(ordered);
+    final bench = benchNames.isEmpty
+        ? null
+        : Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              ClipPath(
+                clipper: const _SlantClipper(),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 8,
+                  ),
+                  color: _brandBright,
+                  child: const Text(
+                    'BANK',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      fontStyle: FontStyle.italic,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 14),
+              SizedBox(
+                width: twoCols ? 520 : 330,
+                child: Text(
+                  benchNames.map((n) => n.toUpperCase()).join(', '),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          );
+    final inner = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Padding(
+          padding: EdgeInsets.only(left: twoCols ? 0 : 24),
+          child: rows,
+        ),
+        if (bench != null) ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            width: twoCols ? 640 : 460,
+            child: Container(
+              height: 1.5,
+              color: Colors.white.withValues(alpha: 0.35),
+            ),
+          ),
+          const SizedBox(height: 12),
+          bench,
+        ],
+      ],
+    );
+    final pad = const EdgeInsets.fromLTRB(22, 18, 22, 18);
+    final deco = BoxDecoration(
+      color: Colors.black.withValues(alpha: 0.28),
+      borderRadius: BorderRadius.circular(26),
+      border: Border.all(
+        color: _brandBright.withValues(alpha: 0.85),
+        width: 2,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: _brandBright.withValues(alpha: 0.45),
+          blurRadius: 18,
+          spreadRadius: 1,
+        ),
+      ],
+    );
+    if (size != null) {
+      return _fixedBox(
+        size,
+        padding: pad,
+        decoration: deco,
+        fillWidth: false,
+        content: (_) => inner,
+      );
+    }
+    return Container(
+      constraints: const BoxConstraints(minWidth: 500),
+      padding: pad,
+      decoration: deco,
+      child: inner,
     );
   }
 
@@ -10602,6 +11031,25 @@ class _StartelfGraphic extends StatelessWidget {
     bool circle = false,
     String mode = 'auto',
   }) => LogoChip(bytes: bytes, height: height, circle: circle, mode: mode);
+}
+
+/// Parallelogramm (schräge Seiten) für Balken und Plaketten.
+class _SlantClipper extends CustomClipper<Path> {
+  const _SlantClipper();
+
+  @override
+  Path getClip(Size size) {
+    final d = size.height * 0.45;
+    return Path()
+      ..moveTo(d, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width - d, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
 }
 
 /// Lässt Treffer (Zeiger-Ereignisse) nur dort zu, wo [test] true liefert –
