@@ -2080,6 +2080,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (keep == true) {
           try {
             _applyDesignJson(jsonDecode(json) as Map<String, dynamic>);
+            _fillMissingFormatPhoto();
             setState(() {});
           } catch (_) {
             // Beschädigtes/altes JSON → ignorieren, mit leerem Design starten.
@@ -2090,6 +2091,23 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     if (_hasStorage) _lastSavedJson = jsonEncode(_designToJson());
     _designLoaded = true;
+  }
+
+  /// Story bzw. Post ohne eigenes Spielerfoto, die noch nie gestaltet wurden
+  /// (keine verschobenen Elemente) → Foto des anderen Formats übernehmen.
+  /// Sonst fehlte z. B. in der Story der Spieler, obwohl er im Post gesetzt ist.
+  void _fillMissingFormatPhoto() {
+    for (final (k, o) in const [('s', 'p'), ('p', 's')]) {
+      if (_posterMainF[k] != null) continue;
+      final other = _posterMainF[o];
+      if (other == null) continue;
+      if (_posterPosF[k]?.isNotEmpty ?? false) continue; // bewusst gestaltet
+      _posterMainF[k] = other;
+      final orig = _imgOrigF[o]?['player'];
+      if (orig != null) _imgOrigF.putIfAbsent(k, () => {})['player'] = orig;
+      final order = _posterOrderF[k];
+      if (order != null && !order.contains('player')) order.insert(0, 'player');
+    }
   }
 
   /// FuPa-Absicherungen nach dem Laden: immer 4:5 mit nur dem Spieler; Foto
@@ -7851,9 +7869,14 @@ class _StartelfGraphic extends StatelessWidget {
             ? Offset((pos.dx - 0.5) * w, (pos.dy - 0.5) * h)
             : Offset.zero,
         child: Align(
+          // Alte (Align-)Positionen auf den Bildrand begrenzen: Werte > 1
+          // schoben Elemente (z. B. die Überschrift) aus dem Bild hinaus.
           alignment: centered
               ? Alignment.center
-              : Alignment(pos.dx * 2 - 1, pos.dy * 2 - 1),
+              : Alignment(
+                  (pos.dx * 2 - 1).clamp(-1.0, 1.0),
+                  (pos.dy * 2 - 1).clamp(-1.0, 1.0),
+                ),
           child: child,
         ),
       ),
