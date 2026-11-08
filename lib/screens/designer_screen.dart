@@ -433,7 +433,18 @@ class _DesignerScreenState extends State<DesignerScreen> {
   }) async {
     final team = _app.ownTeam;
     if (team == null) return null;
-    final all = await _app.playersOf(team.id, onlyActive: true);
+    final raw = await _app.playersOf(team.id, onlyActive: true);
+    // Doppelte Kader-Einträge (gleicher Name, z. B. doppelt importiert) nur
+    // einmal zeigen – bevorzugt den mit Rückennummer bzw. Foto.
+    int rank(Player p) =>
+        (p.number != null ? 2 : 0) + (p.photoPath != null ? 1 : 0);
+    final unique = <String, Player>{};
+    for (final p in raw) {
+      final key = p.fullName.trim().toLowerCase();
+      final prev = unique[key];
+      if (prev == null || rank(p) > rank(prev)) unique[key] = p;
+    }
+    final all = unique.values.toList();
     int byName(Player a, Player b) => a.fullName.compareTo(b.fullName);
     final players = all.where((p) => !p.isStaffOnly).toList()..sort(byName);
     final staff = includeStaff
