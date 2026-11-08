@@ -200,12 +200,12 @@ const List<(String, Map<String, double>)> kGradePresets = [
     kFupaStyleName,
     {
       'warmth': 4,
-      'contrast': 10,
+      'contrast': 12,
       'saturation': 8,
-      // Vignette nur ganz außen – Logo/Hintergrund-Details bleiben hell.
-      'vignette': 12,
-      'vigSize': 80,
-      'vigSoft': 80,
+      'highlights': -4,
+      'vignette': 35,
+      'vigSize': 55,
+      'vigSoft': 75,
       'glow': 60,
       'match': 25,
       'shade': 40,
