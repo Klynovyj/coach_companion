@@ -1,13 +1,9 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:image/image.dart' as img;
-import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
@@ -33,7 +29,7 @@ import '../widgets/team_logo.dart';
 import '../widgets/rich_note_view.dart';
 import '../widgets/star_rating.dart';
 import 'live_match_screen.dart';
-import 'photo_crop_screen.dart';
+import 'player_photos_screen.dart';
 import 'note_editor_screen.dart';
 import 'player_of_month_graphic_screen.dart';
 import 'spielergespraeche_screen.dart';
@@ -80,114 +76,14 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     if (p != null && mounted) setState(() => _player = p);
   }
 
-  /// Spielerfoto wählen: Datei/Galerie (Desktop & Handy), Kamera (nur Handy),
-  /// oder vorhandenes Foto entfernen. Wird als Data-URL am Spieler gespeichert.
+  /// Die vier Fotos des Spielers (FuPa, eigenes FuPa-Foto, Verein, Action)
+  /// verwalten: ansehen, teilen, ersetzen, Profilbild wählen.
   Future<void> _changePhoto() async {
-    final isMobile = Platform.isAndroid || Platform.isIOS;
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (isMobile)
-              ListTile(
-                leading: const Icon(Icons.photo_camera),
-                title: const Text('Kamera'),
-                onTap: () => Navigator.pop(context, 'camera'),
-              ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: Text(isMobile ? 'Galerie (mein Foto)' : 'Bild auswählen'),
-              onTap: () => Navigator.pop(context, 'gallery'),
-            ),
-            if (_player.hasCustomPhoto && _player.hasFupaPhoto) ...[
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.person_outline),
-                title: const Text('Mein Foto verwenden'),
-                trailing: _player.useCustomPhoto
-                    ? const Icon(Icons.check, color: Colors.green)
-                    : null,
-                onTap: () => Navigator.pop(context, 'use_custom'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.cloud_outlined),
-                title: const Text('FuPa-Foto verwenden'),
-                trailing: !_player.useCustomPhoto
-                    ? const Icon(Icons.check, color: Colors.green)
-                    : null,
-                onTap: () => Navigator.pop(context, 'use_fupa'),
-              ),
-            ],
-            if (_player.hasCustomPhoto)
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text('Mein Foto entfernen'),
-                onTap: () => Navigator.pop(context, 'remove'),
-              ),
-          ],
-        ),
-      ),
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PlayerPhotosScreen(player: _player)),
     );
-    if (choice == null || !mounted) return;
-    if (choice == 'use_custom') {
-      await _apply(_player.copyWith(useCustomPhoto: true));
-      return;
-    }
-    if (choice == 'use_fupa') {
-      await _apply(_player.copyWith(useCustomPhoto: false));
-      return;
-    }
-    if (choice == 'remove') {
-      // Eigenes Foto entfernen → auf das FuPa-Foto zurückfallen.
-      await _apply(
-        _player.copyWith(clearCustomPhoto: true, useCustomPhoto: false),
-      );
-      return;
-    }
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      final file = await ImagePicker().pickImage(
-        source: choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
-        maxWidth: 1600,
-        maxHeight: 1600,
-        imageQuality: 90,
-      );
-      if (file == null) return;
-      final raw = await file.readAsBytes();
-      if (!mounted) return;
-      // Quadratisch zuschneiden lassen (In-App-Crop).
-      final cropped = await Navigator.of(context).push<Uint8List>(
-        MaterialPageRoute(
-          fullscreenDialog: true,
-          builder: (_) => PhotoCropScreen(imageBytes: raw),
-        ),
-      );
-      if (cropped == null || !mounted) return;
-      final dataUrl = _encodeSquareJpeg(cropped);
-      await _apply(
-        _player.copyWith(customPhoto: dataUrl, useCustomPhoto: true),
-      );
-    } catch (e) {
-      messenger.showSnackBar(
-        SnackBar(content: Text('Foto konnte nicht geladen werden: $e')),
-      );
-    }
-  }
-
-  /// Verkleinert das (bereits quadratische) Bild auf max. 512 px und kodiert es
-  /// als JPEG-Data-URL – klein genug für DB und Cloud-Sync.
-  String _encodeSquareJpeg(Uint8List input) {
-    final decoded = img.decodeImage(input);
-    if (decoded == null) {
-      return 'data:image/jpeg;base64,${base64Encode(input)}';
-    }
-    final sized = decoded.width > 512
-        ? img.copyResize(decoded, width: 512, height: 512)
-        : decoded;
-    final jpg = img.encodeJpg(sized, quality: 85);
-    return 'data:image/jpeg;base64,${base64Encode(jpg)}';
+    if (mounted) await _refreshPlayer();
   }
 
   /// Status setzen: Fit/Inaktiv = Grundstatus; Krank/Verletzt = befristete
@@ -381,9 +277,17 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               _headerPhoto(context, p, isTrainer),
-              if (isTrainer && p.hasFupaPhoto && p.hasCustomPhoto) ...[
-                const SizedBox(height: 6),
-                _photoSourceToggle(context, p),
+              if (isTrainer) ...[
+                const SizedBox(height: 4),
+                TextButton.icon(
+                  style: TextButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: _changePhoto,
+                  icon: const Icon(Icons.photo_library_outlined, size: 18),
+                  label: const Text('Fotos'),
+                ),
               ],
             ],
           ),
@@ -495,33 +399,6 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  /// Kleiner Umschalter FuPa-Foto / mein Foto (nur wenn beide vorhanden).
-  Widget _photoSourceToggle(BuildContext context, Player p) {
-    return SizedBox(
-      width: 160,
-      child: SegmentedButton<bool>(
-        style: const ButtonStyle(
-          visualDensity: VisualDensity.compact,
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
-        ),
-        segments: const [
-          ButtonSegment(
-            value: false,
-            label: Text('FuPa', style: TextStyle(fontSize: 11)),
-          ),
-          ButtonSegment(
-            value: true,
-            label: Text('Mein', style: TextStyle(fontSize: 11)),
-          ),
-        ],
-        selected: {p.useCustomPhoto},
-        showSelectedIcon: false,
-        onSelectionChanged: (s) => _apply(p.copyWith(useCustomPhoto: s.first)),
       ),
     );
   }

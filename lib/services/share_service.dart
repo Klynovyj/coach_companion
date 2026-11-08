@@ -32,11 +32,13 @@ Future<String?> shareOrSaveImage(
   Uint8List bytes,
   String baseName, {
   String? text,
+  // Dateiendung (z. B. 'jpg' für Fotos im Originalformat).
+  String ext = 'png',
 }) async {
   final safe = baseName.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
   if (Platform.isAndroid || Platform.isIOS) {
     final dir = await getTemporaryDirectory();
-    final file = File('${dir.path}/$safe.png');
+    final file = File('${dir.path}/$safe.$ext');
     await file.writeAsBytes(bytes);
     await SharePlus.instance.share(
       ShareParams(files: [XFile(file.path)], text: text),
@@ -47,7 +49,7 @@ Future<String?> shareOrSaveImage(
   final dir =
       await getDownloadsDirectory() ?? await getApplicationDocumentsDirectory();
   final stamp = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
-  final file = File('${dir.path}/${safe}_$stamp.png');
+  final file = File('${dir.path}/${safe}_$stamp.$ext');
   await file.writeAsBytes(bytes);
   // Öffnen ist optional – die Datei ist gespeichert, auch wenn kein Viewer startet.
   try {

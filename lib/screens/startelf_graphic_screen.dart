@@ -22,6 +22,7 @@ import '../models/graphic_settings.dart';
 import '../models/sponsor.dart';
 import '../services/cloud_service.dart';
 import '../services/share_service.dart';
+import '../services/player_photos.dart';
 import '../state/app_state.dart';
 import '../widgets/player_picker_page.dart';
 import '../widgets/logo_chip.dart';
@@ -5802,8 +5803,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     await _cutoutSelected();
   }
 
-  /// FuPa: fertiges Bild (Hochformat) als eigenes Spielerfoto im Kader
-  /// übernehmen – nach Rückfrage.
+  /// FuPa: fertiges Bild (960×1200) als eigenes FuPa-, Vereins- oder
+  /// Actionfoto ins Spielerprofil übernehmen – optional als Profilbild.
   Future<void> _fupaAdoptAsPlayerPhoto() async {
     final messenger = ScaffoldMessenger.of(context);
     final state = context.read<AppState>();
@@ -5824,30 +5825,62 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       );
       return;
     }
+    // Fach wählen: eigenes FuPa-Foto, Vereins- oder Actionfoto (+ Profilbild).
+    var slot = PlayerPhotoSlot.own;
+    var asProfile = true;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Als Spielerfoto übernehmen?'),
-        content: Text(
-          'Das FuPa-Foto wird das Foto von ${player.fullName} in der App '
-          '(Kader, Grafiken). Das bisherige eigene Foto wird ersetzt.',
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text('Foto für ${player.fullName}'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final s in const [
+                PlayerPhotoSlot.own,
+                PlayerPhotoSlot.club,
+                PlayerPhotoSlot.action,
+              ])
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(
+                    slot == s
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                  ),
+                  title: Text(s.description),
+                  onTap: () => setD(() {
+                    slot = s;
+                    asProfile = s == PlayerPhotoSlot.own;
+                  }),
+                ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Als Profilbild verwenden'),
+                subtitle: const Text('Rundes Bild in Kader und Grafiken'),
+                value: asProfile,
+                onChanged: (v) => setD(() => asProfile = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Übernehmen'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Abbrechen'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Übernehmen'),
-          ),
-        ],
       ),
     );
     if (ok != true || !mounted) return;
     setState(() => _sharing = true);
     try {
-      final image = await _captureImage(_boundaryKey, 720); // 720×900
+      // Originalformat der FuPa-Vorlage: 960×1200.
+      final image = await _captureImage(_boundaryKey, 960);
       if (image == null) return;
       final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
       if (data == null) return;
@@ -5856,12 +5889,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         'h': image.height,
         'px': data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
       });
-      await state.updatePlayer(
-        player.copyWith(customPhoto: url, useCustomPhoto: true),
-      );
+      await state.setPlayerPhoto(player, slot, url, asProfile: asProfile);
       messenger.showSnackBar(
         SnackBar(
-          content: Text('Als Spielerfoto von ${player.fullName} übernommen.'),
+          content: Text(
+            'Als ${slot.description} von ${player.fullName} gespeichert'
+            '${asProfile ? ' (Profilbild)' : ''}.',
+          ),
         ),
       );
     } catch (e) {
@@ -5898,7 +5932,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         ? null
                         : _fupaAdoptAsPlayerPhoto,
                     icon: const Icon(Icons.how_to_reg),
-                    label: const Text('Als Spielerfoto'),
+                    label: const Text('Ins Profil'),
                   ),
                 ),
               ],

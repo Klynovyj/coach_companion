@@ -196,6 +196,10 @@ class FupaReduxImporter {
   Future<String?> downloadPhoto(String baseUrl) =>
       _downloadImage(baseUrl, '128x128.jpeg');
 
+  /// Lädt ein Spielerfoto in FuPa-Originalgröße (JPEG, 960×1200).
+  Future<String?> downloadPhotoLarge(String baseUrl) =>
+      _downloadImage(baseUrl, '960x1200.jpeg');
+
   /// Lädt ein FuPa-Bild (Basis-URL + Größen-Suffix) als Data-URL. Fehler
   /// werden still verschluckt (Bild ist optional).
   Future<String?> _downloadImage(String baseUrl, String suffix) async {

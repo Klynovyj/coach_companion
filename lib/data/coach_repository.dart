@@ -27,6 +27,7 @@ import '../models/scouting.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
+import '../services/player_photos.dart' show kPlayerPhotoKind;
 import 'app_database.dart';
 
 /// Spiegel-Haken: wird nach jeder team-relevanten Schreiboperation gerufen,
@@ -233,6 +234,20 @@ class CoachRepository {
       _upsertById('announcement_designs', {
         'id': id,
         'title': title,
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      });
+
+  /// Spielerfoto (Data-URL im Originalformat) speichern – lokal + Cloud. Nutzt
+  /// die Design-Tabelle als synchronisierten Bildspeicher; überschreibt auch
+  /// einen früheren „Grabstein" (Foto wurde entfernt und neu gesetzt).
+  Future<void> savePlayerPhoto(String id, String slot, String data) =>
+      _upsertById('announcement_designs', {
+        'id': id,
+        'match_id': null,
+        'data': data,
+        'title': slot,
+        'kind': kPlayerPhotoKind,
+        'thumb': null,
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       });
 

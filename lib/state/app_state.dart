@@ -40,6 +40,7 @@ import '../services/cloud_service.dart';
 import '../services/live_clock.dart';
 import '../services/push_service.dart';
 import '../services/fupa/fupa_dtos.dart';
+import '../services/player_photos.dart';
 import '../services/fupa/fupa_persistence.dart';
 import '../services/material_duty.dart';
 import '../services/fupa/fupa_redux_importer.dart';
@@ -202,6 +203,14 @@ class AppState extends ChangeNotifier {
             'id,updated_at',
           );
           for (final m in metas) {
+            // Spielerfotos (groß) erst beim Öffnen des Profils laden – außer
+            // es gibt schon eine lokale Kopie, die aktuell gehalten wird.
+            final id = m['id'] as String?;
+            if (id != null &&
+                id.startsWith('pphoto:') &&
+                await _repo.getAnnouncementDesignUpdatedAt(id) == null) {
+              continue;
+            }
             await _mergeDesignMeta(m);
           }
           continue;
@@ -314,6 +323,123 @@ class AppState extends ChangeNotifier {
   Future<void> renameAnnouncementDesign(String id, String title) async {
     await _repo.renameAnnouncementDesign(id, title);
     notifyListeners();
+  }
+
+  // ------------------------------------------------------- Spielerfotos (4)
+
+  /// Gespeichertes Foto eines Fachs (Data-URL im Originalformat) oder null.
+  Future<String?> playerPhoto(String playerId, PlayerPhotoSlot slot) async {
+    final d = await _repo.getAnnouncementDesign(
+      playerPhotoId(playerId, slot.key),
+    );
+    return (d == null || d.isEmpty) ? null : d;
+  }
+
+  /// Fotos eines Spielers frisch aus der Cloud holen (nur neuere Stände).
+  Future<void> refreshPlayerPhotos(String playerId) async {
+    await Future.wait([
+      for (final k in [...PlayerPhotoSlot.values.map((s) => s.key), 'profile'])
+        refreshAnnouncementDesign(playerPhotoId(playerId, k)),
+    ]);
+  }
+
+  /// Welches Fach ist das Profilbild? Ohne Auswahl wie bisher: eigenes Foto,
+  /// sonst FuPa.
+  Future<PlayerPhotoSlot> profilePhotoSlot(Player p) async {
+    final d = await _repo.getAnnouncementDesign(playerPhotoId(p.id, 'profile'));
+    final s = PlayerPhotoSlot.fromKey(d);
+    if (s != null) return s;
+    return p.useCustomPhoto && p.hasCustomPhoto
+        ? PlayerPhotoSlot.own
+        : PlayerPhotoSlot.fupa;
+  }
+
+  /// Foto eines Fachs setzen ([dataUrl] = null → entfernen). War es das
+  /// Profilbild (oder [asProfile]), wird das Profilbild nachgeführt.
+  Future<Player> setPlayerPhoto(
+    Player p,
+    PlayerPhotoSlot slot,
+    String? dataUrl, {
+    bool asProfile = false,
+  }) async {
+    final id = playerPhotoId(p.id, slot.key);
+    final current = await profilePhotoSlot(p);
+    if (dataUrl == null) {
+      await _repo.deleteAnnouncementDesign(id);
+      if (current == slot) {
+        // Profilbild weg → auf FuPa zurückfallen.
+        return setProfilePhoto(
+          slot == PlayerPhotoSlot.own
+              ? p.copyWith(clearCustomPhoto: true)
+              : p,
+          PlayerPhotoSlot.fupa,
+        );
+      }
+      notifyListeners();
+      return p;
+    }
+    await _repo.savePlayerPhoto(id, slot.key, dataUrl);
+    if (asProfile || current == slot) return setProfilePhoto(p, slot);
+    notifyListeners();
+    return p;
+  }
+
+  /// [slot] als Profilbild verwenden: kleine Kopie als rundes Spielerfoto.
+  Future<Player> setProfilePhoto(Player p, PlayerPhotoSlot slot) async {
+    await _repo.savePlayerPhoto(
+      playerPhotoId(p.id, 'profile'),
+      'profile',
+      slot.key,
+    );
+    Player updated;
+    final original = await playerPhoto(p.id, slot);
+    if (slot == PlayerPhotoSlot.fupa && p.hasFupaPhoto) {
+      updated = p.copyWith(useCustomPhoto: false);
+    } else if (original != null) {
+      final thumb = await compute(profileThumbFromDataUrl, original);
+      updated = thumb == null
+          ? p
+          : p.copyWith(customPhoto: thumb, useCustomPhoto: true);
+    } else if (slot == PlayerPhotoSlot.own && p.hasCustomPhoto) {
+      updated = p.copyWith(useCustomPhoto: true);
+    } else {
+      updated = p.copyWith(useCustomPhoto: false);
+    }
+    await updatePlayer(updated);
+    return updated;
+  }
+
+  /// FuPa-Foto in Originalgröße (960×1200) laden und im Fach „FuPa" ablegen.
+  /// Die Bild-Adresse kommt aus der Team-Roster (per FuPa-ID gematcht).
+  /// Gibt die Data-URL zurück oder null (kein FuPa-Spieler / nicht erreichbar).
+  Future<String?> fetchFupaOriginalPhoto(Player p) async {
+    final id = p.externalId?.trim();
+    if (id == null || id.isEmpty) return null;
+    final team = await _repo.getTeam(p.teamId);
+    final teamUrl = team?.fupaUrl;
+    if (teamUrl == null || teamUrl.isEmpty) return null;
+    String? base;
+    try {
+      final roster = await _importer.importTeamPlayers(teamUrl);
+      for (final r in roster) {
+        if (r.externalId == id && (r.photoUrl ?? '').isNotEmpty) {
+          base = r.photoUrl;
+          break;
+        }
+      }
+    } catch (_) {
+      return null;
+    }
+    if (base == null) return null;
+    final url = await _importer.downloadPhotoLarge(base);
+    if (url == null) return null;
+    await _repo.savePlayerPhoto(
+      playerPhotoId(p.id, PlayerPhotoSlot.fupa.key),
+      PlayerPhotoSlot.fupa.key,
+      url,
+    );
+    notifyListeners();
+    return url;
   }
 
   /// Designer-Design in einen Ordner legen (null = automatischer Ordner).
