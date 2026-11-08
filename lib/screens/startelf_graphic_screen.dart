@@ -3190,7 +3190,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         edit: true,
                         aspectRatio: _photoAspect(_PhotoPlace.background),
                       );
-                      if (url != null) apply(_settings.copyWith(bgImage: url));
+                      if (url == null) return;
+                      // FuPa: importierter Hintergrund genau wie die Datei –
+                      // volle Deckkraft, nicht abgedunkelt.
+                      apply(
+                        _isFupa
+                            ? _settings.copyWith(
+                                bgImage: url,
+                                bgOpacity: 100,
+                                overlayOpacity: 0,
+                                bgBlend: 'normal',
+                              )
+                            : _settings.copyWith(bgImage: url),
+                      );
                     },
                     onClear: _settings.bgImage == null
                         ? null
@@ -10348,26 +10360,28 @@ class _StartelfGraphic extends StatelessWidget {
           fit: StackFit.expand,
           children: [
             _bgBase(radial: true),
-            // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar.
-            Align(
-              alignment: Alignment.topCenter,
-              child: FractionallySizedBox(
-                widthFactor: 1,
-                heightFactor: 0.5,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withValues(alpha: 0.45),
-                        Colors.black.withValues(alpha: 0.0),
-                      ],
+            // Scrim oben → Texte bleiben über Bild/Hintergrund lesbar. FuPa-Foto
+            // hat keinen Text → Hintergrund (Logo!) unverfälscht zeigen.
+            if (!fupaPlayer)
+              Align(
+                alignment: Alignment.topCenter,
+                child: FractionallySizedBox(
+                  widthFactor: 1,
+                  heightFactor: 0.5,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withValues(alpha: 0.45),
+                          Colors.black.withValues(alpha: 0.0),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
             // Hintergrund-Gesten ÜBER Hintergrundbild und Scrim (die würden sie
             // sonst abfangen): Tippen auf leere Fläche = Auswahl aufheben,
             // Langdruck = Hinzufügen/Hintergrund-Menü. Elemente liegen darüber.
