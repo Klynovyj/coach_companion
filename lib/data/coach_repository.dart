@@ -162,11 +162,37 @@ class CoachRepository {
     final db = await _db;
     final rows = await db.query(
       'announcement_designs',
+      columns: ['id', 'match_id', 'updated_at', 'title', 'kind', 'thumb'],
       where: 'id = ?',
       whereArgs: [id],
       limit: 1,
     );
-    return rows.isEmpty ? null : Map<String, Object?>.from(rows.first);
+    if (rows.isEmpty) return null;
+    return {...rows.first, 'data': await _readDesignData(id)};
+  }
+
+  /// Design-JSON in Stücken lesen: Android liest aus SQLite höchstens ~2 MB
+  /// pro Zeile am Stück („Row too big to fit into CursorWindow") – große
+  /// Designs (Fotos + Hintergrund) ließen sich sonst gar nicht öffnen.
+  Future<String?> _readDesignData(String id) async {
+    final db = await _db;
+    final meta = await db.rawQuery(
+      'SELECT length(data) AS n FROM announcement_designs WHERE id = ?',
+      [id],
+    );
+    if (meta.isEmpty || meta.first['n'] == null) return null;
+    final n = (meta.first['n'] as num).toInt();
+    const chunk = 400000; // Zeichen (Base64/JSON = 1 Byte je Zeichen)
+    final sb = StringBuffer();
+    for (var i = 1; i <= n; i += chunk) {
+      final r = await db.rawQuery(
+        'SELECT substr(data, ?, ?) AS c FROM announcement_designs WHERE id = ?',
+        [i, chunk, id],
+      );
+      if (r.isEmpty) break;
+      sb.write(r.first['c'] as String? ?? '');
+    }
+    return sb.toString();
   }
 
   /// „Meine Designs": alle Designer-Grafiken (id beginnt mit `designer:`),
@@ -231,18 +257,7 @@ class CoachRepository {
   }
 
   /// Liefert das gespeicherte Design-JSON eines Spiels (oder null).
-  Future<String?> getAnnouncementDesign(String id) async {
-    final db = await _db;
-    final rows = await db.query(
-      'announcement_designs',
-      columns: ['data'],
-      where: 'id = ?',
-      whereArgs: [id],
-      limit: 1,
-    );
-    if (rows.isEmpty) return null;
-    return rows.first['data'] as String?;
-  }
+  Future<String?> getAnnouncementDesign(String id) => _readDesignData(id);
 
   // ---------------------------------------------------------------- Settings
   Future<String?> getSetting(String key) async {

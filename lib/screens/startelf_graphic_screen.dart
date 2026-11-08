@@ -893,6 +893,7 @@ Uint8List chromaKeyMagenta(Uint8List input) {
   final src = img.decodeImage(input);
   if (src == null) return input;
   final im = src.convert(numChannels: 4);
+  final preTaint = Float32List(im.width * im.height);
   const inner = 70.0; // bis hier: komplett transparent
   const outer = 150.0; // ab hier: voll deckend
   for (final p in im) {
@@ -915,11 +916,13 @@ Uint8List chromaKeyMagenta(Uint8List input) {
       p.a = 0;
       continue;
     }
-    // Kante: teiltransparent + Magenta-Stich entfernen (Despill). Voll
-    // deckende Pixel bleiben unverändert (z. B. ein pinkes Trikot-Detail).
+    // Kante: teiltransparent + Magenta-Stich abziehen. Wie stark der Pixel
+    // verunreinigt war, merken: [_despillMagentaEdges] gibt ihm danach die
+    // ECHTE Umgebungsfarbe (bloßes Abziehen ließ einen dunkelroten Saum).
     if (keep < 1) {
       final spill = lo - g;
       if (spill > 0) {
+        preTaint[p.y * im.width + p.x] = _magentaTaint(r, g, b);
         p
           ..r = (r - spill).clamp(0, 255)
           ..b = (b - spill).clamp(0, 255);
@@ -928,8 +931,17 @@ Uint8List chromaKeyMagenta(Uint8List input) {
     }
   }
   _removeSmallIslands(im);
-  _despillMagentaEdges(im);
+  _despillMagentaEdges(im, preTaint: preTaint);
   return Uint8List.fromList(img.encodePng(im));
+}
+
+/// Wie stark ist eine Farbe mit Magenta verunreinigt (0..1)? Haare/Haut haben
+/// Blau ≤ Grün → 0; Mischungen mit Magenta-Grund dagegen > 0.
+double _magentaTaint(double r, double g, double b) {
+  final hi = math.max(r, b);
+  if (hi <= 0) return 0;
+  final sp = math.min(r, b) - g;
+  return sp <= 0 ? 0 : (sp / (0.22 * hi)).clamp(0.0, 1.0);
 }
 
 /// Kleine, abgetrennte Reste außerhalb des Motivs (z. B. ein rosa Fleck in
@@ -982,7 +994,7 @@ void _removeSmallIslands(img.Image im) {
 /// ihren Magenta-Stich (Rot/Blau über Grün → auf Grün-Niveau). Direkt an der
 /// Kante werden stark magentafarbene Pixel zusätzlich ausgedünnt. Pixel tief
 /// im Motiv (z. B. ein pinkes Trikot-Detail) bleiben unverändert.
-void _despillMagentaEdges(img.Image im, {int? radius}) {
+void _despillMagentaEdges(img.Image im, {int? radius, Float32List? preTaint}) {
   final w = im.width, h = im.height;
   if (w < 3 || h < 3) return;
   // Radius mit der Bildgröße skalieren (~1024 px → 26 px): lockige Haare
@@ -1022,13 +1034,10 @@ void _despillMagentaEdges(img.Image im, {int? radius}) {
     visit(x, y - 1);
   }
   // Verunreinigung (0..1) eines Pixels mit Magenta.
-  double taint(img.Pixel p) {
-    final pr = p.r.toDouble(), pg = p.g.toDouble(), pb = p.b.toDouble();
-    final hi = math.max(pr, pb);
-    if (hi <= 0) return 0;
-    final sp = math.min(pr, pb) - pg;
-    return sp <= 0 ? 0 : (sp / (0.22 * hi)).clamp(0.0, 1.0);
-  }
+  double taint(img.Pixel p) => math.max(
+    _magentaTaint(p.r.toDouble(), p.g.toDouble(), p.b.toDouble()),
+    preTaint == null ? 0.0 : preTaint[p.y * w + p.x].toDouble(),
+  );
 
   // Rosa, das ZUSAMMENHÄNGEND mit dem freigestellten Hintergrund verbunden ist
   // (Flecken/Strähnen in Locken), egal wie tief – ein rosa Detail mitten im
@@ -1088,8 +1097,9 @@ void _despillMagentaEdges(img.Image im, {int? radius}) {
   for (final p in im) {
     if (p.a == 0) continue;
     final idx = p.y * w + p.x;
+    // d = 0: halbdurchsichtiger Randpixel (Haarspitzen) – gerade die zeigen
+    // sonst den rötlichen Saum, also mitbehandeln.
     final d = dist[idx];
-    if (d == 0) continue;
     // Wie stark ist der Pixel mit Magenta verunreinigt (0..1)? Haare/Haut
     // haben Blau ≤ Grün → kein Spill; Rosa-Reste in Locken dagegen schon.
     final t = taint(p);
@@ -1100,13 +1110,18 @@ void _despillMagentaEdges(img.Image im, {int? radius}) {
     final rr = p.r.toDouble(), g = p.g.toDouble(), b = p.b.toDouble();
     final lo = math.min(rr, b), hi = math.max(rr, b);
     final spill = lo - g;
-    if (spill <= 0) continue;
+    if (spill <= 0 && t <= 0) continue;
     // Entfärben: Rot/Blau um den Magenta-Anteil senken (Richtung neutral) …
-    var nr = rr - spill, ng = g, nb = b - spill;
+    var nr = rr, ng = g, nb = b;
+    if (spill > 0) {
+      nr -= spill;
+      nb -= spill;
+    }
     // … und je nach Verunreinigung zur sauberen Umgebungsfarbe ziehen.
     final x0 = math.max(0, p.x - k), y0 = math.max(0, p.y - k);
     final x1 = math.min(w, p.x + k + 1), y1 = math.min(h, p.y + k + 1);
     final n = boxSum(sN, x0, y0, x1, y1);
+    final a0 = p.a.toInt();
     if (n > 0) {
       final cr = boxSum(sR, x0, y0, x1, y1) / n;
       final cg = boxSum(sG, x0, y0, x1, y1) / n;
@@ -1121,9 +1136,11 @@ void _despillMagentaEdges(img.Image im, {int? radius}) {
       ..b = nb.clamp(0, 255);
     // Stark rosa und mit dem Hintergrund verbunden (Fleck auf/über den
     // Haaren) → ausblenden.
-    if (t > 0.5 && (isLinked || d <= rr0 ~/ 2)) {
+    // (Nur deckende Flecken – halbdurchsichtige Haarspitzen behalten ihre
+    // Deckkraft, sie haben jetzt die richtige Haarfarbe.)
+    if (t > 0.5 && a0 > 200 && (isLinked || d <= rr0 ~/ 2)) {
       p.a = (p.a * (1 - (t - 0.5) * 1.8)).round().clamp(0, 255);
-    } else if (d <= 2 && hi > 0 && spill / hi > 0.2) {
+    } else if (n == 0 && d <= 2 && hi > 0 && spill > 0 && spill / hi > 0.2) {
       // Direkt an der Kante + deutlich magenta → leicht ausdünnen (Saum weg).
       p.a = (p.a * (d == 1 ? 0.35 : 0.7)).round();
     }
@@ -2574,6 +2591,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         );
         if (edited == null) return null; // Abbruch im Editor
         bytes = edited;
+      }
+      // Hintergrund ohne Transparenz kompakt als JPEG (der Editor liefert PNG
+      // – das machte Designs mehrere MB groß und auf dem Handy unlesbar).
+      if (asBackground && !keepAlpha) {
+        try {
+          bytes = await compute(normalizeImageBytes, {
+            'data': bytes,
+            'keepAlpha': false,
+            'maxSize': maxSize,
+          });
+        } catch (_) {}
       }
       final mime = keepAlpha
           ? 'image/png'

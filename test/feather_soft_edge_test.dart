@@ -112,4 +112,36 @@ void main() {
     expect(hair.r, closeTo(130, 3));
     expect(hair.g, closeTo(90, 3));
   });
+
+  test('Kein rötlicher Saum: Haar-Magenta-Mischkante bekommt Haarfarbe', () {
+    final im = img.Image(width: 200, height: 200)
+      ..clear(img.ColorRgb8(255, 0, 255));
+    // Dunkle Haare + eine Kantenspalte, die Haar und Magenta mischt.
+    img.fillRect(
+      im,
+      x1: 41,
+      y1: 0,
+      x2: 199,
+      y2: 199,
+      color: img.ColorRgb8(60, 40, 30),
+    );
+    img.fillRect(
+      im,
+      x1: 40,
+      y1: 0,
+      x2: 40,
+      y2: 199,
+      color: img.ColorRgb8(99, 32, 75), // 80 % Haar + 20 % Magenta
+    );
+    final out = img.decodePng(
+      chromaKeyMagenta(Uint8List.fromList(img.encodePng(im))),
+    )!;
+    final e = out.getPixel(40, 100);
+    expect(e.a, greaterThan(20)); // Haarspitze bleibt sichtbar
+    // … und hat Haarfarbe statt Dunkelrot/Rosa.
+    expect(e.r - e.g, lessThan(40));
+    expect(e.b, lessThanOrEqualTo(e.g + 6));
+    final hair = out.getPixel(120, 100);
+    expect([hair.r, hair.g, hair.b, hair.a], [60, 40, 30, 255]);
+  });
 }
