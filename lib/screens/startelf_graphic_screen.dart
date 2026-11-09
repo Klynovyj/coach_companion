@@ -9683,10 +9683,13 @@ class _StartelfGraphic extends StatelessWidget {
               boundaryMargin: const EdgeInsets.all(double.infinity),
               clipBehavior: Clip.none,
               onInteractionEnd: (_) => onFtPhotoChanged?.call(),
-              child: Image.memory(
-                photo,
+              // FittedBox statt Image(fit: cover): das Bild füllt die Fläche
+              // wie bisher, wird aber NICHT auf sie zugeschnitten – beim
+              // Verkleinern/Verschieben kommt der Rest des Fotos zum Vorschein.
+              child: FittedBox(
                 fit: BoxFit.cover,
-                gaplessPlayback: true,
+                clipBehavior: Clip.none,
+                child: Image.memory(photo, gaplessPlayback: true),
               ),
             ),
     );
