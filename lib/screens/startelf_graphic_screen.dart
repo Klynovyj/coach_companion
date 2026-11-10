@@ -529,6 +529,11 @@ _kAnnouncementLayout = {
   },
 };
 
+/// Grundgröße der Startelf-Kästen je Format (vom Trainer festgelegt).
+const Map<String, Map<String, Size>> _kStartelfBoxDefaults = {
+  'p': {'std_lineup': Size(340, 203.5)},
+};
+
 /// Startwerte nach dem Freistellen: weiche Kante + „Rand verschmelzen".
 const double _kCutoutFeather = 30;
 const double _kCutoutRim = 45;
@@ -1559,8 +1564,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Ziehbare Kästen: feste Größe (logische px) je Element, je Format. Fehlt ein
   // Eintrag, hat der Kasten seine natürliche Größe.
   final Map<String, Map<String, Size>> _boxSizeF = {};
-  Map<String, Size> get _boxSize =>
-      _boxSizeF.putIfAbsent(_designKey, () => <String, Size>{});
+  Map<String, Size> get _boxSize => _boxSizeF.putIfAbsent(
+    _designKey,
+    // Neue Startelf: Kader-Kasten in der vom Trainer festgelegten Größe
+    // (Post: höher, füllt den unteren Teil). Story nutzt das Grundlayout.
+    () => _kind == 'Startelf'
+        ? Map<String, Size>.of(_kStartelfBoxDefaults[_designKey] ?? const {})
+        : <String, Size>{},
+  );
   // Ergebnis-Grafik: 'std' (Standard) | 'photo' (ENDSTAND mit Foto oben).
   String _resultLayout = 'std';
   bool get _ftLayout => widget.isResult && _resultLayout == 'photo';
