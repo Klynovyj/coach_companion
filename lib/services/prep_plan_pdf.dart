@@ -89,7 +89,8 @@ class PrepPlanPdf {
               ),
             )
           else
-            _table(plan.entries),
+            // Gleiche Reihenfolge wie in der App: chronologisch.
+            _table(sortedPrepEntries(plan.entries)),
           if (footer != null)
             pw.Padding(
               padding: pw.EdgeInsets.fromLTRB(px(16), px(16), px(16), px(8)),

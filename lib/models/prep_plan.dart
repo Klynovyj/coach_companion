@@ -20,6 +20,19 @@ extension PrepVenueLabel on PrepVenue {
 String? visiblePrepTime(String? t) =>
     (t == null || t.isEmpty || t == '00:00') ? null : t;
 
+/// Termine chronologisch: Datum, dann Treffpunkt-/Beginn-Zeit; bei Gleichstand
+/// bleibt die bisherige Reihenfolge (stabil).
+List<PrepPlanEntry> sortedPrepEntries(List<PrepPlanEntry> list) {
+  String key(PrepPlanEntry e) =>
+      '${e.date} ${visiblePrepTime(e.meetTime) ?? visiblePrepTime(e.time) ?? '99:99'}';
+  final indexed = [for (var i = 0; i < list.length; i++) (i, list[i])];
+  indexed.sort((a, b) {
+    final c = key(a.$2).compareTo(key(b.$2));
+    return c != 0 ? c : a.$1.compareTo(b.$1);
+  });
+  return [for (final x in indexed) x.$2];
+}
+
 /// Ein Termin im Vorbereitungsplan. Der Wochentag wird aus dem Datum
 /// abgeleitet.
 class PrepPlanEntry {
