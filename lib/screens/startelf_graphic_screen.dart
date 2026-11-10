@@ -1564,14 +1564,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Ziehbare Kästen: feste Größe (logische px) je Element, je Format. Fehlt ein
   // Eintrag, hat der Kasten seine natürliche Größe.
   final Map<String, Map<String, Size>> _boxSizeF = {};
-  Map<String, Size> get _boxSize => _boxSizeF.putIfAbsent(
-    _designKey,
-    // Neue Startelf: Kader-Kasten in der vom Trainer festgelegten Größe
-    // (Post: höher, füllt den unteren Teil). Story nutzt das Grundlayout.
-    () => _kind == 'Startelf'
-        ? Map<String, Size>.of(_kStartelfBoxDefaults[_designKey] ?? const {})
-        : <String, Size>{},
-  );
+  Map<String, Size> get _boxSize {
+    final m = _boxSizeF.putIfAbsent(_designKey, () => <String, Size>{});
+    // Startelf ohne eigene Kastengröße (neu oder leer gespeichert): Kader-
+    // Kasten in der vom Trainer festgelegten Größe (Post: höher, füllt den
+    // unteren Teil). Story nutzt das Grundlayout.
+    if (m.isEmpty && _kind == 'Startelf') {
+      m.addAll(_kStartelfBoxDefaults[_designKey] ?? const {});
+    }
+    return m;
+  }
   // Ergebnis-Grafik: 'std' (Standard) | 'photo' (ENDSTAND mit Foto oben).
   String _resultLayout = 'std';
   bool get _ftLayout => widget.isResult && _resultLayout == 'photo';
@@ -1634,7 +1636,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (!widget.isAnnouncement || widget.designer != null || _isFupa) return;
     final k = _designKey;
     final layout = _kAnnouncementLayout[k];
-    if (layout == null || _posterPosF.containsKey(k)) return;
+    // Leer gespeichert ({}) = nie verschoben → ebenfalls Grundposition.
+    if (layout == null || (_posterPosF[k]?.isNotEmpty ?? false)) return;
     _posterPosF[k] = {for (final e in layout.entries) e.key: e.value.pos};
     _posCenteredF[k] = layout.keys.toSet();
     _posterScaleF[k] = {
