@@ -1337,14 +1337,14 @@ class _StatsView extends StatelessWidget {
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              if (sub != null)
-                Text(
-                  sub,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                  ),
+              // Unterzeile immer (ggf. leer) → alle Karten gleich hoch.
+              Text(
+                sub ?? ' ',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
                 ),
+              ),
             ],
           ),
         );

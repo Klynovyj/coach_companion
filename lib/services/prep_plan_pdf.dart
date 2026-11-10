@@ -529,15 +529,15 @@ class PrepPlanPdf {
                 color: _title,
               ),
             ),
-            if (sub != null)
-              pw.Text(
-                sub,
-                style: pw.TextStyle(
-                  fontSize: px(8.5),
-                  fontWeight: pw.FontWeight.bold,
-                  color: _gray600,
-                ),
+            // Unterzeile immer (ggf. leer) → alle Karten gleich hoch.
+            pw.Text(
+              sub ?? ' ',
+              style: pw.TextStyle(
+                fontSize: px(8.5),
+                fontWeight: pw.FontWeight.bold,
+                color: _gray600,
               ),
+            ),
           ],
         ),
       ),
