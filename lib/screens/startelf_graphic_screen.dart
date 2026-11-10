@@ -508,6 +508,27 @@ const Map<String, Offset> _kBlendItemDefaults = {
   'sponsorbar': Offset(0.5, 0.98),
 };
 
+/// Grundposition der Spielankündigung je Format ('s' = Story, 'p' = Post):
+/// Mittelpunkt (normiert 0..1, Mittelpunkt-Semantik) + Größe. Vom Trainer so
+/// gestaltet und als Standard für jede neue Ankündigung übernommen.
+const Map<String, Map<String, ({Offset pos, double scale})>>
+_kAnnouncementLayout = {
+  's': {
+    'sponsortext': (pos: Offset(0.437, 0.040), scale: 1.0),
+    'sponsor': (pos: Offset(0.655, 0.040), scale: 1.0),
+    'headline': (pos: Offset(0.504, 0.122), scale: 1.0),
+    'info': (pos: Offset(0.514, 0.185), scale: 0.79),
+    'logos': (pos: Offset(0.527, 0.246), scale: 0.888),
+  },
+  'p': {
+    'sponsortext': (pos: Offset(0.459, 0.047), scale: 1.0),
+    'sponsor': (pos: Offset(0.642, 0.053), scale: 1.0),
+    'logos': (pos: Offset(0.747, 0.187), scale: 0.841),
+    'headline': (pos: Offset(0.732, 0.312), scale: 0.632),
+    'info': (pos: Offset(0.733, 0.369), scale: 0.531),
+  },
+};
+
 /// Startwerte nach dem Freistellen: weiche Kante + „Rand verschmelzen".
 const double _kCutoutFeather = 30;
 const double _kCutoutRim = 45;
@@ -1585,10 +1606,31 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   int _textSeq = 0; // eindeutige Text-IDs (global)
   int _editorSeq = 0; // erzwingt Editor-Neuaufbau (z.B. „Datum auf Auto")
   String? _posterSel; // aktuell ausgewähltes Element (für Größe-Regler)
-  Map<String, Offset> get _posterPos =>
-      _posterPosF.putIfAbsent(_designKey, () => {});
-  Set<String> get _posCentered =>
-      _posCenteredF.putIfAbsent(_designKey, () => <String>{});
+  Map<String, Offset> get _posterPos {
+    _seedAnnouncementLayout();
+    return _posterPosF.putIfAbsent(_designKey, () => {});
+  }
+
+  Set<String> get _posCentered {
+    _seedAnnouncementLayout();
+    return _posCenteredF.putIfAbsent(_designKey, () => <String>{});
+  }
+
+  /// Neue (oder zurückgesetzte) Spielankündigung: Grundposition der Elemente
+  /// wie vom Trainer festgelegt (Story: Sponsor oben, SPIELTAG, Datum, Logos;
+  /// Post: Logos + SPIELTAG rechts). Bereits gestaltete Formate bleiben.
+  void _seedAnnouncementLayout() {
+    if (!widget.isAnnouncement || widget.designer != null || _isFupa) return;
+    final k = _designKey;
+    final layout = _kAnnouncementLayout[k];
+    if (layout == null || _posterPosF.containsKey(k)) return;
+    _posterPosF[k] = {for (final e in layout.entries) e.key: e.value.pos};
+    _posCenteredF[k] = layout.keys.toSet();
+    _posterScaleF[k] = {
+      ...?_posterScaleF[k],
+      for (final e in layout.entries) e.key: e.value.scale,
+    };
+  }
   Map<String, Offset> get _stdOff => _stdOffF.putIfAbsent(_designKey, () => {});
   Set<String> get _stdHidden =>
       _stdHiddenF.putIfAbsent(_designKey, () => <String>{});
