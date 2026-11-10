@@ -31,6 +31,7 @@ import '../models/graphic_settings.dart';
 import '../models/match_rating.dart';
 import '../models/player_of_month.dart';
 import '../models/player_talk.dart';
+import '../models/prep_plan.dart';
 import '../models/scouting.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
@@ -123,6 +124,8 @@ class AppState extends ChangeNotifier {
     'player_talks',
     'player_absences',
     'sponsors',
+    // Vorbereitungspläne (ganzer Plan als JSON je Zeile).
+    'prep_plans',
     'graphic_settings',
     'graphic_presets',
     // Spielankündigung: gespeichertes Design je Spiel (Positionen/Bilder/Finish).
@@ -4890,6 +4893,62 @@ class AppState extends ChangeNotifier {
       }
     }
     return (ours, table);
+  }
+
+  // ------------------------------------------------------ Vorbereitungspläne
+  Future<List<PrepPlan>> prepPlans() => _repo.getPrepPlans();
+
+  /// Speichert einen Plan (Zeitstempel = jetzt) – lokal + Cloud (Hook).
+  Future<void> savePrepPlan(PrepPlan p, {bool notify = true}) async {
+    await _repo.upsertPrepPlan(
+      p.copyWith(updatedAt: DateTime.now().toUtc().toIso8601String()),
+    );
+    if (notify) notifyListeners();
+  }
+
+  Future<void> deletePrepPlan(String id) async {
+    await _repo.deletePrepPlan(id);
+    notifyListeners();
+  }
+
+  /// Lädt die Pläne frisch aus der Cloud und schiebt lokale Pläne hoch, die
+  /// dort fehlen oder neuer sind (z. B. angelegt, bevor die Cloud-Tabelle
+  /// existierte). Best effort – ohne Cloud passiert nichts.
+  Future<void> syncPrepPlans() async {
+    final teamId = _activeCloudTeamId;
+    if (teamId == null || !CloudService.ready || !CloudService.signedIn) return;
+    try {
+      final rows = await CloudService.fetchForTeam('prep_plans', teamId);
+      final cloud = <String, String?>{
+        for (final r in rows) r['id'] as String: r['updated_at'] as String?,
+      };
+      for (final r in rows) {
+        final map = Map<String, Object?>.from(r)..remove('team_id');
+        final id = map['id'] as String;
+        final local = (await _repo.getPrepPlans())
+            .where((p) => p.id == id)
+            .firstOrNull;
+        if (local == null ||
+            (local.updatedAt ?? '').compareTo(
+                  (map['updated_at'] as String?) ?? '',
+                ) <
+                0) {
+          await _repo.upsertRawById('prep_plans', map);
+        }
+      }
+      for (final p in await _repo.getPrepPlans()) {
+        final c = cloud[p.id];
+        if (c == null || (p.updatedAt ?? '').compareTo(c) > 0) {
+          await CloudService.upsertRow('prep_plans', {
+            ...p.toRow(),
+            'team_id': teamId,
+          });
+        }
+      }
+      notifyListeners();
+    } catch (_) {
+      // Cloud-Tabelle fehlt (stage57 nicht ausgeführt) oder offline.
+    }
   }
 
   // ---------------------------------------------------- Ball-/Materialdienst

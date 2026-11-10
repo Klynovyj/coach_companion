@@ -24,6 +24,7 @@ import '../models/exercise.dart';
 import '../models/training_session.dart';
 import '../models/player_talk.dart';
 import '../models/scouting.dart';
+import '../models/prep_plan.dart';
 import '../models/sponsor.dart';
 import '../models/todo.dart';
 import '../models/todo_topic.dart';
@@ -1431,6 +1432,23 @@ class CoachRepository {
     );
     await db.delete('todo_topics', where: 'id = ?', whereArgs: [id]);
     _syncDelete('todo_topics', {'id': id});
+  }
+
+  // ------------------------------------------------------ Vorbereitungspläne
+  /// Alle Vorbereitungspläne (zuletzt bearbeitete zuerst).
+  Future<List<PrepPlan>> getPrepPlans() async {
+    final db = await _db;
+    final rows = await db.query('prep_plans', orderBy: 'updated_at DESC');
+    return [for (final r in rows) ?PrepPlan.fromRow(r)];
+  }
+
+  Future<void> upsertPrepPlan(PrepPlan p) =>
+      _upsertById('prep_plans', p.toRow());
+
+  Future<void> deletePrepPlan(String id) async {
+    final db = await _db;
+    await db.delete('prep_plans', where: 'id = ?', whereArgs: [id]);
+    _syncDelete('prep_plans', {'id': id});
   }
 
   // ------------------------------------------------------------- Sponsoren

@@ -708,6 +708,7 @@ class CloudService {
     'player_talks',
     'player_absences',
     'sponsors',
+    'prep_plans',
     'graphic_settings',
     'graphic_presets',
     'match_ratings',

@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 69;
+  static const _dbVersion = 70;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -565,6 +565,10 @@ class AppDatabase {
         'ALTER TABLE announcement_designs ADD COLUMN folder TEXT',
       );
     }
+    // v69 -> v70: Vorbereitungspläne (wie im Coach Studio).
+    if (oldV < 70) {
+      await db.execute(_prepPlansTableSql);
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -598,6 +602,16 @@ class AppDatabase {
         id TEXT PRIMARY KEY,
         match_id TEXT,
         data TEXT,
+        updated_at TEXT
+      )
+    ''';
+
+  // Vorbereitungspläne: ganzer Plan als JSON in `data` (Termine + Texte).
+  // Team-weit geteilt; lokal ohne team_id (die Cloud-Zeile bekommt es).
+  static const _prepPlansTableSql = '''
+      CREATE TABLE prep_plans (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL,
         updated_at TEXT
       )
     ''';
@@ -1196,6 +1210,7 @@ class AppDatabase {
     await db.execute(_announcementDesignsTableSql);
     await _addDesignerColumns(db);
     await db.execute('ALTER TABLE announcement_designs ADD COLUMN folder TEXT');
+    await db.execute(_prepPlansTableSql);
 
     await db.execute('''
       CREATE TABLE settings (

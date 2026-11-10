@@ -8,6 +8,7 @@ import 'designer_screen.dart';
 import 'material_duty_screen.dart';
 import 'nachholen_screen.dart';
 import 'player_of_month_screen.dart';
+import 'prep_plans_screen.dart';
 import 'absence_overview_screen.dart';
 import 'inbox_screen.dart';
 import 'training/training_home_screen.dart';
@@ -55,6 +56,12 @@ class MoreScreen extends StatelessWidget {
             icon: Icons.fitness_center,
             label: 'Training',
             screen: const TrainingHomeScreen(),
+          ),
+          _tile(
+            context,
+            icon: Icons.calendar_month_outlined,
+            label: 'Vorbereitungsplan',
+            screen: const PrepPlansScreen(),
           ),
           _tile(
             context,

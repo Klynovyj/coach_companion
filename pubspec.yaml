@@ -60,6 +60,13 @@ dependencies:
   image: ^4.12.0
   # Auswählbare Schriftarten für die Poster-Texte.
   google_fonts: ^6.2.1
+  # Vorbereitungsplan als DIN-A4-PDF.
+  pdf: ^3.12.0
+
+# pdf 3.12 erlaubt archive nur <4.1, image 4.12 braucht ^4.5. pdf nutzt
+# archive ausschließlich im Web-Build (native: dart:io-zlib) → gefahrlos.
+dependency_overrides:
+  archive: ^4.5.0
 
 dev_dependencies:
   flutter_test:
