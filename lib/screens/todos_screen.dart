@@ -20,9 +20,9 @@ class TodosScreen extends StatefulWidget {
 }
 
 class _TodosScreenState extends State<TodosScreen> {
-  final _quickCtrl = TextEditingController();
-  DateTime? _quickDue;
-  List<TodoResponsible> _quickResponsible = [];
+  /// Weggewischte Aufgaben, die erst nach Ablauf des „Rückgängig" gelöscht
+  /// werden (bis dahin nur ausgeblendet).
+  final Set<String> _pendingDelete = {};
   bool _showArchive = false;
 
   /// Eingeklappte Abschnitte (Thema-ID bzw. '__none__' für „Ohne Thema").
@@ -41,12 +41,6 @@ class _TodosScreenState extends State<TodosScreen> {
   static final _dDate = DateFormat('dd.MM.yyyy', 'de_DE');
   static final _dDateTime = DateFormat('dd.MM.yyyy  HH:mm', 'de_DE');
 
-  @override
-  void dispose() {
-    _quickCtrl.dispose();
-    super.dispose();
-  }
-
   Future<(List<TodoTopic>, List<Todo>, List<Player>)> _load(
     AppState state,
   ) async {
@@ -57,18 +51,6 @@ class _TodosScreenState extends State<TodosScreen> {
     final team = state.ownTeam;
     final players = team == null ? <Player>[] : await state.playersOf(team.id);
     return (topics, todos, players);
-  }
-
-  Future<DateTime?> _pickDate(DateTime? initial) {
-    final now = DateTime.now();
-    final base = initial ?? now;
-    return showDatePicker(
-      context: context,
-      initialDate: base.isBefore(now) ? now : base,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 2),
-      helpText: 'Fälligkeit wählen',
-    );
   }
 
   /// „heute" / „morgen" / „gestern", sonst das Datum.
@@ -84,19 +66,62 @@ class _TodosScreenState extends State<TodosScreen> {
   }
 
   // ------------------------------------------------------------ Aktionen
-  Future<void> _addQuick(AppState state) async {
-    final t = _quickCtrl.text.trim();
-    if (t.isEmpty) return;
-    if (_quickResponsible.isEmpty) {
-      _snack('Bitte mindestens einen Verantwortlichen wählen.');
-      return;
-    }
-    await state.addTodo(t, dueDate: _quickDue, responsible: _quickResponsible);
-    _quickCtrl.clear();
-    setState(() {
-      _quickDue = null;
-      _quickResponsible = [];
-    });
+  /// Schnell-Erfassung: Blatt mit Text, Thema, Fälligkeit, Verantwortlichen.
+  Future<void> _openQuickAdd(AppState state, {String? topicId}) async {
+    final team = state.ownTeam;
+    final players = team == null ? <Player>[] : await state.playersOf(team.id);
+    final topics = await state.todoTopics();
+    final todos = await state.todos();
+    if (!mounted) return;
+    final me = [
+      for (final p in players)
+        if (state.myPlayerIds.contains(p.id))
+          TodoResponsible(playerId: p.id, name: p.displayName),
+    ];
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (_) => _QuickAddSheet(
+        players: players,
+        topics: topics,
+        recent: todos,
+        me: me,
+        initialTopicId: topicId,
+        onAddTopic: (title) => state.addTodoTopic(title),
+        onSave: (text, topic, due, resp) => state.addTodo(
+          text,
+          dueDate: due,
+          topicId: topic,
+          responsible: resp,
+        ),
+      ),
+    );
+    if (mounted) setState(() {});
+  }
+
+  /// Nach links gewischt: ausblenden, mit „Rückgängig"; erst danach löschen.
+  void _swipeDelete(AppState state, Todo t) {
+    setState(() => _pendingDelete.add(t.id));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger
+        .showSnackBar(
+          SnackBar(
+            content: Text('„${t.text}" gelöscht'),
+            action: SnackBarAction(label: 'Rückgängig', onPressed: () {}),
+          ),
+        )
+        .closed
+        .then((reason) async {
+          if (reason == SnackBarClosedReason.action) {
+            if (mounted) setState(() => _pendingDelete.remove(t.id));
+            return;
+          }
+          await state.deleteTodo(t.id);
+          _pendingDelete.remove(t.id);
+        });
   }
 
   Future<void> _addTopic(AppState state) async {
@@ -234,9 +259,6 @@ class _TodosScreenState extends State<TodosScreen> {
     if (mounted) setState(() {});
   }
 
-  void _snack(String msg) =>
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
@@ -267,18 +289,21 @@ class _TodosScreenState extends State<TodosScreen> {
           final todos = snap.data!.$2;
           final players = snap.data!.$3;
           final playerMap = {for (final p in players) p.id: p};
-          return Column(
-            children: [
-              Expanded(
-                child: _showArchive
-                    ? _archiveView(state, todos, playerMap)
-                    : _activeView(state, topics, todos, players, playerMap),
-              ),
-              if (!_showArchive) _addBar(state, players),
-            ],
-          );
+          final visible = todos
+              .where((t) => !_pendingDelete.contains(t.id))
+              .toList();
+          return _showArchive
+              ? _archiveView(state, visible, playerMap)
+              : _activeView(state, topics, visible, players, playerMap);
         },
       ),
+      floatingActionButton: _showArchive
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: () => _openQuickAdd(state),
+              icon: const Icon(Icons.add_task),
+              label: const Text('Aufgabe'),
+            ),
     );
   }
 
@@ -301,8 +326,7 @@ class _TodosScreenState extends State<TodosScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'Noch keine Aufgaben.\nOben ein Thema anlegen oder unten eine '
-            'Schnellaufgabe hinzufügen.',
+            'Noch keine Aufgaben.\nTippe unten rechts auf „Aufgabe".',
             textAlign: TextAlign.center,
             style: TextStyle(color: Colors.grey.shade600),
           ),
@@ -311,7 +335,8 @@ class _TodosScreenState extends State<TodosScreen> {
     }
 
     return ListView(
-      padding: const EdgeInsets.only(bottom: 12),
+      // Platz für den „Aufgabe"-Knopf unten rechts.
+      padding: const EdgeInsets.only(bottom: 96),
       children: [
         for (final topic in topics)
           _section(
@@ -387,12 +412,7 @@ class _TodosScreenState extends State<TodosScreen> {
                   tooltip: 'Aufgabe hinzufügen',
                   icon: const Icon(Icons.add),
                   visualDensity: VisualDensity.compact,
-                  onPressed: () => _openTaskPage(
-                    state,
-                    players,
-                    topicId: topic.id,
-                    topics: allTopics,
-                  ),
+                  onPressed: () => _openQuickAdd(state, topicId: topic.id),
                 ),
                 PopupMenuButton<String>(
                   onSelected: (v) {
@@ -524,16 +544,53 @@ class _TodosScreenState extends State<TodosScreen> {
       );
     }
 
+    // Wischen: nach rechts = erledigt/wieder offen, nach links = löschen
+    // (mit „Rückgängig").
     final tile = Dismissible(
       key: ValueKey(t.id),
-      direction: DismissDirection.endToStart,
       background: Container(
+        color: t.done ? Colors.blueGrey : Colors.green.shade600,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 20),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(t.done ? Icons.undo : Icons.check, color: Colors.white),
+            const SizedBox(width: 8),
+            Text(
+              t.done ? 'Wieder offen' : 'Erledigt',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+      secondaryBackground: Container(
         color: Colors.red,
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 20),
-        child: const Icon(Icons.delete, color: Colors.white),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Löschen',
+              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+            ),
+            SizedBox(width: 8),
+            Icon(Icons.delete, color: Colors.white),
+          ],
+        ),
       ),
-      onDismissed: (_) => state.deleteTodo(t.id),
+      confirmDismiss: (dir) async {
+        if (dir == DismissDirection.startToEnd) {
+          await state.toggleTodo(t, !t.done);
+          return false;
+        }
+        return true;
+      },
+      onDismissed: (_) => _swipeDelete(state, t),
       child: ListTile(
         leading: Checkbox(
           value: t.done,
@@ -642,110 +699,6 @@ class _TodosScreenState extends State<TodosScreen> {
     if (mounted) setState(() {});
   }
 
-  Widget _addBar(AppState state, List<Player> players) {
-    final hasResp = _quickResponsible.isNotEmpty;
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_quickDue != null || hasResp)
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 4,
-                    children: [
-                      if (_quickDue != null)
-                        InputChip(
-                          avatar: const Icon(Icons.event, size: 16),
-                          label: Text('Fällig: ${_dueLabel(_quickDue!)}'),
-                          onDeleted: () => setState(() => _quickDue = null),
-                        ),
-                      for (final r in _quickResponsible)
-                        InputChip(
-                          avatar: const Icon(Icons.person, size: 16),
-                          label: Text(r.name),
-                          onDeleted: () => setState(
-                            () => _quickResponsible = _quickResponsible
-                                .where((x) => x != r)
-                                .toList(),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ),
-            Row(
-              children: [
-                IconButton(
-                  tooltip: 'Verantwortliche wählen',
-                  icon: Icon(
-                    Icons.group_add,
-                    color: hasResp
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                  ),
-                  onPressed: () async {
-                    final res = await _pickResponsible(
-                      players,
-                      _quickResponsible,
-                    );
-                    if (res != null) setState(() => _quickResponsible = res);
-                  },
-                ),
-                IconButton(
-                  tooltip: 'Fälligkeit',
-                  icon: Icon(
-                    Icons.event,
-                    color: _quickDue != null
-                        ? Theme.of(context).colorScheme.primary
-                        : null,
-                  ),
-                  onPressed: () async {
-                    final d = await _pickDate(_quickDue);
-                    if (d != null) setState(() => _quickDue = d);
-                  },
-                ),
-                Expanded(
-                  child: TextField(
-                    controller: _quickCtrl,
-                    decoration: const InputDecoration(
-                      hintText: 'Schnellaufgabe …',
-                      isDense: true,
-                      border: OutlineInputBorder(),
-                    ),
-                    onSubmitted: (_) => _addQuick(state),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(
-                  icon: const Icon(Icons.add),
-                  onPressed: () => _addQuick(state),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<List<TodoResponsible>?> _pickResponsible(
-    List<Player> players,
-    List<TodoResponsible> initial,
-  ) {
-    return Navigator.of(context).push<List<TodoResponsible>>(
-      MaterialPageRoute(
-        fullscreenDialog: true,
-        builder: (_) =>
-            _ResponsiblePickerPage(players: players, initial: initial),
-      ),
-    );
-  }
 }
 
 /// Ergebnis der Aufgaben-Seite.
@@ -1175,4 +1128,400 @@ Player? _resolveResponsible(TodoResponsible r, Map<String, Player> playerMap) {
     if (p.displayName.trim().toLowerCase() == name) return p;
   }
   return null;
+}
+
+/// Schlüssel eines Verantwortlichen (Spieler-ID, sonst Name).
+String _respKey(TodoResponsible r) =>
+    r.playerId ?? 'n:${r.name.trim().toLowerCase()}';
+
+/// Schnell-Erfassung als Blatt: Text (Tastatur sofort offen) + Ein-Tipp-Chips
+/// für Thema, Fälligkeit und Verantwortliche („Ich" vorausgewählt).
+/// „Speichern & neu" speichert und lässt das Blatt für die nächste offen.
+class _QuickAddSheet extends StatefulWidget {
+  const _QuickAddSheet({
+    required this.players,
+    required this.topics,
+    required this.recent,
+    required this.me,
+    required this.onSave,
+    required this.onAddTopic,
+    this.initialTopicId,
+  });
+
+  final List<Player> players;
+  final List<TodoTopic> topics;
+  final List<Todo> recent;
+  final List<TodoResponsible> me;
+  final String? initialTopicId;
+  final Future<void> Function(
+    String text,
+    String? topicId,
+    DateTime? due,
+    List<TodoResponsible> responsible,
+  )
+  onSave;
+  final Future<TodoTopic> Function(String title) onAddTopic;
+
+  @override
+  State<_QuickAddSheet> createState() => _QuickAddSheetState();
+}
+
+class _QuickAddSheetState extends State<_QuickAddSheet> {
+  final _text = TextEditingController();
+  final _focus = FocusNode();
+  late final List<TodoTopic> _topics = List.of(widget.topics);
+  late String? _topicId =
+      widget.topics.any((t) => t.id == widget.initialTopicId)
+      ? widget.initialTopicId
+      : null;
+  DateTime? _due;
+
+  /// Angezeigte Personen-Chips (Ich + zuletzt verwendete + nachgewählte).
+  late final List<TodoResponsible> _people = _initialPeople();
+  late final Set<String> _selected = {for (final r in widget.me) _respKey(r)};
+  String? _error;
+  int _savedCount = 0;
+  bool _saving = false;
+
+  static final _dDate = DateFormat('EE, dd.MM.', 'de_DE');
+
+  List<TodoResponsible> _initialPeople() {
+    final out = <TodoResponsible>[...widget.me];
+    final seen = {for (final r in out) _respKey(r)};
+    final todos = [...widget.recent]
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    for (final t in todos) {
+      for (final r in t.responsible) {
+        if (out.length >= 7) break;
+        if (seen.add(_respKey(r))) out.add(r);
+      }
+    }
+    return out;
+  }
+
+  @override
+  void dispose() {
+    _text.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  DateTime get _today {
+    final n = DateTime.now();
+    return DateTime(n.year, n.month, n.day);
+  }
+
+  /// Nächster Samstag (heute, falls Samstag).
+  DateTime get _saturday {
+    final t = _today;
+    return t.add(Duration(days: (DateTime.saturday - t.weekday) % 7));
+  }
+
+  bool _sameDay(DateTime? a, DateTime b) =>
+      a != null && a.year == b.year && a.month == b.month && a.day == b.day;
+
+  Future<void> _save({required bool close}) async {
+    final text = _text.text.trim();
+    if (text.isEmpty) {
+      setState(() => _error = 'Bitte eintragen, was zu tun ist.');
+      _focus.requestFocus();
+      return;
+    }
+    final resp = [
+      for (final r in _people)
+        if (_selected.contains(_respKey(r))) r,
+    ];
+    if (resp.isEmpty) {
+      setState(() => _error = 'Bitte wählen, wer verantwortlich ist.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    await widget.onSave(text, _topicId, _due, resp);
+    if (!mounted) return;
+    if (close) {
+      Navigator.pop(context);
+      return;
+    }
+    setState(() {
+      _saving = false;
+      _savedCount++;
+      _text.clear();
+    });
+    _focus.requestFocus();
+  }
+
+  Future<void> _newTopic() async {
+    final ctrl = TextEditingController();
+    final title = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Neues Thema'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(hintText: 'z.B. Kabine'),
+          onSubmitted: (v) => Navigator.pop(ctx, v.trim()),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+            child: const Text('Anlegen'),
+          ),
+        ],
+      ),
+    );
+    if (title == null || title.isEmpty) return;
+    final topic = await widget.onAddTopic(title);
+    if (!mounted) return;
+    setState(() {
+      _topics.add(topic);
+      _topicId = topic.id;
+    });
+  }
+
+  Future<void> _pickDate() async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _due ?? now,
+      firstDate: DateTime(now.year - 1),
+      lastDate: DateTime(now.year + 2),
+      helpText: 'Fälligkeit wählen',
+    );
+    if (d != null) setState(() => _due = d);
+  }
+
+  Future<void> _morePeople() async {
+    final current = [
+      for (final r in _people)
+        if (_selected.contains(_respKey(r))) r,
+    ];
+    final res = await Navigator.of(context).push<List<TodoResponsible>>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) =>
+            _ResponsiblePickerPage(players: widget.players, initial: current),
+      ),
+    );
+    if (res == null || !mounted) return;
+    setState(() {
+      _selected.clear();
+      for (final r in res) {
+        final k = _respKey(r);
+        _selected.add(k);
+        if (!_people.any((x) => _respKey(x) == k)) _people.add(r);
+      }
+    });
+  }
+
+  Widget _row(String label, List<Widget> chips) => Padding(
+    padding: const EdgeInsets.only(top: 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).hintColor,
+          ),
+        ),
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final c in chips)
+                Padding(padding: const EdgeInsets.only(right: 8), child: c),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final playerMap = {for (final p in widget.players) p.id: p};
+    final meKeys = {for (final r in widget.me) _respKey(r)};
+    final saturday = _saturday;
+    final today = _today;
+    final tomorrow = today.add(const Duration(days: 1));
+    final customDue =
+        _due != null &&
+        !_sameDay(_due, today) &&
+        !_sameDay(_due, tomorrow) &&
+        !_sameDay(_due, saturday);
+
+    Widget dueChip(String label, DateTime? d) => ChoiceChip(
+      label: Text(label),
+      selected: d == null ? _due == null : _sameDay(_due, d),
+      onSelected: (_) => setState(() => _due = d),
+    );
+
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Neue Aufgabe',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                if (_savedCount > 0)
+                  Text(
+                    '✓ $_savedCount gespeichert',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _text,
+              focusNode: _focus,
+              autofocus: true,
+              minLines: 1,
+              maxLines: 4,
+              textCapitalization: TextCapitalization.sentences,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _save(close: true),
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
+              },
+              decoration: InputDecoration(
+                hintText: 'Was ist zu tun?',
+                filled: true,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+            _row('Thema', [
+              ChoiceChip(
+                label: const Text('Ohne'),
+                selected: _topicId == null,
+                onSelected: (_) => setState(() => _topicId = null),
+              ),
+              for (final t in _topics)
+                ChoiceChip(
+                  label: Text(t.title),
+                  selected: _topicId == t.id,
+                  onSelected: (_) => setState(() => _topicId = t.id),
+                ),
+              ActionChip(
+                avatar: const Icon(Icons.add, size: 18),
+                label: const Text('Thema'),
+                onPressed: _newTopic,
+              ),
+            ]),
+            _row('Fällig', [
+              dueChip('Keine', null),
+              dueChip('Heute', today),
+              dueChip('Morgen', tomorrow),
+              if (!_sameDay(saturday, today) && !_sameDay(saturday, tomorrow))
+                dueChip(_dDate.format(saturday), saturday),
+              customDue
+                  ? InputChip(
+                      avatar: const Icon(Icons.event, size: 18),
+                      label: Text(_dDate.format(_due!)),
+                      selected: true,
+                      onPressed: _pickDate,
+                      onDeleted: () => setState(() => _due = null),
+                    )
+                  : ActionChip(
+                      avatar: const Icon(Icons.event, size: 18),
+                      label: const Text('Datum …'),
+                      onPressed: _pickDate,
+                    ),
+            ]),
+            _row('Wer', [
+              for (final r in _people)
+                FilterChip(
+                  avatar: switch (_resolveResponsible(r, playerMap)) {
+                    final p? => PlayerAvatar(player: p, radius: 11),
+                    null => const Icon(Icons.person, size: 18),
+                  },
+                  label: Text(meKeys.contains(_respKey(r)) ? 'Ich' : r.name),
+                  selected: _selected.contains(_respKey(r)),
+                  showCheckmark: false,
+                  onSelected: (v) => setState(() {
+                    _error = null;
+                    if (v) {
+                      _selected.add(_respKey(r));
+                    } else {
+                      _selected.remove(_respKey(r));
+                    }
+                  }),
+                ),
+              ActionChip(
+                avatar: const Icon(Icons.group_add, size: 18),
+                label: const Text('Auswählen …'),
+                onPressed: _morePeople,
+              ),
+            ]),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10),
+                child: Text(
+                  _error!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _saving ? null : () => _save(close: false),
+                    icon: const Icon(Icons.playlist_add),
+                    label: const Text('Speichern & neu'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton.icon(
+                    onPressed: _saving ? null : () => _save(close: true),
+                    icon: const Icon(Icons.check),
+                    label: const Text('Speichern'),
+                    style: FilledButton.styleFrom(
+                      minimumSize: const Size.fromHeight(48),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
