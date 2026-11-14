@@ -4895,6 +4895,24 @@ class AppState extends ChangeNotifier {
     return (ours, table);
   }
 
+  Future<(StandingRow?, List<StandingRow>)>? _leagueCache;
+  String? _leagueCacheTeam;
+  DateTime? _leagueCacheAt;
+
+  /// Wie [leagueTable], aber 15 Minuten zwischengespeichert – für Anzeigen,
+  /// die oft neu gezeichnet werden (z. B. „Platz 9" auf der Startseite).
+  Future<(StandingRow?, List<StandingRow>)> leagueTableCached(String teamId) {
+    final fresh =
+        _leagueCacheAt != null &&
+        DateTime.now().difference(_leagueCacheAt!) < const Duration(minutes: 15);
+    if (_leagueCache == null || _leagueCacheTeam != teamId || !fresh) {
+      _leagueCacheTeam = teamId;
+      _leagueCacheAt = DateTime.now();
+      _leagueCache = leagueTable(teamId);
+    }
+    return _leagueCache!;
+  }
+
   // ------------------------------------------------------ Vorbereitungspläne
   Future<List<PrepPlan>> prepPlans() => _repo.getPrepPlans();
 

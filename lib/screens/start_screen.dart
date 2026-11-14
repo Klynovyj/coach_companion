@@ -15,6 +15,7 @@ import 'match_center_screen.dart';
 import 'material_duty_screen.dart';
 import 'nachholen_screen.dart';
 import 'statistics_hub_screen.dart';
+import 'stats_screen.dart';
 import 'todos_screen.dart';
 
 /// Start-/Heute-Bildschirm: das Wichtigste auf einen Blick (laufendes/nächstes
@@ -555,7 +556,12 @@ class StartScreen extends StatelessWidget {
     final team = state.ownTeam;
     void push(Widget s) =>
         Navigator.push(context, MaterialPageRoute(builder: (_) => s));
-    Widget tile(IconData icon, String label, VoidCallback onTap) => Expanded(
+    Widget tile(
+      IconData icon,
+      String label,
+      VoidCallback onTap, {
+      Widget? sub,
+    }) => Expanded(
       child: InkWell(
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
@@ -570,6 +576,7 @@ class StartScreen extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              ?sub,
             ],
           ),
         ),
@@ -583,6 +590,34 @@ class StartScreen extends StatelessWidget {
             'Statistik',
             () => push(const StatisticsHubScreen()),
           ),
+          // Liga-Tabelle direkt (eigene Seite), darunter der aktuelle Platz.
+          if (team != null)
+            tile(
+              Icons.emoji_events_outlined,
+              'Tabelle',
+              () => push(
+                StatsScreen(
+                  teamId: team.id,
+                  teamName: team.name,
+                  fupaUrl: team.fupaUrl,
+                  tableOnly: true,
+                ),
+              ),
+              sub: FutureBuilder(
+                future: state.leagueTableCached(team.id),
+                builder: (context, snap) {
+                  final rank = snap.data?.$1?.rank;
+                  if (rank == null || rank <= 0) return const SizedBox.shrink();
+                  return Text(
+                    'Platz $rank',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  );
+                },
+              ),
+            ),
           if (team != null)
             tile(
               Icons.sports_soccer,

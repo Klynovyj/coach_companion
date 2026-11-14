@@ -20,6 +20,7 @@ class StatsScreen extends StatefulWidget {
     required this.teamName,
     this.fupaUrl,
     this.embedded = false,
+    this.tableOnly = false,
   });
 
   final String teamId;
@@ -28,6 +29,9 @@ class StatsScreen extends StatefulWidget {
 
   /// Eingebettet (Statistik-Hub): ohne eigenes Scaffold/AppBar.
   final bool embedded;
+
+  /// Nur die Liga-Tabelle als eigene Seite (Schnellzugriff „Tabelle").
+  final bool tableOnly;
 
   @override
   State<StatsScreen> createState() => _StatsScreenState();
@@ -64,6 +68,12 @@ class _StatsScreenState extends State<StatsScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    if (widget.tableOnly) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('Tabelle')),
+        body: _standingsView(state),
+      );
+    }
     final body = Column(
       children: [
         Padding(
