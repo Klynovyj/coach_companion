@@ -28,6 +28,7 @@ import '../widgets/player_picker_page.dart';
 import '../widgets/logo_chip.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/text_look.dart';
+import '../widgets/ai_look.dart';
 import 'photo_editor_screen.dart';
 
 /// Globale Bildkorrektur („Profi-Finish") über der fertigen Grafik: wirkt nur
@@ -4170,7 +4171,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(_aiErrorMessage(e)),
+          content: Text(aiErrorMessage(e)),
           duration: const Duration(seconds: 6),
         ),
       );
@@ -4257,7 +4258,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(_aiErrorMessage(e)),
+          content: Text(aiErrorMessage(e)),
           duration: const Duration(seconds: 6),
         ),
       );
@@ -4686,7 +4687,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           SnackBar(
             content: Text(
               lastError != null
-                  ? _aiErrorMessage(lastError)
+                  ? aiErrorMessage(lastError)
                   : 'Die KI hat den Hintergrund nicht entfernt – das Bild '
                         'bleibt unverändert. Bitte erneut versuchen, evtl. '
                         'mit genauerem Motiv (z. B. „der Spieler in der '
@@ -4720,7 +4721,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(_aiErrorMessage(e)),
+          content: Text(aiErrorMessage(e)),
           duration: const Duration(seconds: 6),
         ),
       );
@@ -4920,68 +4921,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   }
 
   /// Kurzer, einzeiliger Auszug einer Fehlermeldung (für Diagnose).
-  String _errSnippet(String s, int max) {
-    final d = s.replaceAll(RegExp(r'\s+'), ' ').trim();
-    return d.length > max ? '${d.substring(0, max)}…' : d;
-  }
-
-  String _aiErrorMessage(Object e) {
-    final s = e.toString();
-    final low = s.toLowerCase();
-    if (low.contains('resource_exhausted') ||
-        low.contains('prepayment credits') ||
-        low.contains('quota') ||
-        low.contains('"code": 402') ||
-        low.contains('code: 402')) {
-      return 'Gemini-Guthaben aufgebraucht – im Google AI Studio Guthaben aufladen.';
-    }
-    if (low.contains('api_key_invalid') ||
-        low.contains('api key not valid') ||
-        low.contains('unauthorized') ||
-        low.contains('permission_denied')) {
-      return 'Gemini-Zugang abgelehnt – API-Key im Supabase-Secret prüfen.';
-    }
-    if (low.contains('gemini_api_key fehlt') || low.contains('secret setzen')) {
-      return 'Gemini ist noch nicht eingerichtet (Secret fehlt).';
-    }
-    if (low.contains('nicht freigeschaltet')) {
-      return 'KI ist für dich nicht freigeschaltet (Einstellungen → '
-          'KI-Berechtigungen).';
-    }
-    if (low.contains('kein bild von der ki')) {
-      return 'Die KI hat kein Bild zurückgegeben – anderen Wunsch probieren.';
-    }
-    // Zeitlimit/Server kurz überlastet ≠ kein Internet.
-    if (low.contains('timeout') ||
-        low.contains('timed out') ||
-        low.contains('504') ||
-        low.contains('503') ||
-        low.contains('546') ||
-        low.contains('wall clock') ||
-        low.contains('worker_limit')) {
-      return 'Die KI hat zu lange gebraucht bzw. war kurz überlastet – bitte '
-          'gleich noch mal versuchen.';
-    }
-    if (low.contains('failed host lookup') ||
-        low.contains('network is unreachable') ||
-        low.contains('no address associated')) {
-      return 'Keine Internetverbindung – Netz prüfen und erneut versuchen.';
-    }
-    if (low.contains('socketexception') ||
-        low.contains('clientexception') ||
-        low.contains('connection')) {
-      return 'Verbindung zur KI abgebrochen – bitte erneut versuchen. '
-          '(${_errSnippet(s, 90)})';
-    }
-    // Unbekannter Fehler: kurzen Rohhinweis mitgeben, damit die echte Ursache
-    // sichtbar ist (Function-/Gemini-Meldung), statt nur „später versuchen".
-    final detail = s.replaceAll(RegExp(r'\s+'), ' ').trim();
-    final snippet = detail.length > 160
-        ? '${detail.substring(0, 160)}…'
-        : detail;
-    return 'KI-Fehler: $snippet';
-  }
-
   /// Dialog für den KI-Wunsch (Freitext + Vorschlags-Chips). Die KI gestaltet
   /// NUR den Hintergrund – Logos, Namen, Sponsoren & Score bleiben unverändert
   /// (die App legt sie scharf darüber). Gibt Wunsch + Modus ('background') zurück.
@@ -6668,106 +6607,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   /// Langdruck auf den leeren Hintergrund → Objekte hinzufügen + zentrale
   /// Hintergrund-Eigenschaften (wie moderne Design-Apps).
-  // KI-Look-Vorlagen: Gruppe → (Name, Motiv-Beschreibung für die KI).
-  static const Map<String, List<(String, String)>> _kLookPresets = {
-    'Feiertage': [
-      (
-        'Karneval',
-        'Karneval/Fasching: bunte Luftschlangen, Konfetti, Narrenkappen-Zacken, '
-            'kleine Sterne und Luftballons in Rot, Gelb, Grün und Blau',
-      ),
-      (
-        'Weihnachten',
-        'Weihnachten: goldene Lichterketten, Christbaumkugeln, Tannenzweige, '
-            'Schneeflocken und warmes Funkeln',
-      ),
-      (
-        'Ostern',
-        'Ostern: Frühlingsblüten, bunte Ostereier, Pastellfarben, Gräser und '
-            'kleine Schmetterlinge',
-      ),
-      (
-        'Silvester',
-        'Silvester/Neujahr: Feuerwerk, goldene Funken, Sektperlen, Glitzer und '
-            'Lichtstreifen',
-      ),
-      (
-        'Halloween',
-        'Halloween: Kürbisse, Fledermäuse, Spinnweben, orange-violettes '
-            'Leuchten und Nebelschwaden',
-      ),
-    ],
-    'Spiel-Anlässe': [
-      (
-        'Derby',
-        'Derby-Stimmung: lodernde Flammen, Funkenflug, Rauchschwaden und '
-            'Pyro-Leuchten in den Vereinsfarben',
-      ),
-      (
-        'Pokalspiel',
-        'Pokalspiel: goldene Lichtstrahlen, Glanz, Funkeln und edle '
-            'Goldakzente wie bei einem Finale',
-      ),
-      (
-        'Saisonstart',
-        'Saisonstart: dynamische Speed-Lines, Lichtblitze und Energie-Streifen '
-            'in den Vereinsfarben',
-      ),
-      (
-        'Flutlicht',
-        'Topspiel unter Flutlicht: helle Flutlicht-Strahlen von oben, '
-            'Lichtkegel, Lens-Flares und leichter Dunst',
-      ),
-    ],
-    'Feiern': [
-      (
-        'Sieg',
-        'Siegesfeier: Konfetti-Regen, Goldglitzer, Luftschlangen und '
-            'Jubel-Lichteffekte',
-      ),
-      (
-        'Aufstieg',
-        'Aufstiegsfeier: goldenes Konfetti, Feuerwerk, Sektspritzer und '
-            'Lichtstrahlen nach oben',
-      ),
-      (
-        'Meisterschaft',
-        'Meisterschaft: goldene Sterne, Lorbeerzweige, Konfetti und edler '
-            'Goldglanz',
-      ),
-      (
-        'Jubiläum',
-        'Vereinsjubiläum: elegante Goldornamente, Sterne, Lichterglanz und '
-            'festliches Funkeln',
-      ),
-    ],
-    'Wetter & Stimmung': [
-      (
-        'Herbst',
-        'Herbst: fallende bunte Blätter in Rot, Orange und Gelb, warmes '
-            'Gegenlicht',
-      ),
-      (
-        'Winter',
-        'Winter: Schneefall, Eiskristalle, Frost an den Rändern, kühles '
-            'Glitzern',
-      ),
-      (
-        'Sommer',
-        'Sommer: Sonnenstrahlen, Lens-Flares, warmes goldenes Licht und '
-            'Hitzeflimmern',
-      ),
-      (
-        'Regen & Nebel',
-        'Regen und Nebel: Regentropfen, Regenschlieren, Nebelschwaden und '
-            'stimmungsvolles Gegenlicht',
-      ),
-    ],
-  };
-
   /// Kurzname eines Looks (Vorlagen-Name oder Anfang des eigenen Textes).
   String _lookName(_AiLook l) {
-    for (final group in _kLookPresets.values) {
+    for (final group in kAiLookPresets.values) {
       for (final p in group) {
         if (p.$2 == l.theme) return p.$1;
       }
@@ -6894,114 +6736,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Dialog „KI-Look erstellen": Vorlagen (füllen das Textfeld, frei
   /// änderbar) oder eigener Text + Darstellung Leuchtend/Freigestellt.
   Future<void> _openLookDialog({_AiLook? current}) async {
-    final ctrl = TextEditingController(text: current?.theme ?? '');
-    var mode = current?.mode ?? 'glow';
-    final res = await showDialog<({String theme, String mode})>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        scrollable: true,
-        title: const Text('KI-Look erstellen'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: StatefulBuilder(
-            builder: (ctx, setLocal) => Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Die KI malt nur eine Deko-Ebene an den Rändern. Deine '
-                  'Grafik darunter bleibt unverändert.',
-                  style: Theme.of(ctx).textTheme.bodySmall,
-                ),
-                for (final group in _kLookPresets.entries) ...[
-                  const SizedBox(height: 10),
-                  Text(
-                    group.key,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: [
-                      for (final p in group.value)
-                        ChoiceChip(
-                          label: Text(p.$1),
-                          selected: ctrl.text == p.$2,
-                          onSelected: (_) => setLocal(() {
-                            ctrl.text = p.$2;
-                            ctrl.selection = TextSelection.collapsed(
-                              offset: ctrl.text.length,
-                            );
-                          }),
-                        ),
-                    ],
-                  ),
-                ],
-                const SizedBox(height: 12),
-                TextField(
-                  controller: ctrl,
-                  maxLines: 3,
-                  textCapitalization: TextCapitalization.sentences,
-                  onChanged: (_) => setLocal(() {}),
-                  decoration: const InputDecoration(
-                    labelText: 'Eigener Look / Vorlage anpassen',
-                    hintText:
-                        'z. B. Derby gegen Benrath: rot-weiße Pyro, '
-                        'Rauch und Funken',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text('Darstellung:', style: TextStyle(fontSize: 12)),
-                const SizedBox(height: 4),
-                SegmentedButton<String>(
-                  segments: const [
-                    ButtonSegment(
-                      value: 'glow',
-                      label: Text('Leuchtend'),
-                      icon: Icon(Icons.flare),
-                    ),
-                    ButtonSegment(
-                      value: 'cutout',
-                      label: Text('Freigestellt'),
-                      icon: Icon(Icons.layers),
-                    ),
-                  ],
-                  selected: {mode},
-                  onSelectionChanged: (s) => setLocal(() => mode = s.first),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  mode == 'glow'
-                      ? 'Leuchtend: Licht, Funken, Konfetti, Schnee wirken '
-                            'strahlend; dunkle Deko-Teile verschwinden.'
-                      : 'Freigestellt: Farben exakt (auch dunkle Deko wie '
-                            'Tannenzweige); Ränder können leicht ausfransen.',
-                  style: Theme.of(ctx).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Abbrechen'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final t = ctrl.text.trim();
-              if (t.isEmpty) return;
-              Navigator.pop(ctx, (theme: t, mode: mode));
-            },
-            child: const Text('Erstellen'),
-          ),
-        ],
-      ),
+    final res = await showAiLookDialog(
+      context,
+      theme: current?.theme,
+      mode: current?.mode ?? 'glow',
     );
     if (res == null || !mounted) return;
     await _createLook(theme: res.theme, mode: res.mode);
@@ -7024,35 +6762,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       ),
     );
     try {
-      final magenta = mode == 'cutout';
-      final canvas = await compute(lookCanvasPng, <String, Object>{
-        'w': _format == 's' ? 576 : (_format == 'f' ? 819 : 1024),
-        'h': 1024,
-        'magenta': magenta,
-      });
-      final prompt =
-          '$theme. Vereinsfarben als Akzent: ${_settings.gradTop}, '
-          '${_settings.gradBottom}.';
-      final out = await CloudService.aiImage(
-        images: [
-          {
-            'mime': 'image/png',
-            'data': 'data:image/png;base64,${base64Encode(canvas)}',
-            'role': 'canvas',
-          },
-        ],
-        prompt: prompt,
-        mode: 'overlay',
+      final png = await generateAiLookPng(
+        theme: theme,
+        mode: mode,
+        width: _format == 's' ? 576 : (_format == 'f' ? 819 : 1024),
+        height: 1024,
         aspect: _aiAspect,
-        key: magenta ? 'magenta' : 'black',
+        gradTop: _settings.gradTop,
+        gradBottom: _settings.gradBottom,
       );
-      if (out == null) {
+      if (png == null) {
         messenger.showSnackBar(
           const SnackBar(content: Text('Die KI hat kein Bild zurückgegeben.')),
         );
         return;
       }
-      final png = await compute(magenta ? chromaKeyMagenta : lumaKeyBlack, out);
       if (!mounted) return;
       final keepOpacity = _look?.opacity ?? 1.0;
       setState(
@@ -7075,7 +6799,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(
-          content: Text(_aiErrorMessage(e)),
+          content: Text(aiErrorMessage(e)),
           duration: const Duration(seconds: 6),
         ),
       );

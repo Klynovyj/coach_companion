@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -7,6 +8,7 @@ import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../models/graphic_settings.dart';
@@ -17,6 +19,7 @@ import '../services/fupa/fupa_dtos.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import '../widgets/ai_look.dart';
 import '../widgets/text_look.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'photo_crop_screen.dart';
@@ -132,6 +135,240 @@ class _PlayerOfMonthGraphicScreenState
     return t.hasAny ? t : null;
   }
 
+  /// KI-Look (Deko-Ebene) je Format, auf dem Gerät je Spieler gespeichert.
+  final Map<_Fmt, AiLookData> _aiLooks = {};
+  bool _lookBusy = false;
+
+  Future<File> _lookFile(_Fmt f) async {
+    final dir = await getApplicationDocumentsDirectory();
+    final safe = widget.player.id.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+    return File('${dir.path}/ai_looks/pom_${safe}_${f.name}.json');
+  }
+
+  Future<void> _loadAiLooks() async {
+    for (final f in _Fmt.values) {
+      try {
+        final file = await _lookFile(f);
+        if (!file.existsSync()) continue;
+        final l = AiLookData.fromJson(jsonDecode(await file.readAsString()));
+        if (l != null && mounted) setState(() => _aiLooks[f] = l);
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _saveAiLook(_Fmt f) async {
+    try {
+      final file = await _lookFile(f);
+      final l = _aiLooks[f];
+      if (l == null) {
+        if (file.existsSync()) await file.delete();
+        return;
+      }
+      await file.parent.create(recursive: true);
+      await file.writeAsString(jsonEncode(l.toJson()));
+    } catch (_) {}
+  }
+
+  /// Leinwand je Format (Seitenverhältnis wie die Grafik).
+  (int, int, String) get _lookCanvas => switch (_fmt) {
+    _Fmt.post => (1024, 1024, '1:1'),
+    _Fmt.story => (576, 1024, '9:16'),
+    _Fmt.urkunde => (724, 1024, '3:4'),
+  };
+
+  Future<void> _createAiLook({
+    required String theme,
+    required String mode,
+  }) async {
+    if (_lookBusy) return;
+    final fmt = _fmt;
+    setState(() => _lookBusy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('KI gestaltet den Look …'),
+        duration: Duration(seconds: 3),
+      ),
+    );
+    try {
+      final (w, h, aspect) = _lookCanvas;
+      final png = await generateAiLookPng(
+        theme: theme,
+        mode: mode,
+        width: w,
+        height: h,
+        aspect: aspect,
+        gradTop: _settings.gradTop,
+        gradBottom: _settings.gradBottom,
+      );
+      if (!mounted) return;
+      if (png == null) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Die KI hat kein Bild zurückgegeben.')),
+        );
+        return;
+      }
+      setState(
+        () => _aiLooks[fmt] = AiLookData(
+          dataUrl: 'data:image/png;base64,${base64Encode(png)}',
+          mode: mode,
+          theme: theme,
+          opacity: _aiLooks[fmt]?.opacity ?? 1.0,
+        ),
+      );
+      _saveAiLook(fmt);
+      _sheetSetState?.call(() {});
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(aiErrorMessage(e)),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _lookBusy = false);
+      _sheetSetState?.call(() {});
+    }
+  }
+
+  Future<void> _openAiLookDialog({AiLookData? current}) async {
+    final urkunde = _fmt == _Fmt.urkunde;
+    final res = await showAiLookDialog(
+      context,
+      theme: current?.theme,
+      mode: current?.mode ?? 'glow',
+      presets: {...kAiLookHonorPresets, ...kAiLookPresets},
+      // Auf weißem Papier wäre „Leuchtend" kaum sichtbar.
+      fixedMode: urkunde ? 'cutout' : null,
+      fixedModeHint: urkunde
+          ? 'Urkunde: Darstellung „Freigestellt" (auf weißem Papier sichtbar).'
+          : null,
+    );
+    if (res == null || !mounted) return;
+    await _createAiLook(theme: res.theme, mode: res.mode);
+  }
+
+  /// Abschnitt „KI-Look" im Menü „Grafik anpassen" (für das aktive Format).
+  Widget _aiLookSection(void Function(VoidCallback) setSheet) {
+    final look = _aiLooks[_fmt];
+    final allowed = context.read<AppState>().canAiImage;
+    void upd(VoidCallback fn) {
+      setState(fn);
+      setSheet(() {});
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.auto_awesome, size: 18),
+            const SizedBox(width: 6),
+            Text(
+              'KI-Look (${_fmt.label})',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          'Deko über der Grafik (z. B. Goldglanz, Konfetti) – Texte, Foto und '
+          'Werte bleiben unverändert. Gilt je Format.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        const SizedBox(height: 6),
+        if (!allowed)
+          Text(
+            'KI ist für dich nicht freigeschaltet (Einstellungen → '
+            'KI-Berechtigungen).',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          )
+        else if (look == null)
+          OutlinedButton.icon(
+            icon: _lookBusy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.auto_awesome, size: 18),
+            label: Text(_lookBusy ? 'KI gestaltet …' : 'KI-Look erstellen'),
+            onPressed: _lookBusy ? null : () => _openAiLookDialog(),
+          )
+        else ...[
+          Text(
+            'Aktiv: ${aiLookName(look.theme, {...kAiLookHonorPresets, ...kAiLookPresets})} · '
+            '${look.mode == 'cutout' ? 'Freigestellt' : 'Leuchtend'}',
+            style: const TextStyle(fontSize: 13),
+          ),
+          Row(
+            children: [
+              const SizedBox(
+                width: 52,
+                child: Text('Stärke', style: TextStyle(fontSize: 12)),
+              ),
+              Expanded(
+                child: Slider(
+                  value: look.opacity.clamp(0.1, 1.0),
+                  min: 0.1,
+                  max: 1.0,
+                  onChanged: (v) => upd(() => look.opacity = v),
+                  onChangeEnd: (_) => _saveAiLook(_fmt),
+                ),
+              ),
+              SizedBox(
+                width: 40,
+                child: Text(
+                  '${(look.opacity * 100).round()}%',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            children: [
+              OutlinedButton.icon(
+                icon: _lookBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh, size: 18),
+                label: const Text('Neu erzeugen'),
+                onPressed: _lookBusy
+                    ? null
+                    : () => _createAiLook(theme: look.theme, mode: look.mode),
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.edit, size: 18),
+                label: const Text('Ändern'),
+                onPressed: _lookBusy
+                    ? null
+                    : () => _openAiLookDialog(current: look),
+              ),
+              TextButton.icon(
+                icon: const Icon(Icons.delete_outline, color: Colors.red),
+                label: const Text(
+                  'Entfernen',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onPressed: () {
+                  upd(() => _aiLooks.remove(_fmt));
+                  _saveAiLook(_fmt);
+                },
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
   /// Gestaltung der Texte (Schrift/Farbe/Schatten/Ausrichtung) je Text:
   /// team · occasion · subtitle · honor. Auf dem Gerät gespeichert.
   Map<String, TextLook> _looks = {};
@@ -214,6 +451,7 @@ class _PlayerOfMonthGraphicScreenState
     super.initState();
     _load();
     _loadLooks();
+    _loadAiLooks();
   }
 
   Future<void> _load() async {
@@ -405,6 +643,8 @@ class _PlayerOfMonthGraphicScreenState
                     'subtitle',
                     'Untertitel',
                   ),
+                  const Divider(height: 28),
+                  _aiLookSection(setSheet),
                   const Divider(height: 28),
                   // Live-Vorschau des Verlaufs (Post/Story-Hintergrund).
                   Container(
@@ -966,7 +1206,25 @@ class _PlayerOfMonthGraphicScreenState
                     child: SizedBox(
                       width: size.width,
                       height: size.height,
-                      child: graphic,
+                      // KI-Look liegt über allem (auch im Export).
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          graphic,
+                          if (_aiLooks[_fmt] case final look?)
+                            if (TeamLogo.decode(look.dataUrl) case final b?)
+                              IgnorePointer(
+                                child: Opacity(
+                                  opacity: look.opacity.clamp(0.1, 1.0),
+                                  child: Image.memory(
+                                    b,
+                                    fit: BoxFit.cover,
+                                    gaplessPlayback: true,
+                                  ),
+                                ),
+                              ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
