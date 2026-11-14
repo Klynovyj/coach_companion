@@ -1615,6 +1615,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   final Map<String, Map<String, String>> _textContentF = {};
   final Map<String, Map<String, String>> _textFontF = {};
   final Map<String, Map<String, String>> _textColorF = {};
+  // Schatten je Text: none | soft | strong | outline | glow.
+  final Map<String, Map<String, String>> _textShadowF = {};
   int _posterOverlaySeq = 0; // eindeutige Overlay-IDs (global)
   int _textSeq = 0; // eindeutige Text-IDs (global)
   int _editorSeq = 0; // erzwingt Editor-Neuaufbau (z.B. „Datum auf Auto")
@@ -1672,6 +1674,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _textFontF.putIfAbsent(_designKey, () => {});
   Map<String, String> get _textColor =>
       _textColorF.putIfAbsent(_designKey, () => {});
+  Map<String, String> get _textShadow =>
+      _textShadowF.putIfAbsent(_designKey, () => {});
   // Weiche Kanten je Bild-Element: Original-Bild + Stärke (0..100), je Layout.
   final Map<String, Map<String, String>> _imgOrigF = {};
   final Map<String, Map<String, double>> _imgFeatherF = {};
@@ -2331,6 +2335,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'textContent': strMap(_textContentF),
       'textFont': strMap(_textFontF),
       'textColor': strMap(_textColorF),
+      'textShadow': strMap(_textShadowF),
       // Original-Bilder NUR speichern, wenn sie sich vom angezeigten Bild
       // unterscheiden (nach Weiche Kanten/Schatten). Sonst wäre jedes Bild
       // doppelt drin – das machte Designs 8 MB groß und der Cloud-Upload
@@ -2568,6 +2573,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     fillStr(_textContentF, m['textContent']);
     fillStr(_textFontF, m['textFont']);
     fillStr(_textColorF, m['textColor']);
+    fillStr(_textShadowF, m['textShadow']);
     fillStr(_imgOrigF, m['imgOrig']);
     // Nicht mitgespeicherte Originale (= unverändertes Bild) wieder ergänzen,
     // damit Weiche Kanten/Schatten weiterhin vom Original aus rechnen.
@@ -5181,6 +5187,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     showMainSponsor: _showMainSponsor,
     showOtherSponsors: _showOtherSponsors,
     mainSponsorMode: _mainSponsorMode,
+    posterTextShadow: Map.of(_textShadow),
     posterTexts: {
       for (final id in _textIds)
         id: (
@@ -5225,6 +5232,396 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     return c;
   }
 
+  /// Langdruck auf einen Text → kompaktes Menü: oben der Text, darunter die
+  /// Reiter „Stil" (Schrift-Kacheln, Farbkreise, Schatten) und „Lage" (Größe,
+  /// Drehung, Ebene). Löschen als Symbol oben rechts; die Grafik bleibt
+  /// ungedimmt sichtbar.
+  void _showTextProperties(
+    String id, {
+    required bool isSponsorText,
+    required bool isStd,
+  }) {
+    var tab = 0; // 0 = Stil, 1 = Lage
+    final delLabel = id.startsWith('text_') ? 'Text löschen' : 'Ausblenden';
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      barrierColor: Colors.black12,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void apply(VoidCallback fn) {
+            setState(fn);
+            setSheet(() {});
+          }
+
+          final scheme = Theme.of(ctx).colorScheme;
+          final hint = Theme.of(ctx).hintColor;
+
+          Widget section(String label, Widget child) => Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: hint,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                child,
+              ],
+            ),
+          );
+
+          Widget hScroll(List<Widget> kids) => SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final k in kids)
+                  Padding(padding: const EdgeInsets.only(right: 8), child: k),
+              ],
+            ),
+          );
+
+          Widget slider(
+            String label,
+            double value,
+            double min,
+            double max,
+            ValueChanged<double> onCh,
+            String text,
+          ) => Row(
+            children: [
+              SizedBox(
+                width: 64,
+                child: Text(label, style: const TextStyle(fontSize: 13)),
+              ),
+              Expanded(
+                child: Slider(
+                  value: value.clamp(min, max),
+                  min: min,
+                  max: max,
+                  onChanged: onCh,
+                ),
+              ),
+              SizedBox(
+                width: 46,
+                child: Text(
+                  text,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+          );
+
+          // ---------------------------------------------------- Stil
+          final curFont = _textFont[id] ?? 'standard';
+          final fonts = hScroll([
+            for (final e in _kPosterFonts.entries)
+              ChoiceChip(
+                showCheckmark: false,
+                label: Text(
+                  e.value,
+                  style: posterFontStyle(
+                    e.key,
+                    const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                selected: curFont == e.key,
+                onSelected: (_) => apply(() => _textFont[id] = e.key),
+              ),
+          ]);
+
+          final curColor =
+              _textColor[id] ?? (id == 'info' ? 'accent' : 'white');
+          Widget circle(Color c, bool sel, VoidCallback onTap, String tip) =>
+              Tooltip(
+                message: tip,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: onTap,
+                  child: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: c,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: sel ? scheme.primary : Colors.black26,
+                        width: sel ? 3 : 1,
+                      ),
+                    ),
+                    child: sel
+                        ? Icon(
+                            Icons.check,
+                            size: 18,
+                            color: c.computeLuminance() > 0.5
+                                ? Colors.black
+                                : Colors.white,
+                          )
+                        : null,
+                  ),
+                ),
+              );
+          final isCustom = !_kTextColors.containsKey(curColor);
+          final colors = hScroll([
+            for (final e in _kTextColors.entries)
+              circle(
+                switch (e.key) {
+                  'white' => Colors.white,
+                  'black' => Colors.black,
+                  _ => _hex(_settings.accent ?? '#FFFFFF'),
+                },
+                curColor == e.key,
+                () => apply(() => _textColor[id] = e.key),
+                e.value,
+              ),
+            if (isCustom)
+              circle(_hex(curColor), true, () {}, 'Eigene Farbe'),
+            Tooltip(
+              message: 'Farbe wählen',
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: () async {
+                  final hex = await _pickColor(_textColorHex(id));
+                  if (hex != null) apply(() => _textColor[id] = hex);
+                },
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: const SweepGradient(
+                      colors: [
+                        Colors.red,
+                        Colors.yellow,
+                        Colors.green,
+                        Colors.cyan,
+                        Colors.blue,
+                        Colors.purple,
+                        Colors.red,
+                      ],
+                    ),
+                    border: Border.all(color: Colors.black26),
+                  ),
+                  child: const Icon(Icons.add, color: Colors.white, size: 20),
+                ),
+              ),
+            ),
+          ]);
+
+          const shadowKinds = {
+            'none': 'Aus',
+            'soft': 'Weich',
+            'strong': 'Stark',
+            'outline': 'Kontur',
+            'glow': 'Leuchten',
+          };
+          final curShadow = _textShadow[id] ?? 'none';
+          final shadows = hScroll([
+            for (final e in shadowKinds.entries)
+              ChoiceChip(
+                label: Text(e.value),
+                selected: curShadow == e.key,
+                onSelected: (_) => apply(() {
+                  if (e.key == 'none') {
+                    _textShadow.remove(id);
+                  } else {
+                    _textShadow[id] = e.key;
+                  }
+                }),
+              ),
+          ]);
+
+          // ---------------------------------------------------- Lage
+          final rotDeg = ((_posterRot[id] ?? 0) * 180 / math.pi).clamp(
+            -180.0,
+            180.0,
+          );
+          final lage = Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 8),
+              slider(
+                'Größe',
+                _posterScale[id] ?? 1.0,
+                0.4,
+                3.0,
+                (v) => apply(() => _posterScale[id] = v),
+                '${((_posterScale[id] ?? 1.0) * 100).round()}%',
+              ),
+              slider('Drehung', rotDeg, -180, 180, (v) {
+                // Magnetisch bei 0° und ±90°/±180° einrasten.
+                var d = v;
+                for (final snap in const [-180.0, -90.0, 0.0, 90.0, 180.0]) {
+                  if ((v - snap).abs() <= 6) {
+                    d = snap;
+                    break;
+                  }
+                }
+                apply(() => _posterRot[id] = d * math.pi / 180);
+              }, '${rotDeg.round()}°'),
+              const SizedBox(height: 4),
+              if (isStd)
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.undo, size: 18),
+                  label: const Text('Position, Größe & Drehung zurück'),
+                  onPressed: () => apply(() {
+                    _stdOff.remove(id);
+                    _posterScale.remove(id);
+                    _posterRot.remove(id);
+                    _boxSize.remove(id);
+                  }),
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.flip_to_back, size: 18),
+                        label: const Text('Nach hinten'),
+                        onPressed: () {
+                          _reorderPoster(id, -1);
+                          setSheet(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        icon: const Icon(Icons.flip_to_front, size: 18),
+                        label: const Text('Nach vorne'),
+                        onPressed: () {
+                          _reorderPoster(id, 1);
+                          setSheet(() {});
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          );
+
+          // Automatik-/Standard-Text wiederherstellen (Datum, „Präsentiert von").
+          final VoidCallback? restore = id == 'info' || isSponsorText
+              ? () => apply(() {
+                  _textContent.remove(id);
+                  _textFont.remove(id);
+                  _textColor.remove(id);
+                  _textShadow.remove(id);
+                  _editorSeq++; // Feld mit Standard-Text neu aufbauen
+                })
+              : null;
+
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                12 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _posterItemLabel(id),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: delLabel,
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            _removePosterItem(id);
+                          },
+                        ),
+                      ],
+                    ),
+                    TextFormField(
+                      key: ValueKey('sheettxt_${id}_$_editorSeq'),
+                      initialValue: id == 'info'
+                          ? (_textContent['info'] ?? _autoInfoLine)
+                          : isSponsorText
+                          ? (_textContent[id] ?? _sponsorTextDefault(id))
+                          : (_textContent[id] ?? ''),
+                      minLines: 1,
+                      maxLines: 4,
+                      keyboardType: TextInputType.multiline,
+                      style: const TextStyle(fontSize: 16),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        filled: true,
+                        hintText: 'Text',
+                        helperText: 'Zeilenumbruch nur mit Enter',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        suffixIcon: restore == null
+                            ? null
+                            : IconButton(
+                                tooltip: id == 'info'
+                                    ? 'Automatisches Datum'
+                                    : 'Standardtext',
+                                icon: const Icon(Icons.restore),
+                                onPressed: restore,
+                              ),
+                      ),
+                      onChanged: (v) => apply(() => _textContent[id] = v),
+                    ),
+                    const SizedBox(height: 10),
+                    SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      segments: const [
+                        ButtonSegment(
+                          value: 0,
+                          icon: Icon(Icons.palette_outlined),
+                          label: Text('Stil'),
+                        ),
+                        ButtonSegment(
+                          value: 1,
+                          icon: Icon(Icons.open_with),
+                          label: Text('Lage'),
+                        ),
+                      ],
+                      selected: {tab},
+                      onSelectionChanged: (v) => setSheet(() => tab = v.first),
+                    ),
+                    if (tab == 0) ...[
+                      section('Schrift', fonts),
+                      section('Farbe', colors),
+                      section('Schatten', shadows),
+                    ] else
+                      lage,
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   /// Langdruck auf ein Element → Eigenschaften-Sheet (Größe, Drehung, Ebene,
   /// Löschen; für Bilder Freistellen/Weiche Kanten, für Text Inhalt/Schrift/Farbe).
   void _showElementProperties(String id) {
@@ -5234,6 +5631,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final isText = id.startsWith('text_') || id == 'info' || isSponsorText;
     // Feste Teile (Ergebnis/Startelf) liegen im Layout – keine Ebenen-Reihenfolge.
     final isStd = id.startsWith('std_');
+    if (isText) {
+      _showTextProperties(id, isSponsorText: isSponsorText, isStd: isStd);
+      return;
+    }
     // Vereinsname geändert → beim Schließen teamweit speichern (nicht je Taste).
     var titleDirty = false;
     final delLabel = id == 'player'
@@ -5579,114 +5980,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                             (v) => apply(() => _posterShadowStrength = v),
                           ),
                       ],
-                    ],
-                    if (isText) ...[
-                      const SizedBox(height: 4),
-                      TextFormField(
-                        key: ValueKey('sheettxt_${id}_$_editorSeq'),
-                        initialValue: id == 'info'
-                            ? (_textContent['info'] ?? _autoInfoLine)
-                            : isSponsorText
-                            ? (_textContent[id] ?? _sponsorTextDefault(id))
-                            : (_textContent[id] ?? ''),
-                        maxLines: null,
-                        keyboardType: TextInputType.multiline,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                          labelText: 'Text (Enter = neue Zeile)',
-                        ),
-                        onChanged: (v) => apply(() => _textContent[id] = v),
-                      ),
-                      if (id == 'info')
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            icon: const Icon(Icons.restore, size: 16),
-                            label: const Text('Automatisches Datum'),
-                            onPressed: () => apply(() {
-                              _textContent.remove('info');
-                              _textFont.remove('info');
-                              _textColor.remove('info');
-                              _editorSeq++; // Feld mit Auto-Zeile neu aufbauen
-                            }),
-                          ),
-                        ),
-                      if (isSponsorText)
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: TextButton.icon(
-                            icon: const Icon(Icons.restore, size: 16),
-                            label: const Text('Standard'),
-                            onPressed: () => apply(() {
-                              _textContent.remove(id);
-                              _textFont.remove(id);
-                              _textColor.remove(id);
-                              _editorSeq++;
-                            }),
-                          ),
-                        ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Text(
-                            'Schrift:',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: DropdownButton<String>(
-                              isExpanded: true,
-                              isDense: true,
-                              value: _textFont[id] ?? 'standard',
-                              items: [
-                                for (final e in _kPosterFonts.entries)
-                                  DropdownMenuItem(
-                                    value: e.key,
-                                    child: Text(e.value),
-                                  ),
-                              ],
-                              onChanged: (v) =>
-                                  apply(() => _textFont[id] = v ?? 'standard'),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Wrap(
-                        spacing: 6,
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        children: [
-                          const Text('Farbe:', style: TextStyle(fontSize: 12)),
-                          for (final e in _kTextColors.entries)
-                            ChoiceChip(
-                              label: Text(e.value),
-                              selected:
-                                  (_textColor[id] ??
-                                      (id == 'info' ? 'accent' : 'white')) ==
-                                  e.key,
-                              onSelected: (_) =>
-                                  apply(() => _textColor[id] = e.key),
-                            ),
-                          ActionChip(
-                            avatar: Container(
-                              width: 16,
-                              height: 16,
-                              decoration: BoxDecoration(
-                                color: _hex(_textColorHex(id)),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.black26),
-                              ),
-                            ),
-                            label: const Text('frei'),
-                            onPressed: () async {
-                              final hex = await _pickColor(_textColorHex(id));
-                              if (hex != null) {
-                                apply(() => _textColor[id] = hex);
-                              }
-                            },
-                          ),
-                        ],
-                      ),
                     ],
                     const SizedBox(height: 4),
                     TextButton.icon(
@@ -7128,6 +7421,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _textContentF.remove(k);
       _textFontF.remove(k);
       _textColorF.remove(k);
+      _textShadowF.remove(k);
       _imgOrigF.remove(k);
       _imgFeatherF.remove(k);
       _imgInnerF.remove(k);
@@ -7819,6 +8113,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.showOtherSponsors = true,
     this.mainSponsorMode = 'logo',
     this.posterTexts = const {},
+    this.posterTextShadow = const {},
   });
 
   final String title;
@@ -7934,6 +8229,8 @@ class _StartelfGraphic extends StatelessWidget {
   final String mainSponsorMode; // 'logo' | 'text' – Hauptsponsor-Darstellung
   // Eigene Textfelder: id → (Inhalt, Schriftart, Farb-Key).
   final Map<String, ({String text, String font, String color})> posterTexts;
+  // Schatten-Stil je Text-Element (none/soft/strong/outline/glow).
+  final Map<String, String> posterTextShadow;
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
@@ -7956,6 +8253,67 @@ class _StartelfGraphic extends StatelessWidget {
         return Colors.white;
     }
   }
+
+  /// Text-Stil mit dem gewählten Schatten (Weich/Stark/Kontur/Leuchten).
+  TextStyle _shadowed(String id, TextStyle s) {
+    final kind = posterTextShadow[id];
+    if (kind == null || kind == 'none') return s;
+    final fs = s.fontSize ?? 20;
+    final List<Shadow> sh = switch (kind) {
+      'soft' => [
+        Shadow(
+          color: Colors.black.withValues(alpha: 0.6),
+          offset: Offset(0, fs * 0.06),
+          blurRadius: fs * 0.25,
+        ),
+      ],
+      'strong' => [
+        Shadow(
+          color: Colors.black.withValues(alpha: 0.9),
+          offset: Offset(fs * 0.07, fs * 0.09),
+          blurRadius: fs * 0.03,
+        ),
+        Shadow(
+          color: Colors.black.withValues(alpha: 0.55),
+          blurRadius: fs * 0.45,
+        ),
+      ],
+      'outline' => [
+        for (var a = 0; a < 360; a += 30)
+          Shadow(
+            color: Colors.black,
+            offset: Offset(
+              math.cos(a * math.pi / 180) * fs * 0.045,
+              math.sin(a * math.pi / 180) * fs * 0.045,
+            ),
+          ),
+      ],
+      'glow' => [
+        Shadow(
+          color: _brandBright.withValues(alpha: 0.95),
+          blurRadius: fs * 0.3,
+        ),
+        Shadow(
+          color: _brandBright.withValues(alpha: 0.75),
+          blurRadius: fs * 0.8,
+        ),
+      ],
+      _ => const <Shadow>[],
+    };
+    return s.copyWith(shadows: [...?s.shadows, ...sh]);
+  }
+
+  /// Freier Text: bricht NUR an eigenen Zeilenumbrüchen (Enter) um, nie
+  /// automatisch an der Bildbreite; lange Zeilen bleiben einzeilig (Größe
+  /// über den Regler).
+  Widget _freeText(String id, String text, TextStyle style) => UnconstrainedBox(
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      softWrap: false,
+      style: _shadowed(id, style),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -8390,10 +8748,10 @@ class _StartelfGraphic extends StatelessWidget {
           if (id.startsWith('text_')) {
             final t = posterTexts[id];
             if (t == null || t.text.trim().isEmpty) return null;
-            return Text(
+            return _freeText(
+              id,
               t.text,
-              textAlign: TextAlign.center,
-              style: posterFontStyle(
+              posterFontStyle(
                 t.font,
                 TextStyle(
                   color: _resolveTextColor(t.color),
@@ -9469,7 +9827,7 @@ class _StartelfGraphic extends StatelessWidget {
             o.font,
             base.copyWith(color: _resolveTextColor(o.color)),
           );
-    return Text(text, textAlign: TextAlign.center, style: style);
+    return _freeText(id, text, style);
   }
 
   /// Sponsor-Logo (bzw. Name im Text-Modus) des Hauptsponsors.
@@ -10763,10 +11121,10 @@ class _StartelfGraphic extends StatelessWidget {
       final text = (o != null && o.text.trim().isNotEmpty) ? o.text : infoLine;
       if (text.trim().isEmpty) return null;
       final col = o == null ? _accent : _resolveTextColor(o.color);
-      return Text(
+      return _freeText(
+        'info',
         text,
-        textAlign: TextAlign.center,
-        style: posterFontStyle(
+        posterFontStyle(
           o?.font ?? posterFont,
           TextStyle(
             color: col,
@@ -11001,10 +11359,10 @@ class _StartelfGraphic extends StatelessWidget {
                 final t = posterTexts[id];
                 if (t == null || t.text.trim().isEmpty) return null;
                 final col = _resolveTextColor(t.color);
-                return Text(
+                return _freeText(
+                  id,
                   t.text,
-                  textAlign: TextAlign.center,
-                  style: posterFontStyle(
+                  posterFontStyle(
                     t.font,
                     TextStyle(
                       color: col,
