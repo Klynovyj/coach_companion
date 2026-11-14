@@ -8642,12 +8642,15 @@ class _StartelfGraphic extends StatelessWidget {
     final oppLogo = TeamLogo.decode(opponentLogo);
     final logoH = compact ? 56.0 : 70.0;
 
+    // Heim links, Gast rechts: auswärts steht der Gegner vorn.
+    final first = isHome ? ownLogo : oppLogo;
+    final second = isHome ? oppLogo : ownLogo;
     Widget vs() => Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        if (ownLogo != null)
-          _logoChip(ownLogo, height: logoH, circle: logoCircle),
+        if (first != null)
+          _logoChip(first, height: logoH, circle: logoCircle),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
@@ -8659,8 +8662,8 @@ class _StartelfGraphic extends StatelessWidget {
             ),
           ),
         ),
-        if (oppLogo != null)
-          _logoChip(oppLogo, height: logoH, circle: logoCircle),
+        if (second != null)
+          _logoChip(second, height: logoH, circle: logoCircle),
       ],
     );
 
@@ -8671,7 +8674,9 @@ class _StartelfGraphic extends StatelessWidget {
     if (r != null) {
       children.add(
         Text(
-          '${r.ownScore} : ${r.oppScore}',
+          isHome
+              ? '${r.ownScore} : ${r.oppScore}'
+              : '${r.oppScore} : ${r.ownScore}',
           style: TextStyle(
             color: _accent,
             fontSize: 56,
@@ -10201,7 +10206,8 @@ class _StartelfGraphic extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(child: Center(child: side(ownLogo))),
+        // Heim links, Gast rechts: auswärts Gegner-Logo und -Tore vorn.
+        Expanded(child: Center(child: side(isHome ? ownLogo : oppLogo))),
         // Flexible + FittedBox: auch zweistellige Stände („10 : 12") passen
         // immer – verkleinern statt überlaufen.
         Flexible(
@@ -10212,7 +10218,9 @@ class _StartelfGraphic extends StatelessWidget {
               fit: BoxFit.scaleDown,
               child: _resultBand(
                 Text(
-                  '${r.ownScore} : ${r.oppScore}',
+                  isHome
+                      ? '${r.ownScore} : ${r.oppScore}'
+                      : '${r.oppScore} : ${r.ownScore}',
                   maxLines: 1,
                   softWrap: false,
                   style: TextStyle(
@@ -10232,7 +10240,7 @@ class _StartelfGraphic extends StatelessWidget {
             ),
           ),
         ),
-        Expanded(child: Center(child: side(oppLogo))),
+        Expanded(child: Center(child: side(isHome ? oppLogo : ownLogo))),
       ],
     );
   }
@@ -10713,24 +10721,23 @@ class _StartelfGraphic extends StatelessWidget {
             ],
           );
     // Ohne Gegner (z. B. Designer: Anlass/frei) nur das eigene Logo – ohne
-    // Trennstrich.
+    // Trennstrich. Heim links, Gast rechts: auswärts steht der Gegner vorn.
+    final divider = Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Container(
+        width: 1.5,
+        height: logoH * 0.7,
+        color: Colors.white.withValues(alpha: 0.5),
+      ),
+    );
     final Widget logosW = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        side(ownLogo),
-        if (oppLogo != null) ...[
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            child: Container(
-              width: 1.5,
-              height: logoH * 0.7,
-              color: Colors.white.withValues(alpha: 0.5),
-            ),
-          ),
-          side(oppLogo),
-        ],
-      ],
+      children: oppLogo == null
+          ? [side(ownLogo)]
+          : isHome
+          ? [side(ownLogo), divider, side(oppLogo)]
+          : [side(oppLogo), divider, side(ownLogo)],
     );
     final Widget headlineW = Text(
       posterHeadline,
