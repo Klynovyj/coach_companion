@@ -17,6 +17,8 @@ import '../services/fupa/fupa_dtos.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import '../widgets/text_look.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'photo_crop_screen.dart';
 
 /// Ausgabeformate für den Spieler des Monats.
@@ -130,6 +132,69 @@ class _PlayerOfMonthGraphicScreenState
     return t.hasAny ? t : null;
   }
 
+  /// Gestaltung der Texte (Schrift/Farbe/Schatten/Ausrichtung) je Text:
+  /// team · occasion · subtitle · honor. Auf dem Gerät gespeichert.
+  Map<String, TextLook> _looks = {};
+  static const _looksPref = 'pom_text_looks';
+
+  Future<void> _loadLooks() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final m = TextLook.decodeMap(p.getString(_looksPref));
+      if (mounted) setState(() => _looks = m);
+    } catch (_) {}
+  }
+
+  Future<void> _saveLooks() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setString(_looksPref, TextLook.encodeMap(_looks));
+    } catch (_) {}
+  }
+
+  /// „Aa"-Knopf neben einem Textfeld → Text gestalten.
+  Widget _lookButton(String key, String title, TextAlign defaultAlign) =>
+      IconButton.filledTonal(
+        tooltip: 'Text gestalten',
+        icon: const Icon(Icons.text_format),
+        onPressed: () => showTextLookSheet(
+          context,
+          title: title,
+          initial: _looks[key] ?? const TextLook(),
+          defaultAlign: defaultAlign,
+          palette: [
+            ('Weiß', Colors.white),
+            ('Gold', _gold),
+            ('Schwarz', Colors.black),
+            ('Dunkel', _ink),
+            ('Vereinsfarbe', _hex(_settings.gradTop)),
+            ('Rot', const Color(0xFFD32F2F)),
+          ],
+          onChanged: (l) {
+            setState(() => _looks = {..._looks, key: l});
+            _saveLooks();
+          },
+        ),
+      );
+
+  /// Textfeld + „Aa"-Knopf nebeneinander.
+  Widget _withLook(
+    Widget field,
+    String key,
+    String title, [
+    TextAlign defaultAlign = TextAlign.center,
+  ]) => Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Expanded(child: field),
+      const SizedBox(width: 8),
+      Padding(
+        padding: const EdgeInsets.only(top: 4),
+        child: _lookButton(key, title, defaultAlign),
+      ),
+    ],
+  );
+
   // Spieler (lokal veränderbar – z.B. neues Foto) und editierbarer Text.
   late Player _player = widget.player;
   String? _honorText;
@@ -148,6 +213,7 @@ class _PlayerOfMonthGraphicScreenState
   void initState() {
     super.initState();
     _load();
+    _loadLooks();
   }
 
   Future<void> _load() async {
@@ -308,26 +374,36 @@ class _PlayerOfMonthGraphicScreenState
                     ],
                   ),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: occasionCtrl,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Anlass-Titel',
-                      helperText: 'Große Überschrift der Grafik',
-                      border: OutlineInputBorder(),
+                  _withLook(
+                    TextField(
+                      controller: occasionCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      minLines: 1,
+                      maxLines: 3,
+                      decoration: const InputDecoration(
+                        labelText: 'Anlass-Titel',
+                        helperText: 'Große Überschrift der Grafik',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (v) => setState(() => _occasion = v),
                     ),
-                    onChanged: (v) => setState(() => _occasion = v),
+                    'occasion',
+                    'Anlass-Titel',
                   ),
                   const SizedBox(height: 10),
-                  TextField(
-                    controller: subtitleCtrl,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(
-                      labelText: 'Untertitel (optional)',
-                      hintText: _hasMonth ? _monthLabel : 'z.B. Garather SV',
-                      border: const OutlineInputBorder(),
+                  _withLook(
+                    TextField(
+                      controller: subtitleCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: InputDecoration(
+                        labelText: 'Untertitel (optional)',
+                        hintText: _hasMonth ? _monthLabel : 'z.B. Garather SV',
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (v) => setState(() => _subtitle = v),
                     ),
-                    onChanged: (v) => setState(() => _subtitle = v),
+                    'subtitle',
+                    'Untertitel',
                   ),
                   const Divider(height: 28),
                   // Live-Vorschau des Verlaufs (Post/Story-Hintergrund).
@@ -355,43 +431,52 @@ class _PlayerOfMonthGraphicScreenState
                     ),
                   ),
                   const SizedBox(height: 14),
-                  TextField(
-                    controller: titleCtrl,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: InputDecoration(
-                      labelText: 'Titel (Vereinsname)',
-                      hintText: widget.teamName,
-                      border: const OutlineInputBorder(),
-                    ),
-                    onChanged: (v) => apply(
-                      _settings.copyWith(
-                        title: v.trim(),
-                        clearTitle: v.trim().isEmpty,
+                  _withLook(
+                    TextField(
+                      controller: titleCtrl,
+                      textCapitalization: TextCapitalization.words,
+                      decoration: InputDecoration(
+                        labelText: 'Titel (Vereinsname)',
+                        hintText: widget.teamName,
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (v) => apply(
+                        _settings.copyWith(
+                          title: v.trim(),
+                          clearTitle: v.trim().isEmpty,
+                        ),
                       ),
                     ),
+                    'team',
+                    'Vereinsname',
+                    TextAlign.left,
                   ),
                   const SizedBox(height: 16),
                   // Urkunden-Text – jederzeit frei eingebbar.
-                  TextField(
-                    controller: honorCtrl,
-                    minLines: 2,
-                    maxLines: 4,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(
-                      labelText: 'Urkunden-Text',
-                      helperText: 'Erscheint auf der Urkunde unter dem Namen',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        tooltip: 'Auf Standardtext zurücksetzen',
-                        icon: const Icon(Icons.restart_alt),
-                        onPressed: () {
-                          honorCtrl.text = _defaultHonor;
-                          setState(() => _honorText = null);
-                          setSheet(() {});
-                        },
+                  _withLook(
+                    TextField(
+                      controller: honorCtrl,
+                      minLines: 2,
+                      maxLines: 4,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: 'Urkunden-Text',
+                        helperText: 'Erscheint auf der Urkunde unter dem Namen',
+                        border: const OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          tooltip: 'Auf Standardtext zurücksetzen',
+                          icon: const Icon(Icons.restart_alt),
+                          onPressed: () {
+                            honorCtrl.text = _defaultHonor;
+                            setState(() => _honorText = null);
+                            setSheet(() {});
+                          },
+                        ),
                       ),
+                      onChanged: (v) => setState(() => _honorText = v),
                     ),
-                    onChanged: (v) => setState(() => _honorText = v),
+                    'honor',
+                    'Urkunden-Text',
                   ),
                   const SizedBox(height: 16),
                   _rowWithImage(
@@ -801,6 +886,7 @@ class _PlayerOfMonthGraphicScreenState
             occasion: _occasion,
             subtitle: _subtitle,
             honorText: _effectiveHonor,
+            looks: _looks,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
             month: _month,
@@ -820,6 +906,7 @@ class _PlayerOfMonthGraphicScreenState
             teamLogo: _logo,
             occasion: _occasion,
             subtitle: _subtitle,
+            looks: _looks,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
             month: _month,
@@ -1041,6 +1128,7 @@ class _SocialGraphic extends StatelessWidget {
     required this.teamLogo,
     required this.occasion,
     required this.subtitle,
+    this.looks = const {},
     required this.avg,
     required this.ratedCount,
     required this.month,
@@ -1065,6 +1153,7 @@ class _SocialGraphic extends StatelessWidget {
   final String? teamLogo;
   final String occasion;
   final String subtitle;
+  final Map<String, TextLook> looks;
   final double? avg;
   final int ratedCount;
   final PlayerMonthStats month;
@@ -1180,6 +1269,8 @@ class _SocialGraphic extends StatelessWidget {
     );
   }
 
+  TextLook _look(String k) => looks[k] ?? const TextLook();
+
   Widget _header() {
     return Column(
       children: [
@@ -1194,11 +1285,15 @@ class _SocialGraphic extends StatelessWidget {
                 teamName.toUpperCase(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white.withValues(alpha: 0.9),
-                  fontSize: compact ? 12 : 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.5,
+                textAlign: _look('team').textAlign(TextAlign.left),
+                style: _look('team').apply(
+                  TextStyle(
+                    color: Colors.white.withValues(alpha: 0.9),
+                    fontSize: compact ? 12 : 14,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.5,
+                  ),
+                  glow: _gold,
                 ),
               ),
             ),
@@ -1208,27 +1303,37 @@ class _SocialGraphic extends StatelessWidget {
         FittedBox(
           fit: BoxFit.scaleDown,
           child: Column(
+            crossAxisAlignment: _look(
+              'occasion',
+            ).crossAxis(CrossAxisAlignment.center),
             children: [
               Text(
                 occasion.toUpperCase(),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _gold,
-                  fontSize: compact ? 22 : 26,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 1.5,
-                  height: 1.0,
+                textAlign: _look('occasion').textAlign(TextAlign.center),
+                style: _look('occasion').apply(
+                  TextStyle(
+                    color: _gold,
+                    fontSize: compact ? 22 : 26,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                    height: 1.0,
+                  ),
+                  glow: _gold,
                 ),
               ),
               if (subtitle.trim().isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(
                   subtitle.toUpperCase(),
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 2,
+                  textAlign: _look('subtitle').textAlign(TextAlign.center),
+                  style: _look('subtitle').apply(
+                    TextStyle(
+                      color: Colors.white.withValues(alpha: 0.85),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 2,
+                    ),
+                    glow: _gold,
                   ),
                 ),
               ],
@@ -1370,6 +1475,7 @@ class _UrkundeGraphic extends StatelessWidget {
     required this.occasion,
     required this.subtitle,
     required this.honorText,
+    this.looks = const {},
     required this.avg,
     required this.ratedCount,
     required this.month,
@@ -1390,6 +1496,9 @@ class _UrkundeGraphic extends StatelessWidget {
   final String occasion;
   final String subtitle;
   final String honorText;
+  final Map<String, TextLook> looks;
+
+  TextLook _look(String k) => looks[k] ?? const TextLook();
   final double? avg;
   final int ratedCount;
   final PlayerMonthStats month;
@@ -1456,12 +1565,15 @@ class _UrkundeGraphic extends StatelessWidget {
             Flexible(
               child: Text(
                 teamName.toUpperCase(),
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _ink.withValues(alpha: 0.75),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 1.5,
+                textAlign: _look('team').textAlign(TextAlign.center),
+                style: _look('team').apply(
+                  TextStyle(
+                    color: _ink.withValues(alpha: 0.75),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.5,
+                  ),
+                  glow: _gold,
                 ),
               ),
             ),
@@ -1471,13 +1583,16 @@ class _UrkundeGraphic extends StatelessWidget {
         // Eyebrow (Anlass) + kleines URKUNDE-Label.
         Text(
           occasion.toUpperCase(),
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: _gold,
-            fontSize: 20,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 3,
-            height: 1.05,
+          textAlign: _look('occasion').textAlign(TextAlign.center),
+          style: _look('occasion').apply(
+            const TextStyle(
+              color: _gold,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 3,
+              height: 1.05,
+            ),
+            glow: _gold,
           ),
         ),
         const SizedBox(height: 6),
@@ -1485,12 +1600,15 @@ class _UrkundeGraphic extends StatelessWidget {
           subtitle.trim().isEmpty
               ? 'URKUNDE'
               : 'URKUNDE · ${subtitle.toUpperCase()}',
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: _ink.withValues(alpha: 0.55),
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 2,
+          textAlign: _look('subtitle').textAlign(TextAlign.center),
+          style: _look('subtitle').apply(
+            TextStyle(
+              color: _ink.withValues(alpha: 0.55),
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 2,
+            ),
+            glow: _gold,
           ),
         ),
         const SizedBox(height: 20),
@@ -1511,11 +1629,14 @@ class _UrkundeGraphic extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 6),
           child: Text(
             honorText,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: _ink.withValues(alpha: 0.72),
-              fontSize: 12.5,
-              height: 1.45,
+            textAlign: _look('honor').textAlign(TextAlign.center),
+            style: _look('honor').apply(
+              TextStyle(
+                color: _ink.withValues(alpha: 0.72),
+                fontSize: 12.5,
+                height: 1.45,
+              ),
+              glow: _gold,
             ),
           ),
         ),

@@ -27,6 +27,7 @@ import '../state/app_state.dart';
 import '../widgets/player_picker_page.dart';
 import '../widgets/logo_chip.dart';
 import '../widgets/team_logo.dart';
+import '../widgets/text_look.dart';
 import 'photo_editor_screen.dart';
 
 /// Globale Bildkorrektur („Profi-Finish") über der fertigen Grafik: wirkt nur
@@ -562,6 +563,15 @@ const List<String> _kSponsorTextIds = [
   'sponsortext',
   'std_sponsor_text',
   'std_ft_sponsor_text',
+];
+
+/// Feste Texte mit vollem Text-Menü (Schrift/Farbe/Schatten/Ausrichtung):
+/// Poster-Titel, Überschrift Startelf/Ergebnis, ENDSTAND-Titel, Datumszeile.
+const List<String> _kStyledFixedTextIds = [
+  'headline',
+  'std_title',
+  'std_ft_title',
+  'std_info',
 ];
 
 /// Textfarben für eigene Textfelder (key → Anzeigename).
@@ -1574,6 +1584,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     return m;
   }
+
   // Ergebnis-Grafik: 'std' (Standard) | 'photo' (ENDSTAND mit Foto oben).
   String _resultLayout = 'std';
   bool get _ftLayout => widget.isResult && _resultLayout == 'photo';
@@ -1617,6 +1628,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   final Map<String, Map<String, String>> _textColorF = {};
   // Schatten je Text: none | soft | strong | outline | glow.
   final Map<String, Map<String, String>> _textShadowF = {};
+  // Ausrichtung der Zeilen je Text: left | center | right.
+  final Map<String, Map<String, String>> _textAlignF = {};
   int _posterOverlaySeq = 0; // eindeutige Overlay-IDs (global)
   int _textSeq = 0; // eindeutige Text-IDs (global)
   int _editorSeq = 0; // erzwingt Editor-Neuaufbau (z.B. „Datum auf Auto")
@@ -1647,6 +1660,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       for (final e in layout.entries) e.key: e.value.scale,
     };
   }
+
   Map<String, Offset> get _stdOff => _stdOffF.putIfAbsent(_designKey, () => {});
   Set<String> get _stdHidden =>
       _stdHiddenF.putIfAbsent(_designKey, () => <String>{});
@@ -1676,6 +1690,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _textColorF.putIfAbsent(_designKey, () => {});
   Map<String, String> get _textShadow =>
       _textShadowF.putIfAbsent(_designKey, () => {});
+  Map<String, String> get _textAlign =>
+      _textAlignF.putIfAbsent(_designKey, () => {});
   // Weiche Kanten je Bild-Element: Original-Bild + Stärke (0..100), je Layout.
   final Map<String, Map<String, String>> _imgOrigF = {};
   final Map<String, Map<String, double>> _imgFeatherF = {};
@@ -1801,6 +1817,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       default:
         return _defaultHeadline;
     }
+  }
+
+  /// Automatische Datumszeile der Startelf/Ergebnis-Grafik.
+  String get _autoStdInfoLine {
+    final parts = <String>[widget.isHome ? 'HEIMSPIEL' : 'AUSWÄRTSSPIEL'];
+    final d = widget.matchDate;
+    if (d != null) {
+      final local = d.toLocal();
+      parts.add(DateFormat('EEE, dd.MM.yyyy', 'de_DE').format(local));
+      if (local.hour != 0 || local.minute != 0) {
+        parts.add('${DateFormat('HH:mm', 'de_DE').format(local)} Uhr');
+      }
+    }
+    return parts.join('   ·   ');
   }
 
   /// Automatische Datum/Ort-Zeile (Vorbelegung für den editierbaren Datum-Text).
@@ -2336,6 +2366,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'textFont': strMap(_textFontF),
       'textColor': strMap(_textColorF),
       'textShadow': strMap(_textShadowF),
+      'textAlign': strMap(_textAlignF),
       // Original-Bilder NUR speichern, wenn sie sich vom angezeigten Bild
       // unterscheiden (nach Weiche Kanten/Schatten). Sonst wäre jedes Bild
       // doppelt drin – das machte Designs 8 MB groß und der Cloud-Upload
@@ -2574,6 +2605,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     fillStr(_textFontF, m['textFont']);
     fillStr(_textColorF, m['textColor']);
     fillStr(_textShadowF, m['textShadow']);
+    fillStr(_textAlignF, m['textAlign']);
     fillStr(_imgOrigF, m['imgOrig']);
     // Nicht mitgespeicherte Originale (= unverändertes Bild) wieder ergänzen,
     // damit Weiche Kanten/Schatten weiterhin vom Original aus rechnen.
@@ -5188,6 +5220,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     showOtherSponsors: _showOtherSponsors,
     mainSponsorMode: _mainSponsorMode,
     posterTextShadow: Map.of(_textShadow),
+    posterTextAlign: Map.of(_textAlign),
     posterTexts: {
       for (final id in _textIds)
         id: (
@@ -5206,6 +5239,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           font: _textFont['info'] ?? 'standard',
           color: _textColor['info'] ?? 'accent',
         ),
+      // Titel/Überschrift/Datum (feste Teile) mit eigener Schrift/Farbe.
+      for (final id in _kStyledFixedTextIds)
+        if (_textContent.containsKey(id) ||
+            _textFont.containsKey(id) ||
+            _textColor.containsKey(id))
+          id: (
+            text: _textContent[id] ?? '',
+            // Datum ohne eigene Schrift: Standardschrift (nicht Poster-Font).
+            font:
+                _textFont[id] ?? (id == 'std_info' ? 'standard' : _posterFont),
+            color: _textColor[id] ?? 'white',
+          ),
       // „Präsentiert von"-Texte (Poster + feste Teile) mit eigenem Inhalt/Stil.
       for (final id in _kSponsorTextIds)
         if (_textContent.containsKey(id) ||
@@ -5243,6 +5288,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   }) {
     var tab = 0; // 0 = Stil, 1 = Lage
     final delLabel = id.startsWith('text_') ? 'Text löschen' : 'Ausblenden';
+    // Vereinsname geändert → beim Schließen teamweit speichern.
+    var titleDirty = false;
+    final isHeadline =
+        id == 'headline' || id == 'std_title' || id == 'std_ft_title';
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -5320,7 +5369,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           );
 
           // ---------------------------------------------------- Stil
-          final curFont = _textFont[id] ?? 'standard';
+          final curFont =
+              _textFont[id] ?? (isHeadline ? _posterFont : 'standard');
           final fonts = hScroll([
             for (final e in _kPosterFonts.entries)
               ChoiceChip(
@@ -5381,8 +5431,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 () => apply(() => _textColor[id] = e.key),
                 e.value,
               ),
-            if (isCustom)
-              circle(_hex(curColor), true, () {}, 'Eigene Farbe'),
+            if (isCustom) circle(_hex(curColor), true, () {}, 'Eigene Farbe'),
             Tooltip(
               message: 'Farbe wählen',
               child: InkWell(
@@ -5422,6 +5471,36 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             'outline': 'Kontur',
             'glow': 'Leuchten',
           };
+          final defAlign = id == 'std_title' ? 'left' : 'center';
+          final curAlign = _textAlign[id] ?? defAlign;
+          final alignRow = SegmentedButton<String>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: 'left',
+                icon: Icon(Icons.format_align_left),
+                tooltip: 'Linksbündig',
+              ),
+              ButtonSegment(
+                value: 'center',
+                icon: Icon(Icons.format_align_center),
+                tooltip: 'Zentriert',
+              ),
+              ButtonSegment(
+                value: 'right',
+                icon: Icon(Icons.format_align_right),
+                tooltip: 'Rechtsbündig',
+              ),
+            ],
+            selected: {curAlign},
+            onSelectionChanged: (v) => apply(() {
+              if (v.first == defAlign) {
+                _textAlign.remove(id);
+              } else {
+                _textAlign[id] = v.first;
+              }
+            }),
+          );
           final curShadow = _textShadow[id] ?? 'none';
           final shadows = hScroll([
             for (final e in shadowKinds.entries)
@@ -5509,15 +5588,60 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           );
 
           // Automatik-/Standard-Text wiederherstellen (Datum, „Präsentiert von").
-          final VoidCallback? restore = id == 'info' || isSponsorText
+          final VoidCallback? restore =
+              id == 'info' || isSponsorText || id == 'std_info'
               ? () => apply(() {
                   _textContent.remove(id);
                   _textFont.remove(id);
                   _textColor.remove(id);
                   _textShadow.remove(id);
+                  _textAlign.remove(id);
                   _editorSeq++; // Feld mit Standard-Text neu aufbauen
                 })
+              : isHeadline
+              ? () => apply(() {
+                  _annHeadMode = 'spieltag';
+                  _annHeadText = '';
+                  _editorSeq++;
+                })
               : null;
+          InputDecoration fieldDeco(String? label, {bool withRestore = true}) =>
+              InputDecoration(
+                isDense: true,
+                filled: true,
+                labelText: label,
+                hintText: label == null ? 'Text' : null,
+                helperText: 'Zeilenumbruch nur mit Enter',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide.none,
+                ),
+                suffixIcon: restore == null || !withRestore
+                    ? null
+                    : IconButton(
+                        tooltip: id == 'info' || id == 'std_info'
+                            ? 'Automatisches Datum'
+                            : 'Standardtext',
+                        icon: const Icon(Icons.restore),
+                        onPressed: restore,
+                      ),
+              );
+          final Widget headlineField = TextFormField(
+            key: ValueKey('sheethead_${id}_$_editorSeq'),
+            initialValue: _annHeadMode == 'custom'
+                ? _annHeadText
+                : _posterHeadline,
+            minLines: 1,
+            maxLines: 3,
+            keyboardType: TextInputType.multiline,
+            textCapitalization: TextCapitalization.characters,
+            style: const TextStyle(fontSize: 16),
+            decoration: fieldDeco('Überschrift'),
+            onChanged: (v) => apply(() {
+              _annHeadMode = 'custom';
+              _annHeadText = v;
+            }),
+          );
 
           return SafeArea(
             child: Padding(
@@ -5556,38 +5680,45 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         ),
                       ],
                     ),
-                    TextFormField(
-                      key: ValueKey('sheettxt_${id}_$_editorSeq'),
-                      initialValue: id == 'info'
-                          ? (_textContent['info'] ?? _autoInfoLine)
-                          : isSponsorText
-                          ? (_textContent[id] ?? _sponsorTextDefault(id))
-                          : (_textContent[id] ?? ''),
-                      minLines: 1,
-                      maxLines: 4,
-                      keyboardType: TextInputType.multiline,
-                      style: const TextStyle(fontSize: 16),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        filled: true,
-                        hintText: 'Text',
-                        helperText: 'Zeilenumbruch nur mit Enter',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide.none,
-                        ),
-                        suffixIcon: restore == null
-                            ? null
-                            : IconButton(
-                                tooltip: id == 'info'
-                                    ? 'Automatisches Datum'
-                                    : 'Standardtext',
-                                icon: const Icon(Icons.restore),
-                                onPressed: restore,
-                              ),
+                    if (id == 'std_title') ...[
+                      TextFormField(
+                        initialValue: _title,
+                        textCapitalization: TextCapitalization.characters,
+                        style: const TextStyle(fontSize: 16),
+                        decoration: fieldDeco(
+                          'Vereinsname (gilt für alle Grafiken)',
+                          withRestore: false,
+                        ).copyWith(helperText: null),
+                        onChanged: (v) {
+                          titleDirty = true;
+                          apply(
+                            () => _settings = v.trim().isEmpty
+                                ? _settings.copyWith(clearTitle: true)
+                                : _settings.copyWith(title: v.trim()),
+                          );
+                        },
                       ),
-                      onChanged: (v) => apply(() => _textContent[id] = v),
-                    ),
+                      const SizedBox(height: 8),
+                      headlineField,
+                    ] else if (isHeadline)
+                      headlineField
+                    else
+                      TextFormField(
+                        key: ValueKey('sheettxt_${id}_$_editorSeq'),
+                        initialValue: id == 'info'
+                            ? (_textContent['info'] ?? _autoInfoLine)
+                            : id == 'std_info'
+                            ? (_textContent['std_info'] ?? _autoStdInfoLine)
+                            : isSponsorText
+                            ? (_textContent[id] ?? _sponsorTextDefault(id))
+                            : (_textContent[id] ?? ''),
+                        minLines: 1,
+                        maxLines: 4,
+                        keyboardType: TextInputType.multiline,
+                        style: const TextStyle(fontSize: 16),
+                        decoration: fieldDeco(null),
+                        onChanged: (v) => apply(() => _textContent[id] = v),
+                      ),
                     const SizedBox(height: 10),
                     SegmentedButton<int>(
                       showSelectedIcon: false,
@@ -5607,6 +5738,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       onSelectionChanged: (v) => setSheet(() => tab = v.first),
                     ),
                     if (tab == 0) ...[
+                      section('Ausrichtung', alignRow),
                       section('Schrift', fonts),
                       section('Farbe', colors),
                       section('Schatten', shadows),
@@ -5619,7 +5751,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      if (titleDirty && mounted) {
+        context.read<AppState>().saveGraphicSettings(_settings);
+      }
+    });
   }
 
   /// Langdruck auf ein Element → Eigenschaften-Sheet (Größe, Drehung, Ebene,
@@ -5628,15 +5764,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     setState(() => _posterSel = id);
     final isImage = id == 'player' || id.startsWith('overlay_');
     final isSponsorText = _kSponsorTextIds.contains(id);
-    final isText = id.startsWith('text_') || id == 'info' || isSponsorText;
+    final isText =
+        id.startsWith('text_') ||
+        id == 'info' ||
+        isSponsorText ||
+        _kStyledFixedTextIds.contains(id);
     // Feste Teile (Ergebnis/Startelf) liegen im Layout – keine Ebenen-Reihenfolge.
     final isStd = id.startsWith('std_');
     if (isText) {
       _showTextProperties(id, isSponsorText: isSponsorText, isStd: isStd);
       return;
     }
-    // Vereinsname geändert → beim Schließen teamweit speichern (nicht je Taste).
-    var titleDirty = false;
     final delLabel = id == 'player'
         ? 'Spielerbild entfernen'
         : (id.startsWith('overlay_') || id.startsWith('text_'))
@@ -5746,66 +5884,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           _boxSize.remove(id); // gezogene Kastengröße
                         }),
                       ),
-                    // Überschrift-Objekt: Texte direkt hier bearbeiten.
-                    if (id == 'std_title' || id == 'std_ft_title') ...[
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        initialValue: _title,
-                        textCapitalization: TextCapitalization.characters,
-                        decoration: const InputDecoration(
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                          labelText: 'Vereinsname (gilt für alle Grafiken)',
-                        ),
-                        onChanged: (v) {
-                          titleDirty = true;
-                          apply(
-                            () => _settings = v.trim().isEmpty
-                                ? _settings.copyWith(clearTitle: true)
-                                : _settings.copyWith(title: v.trim()),
-                          );
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        initialValue: _posterHeadline,
-                        textCapitalization: TextCapitalization.characters,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: const OutlineInputBorder(),
-                          labelText: 'Überschrift (leer = $_defaultHeadline)',
-                        ),
-                        onChanged: (v) => apply(() {
-                          _annHeadMode = 'custom';
-                          _annHeadText = v;
-                        }),
-                      ),
-                      Row(
-                        children: [
-                          const Text(
-                            'Schrift:',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: DropdownButton<String>(
-                              isExpanded: true,
-                              isDense: true,
-                              value: _posterFont,
-                              items: [
-                                for (final e in _kPosterFonts.entries)
-                                  DropdownMenuItem(
-                                    value: e.key,
-                                    child: Text(e.value),
-                                  ),
-                              ],
-                              onChanged: (v) =>
-                                  apply(() => _posterFont = v ?? 'standard'),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
                     if (!isStd)
                       Row(
                         children: [
@@ -6000,11 +6078,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           );
         },
       ),
-    ).whenComplete(() {
-      if (titleDirty && mounted) {
-        context.read<AppState>().saveGraphicSettings(_settings);
-      }
-    });
+    );
   }
 
   /// Anzeigename eines Poster-Elements (für den Größe-Regler).
@@ -7422,6 +7496,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _textFontF.remove(k);
       _textColorF.remove(k);
       _textShadowF.remove(k);
+      _textAlignF.remove(k);
       _imgOrigF.remove(k);
       _imgFeatherF.remove(k);
       _imgInnerF.remove(k);
@@ -8114,6 +8189,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.mainSponsorMode = 'logo',
     this.posterTexts = const {},
     this.posterTextShadow = const {},
+    this.posterTextAlign = const {},
   });
 
   final String title;
@@ -8231,6 +8307,8 @@ class _StartelfGraphic extends StatelessWidget {
   final Map<String, ({String text, String font, String color})> posterTexts;
   // Schatten-Stil je Text-Element (none/soft/strong/outline/glow).
   final Map<String, String> posterTextShadow;
+  // Ausrichtung der Zeilen je Text-Element (left/center/right).
+  final Map<String, String> posterTextAlign;
 
   /// Effektive Akzentfarbe (Weiß, wenn nichts gesetzt).
   Color get _accent => accent ?? Colors.white;
@@ -8258,49 +8336,29 @@ class _StartelfGraphic extends StatelessWidget {
   TextStyle _shadowed(String id, TextStyle s) {
     final kind = posterTextShadow[id];
     if (kind == null || kind == 'none') return s;
-    final fs = s.fontSize ?? 20;
-    final List<Shadow> sh = switch (kind) {
-      'soft' => [
-        Shadow(
-          color: Colors.black.withValues(alpha: 0.6),
-          offset: Offset(0, fs * 0.06),
-          blurRadius: fs * 0.25,
-        ),
-      ],
-      'strong' => [
-        Shadow(
-          color: Colors.black.withValues(alpha: 0.9),
-          offset: Offset(fs * 0.07, fs * 0.09),
-          blurRadius: fs * 0.03,
-        ),
-        Shadow(
-          color: Colors.black.withValues(alpha: 0.55),
-          blurRadius: fs * 0.45,
-        ),
-      ],
-      'outline' => [
-        for (var a = 0; a < 360; a += 30)
-          Shadow(
-            color: Colors.black,
-            offset: Offset(
-              math.cos(a * math.pi / 180) * fs * 0.045,
-              math.sin(a * math.pi / 180) * fs * 0.045,
-            ),
-          ),
-      ],
-      'glow' => [
-        Shadow(
-          color: _brandBright.withValues(alpha: 0.95),
-          blurRadius: fs * 0.3,
-        ),
-        Shadow(
-          color: _brandBright.withValues(alpha: 0.75),
-          blurRadius: fs * 0.8,
-        ),
-      ],
-      _ => const <Shadow>[],
-    };
+    final sh = textShadowsFor(kind, s.fontSize ?? 20, _brandBright);
     return s.copyWith(shadows: [...?s.shadows, ...sh]);
+  }
+
+  /// Gewählte Zeilen-Ausrichtung eines Texts (Standard: [def]).
+  TextAlign _alignOf(String id, [TextAlign def = TextAlign.center]) =>
+      switch (posterTextAlign[id]) {
+        'left' => TextAlign.left,
+        'right' => TextAlign.right,
+        'center' => TextAlign.center,
+        _ => def,
+      };
+
+  /// Fester Text (Titel/Überschrift/Datum) mit Schrift/Farbe-Override und
+  /// Schatten; ohne Override [base] in der Poster-Schrift [defFont].
+  TextStyle _styledFixed(String id, TextStyle base, {String? defFont}) {
+    final o = posterTexts[id];
+    var st = o == null
+        ? base
+        : base.copyWith(color: _resolveTextColor(o.color));
+    final font = o?.font ?? defFont;
+    if (font != null) st = posterFontStyle(font, st);
+    return _shadowed(id, st);
   }
 
   /// Freier Text: bricht NUR an eigenen Zeilenumbrüchen (Enter) um, nie
@@ -8309,7 +8367,7 @@ class _StartelfGraphic extends StatelessWidget {
   Widget _freeText(String id, String text, TextStyle style) => UnconstrainedBox(
     child: Text(
       text,
-      textAlign: TextAlign.center,
+      textAlign: _alignOf(id),
       softWrap: false,
       style: _shadowed(id, style),
     ),
@@ -9007,8 +9065,7 @@ class _StartelfGraphic extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        if (first != null)
-          _logoChip(first, height: logoH, circle: logoCircle),
+        if (first != null) _logoChip(first, height: logoH, circle: logoCircle),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
           child: Text(
@@ -9406,16 +9463,24 @@ class _StartelfGraphic extends StatelessWidget {
         parts.add('${DateFormat('HH:mm', 'de_DE').format(local)} Uhr');
       }
     }
+    final o = posterTexts['std_info'];
+    final text = (o != null && o.text.trim().isNotEmpty)
+        ? o.text
+        : parts.join('   ·   ');
     return Text(
-      parts.join('   ·   '),
-      maxLines: 1,
+      text,
       softWrap: false,
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        color: Colors.white.withValues(alpha: 0.95),
-        fontSize: compact ? 9 : 14,
-        fontWeight: FontWeight.w800,
-        letterSpacing: 1.6,
+      textAlign: _alignOf('std_info'),
+      style: _styledFixed(
+        'std_info',
+        TextStyle(
+          color: Colors.white.withValues(alpha: 0.95),
+          fontSize: compact ? 9 : 14,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.6,
+        ),
+        // Ohne eigene Schrift bleibt die Standardschrift (nicht Poster-Font).
+        defFont: o?.font,
       ),
     );
   }
@@ -9755,7 +9820,14 @@ class _StartelfGraphic extends StatelessWidget {
             child: _stdEl(
               'std_title',
               Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: switch (_alignOf(
+                  'std_title',
+                  TextAlign.left,
+                )) {
+                  TextAlign.center => CrossAxisAlignment.center,
+                  TextAlign.right => CrossAxisAlignment.end,
+                  _ => CrossAxisAlignment.start,
+                },
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   // Vereinsname immer vollständig (notfalls verkleinert, nie „…").
@@ -9766,11 +9838,19 @@ class _StartelfGraphic extends StatelessWidget {
                       title.toUpperCase(),
                       maxLines: 1,
                       softWrap: false,
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: compact ? 13 : 17,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.5,
+                      // Vereinsname: Standardschrift, aber Farbe + Schatten
+                      // wie die Überschrift.
+                      style: _shadowed(
+                        'std_title',
+                        TextStyle(
+                          color: switch (posterTexts['std_title']) {
+                            final o? => _resolveTextColor(o.color),
+                            null => Colors.white,
+                          },
+                          fontSize: compact ? 13 : 17,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5,
+                        ),
                       ),
                     ),
                   ),
@@ -9782,10 +9862,11 @@ class _StartelfGraphic extends StatelessWidget {
                     child: _resultBand(
                       Text(
                         rubric,
-                        maxLines: 1,
                         softWrap: false,
-                        style: posterFontStyle(
-                          posterFont,
+                        textAlign: _alignOf('std_title', TextAlign.left),
+                        style: _styledFixed(
+                          'std_title',
+                          defFont: posterFont,
                           TextStyle(
                             color: Colors.white,
                             fontSize: compact ? 36 : 46,
@@ -10118,10 +10199,11 @@ class _StartelfGraphic extends StatelessWidget {
       child: _slantBand(
         Text(
           posterHeadline,
-          maxLines: 1,
           softWrap: false,
-          style: posterFontStyle(
-            posterFont,
+          textAlign: _alignOf('std_ft_title'),
+          style: _styledFixed(
+            'std_ft_title',
+            defFont: posterFont,
             TextStyle(
               color: Colors.white,
               fontSize: compact ? 34 : 50,
@@ -11099,12 +11181,11 @@ class _StartelfGraphic extends StatelessWidget {
     );
     final Widget headlineW = Text(
       posterHeadline,
-      maxLines: 1,
       softWrap: false,
       overflow: TextOverflow.visible,
-      textAlign: TextAlign.center,
-      style: posterFontStyle(
-        posterFont,
+      textAlign: _alignOf('headline'),
+      style: _styledFixed(
+        'headline',
         const TextStyle(
           color: Colors.white,
           fontSize: 58,
@@ -11112,6 +11193,7 @@ class _StartelfGraphic extends StatelessWidget {
           letterSpacing: 2,
           height: 1.0,
         ),
+        defFont: posterFont,
       ),
     );
     // Datum: eigener editierbarer Text (Override) ODER automatische Zeile;
