@@ -638,6 +638,9 @@ Uint8List downscaleForAi(Uint8List input) => _downscaleJpeg(input, 1280, 90);
 Uint8List downscaleForCutout(Uint8List input) =>
     _downscaleJpeg(input, 1024, 85);
 
+/// KI-Hintergrund kompakt speichern (Isolate): JPEG, längste Seite 1600 px.
+Uint8List _aiBgJpeg(Uint8List input) => _downscaleJpeg(input, 1600, 85);
+
 Uint8List _downscaleJpeg(Uint8List input, int maxSide, int quality) {
   final src = img.decodeImage(input);
   if (src == null) return input;
@@ -1771,11 +1774,26 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   // Hinzugefügte Fotos (für alle Grafiktypen), transient. Hintergrund ODER
   // Foto-Bereich oben; mehrere möglich.
   final List<_GraphicPhoto> _photos = [];
+
+  // KI-Hintergründe: Verlauf der letzten [_kMaxAiBgs] (neuester zuerst) und
+  // je Format die Auswahl (Index; null/fehlend = aus).
+  final List<String> _aiBgs = [];
+  final Map<String, int?> _aiBgSelF = {};
+  static const int _kMaxAiBgs = 5;
+
+  int? get _aiBgSel {
+    final i = _aiBgSelF[_designKey];
+    return i != null && i >= 0 && i < _aiBgs.length ? i : null;
+  }
+
   // Einzelnes Band-Foto: verschieben & zoomen (Pinch/Drag).
   final TransformationController _photoCtrl = TransformationController();
 
-  /// Wirksames Hintergrund-Foto (erstes mit Platzierung „Hintergrund").
+  /// Wirksames Hintergrund-Foto: eingeschalteter KI-Hintergrund, sonst das
+  /// erste Foto mit Platzierung „Hintergrund".
   String? get _photoBg {
+    final ai = _aiBgSel;
+    if (ai != null) return _aiBgs[ai];
     for (final p in _photos) {
       if (p.place == _PhotoPlace.background) return p.dataUrl;
     }
@@ -2369,6 +2387,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'textColor': strMap(_textColorF),
       'textShadow': strMap(_textShadowF),
       'textAlign': strMap(_textAlignF),
+      'aiBgs': _aiBgs,
+      'aiBgSel': {
+        for (final e in _aiBgSelF.entries)
+          if (e.value != null) e.key: e.value,
+      },
       // Original-Bilder NUR speichern, wenn sie sich vom angezeigten Bild
       // unterscheiden (nach Weiche Kanten/Schatten). Sonst wäre jedes Bild
       // doppelt drin – das machte Designs 8 MB groß und der Cloud-Upload
@@ -2631,6 +2654,33 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           orElse: () => _PhotoPlace.background,
         );
         _photos.add(_GraphicPhoto(url, place));
+      }
+    }
+    _aiBgs.clear();
+    _aiBgSelF.clear();
+    if (m['aiBgs'] is List) {
+      _aiBgs.addAll((m['aiBgs'] as List).whereType<String>().take(_kMaxAiBgs));
+    }
+    if (m['aiBgSel'] is Map) {
+      (m['aiBgSel'] as Map).forEach((k, v) {
+        if (v is int && v >= 0 && v < _aiBgs.length) {
+          _aiBgSelF[k.toString()] = v;
+        }
+      });
+    }
+    // Ältere Designs: KI-Hintergrund lag als PNG-Hintergrundfoto in _photos
+    // → in den Verlauf übernehmen (eingeschaltet wie bisher, alle Formate).
+    if (m['aiBgs'] == null) {
+      for (final ph in List<_GraphicPhoto>.from(_photos)) {
+        if (ph.place == _PhotoPlace.background &&
+            ph.dataUrl.startsWith('data:image/png')) {
+          _photos.remove(ph);
+          _aiBgs.insert(0, ph.dataUrl);
+          for (final k in const ['s', 'p']) {
+            _aiBgSelF[k] = 0;
+          }
+          break;
+        }
       }
     }
     fillDbl(_imgFeatherF, m['imgFeather']);
@@ -4163,21 +4213,24 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       }
       if (!mounted) return;
       if (wish.mode == 'background') {
-        setState(() {
-          _photos.removeWhere((p) => p.place == _PhotoPlace.background);
-          _photos.add(
-            _GraphicPhoto(
-              'data:image/png;base64,${base64Encode(out)}',
-              _PhotoPlace.background,
-            ),
-          );
-        });
+        // Kompakt als JPEG (PNG aus der KI wäre mehrere MB je Bild).
+        Uint8List jpg;
+        try {
+          jpg = await compute(_aiBgJpeg, out);
+        } catch (_) {
+          jpg = out;
+        }
+        if (!mounted) return;
+        final mime = jpg == out ? 'png' : 'jpeg';
+        setState(
+          () => _pushAiBg('data:image/$mime;base64,${base64Encode(jpg)}'),
+        );
         _refreshBgDark();
         messenger.showSnackBar(
           const SnackBar(
             content: Text(
-              'KI-Hintergrund gesetzt – teile die Grafik wie gewohnt. '
-              '(Entfernen über das Foto-Menü.)',
+              'KI-Hintergrund gesetzt. Ein-/ausschalten und frühere '
+              'Hintergründe unter „Hinzufügen & Hintergrund".',
             ),
             duration: Duration(seconds: 5),
           ),
@@ -6931,6 +6984,200 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     _ftCtrl.value = Matrix4.identity();
   }
 
+  /// Bildleiste „KI-Hintergrund": Aus + die letzten KI-Hintergründe; Antippen
+  /// schaltet für das aktuelle Format um, ✕ löscht einen aus dem Verlauf.
+  Widget _aiBgStrip(BuildContext ctx, void Function(VoidCallback) setSheet) {
+    final sel = _aiBgSel;
+    final scheme = Theme.of(ctx).colorScheme;
+    final aspect = _cw / _ch;
+    const h = 92.0;
+    final w = h * aspect;
+    Widget tile({
+      required bool selected,
+      required Widget child,
+      required VoidCallback onTap,
+      VoidCallback? onDelete,
+    }) => Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GestureDetector(
+            onTap: onTap,
+            child: Container(
+              width: w,
+              height: h,
+              clipBehavior: Clip.antiAlias,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: selected ? scheme.primary : Colors.black26,
+                  width: selected ? 3 : 1,
+                ),
+              ),
+              child: child,
+            ),
+          ),
+          if (onDelete != null)
+            Positioned(
+              right: -6,
+              top: -6,
+              child: InkWell(
+                onTap: onDelete,
+                customBorder: const CircleBorder(),
+                child: Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: const BoxDecoration(
+                    color: Colors.black54,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close, size: 14, color: Colors.white),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+
+    void select(int? i) {
+      setState(() => _aiBgSelF[_designKey] = i);
+      setSheet(() {});
+      _refreshBgDark();
+    }
+
+    Future<void> delete(int i) async {
+      final ok = await showDialog<bool>(
+        context: ctx,
+        builder: (dctx) => AlertDialog(
+          title: const Text('KI-Hintergrund löschen?'),
+          content: const Text(
+            'Er verschwindet aus dem Verlauf (in Story und Post).',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dctx, false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dctx, true),
+              child: const Text('Löschen'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+      setState(() => _removeAiBg(i));
+      setSheet(() {});
+      _refreshBgDark();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'KI-Hintergrund (${_story ? 'Story' : 'Post'})',
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 2),
+        const Text(
+          'Antippen schaltet um – „Aus" zeigt den normalen Hintergrund. '
+          'Die letzten 5 bleiben gespeichert.',
+          style: TextStyle(fontSize: 12),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: h + 8,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.only(top: 6, right: 6),
+            children: [
+              tile(
+                selected: sel == null,
+                onTap: () => select(null),
+                child: ColoredBox(
+                  color: scheme.surfaceContainerHighest,
+                  child: const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.hide_image_outlined),
+                        SizedBox(height: 2),
+                        Text('Aus', style: TextStyle(fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              for (var i = 0; i < _aiBgs.length; i++)
+                tile(
+                  selected: sel == i,
+                  onTap: () => select(i),
+                  onDelete: () => delete(i),
+                  child: Image.memory(
+                    TeamLogo.decode(_aiBgs[i]) ?? Uint8List(0),
+                    fit: BoxFit.cover,
+                    gaplessPlayback: true,
+                    errorBuilder: (_, _, _) => const Icon(Icons.broken_image),
+                  ),
+                ),
+              if (context.read<AppState>().canAiImage)
+                tile(
+                  selected: false,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _aiEdit();
+                  },
+                  child: ColoredBox(
+                    color: scheme.primaryContainer,
+                    child: const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.auto_awesome),
+                          SizedBox(height: 2),
+                          Text(
+                            'Neu mit KI',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Neuen KI-Hintergrund vorne in den Verlauf (max. 5) und fürs aktuelle
+  /// Format einschalten. Auswahlen anderer Formate rücken mit.
+  void _pushAiBg(String url) {
+    _aiBgs.insert(0, url);
+    for (final k in _aiBgSelF.keys.toList()) {
+      final v = _aiBgSelF[k];
+      if (v != null) _aiBgSelF[k] = v + 1;
+    }
+    while (_aiBgs.length > _kMaxAiBgs) {
+      final gone = _aiBgs.length - 1;
+      _aiBgs.removeLast();
+      _aiBgSelF.updateAll((_, v) => v == gone ? null : v);
+    }
+    _aiBgSelF[_designKey] = 0;
+  }
+
+  /// KI-Hintergrund [i] aus dem Verlauf löschen (Auswahlen anpassen).
+  void _removeAiBg(int i) {
+    if (i < 0 || i >= _aiBgs.length) return;
+    _aiBgs.removeAt(i);
+    _aiBgSelF.updateAll(
+      (_, v) => v == null || v == i ? null : (v > i ? v - 1 : v),
+    );
+  }
+
   void _showBackgroundMenu() {
     showModalBottomSheet<void>(
       context: context,
@@ -6950,6 +7197,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (_aiBgs.isNotEmpty) ...[
+                    _aiBgStrip(ctx, setSheet),
+                    const Divider(height: 24),
+                  ],
                   const Text(
                     'Hinzufügen',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
