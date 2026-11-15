@@ -7,6 +7,7 @@ import '../models/player.dart';
 import '../screens/peer_links_screen.dart';
 import '../services/peer_rating_service.dart';
 import '../state/app_state.dart';
+import 'star_rating.dart';
 
 /// Karte im Spieler-Detail (nur Trainer): persönlicher Bewertungs-Link und
 /// Verlauf der Selbsteinschätzung aus der Web-Bewertung.
@@ -169,12 +170,7 @@ class _PeerPlayerCardState extends State<PeerPlayerCard> {
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
               ),
-              for (var i = 1; i <= 5; i++)
-                Icon(
-                  i <= stars ? Icons.star : Icons.star_border,
-                  size: 16,
-                  color: Colors.amber.shade700,
-                ),
+              StarDisplay(value: stars, size: 16),
             ],
           ),
           if (note.isNotEmpty) Text(note),

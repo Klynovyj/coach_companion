@@ -10,6 +10,7 @@ import '../models/player_rating.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 import 'rating_summary_screen.dart';
+import '../widgets/star_rating.dart';
 
 /// Bewertungs-Screen nach dem Spiel: 1–5 Sterne je Spieler **pro Benutzer** +
 /// eine Spiel-Gesamtnote. Jeder bewertet eigenständig; angezeigt wird der
@@ -95,12 +96,12 @@ class _RatingScreenState extends State<RatingScreen> {
     });
   }
 
-  Future<void> _setStars(Player p, int stars) async {
+  Future<void> _setStars(Player p, double stars) async {
     if (!_canEdit) return;
     await context.read<AppState>().setRating(
       matchId: widget.matchId,
       playerId: p.id,
-      rating: stars.toDouble(),
+      rating: stars,
     );
     await _load();
   }
@@ -110,12 +111,9 @@ class _RatingScreenState extends State<RatingScreen> {
     await _load();
   }
 
-  Future<void> _setMatchStars(int stars) async {
+  Future<void> _setMatchStars(double stars) async {
     if (!_canEdit) return;
-    await context.read<AppState>().setMatchRating(
-      widget.matchId,
-      stars.toDouble(),
-    );
+    await context.read<AppState>().setMatchRating(widget.matchId, stars);
     await _load();
   }
 
@@ -318,7 +316,7 @@ class _RatingScreenState extends State<RatingScreen> {
   }
 
   Widget _matchNoteCard(BuildContext context) {
-    final my = _myMatch?.rating?.round() ?? 0;
+    final my = _myMatch?.rating ?? 0;
     final myNote = (_myMatch?.note ?? '').trim();
     final (avg, rated, abs) = _summary;
     final sub = StringBuffer();
@@ -344,7 +342,7 @@ class _RatingScreenState extends State<RatingScreen> {
                 ),
               ],
             ),
-            _StarRow(
+            StarRating(
               value: my,
               enabled: _canEdit,
               onTap: (s) => _setMatchStars(s),
@@ -391,7 +389,7 @@ class _RatingScreenState extends State<RatingScreen> {
 
   Widget _playerRow(BuildContext context, Player p) {
     final r = _mine[p.id];
-    final myStars = r?.rating.round() ?? 0;
+    final myStars = r?.rating ?? 0;
     final a = _avg[p.id];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -422,7 +420,7 @@ class _RatingScreenState extends State<RatingScreen> {
                     ],
                   ],
                 ),
-                _StarRow(
+                StarRating(
                   value: myStars,
                   enabled: _canEdit,
                   onTap: (s) => _setStars(p, s),
@@ -456,38 +454,6 @@ class _RatingScreenState extends State<RatingScreen> {
             ),
         ],
       ),
-    );
-  }
-}
-
-/// Reihe aus 5 antippbaren Sternen.
-class _StarRow extends StatelessWidget {
-  const _StarRow({
-    required this.value,
-    required this.onTap,
-    this.enabled = true,
-  });
-  final int value;
-  final ValueChanged<int> onTap;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        for (var i = 1; i <= 5; i++)
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 34, minHeight: 34),
-            icon: Icon(
-              i <= value ? Icons.star : Icons.star_border,
-              color: enabled ? Colors.amber.shade700 : Colors.grey,
-              size: 26,
-            ),
-            onPressed: enabled ? () => onTap(i) : null,
-          ),
-      ],
     );
   }
 }

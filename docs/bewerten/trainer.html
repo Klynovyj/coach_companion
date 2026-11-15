@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=6">
 </head>
 <body>
 <div class="wrap">
@@ -28,7 +28,7 @@
   </div>
 </div>
 
-<script src="common.js?v=5"></script>
+<script src="common.js?v=6"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let info = null;     // {name, team, rounds}
@@ -239,8 +239,8 @@ async function select(matchId) {
   if (m.logos) logos = m.logos;
   const mine = d.mine;
   form = mine
-    ? { stars: Object.fromEntries(Object.entries(mine.stars || {}).map(([k, v]) => [k, Math.round(v)])),
-        match_stars: mine.match_stars != null ? Math.round(mine.match_stars) : null, note: mine.note || '', abstained: !!mine.abstained,
+    ? { stars: Object.fromEntries(Object.entries(mine.stars || {}).map(([k, v]) => [k, Number(v)])),
+        match_stars: mine.match_stars != null ? Number(mine.match_stars) : null, note: mine.note || '', abstained: !!mine.abstained,
         motm_player_id: mine.motm_player_id || null }
     : { stars: {}, match_stars: null, note: '', abstained: false, motm_player_id: null };
   await loadMonth();

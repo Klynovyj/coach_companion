@@ -2172,7 +2172,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
     GameMatch m,
     PlayerRating? rating,
   ) {
-    final stars = rating?.rating.round() ?? 0;
+    final stars = rating?.rating ?? 0;
     final note = rating?.note;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -2203,7 +2203,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                 onTap: (s) => context.read<AppState>().setRating(
                   matchId: m.id,
                   playerId: _player.id,
-                  rating: s.toDouble(),
+                  rating: s,
                 ),
               ),
               if (stars > 0)

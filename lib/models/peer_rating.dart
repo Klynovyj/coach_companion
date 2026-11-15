@@ -43,12 +43,12 @@ class PeerSelf {
   const PeerSelf({required this.playerId, this.stars, this.note});
 
   final String playerId;
-  final int? stars;
+  final double? stars;
   final String? note;
 
   factory PeerSelf.fromJson(Map<String, dynamic> m) => PeerSelf(
     playerId: m['id'].toString(),
-    stars: (m['stars'] as num?)?.toInt(),
+    stars: (m['stars'] as num?)?.toDouble(),
     note: m['note'] as String?,
   );
 }
@@ -149,14 +149,14 @@ class PeerSelfEntry {
   final String matchId;
   final String title;
   final DateTime? matchDate;
-  final int? stars;
+  final double? stars;
   final String? note;
 
   factory PeerSelfEntry.fromJson(Map<String, dynamic> m) => PeerSelfEntry(
     matchId: m['match_id'].toString(),
     title: (m['title'] as String?) ?? '',
     matchDate: DateTime.tryParse(m['match_date']?.toString() ?? ''),
-    stars: (m['stars'] as num?)?.toInt(),
+    stars: (m['stars'] as num?)?.toDouble(),
     note: (m['note'] as String?)?.trim(),
   );
 }

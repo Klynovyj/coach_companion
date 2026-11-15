@@ -77,7 +77,7 @@ const CC = (() => {
     if (!e) return { cls: 'miss', text: '' };
     if (e.done) {
       if (e.abstained) return { cls: 'ok', text: '✓ nicht da' };
-      const st = e.match_stars ? ' ' + '★'.repeat(Math.round(e.match_stars)) : '';
+      const st = e.match_stars ? ' ' + starText(e.match_stars) : '';
       return { cls: 'ok', text: `✓ bewertet${st}` };
     }
     return e.open ? { cls: 'todo', text: 'offen' } : { cls: 'miss', text: 'verpasst' };
@@ -92,8 +92,8 @@ const CC = (() => {
       const opp = parts[1] ? (parts[1] === usName ? parts[2] : parts[1]) : e.title;
       const s = entryStatus(e);
       const det = e.done ? [
-        e.match_stars ? `Spiel ${'★'.repeat(e.match_stars)}` : null,
-        e.self_stars ? `Du ${'★'.repeat(e.self_stars)}` : null,
+        e.match_stars ? `Spiel ${starText(e.match_stars)}` : null,
+        e.self_stars ? `Du ${starText(e.self_stars)}` : null,
         e.total ? `${e.rated}/${e.total} Mitspieler` : null,
         e.motm ? '👑' : null,
       ].filter(Boolean).join(' · ') : fmtDate(e.match_date);
@@ -177,14 +177,25 @@ const CC = (() => {
     }).join('') + '</div>';
   }
 
+  /** Klasse des i-ten Sterns für Wert v: voll, halb oder leer. */
+  const starClass = (i, v) => (v == null ? '' : v >= i ? 'on' : v >= i - 0.5 ? 'half' : '');
+  const half = (v) => Math.max(0, Math.min(5, Math.round((Number(v) || 0) * 2) / 2));
+
   function starsInput(key, value, cls) {
     let h = `<div class="stars ${cls || ''}" data-key="${esc(key)}" role="radiogroup">`;
-    for (let i = 1; i <= 5; i++) h += `<button type="button" data-v="${i}" class="${value >= i ? 'on' : ''}" aria-label="${i} Sterne">★</button>`;
+    for (let i = 1; i <= 5; i++) h += `<button type="button" data-v="${i}" class="${starClass(i, value)}" aria-label="${i} Sterne (links tippen = ${i - 0.5})">★</button>`;
     return h + '</div>';
   }
+  /** Anzeige mit halben Sternen (Schnitte werden auf 0,5 gerundet). */
   function stars(v) {
-    const n = Math.max(0, Math.min(5, Math.round(v || 0)));
-    return `<span class="st">${'★'.repeat(n)}<i>${'★'.repeat(5 - n)}</i></span>`;
+    const n = half(v);
+    const full = Math.floor(n), hs = n - full >= 0.5;
+    return `<span class="st">${'★'.repeat(full)}${hs ? '<b class="hs">★</b>' : ''}<i>${'★'.repeat(5 - full - (hs ? 1 : 0))}</i></span>`;
+  }
+  /** Kurztext, z. B. „★★★½“. */
+  function starText(v) {
+    const n = half(v);
+    return '★'.repeat(Math.floor(n)) + (n % 1 ? '½' : '');
   }
 
   /** Sterne-Klicks binden; onChange(key, value|null). Nochmal tippen nimmt zurück. */
@@ -193,10 +204,17 @@ const CC = (() => {
       el.addEventListener('click', (e) => {
         const b = e.target.closest('button');
         if (!b) return;
-        let v = Number(b.dataset.v);
+        // Linke Sternhälfte = halber Stern, rechte = ganzer (Tastatur: ganz).
+        const i = Number(b.dataset.v);
+        const rect = b.getBoundingClientRect();
+        let v = e.detail !== 0 && e.clientX - rect.left < rect.width / 2 ? i - 0.5 : i;
         if (getValue(el.dataset.key) === v) v = null;
         onChange(el.dataset.key, v);
-        el.querySelectorAll('button').forEach((x) => x.classList.toggle('on', v != null && Number(x.dataset.v) <= v));
+        el.querySelectorAll('button').forEach((x) => {
+          x.classList.remove('on', 'half');
+          const c = starClass(Number(x.dataset.v), v);
+          if (c) x.classList.add(c);
+        });
         b.classList.add('pop');
         setTimeout(() => b.classList.remove('pop'), 140);
         const row = el.closest('.prow');
@@ -250,6 +268,6 @@ const CC = (() => {
     el.innerHTML = `<div class="card msg"><div class="ic">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
   }
 
-  return { monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
+  return { starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
     playerRow, motmTiles, podium, gradeTiles, bars, sortPlayers, message, safeImg };
 })();

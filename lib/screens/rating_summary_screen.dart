@@ -15,6 +15,7 @@ import '../widgets/player_avatar.dart';
 import '../widgets/trainer_mention_field.dart';
 import 'peer_links_screen.dart';
 import 'rating_screen.dart';
+import '../widgets/star_rating.dart';
 
 /// Auswertung eines Spiels: Gesamtnoten der Trainer (+ Schnitt), ihre
 /// Spielberichte und der Spieler-Schnitt. Rein lesend.
@@ -98,10 +99,10 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
     return (n != null && n.isNotEmpty) ? n : 'Trainer';
   }
 
-  Future<void> _setMyStars(int stars) async {
+  Future<void> _setMyStars(double stars) async {
     await context.read<AppState>().setMatchRating(
       widget.matchId,
-      stars == 0 ? null : stars.toDouble(),
+      stars == 0 ? null : stars,
     );
     await _load();
   }
@@ -162,7 +163,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
   /// Karte „Meine Bewertung": eigene Note (Sterne) + Bericht inline bearbeiten,
   /// plus Button zur vollen Bewertung (Spieler einzeln). Speichert geteilt.
   Widget _myRatingCard(BuildContext context) {
-    final my = _myMatch?.rating?.round() ?? 0;
+    final my = _myMatch?.rating ?? 0;
     final myNote = (_myMatch?.note ?? '').trim();
     final scheme = Theme.of(context).colorScheme;
     return Card(
@@ -183,21 +184,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
             ),
             Row(
               children: [
-                for (var i = 1; i <= 5; i++)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 36,
-                      minHeight: 36,
-                    ),
-                    icon: Icon(
-                      i <= my ? Icons.star : Icons.star_border,
-                      color: Colors.amber.shade700,
-                      size: 28,
-                    ),
-                    onPressed: () => _setMyStars(i),
-                  ),
+                StarRating(value: my, size: 28, onTap: _setMyStars),
                 if (my > 0)
                   TextButton(
                     onPressed: () => _setMyStars(0),
@@ -380,7 +367,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
   );
 
   Widget _trainerRatingRow(BuildContext context, MatchRating r) {
-    final stars = r.rating?.round() ?? 0;
+    final stars = r.rating ?? 0;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       child: Row(
@@ -393,17 +380,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
           else if (stars == 0)
             const Text('keine Note', style: TextStyle(color: Colors.grey))
           else
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                for (var i = 1; i <= 5; i++)
-                  Icon(
-                    i <= stars ? Icons.star : Icons.star_border,
-                    size: 18,
-                    color: Colors.amber.shade700,
-                  ),
-              ],
-            ),
+            StarDisplay(value: stars),
         ],
       ),
     );
@@ -693,14 +670,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
                       Row(
                         children: [
                           Expanded(child: Text(_peerName(e.playerId))),
-                          for (var i = 1; i <= 5; i++)
-                            Icon(
-                              i <= (e.stars ?? 0)
-                                  ? Icons.star
-                                  : Icons.star_border,
-                              size: 15,
-                              color: Colors.amber.shade700,
-                            ),
+                          StarDisplay(value: e.stars ?? 0, size: 15),
                         ],
                       ),
                       if ((e.note ?? '').trim().isNotEmpty)
