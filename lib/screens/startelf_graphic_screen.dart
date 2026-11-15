@@ -10285,16 +10285,9 @@ class _StartelfGraphic extends StatelessWidget {
 
     final photoArea = ClipRect(
       child: photo == null
-          // Platzhalter ohne Foto: ruhiger Verlauf in den Vereinsfarben.
-          ? DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [gradTop, gradBottom],
-                ),
-              ),
-            )
+          // Platzhalter ohne Foto: der eingestellte Hintergrund (Verlauf mit
+          // Form/Muster bzw. Hintergrundbild).
+          ? _bgBase()
           : InteractiveViewer(
               transformationController: ftController,
               minScale: 0.5,
@@ -10369,10 +10362,11 @@ class _StartelfGraphic extends StatelessWidget {
         },
       ),
     );
-    final bottom = Stack(
-      fit: StackFit.expand,
-      children: [_bgBase(), bottomContent],
-    );
+    // Ohne Foto liegt EIN durchgehender Hintergrund unter allem (sonst
+    // entstünde an der Trennlinie eine Naht im Muster/Verlauf).
+    final bottom = photo == null
+        ? bottomContent
+        : Stack(fit: StackFit.expand, children: [_bgBase(), bottomContent]);
 
     final split = ftSplit.clamp(0.2, 0.85);
     final topFlex = (split * 1000).round();
@@ -10417,7 +10411,7 @@ class _StartelfGraphic extends StatelessWidget {
         ],
       );
     }
-    return Column(
+    final column = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
@@ -10425,25 +10419,26 @@ class _StartelfGraphic extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              photoArea,
+              if (photo != null) photoArea,
               // Foto läuft unten weich in den Hintergrund aus.
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: compact ? 40 : 90,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [gradTop.withValues(alpha: 0), gradTop],
+              if (photo != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: compact ? 40 : 90,
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [gradTop.withValues(alpha: 0), gradTop],
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
               // „Präsentiert von" oben rechts über dem Foto (lesbar auf Scrim).
               if (sponsorTop != null)
                 Positioned(top: pad * 0.6, right: pad * 0.6, child: sponsorTop),
@@ -10453,6 +10448,8 @@ class _StartelfGraphic extends StatelessWidget {
         Expanded(flex: 1000 - topFlex, child: bottom),
       ],
     );
+    if (photo != null) return column;
+    return Stack(fit: StackFit.expand, children: [_bgBase(), column]);
   }
 
   /// Unterer ENDSTAND-Block: Überschrift, Ergebnis-Balken, Torschützen,
