@@ -12,6 +12,7 @@ import '../services/peer_rating_service.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import '../widgets/team_logo.dart';
 import '../widgets/trainer_mention_field.dart';
 import 'peer_links_screen.dart';
 import 'rating_screen.dart';
@@ -43,6 +44,9 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
   bool _peerEnabled = false;
   PeerSummary? _peer;
   bool _peerPublished = false;
+
+  /// Einzelne Trainer-Stimmen (Cloud, nur Trainer); null = nicht verfügbar.
+  List<CoachVote>? _votes;
 
   @override
   void initState() {
@@ -76,6 +80,9 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
       }
       peer = await PeerRatingService.summary(widget.matchId);
     }
+    final votes = s.isTrainerHere && PeerRatingService.available
+        ? await PeerRatingService.coachVotes(widget.matchId)
+        : null;
     if (!mounted) return;
     setState(() {
       _match = match;
@@ -87,6 +94,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
       _names = names;
       _peerEnabled = peerEnabled;
       _peer = peer;
+      _votes = votes;
       _loading = false;
     });
   }
@@ -320,11 +328,19 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
             ),
           ),
           // Trainer-Noten
-          _sectionTitle(context, 'Noten der Trainer'),
-          if (ratings.isEmpty)
-            _hint('Noch keine Bewertungen abgegeben.')
-          else
-            for (final r in ratings) _trainerRatingRow(context, r),
+          if (_votes != null) ...[
+            _sectionTitle(context, 'Stimmen der Trainer'),
+            if (_votes!.isEmpty)
+              _hint('Noch keine Trainer-Stimmen.')
+            else
+              for (final v in _votes!) _coachVoteTile(context, v),
+          ] else ...[
+            _sectionTitle(context, 'Noten der Trainer'),
+            if (ratings.isEmpty)
+              _hint('Noch keine Bewertungen abgegeben.')
+            else
+              for (final r in ratings) _trainerRatingRow(context, r),
+          ],
           // Trainer-Berichte
           _sectionTitle(context, 'Spielberichte'),
           if (reports.isEmpty)
@@ -365,6 +381,103 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
     padding: const EdgeInsets.fromLTRB(4, 2, 4, 2),
     child: Text(t, style: const TextStyle(color: Colors.grey)),
   );
+
+  /// Aufklappbare Trainer-Stimme: Spielnote, Spieler des Spiels, Bericht,
+  /// aufgeklappt die Noten je Spieler.
+  Widget _coachVoteTile(BuildContext context, CoachVote v) {
+    final small = Theme.of(context).textTheme.bodySmall;
+    final photo = TeamLogo.decode(v.photo);
+    final me = CloudService.userId;
+    final name = v.raterId == me ? '${v.name} (du)' : v.name;
+    final motmName = v.motmPlayerId == null ? null : _peerName(v.motmPlayerId!);
+    final rated =
+        v.stars.entries.where((e) => _byId.containsKey(e.key)).toList()
+          ..sort((a, b) {
+            final pa = _byId[a.key]!, pb = _byId[b.key]!;
+            final an = pa.number ?? 9999, bn = pb.number ?? 9999;
+            return an != bn
+                ? an.compareTo(bn)
+                : pa.lastName.compareTo(pb.lastName);
+          });
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+          leading: CircleAvatar(
+            radius: 18,
+            backgroundImage: photo != null ? MemoryImage(photo) : null,
+            child: photo == null ? const Icon(Icons.sports, size: 18) : null,
+          ),
+          title: Text(
+            name,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          subtitle: Wrap(
+            spacing: 8,
+            runSpacing: 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (v.abstained)
+                Text('war nicht da', style: small?.copyWith(color: Colors.grey))
+              else if (v.matchStars != null)
+                StarDisplay(value: v.matchStars!, size: 15)
+              else
+                Text(
+                  'keine Spielnote',
+                  style: small?.copyWith(color: Colors.grey),
+                ),
+              if (motmName != null) Text('👑 $motmName', style: small),
+              if ((v.note ?? '').isNotEmpty) Text('📝 Bericht', style: small),
+              if (rated.isNotEmpty)
+                Text('${rated.length} Spieler', style: small),
+            ],
+          ),
+          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+          children: [
+            if ((v.note ?? '').isNotEmpty)
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Text(v.note!),
+                ),
+              ),
+            if (rated.isEmpty)
+              _hint('Keine Spielernoten.')
+            else
+              for (final e in rated)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      PlayerAvatar(player: _byId[e.key]!, radius: 13),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          _byId[e.key]!.fullName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      StarDisplay(value: e.value, size: 15),
+                      SizedBox(
+                        width: 30,
+                        child: Text(
+                          starNumber(e.value),
+                          textAlign: TextAlign.right,
+                          style: small,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _trainerRatingRow(BuildContext context, MatchRating r) {
     final stars = r.rating ?? 0;

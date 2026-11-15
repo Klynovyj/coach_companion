@@ -4,7 +4,12 @@ import 'package:provider/provider.dart';
 
 import '../models/enums.dart';
 import '../models/match.dart';
+import '../models/peer_rating.dart';
+import '../models/player.dart';
+import '../services/peer_rating_service.dart';
 import '../state/app_state.dart';
+import '../widgets/player_avatar.dart';
+import '../widgets/star_rating.dart';
 import '../widgets/team_logo.dart';
 import 'peer_links_screen.dart';
 import 'rating_report_screen.dart';
@@ -33,6 +38,10 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
   String? _ownLogo;
   bool _loading = true;
 
+  /// Abstimm-Übersicht aus der Cloud (nur Trainer im Cloud-Team).
+  Map<String, PeerOverview> _ov = {};
+  Map<String, Player> _players = {};
+
   _SortBy _sortBy = _SortBy.date;
   bool _desc = true; // true = absteigend (neueste/beste/höchste zuerst)
 
@@ -49,10 +58,21 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
     for (final m in matches) {
       _summaries[m.id] = await s.matchRatingSummary(m.id);
     }
+    var ov = <String, PeerOverview>{};
+    var players = <String, Player>{};
+    final teamId = s.activeCloudTeamId;
+    if (teamId != null && s.isTrainerHere) {
+      ov = await PeerRatingService.overview(teamId) ?? {};
+      if (ov.isNotEmpty) {
+        players = {for (final p in await s.playersOf(teamId)) p.id: p};
+      }
+    }
     if (!mounted) return;
     setState(() {
       _matches = matches;
       _ownLogo = s.ownTeam?.logoPath;
+      _ov = ov;
+      _players = players;
       _loading = false;
     });
   }
@@ -188,6 +208,63 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
     return 'U';
   }
 
+  /// Zweite Zeile: Mannschafts-Note, Spieler des Spiels, Abstimm-Stand.
+  Widget _voteLine(BuildContext context, PeerOverview o) {
+    final small = Theme.of(context).textTheme.bodySmall;
+    final hint = small?.copyWith(color: Theme.of(context).hintColor);
+    final motm = o.motmId != null ? _players[o.motmId] : null;
+    final until = o.closesAt != null
+        ? DateFormat('dd.MM.', 'de_DE').format(o.closesAt!.toLocal())
+        : null;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Wrap(
+        spacing: 10,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.groups,
+                size: 15,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+              const SizedBox(width: 3),
+              Text(
+                o.teamAvg == null
+                    ? 'Mannschaft –'
+                    : 'Mannschaft ${starNumber(o.teamAvg!)} (${o.teamN})',
+                style: small,
+              ),
+            ],
+          ),
+          if (o.motmId != null)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (motm != null)
+                  PlayerAvatar(player: motm, radius: 9)
+                else
+                  const Text('👑', style: TextStyle(fontSize: 12)),
+                const SizedBox(width: 4),
+                Text(
+                  '👑 ${motm?.lastName.isNotEmpty == true ? motm!.lastName : (o.motmName ?? '')} (${o.motmVotes})',
+                  style: small?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          Text(
+            '${o.coachDone}/${o.coachTotal} Trainer · ${o.voters}/${o.players} Spieler'
+            '${o.open && until != null ? ' · offen bis $until' : ''}',
+            style: hint,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _matchRow(BuildContext context, GameMatch m) {
     final (avg, rated, _) = _summaries[m.id] ?? (null, 0, 0);
     final finished = m.status == MatchStatus.finished;
@@ -263,6 +340,7 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
                       ),
                     ],
                   ),
+                  if (_ov[m.id] != null) _voteLine(context, _ov[m.id]!),
                 ],
               ),
             ),

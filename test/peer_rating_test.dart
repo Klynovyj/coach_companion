@@ -42,6 +42,45 @@ void main() {
     expect(m('', 'max@example.com', 'Jo', 'Li'), isFalse);
   });
 
+  test('PeerOverview und CoachVote fromJson', () {
+    final o = PeerOverview.fromJson({
+      'match_id': 'm1',
+      'open': true,
+      'closes_at': '2026-11-29T12:15:00Z',
+      'coach_avg': 3.5,
+      'coach_n': 2,
+      'coach_done': 2,
+      'coach_total': 3,
+      'team_avg': 3.8,
+      'team_n': 9,
+      'voters': 9,
+      'players': 13,
+      'motm': {'id': 'p1', 'name': 'Ben Kania', 'votes': 5},
+    });
+    expect(o.coachAvg, 3.5);
+    expect(o.coachDone, 2);
+    expect(o.coachTotal, 3);
+    expect(o.teamAvg, 3.8);
+    expect(o.motmId, 'p1');
+    expect(o.motmVotes, 5);
+    final none = PeerOverview.fromJson({'match_id': 'm2', 'open': false, 'motm': null});
+    expect(none.motmId, isNull);
+    expect(none.teamAvg, isNull);
+
+    final v = CoachVote.fromJson({
+      'rater_id': 'u1',
+      'name': 'Patrick Piel',
+      'match_stars': 3.5,
+      'abstained': false,
+      'note': 'Gut',
+      'motm_player_id': 'p1',
+      'stars': {'p1': 4.5, 'p2': 3},
+    });
+    expect(v.matchStars, 3.5);
+    expect(v.stars, {'p1': 4.5, 'p2': 3.0});
+    expect(v.motmPlayerId, 'p1');
+  });
+
   test('PeerSummary.fromJson: Schnitte, Stimmen, Fehlende', () {
     final s = PeerSummary.fromJson({
       'match_id': 'm1',

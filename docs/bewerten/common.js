@@ -141,6 +141,41 @@ const CC = (() => {
       `<div>${avatar({ id: h.id, name: h.name, number: null }, { [h.id]: h.photo })}<b>${esc(h.name || '–')}</b><span>${esc(monthLabel(h.year_month, true))}</span></div>`).join('') + '</div>';
   }
 
+  /** Übersicht aller Spiele (Trainer): Noten, Stand, Spieler des Spiels. */
+  function overviewList(games, sel, logos, usName) {
+    if (!games || !games.length) return '';
+    const rows = games.map((g) => {
+      const parts = String(g.title).match(/^(.*?)\s+–\s+(.*?)\s+\d+:\d+$/) || [];
+      const opp = parts[1] ? (parts[1] === usName ? parts[2] : parts[1]) : g.title;
+      const mo = g.motm ? `<div class="mo">${avatar({ id: g.motm.id, name: g.motm.name }, { [g.motm.id]: g.motm.photo })}👑 ${esc(g.motm.name || '')} <span style="color:var(--muted);font-weight:500">(${g.motm.votes})</span></div>` : '';
+      return `<div class="og ${g.match_id === sel ? 'on' : ''}" data-og="${esc(g.match_id)}">${crest(logos?.[g.match_id], opp)}
+        <div class="bd"><div class="tt">${esc(g.title)}<small>${esc(fmtDate(g.match_date))}${g.open ? ` · <span class="dot"></span>offen bis ${esc(fmtDate(g.closes_at))}` : ' · beendet'}</small></div>
+        <div class="nums"><span class="t">Trainer <b>${g.coach_avg != null ? f1(g.coach_avg) : '–'}</b> (${g.coach_done}/${g.coach_total})</span>
+        <span class="m">Mannschaft <b>${g.team_avg != null ? f1(g.team_avg) : '–'}</b> (${g.voters}/${g.players})</span></div>${mo}</div></div>`;
+    }).join('');
+    return `<details class="all"><summary>Alle Spiele <small>${games.length} Spiele · Trainer &amp; Mannschaft</small></summary>${rows}</details>`;
+  }
+
+  /** Stimmen der Trainer (einzeln, aufklappbar). */
+  function coachVotesCard(votes, byId, photos, meId) {
+    if (!votes || !votes.length) return '';
+    const sorted = (ids) => sortPlayers(ids.map((id) => byId[id] || { id, name: 'Unbekannt' }));
+    return '<div class="card"><h2>Stimmen der Trainer</h2><p class="sub">Jede Trainer-Stimme einzeln – tippen zeigt die Spielernoten.</p>' + votes.map((v) => {
+      const motm = v.motm_player_id ? (byId[v.motm_player_id]?.name || 'Unbekannt') : null;
+      const ids = Object.keys(v.stars || {});
+      const info = [
+        v.abstained ? 'war nicht da' : (v.match_stars != null ? `Spiel ${stars(v.match_stars)}` : 'keine Spielnote'),
+        motm ? `👑 ${esc(motm)}` : null,
+        v.note ? '📝 Bericht' : null,
+        ids.length ? `${ids.length} Spieler` : null,
+      ].filter(Boolean).map((x) => `<em style="font-style:normal">${x}</em>`).join('');
+      const pv = sorted(ids).map((p) => `<div class="pv">${avatar(p, photos)}<span class="n">${esc(p.name)}</span>${stars(v.stars[p.id])}</div>`).join('');
+      return `<details class="cv"><summary>${avatar({ id: v.rater_id, name: v.name }, { [v.rater_id]: v.photo })}
+        <div class="who"><b>${esc(v.name)}${v.rater_id === meId ? ' (du)' : ''}</b><span>${info}</span></div></summary>
+        ${v.note ? `<div class="rep">${esc(v.note).replace(/\n/g, '<br>')}</div>` : ''}${pv || '<div class="pv" style="color:var(--muted)">Keine Spielernoten.</div>'}</details>`;
+    }).join('') + '</div>';
+  }
+
   /** Kopf mit Wappen/Ergebnis. [round] = {title, match_date, closes_at, open}. */
   function scoreboard(m, round) {
     const parts = String(round?.title || '').match(/^(.*?)\s+–\s+(.*?)\s+(\d+):(\d+)$/);
@@ -268,6 +303,6 @@ const CC = (() => {
     el.innerHTML = `<div class="card msg"><div class="ic">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
   }
 
-  return { starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
+  return { overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
     playerRow, motmTiles, podium, gradeTiles, bars, sortPlayers, message, safeImg };
 })();

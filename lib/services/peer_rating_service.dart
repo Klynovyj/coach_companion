@@ -149,4 +149,43 @@ class PeerRatingService {
       return null;
     }
   }
+
+  // ---------------------------------------------------- Übersicht (Stufe 66)
+  /// Abstimm-Übersicht aller Spiele mit Runde (nur Trainer); `null` = nicht
+  /// verfügbar (offline, Cloud-Stufe 66 fehlt).
+  static Future<Map<String, PeerOverview>?> overview(String teamId) async {
+    if (!available) return null;
+    try {
+      final res = await _c.rpc('rating_overview', params: {'p_team': teamId});
+      if (res is List) {
+        return {
+          for (final e in res)
+            if (e is Map)
+              e['match_id'].toString(): PeerOverview.fromJson(
+                Map<String, dynamic>.from(e),
+              ),
+        };
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Einzelne Trainer-Stimmen eines Spiels (nur Trainer); `null` = nicht
+  /// verfügbar.
+  static Future<List<CoachVote>?> coachVotes(String matchId) async {
+    if (!available) return null;
+    try {
+      final res = await _c.rpc(
+        'rating_coach_votes',
+        params: {'p_match_id': matchId},
+      );
+      if (res is List) {
+        return [
+          for (final e in res)
+            if (e is Map) CoachVote.fromJson(Map<String, dynamic>.from(e)),
+        ];
+      }
+    } catch (_) {}
+    return null;
+  }
 }

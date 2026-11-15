@@ -194,3 +194,101 @@ bool accountMatchesPerson({
 
 /// Bewerter-ID für Trainer/Betreuer aus dem Kader ohne App-Konto.
 String staffRaterId(String playerId) => 'staff:$playerId';
+
+/// Abstimm-Übersicht eines Spiels (Trainer + Mannschaft, Stufe 66).
+class PeerOverview {
+  const PeerOverview({
+    required this.matchId,
+    required this.open,
+    this.closesAt,
+    this.coachAvg,
+    this.coachN = 0,
+    this.coachDone = 0,
+    this.coachTotal = 0,
+    this.teamAvg,
+    this.teamN = 0,
+    this.voters = 0,
+    this.players = 0,
+    this.motmId,
+    this.motmName,
+    this.motmVotes = 0,
+  });
+
+  final String matchId;
+  final bool open;
+  final DateTime? closesAt;
+  final double? coachAvg;
+  final int coachN;
+  final int coachDone;
+  final int coachTotal;
+  final double? teamAvg;
+  final int teamN;
+  final int voters;
+  final int players;
+  final String? motmId;
+  final String? motmName;
+  final int motmVotes;
+
+  factory PeerOverview.fromJson(Map<String, dynamic> m) {
+    final motm = m['motm'];
+    return PeerOverview(
+      matchId: m['match_id'].toString(),
+      open: m['open'] == true,
+      closesAt: DateTime.tryParse(m['closes_at']?.toString() ?? ''),
+      coachAvg: (m['coach_avg'] as num?)?.toDouble(),
+      coachN: (m['coach_n'] as num?)?.toInt() ?? 0,
+      coachDone: (m['coach_done'] as num?)?.toInt() ?? 0,
+      coachTotal: (m['coach_total'] as num?)?.toInt() ?? 0,
+      teamAvg: (m['team_avg'] as num?)?.toDouble(),
+      teamN: (m['team_n'] as num?)?.toInt() ?? 0,
+      voters: (m['voters'] as num?)?.toInt() ?? 0,
+      players: (m['players'] as num?)?.toInt() ?? 0,
+      motmId: motm is Map ? motm['id']?.toString() : null,
+      motmName: motm is Map ? motm['name'] as String? : null,
+      motmVotes: motm is Map ? (motm['votes'] as num?)?.toInt() ?? 0 : 0,
+    );
+  }
+}
+
+/// Einzelne Trainer-Stimme eines Spiels (App oder Trainer-Link, Stufe 66).
+class CoachVote {
+  const CoachVote({
+    required this.raterId,
+    required this.name,
+    this.photo,
+    this.matchStars,
+    this.abstained = false,
+    this.note,
+    this.motmPlayerId,
+    this.stars = const {},
+  });
+
+  final String raterId;
+  final String name;
+
+  /// Kader-Foto als Data-URL (nur bei Trainern aus dem Kader).
+  final String? photo;
+  final double? matchStars;
+  final bool abstained;
+  final String? note;
+  final String? motmPlayerId;
+  final Map<String, double> stars;
+
+  factory CoachVote.fromJson(Map<String, dynamic> m) {
+    final st = m['stars'];
+    return CoachVote(
+      raterId: m['rater_id'].toString(),
+      name: (m['name'] as String?) ?? 'Trainer',
+      photo: m['photo'] as String?,
+      matchStars: (m['match_stars'] as num?)?.toDouble(),
+      abstained: m['abstained'] == true,
+      note: m['note'] as String?,
+      motmPlayerId: m['motm_player_id']?.toString(),
+      stars: {
+        if (st is Map)
+          for (final e in st.entries)
+            if (e.value is num) e.key.toString(): (e.value as num).toDouble(),
+      },
+    );
+  }
+}

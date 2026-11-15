@@ -10,12 +10,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=6">
+<link rel="stylesheet" href="style.css?v=7">
 </head>
 <body>
 <div class="wrap">
   <div class="brand" id="brand">Trainer-Bewertung</div>
   <div id="me"></div>
+  <div id="all"></div>
   <div id="tiles"></div>
   <div id="head"></div>
   <div id="main"><div class="card msg"><p>Wird geladen …</p></div></div>
@@ -28,7 +29,7 @@
   </div>
 </div>
 
-<script src="common.js?v=6"></script>
+<script src="common.js?v=7"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let info = null;     // {name, team, rounds}
@@ -37,6 +38,8 @@ let detail = null;   // coach_rating_detail
 let med = {};        // rating_media
 let logos = {};      // Gegnerlogos je Spiel (Kacheln)
 let prof = null;     // rating_profile: Foto + eigene Abgaben
+let ov = [];         // coach_overview: alle Spiele mit Abstimm-Stand
+let votes = [];      // coach_votes: Trainer-Stimmen des gewählten Spiels
 let editing = false;
 let form = { stars: {}, match_stars: null, note: '', abstained: false, motm_player_id: null };
 let month = null;    // coach_month: Rangliste + Gekürter
@@ -50,6 +53,10 @@ function header() {
   $('brand').innerHTML = (logo ? `<img src="${logo}" alt="">` : '') + CC.esc(info?.team || '') + ' · Trainer';
   $('me').innerHTML = CC.profileCard(prof, info?.name, `Trainer · ${info?.team || ''}`);
   $('tiles').innerHTML = CC.matchTiles(info?.rounds, sel, logos, med.us?.name, prof?.entries);
+  const wasOpen = $('all').querySelector('details')?.open;
+  $('all').innerHTML = CC.overviewList(ov, sel, logos, med.us?.name);
+  if (wasOpen) $('all').querySelector('details').open = true;
+  $('all').querySelectorAll('[data-og]').forEach((r) => (r.onclick = () => select(r.dataset.og)));
   $('tiles').querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => select(b.dataset.m)));
   const on = $('tiles').querySelector('.tile.on');
   if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -78,6 +85,7 @@ function resultsHtml() {
   const rows = ps.filter((p) => ta[p.id] || pa[p.id]).map((p) => ({ p, t: ta[p.id], m: pa[p.id] }))
     .sort((a, b) => (b.t?.avg ?? -1) - (a.t?.avg ?? -1) || (b.m?.avg ?? -1) - (a.m?.avg ?? -1));
   h += `<div class="card"><h2>Spieler-Schnitt</h2><p class="sub">Trainer und Mannschaft im Vergleich</p>${rows.length ? CC.bars(rows, med.photos) : '<p class="sub">Noch keine Spielerbewertungen.</p>'}</div>`;
+  h += CC.coachVotesCard(votes, ids, med.photos, null);
   if ((res.reports || []).length) {
     h += '<div class="card"><h2>Spielberichte</h2>' + res.reports.map((r) =>
       `<div class="quote"><div class="by"><span>${CC.esc(r.name)}</span>${r.stars ? CC.stars(r.stars) : ''}</div>${CC.esc(r.note).replace(/\n/g, '<br>')}</div>`).join('') + '</div>';
@@ -212,6 +220,7 @@ async function send() {
     }
     editing = false;
     prof = (await CC.profile()) || prof;
+    ov = await CC.rpc('coach_overview', { p_token: CC.token }).then((o) => (o?.ok ? o.games || [] : ov)).catch(() => ov);
     await select(sel);
   } catch (e) {
     $('err').textContent = 'Keine Verbindung – bitte nochmal versuchen.';
@@ -223,11 +232,12 @@ async function send() {
 async function select(matchId) {
   sel = matchId;
   editing = false;
-  let d, m;
+  let d, m, cv;
   try {
-    [d, m] = await Promise.all([
+    [d, m, cv] = await Promise.all([
       CC.rpc('coach_rating_detail', { p_token: CC.token, p_match_id: matchId }),
       CC.media(matchId),
+      CC.rpc('coach_votes', { p_token: CC.token, p_match_id: matchId }).catch(() => null),
     ]);
   } catch (e) {
     CC.message($('main'), '📶', 'Keine Verbindung', 'Bitte prüfe dein Internet und lade die Seite neu.');
@@ -236,6 +246,7 @@ async function select(matchId) {
   if (!d?.ok) { CC.message($('main'), '🚫', 'Nicht verfügbar', 'Dieses Spiel kann nicht geladen werden.'); return; }
   detail = d;
   med = m;
+  votes = cv?.ok && !cv.locked ? cv.votes || [] : [];
   if (m.logos) logos = m.logos;
   const mine = d.mine;
   form = mine
@@ -257,7 +268,10 @@ async function load() {
     return;
   }
   if (!info?.ok) { info = null; CC.message($('main'), '🚫', 'Link ungültig', 'Dieser Link gilt nicht mehr. Lass dir in der App einen neuen erzeugen.'); return; }
-  prof = await CC.profile();
+  [prof, ov] = await Promise.all([
+    CC.profile(),
+    CC.rpc('coach_overview', { p_token: CC.token }).then((o) => (o?.ok ? o.games || [] : [])).catch(() => []),
+  ]);
   if (!(info.rounds || []).length) {
     med = await CC.media('');
     header();
