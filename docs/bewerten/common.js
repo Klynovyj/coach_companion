@@ -376,7 +376,7 @@ const CC = (() => {
     const col = (g, pl) => {
       if (!g.length) return '<div></div>';
       const ps = sortPlayers(g.map((e) => byId[e.id] || { id: e.id, name: 'Unbekannt' }));
-      const shown = ps.slice(0, pl === 1 ? 6 : 4);
+      const shown = ps.slice(0, pl === 1 ? 4 : 3);
       const solo = ps.length === 1 ? 'solo' : '';
       const names = shown.map((p) => esc(p.name.split(' ').slice(-1)[0] || p.name)).join(', ');
       return `<div class="pod p${pl}"><div class="grp ${solo}">${shown.map((p) => avatar(p, photos)).join('')}</div>

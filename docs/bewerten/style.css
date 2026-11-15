@@ -354,9 +354,13 @@ details.cv .rep { margin: 4px 0 8px 50px; background: var(--card2); border-radiu
 .best .bp .ava .nr { display: none; }
 
 /* ---------- Podest nach Sternen (Gleichstand teilt den Platz) ---------- */
-.pod .grp { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
-.pod .grp .ava { width: 44px; height: 44px; }
-.pod.p1 .grp .ava { width: 56px; height: 56px; }
+.pod .grp { display: flex; flex-wrap: nowrap; justify-content: center; }
+.pod .grp .ava { width: 40px; height: 40px; margin-left: -12px; }
+.pod .grp .ava:first-child { margin-left: 0; }
+.pod .grp .ava .ph { border-color: var(--card); box-shadow: 0 2px 6px rgba(0,0,0,.35); }
+.pod.p1 .grp .ava { width: 46px; height: 46px; margin-left: -14px; }
+.pod.p1 .grp .ava:first-child { margin-left: 0; }
+.pod.p1 .grp .ava .ph { border-color: var(--gold); }
 .pod .grp.solo .ava { width: 60px; height: 60px; }
 .pod.p1 .grp.solo .ava { width: 84px; height: 84px; }
 .pod .grp .ava .nr { display: none; }
