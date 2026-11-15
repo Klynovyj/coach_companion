@@ -171,6 +171,24 @@ class PeerRatingService {
     }
   }
 
+  /// Namen der Trainer-Links: Bewerter-ID → Name. Reine Trainer haben je Gerät
+  /// eine eigene lokale ID – über den Namen wird ein vorhandener Link erkannt.
+  static Future<Map<String, String>> coachLinkNames(String teamId) async {
+    if (!available) return const {};
+    try {
+      final rows = await _c
+          .from('coach_rating_links')
+          .select('rater_id, name')
+          .eq('team_id', teamId);
+      return {
+        for (final r in rows)
+          r['rater_id'].toString(): (r['name'] ?? '').toString(),
+      };
+    } catch (_) {
+      return const {};
+    }
+  }
+
   /// Kader-Person je Trainer-Link: Bewerter-ID → Spieler-ID (player_id oder
   /// 'staff:<id>'); `null` = nicht lesbar.
   static Future<Map<String, String>?> coachLinkPlayers(String teamId) async {

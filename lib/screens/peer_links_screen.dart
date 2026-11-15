@@ -222,11 +222,26 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
         }
       }
     } catch (_) {}
+    // Reine Trainer stehen nicht in der Cloud und haben je Gerät eine eigene
+    // ID – einen schon vorhandenen Link derselben Person über den Namen finden.
+    final linkNames = await PeerRatingService.coachLinkNames(teamId);
+    String norm(String s) => s.trim().toLowerCase();
+    String raterFor(Player p) {
+      final own = staffRaterId(p.id);
+      if (linkNames.containsKey(own)) return own;
+      for (final e in linkNames.entries) {
+        if (e.key.startsWith('staff:') && norm(e.value) == norm(p.fullName)) {
+          return e.key;
+        }
+      }
+      return own;
+    }
+
     for (final p in staff) {
       if (linked.containsKey(p.id)) continue;
       coaches.add(
         _Coach(
-          raterId: staffRaterId(p.id),
+          raterId: raterFor(p),
           name: p.fullName,
           subtitle: 'Kader · ${p.staffRole}',
           player: p,

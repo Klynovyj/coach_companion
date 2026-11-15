@@ -4754,10 +4754,16 @@ class AppState extends ChangeNotifier {
     _coachPhotoTeam = teamId;
     final map = await PeerRatingService.coachLinkPlayers(teamId);
     if (map == null || map.isEmpty) return;
-    final byId = {for (final p in await _repo.getPlayers(teamId)) p.id: p};
+    final local = await _repo.getPlayers(teamId);
+    final byId = {for (final p in local) p.id: p};
+    // Reine Trainer haben je Gerät eine eigene ID → Rückfall über den Namen.
+    final names = await PeerRatingService.coachLinkNames(teamId);
+    final byName = {for (final p in local) p.fullName.trim().toLowerCase(): p};
     final photos = <String, String>{};
     for (final e in map.entries) {
-      final src = byId[e.value]?.photoPath;
+      final p =
+          byId[e.value] ?? byName[(names[e.key] ?? '').trim().toLowerCase()];
+      final src = p?.photoPath;
       if (src == null || src.isEmpty) continue;
       try {
         final t = await compute(smallThumbFromDataUrl, src);
