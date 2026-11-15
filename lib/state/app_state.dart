@@ -851,7 +851,10 @@ class AppState extends ChangeNotifier {
       if (changed) notifyListeners();
       // Bewertungsrunden für kürzlich beendete Spiele nachtragen (einmal je
       // Sitzung) – z. B. Spiele, die vor dieser Funktion abgepfiffen wurden.
-      if (isTrainer) unawaited(publishRecentPeerRounds());
+      if (isTrainer) {
+        unawaited(publishRecentPeerRounds());
+        unawaited(syncCoachLinkPhotos());
+      }
     } catch (_) {
       // Bei Fehler Rechte nicht entziehen.
     }
@@ -4738,6 +4741,31 @@ class AppState extends ChangeNotifier {
   }
 
   String? _peerBackfillTeam;
+  String? _coachPhotoTeam;
+
+  /// Trainer-Fotos (kleine Kopie) an die Trainer-Links hängen – reine Trainer
+  /// stehen nicht als Spieler in der Cloud. Einmal je Sitzung und Team.
+  Future<void> syncCoachLinkPhotos({bool force = false}) async {
+    final teamId = _activeCloudTeamId;
+    if (teamId == null || !_isTrainerHere || !PeerRatingService.available) {
+      return;
+    }
+    if (!force && _coachPhotoTeam == teamId) return;
+    _coachPhotoTeam = teamId;
+    final map = await PeerRatingService.coachLinkPlayers(teamId);
+    if (map == null || map.isEmpty) return;
+    final byId = {for (final p in await _repo.getPlayers(teamId)) p.id: p};
+    final photos = <String, String>{};
+    for (final e in map.entries) {
+      final src = byId[e.value]?.photoPath;
+      if (src == null || src.isEmpty) continue;
+      try {
+        final t = await compute(smallThumbFromDataUrl, src);
+        if (t != null) photos[e.key] = t;
+      } catch (_) {}
+    }
+    await PeerRatingService.updateCoachPhotos(teamId, photos);
+  }
 
   /// Trägt die Bewertungsrunden aller beendeten Spiele nach, deren Frist noch
   /// läuft oder höchstens 14 Tage vorbei ist (Trainer im Cloud-Team). Ohne

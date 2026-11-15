@@ -32,8 +32,7 @@ const String kPlayerPhotoKind = 'player_photo';
 
 /// Zeilen-ID eines Spielerfotos ([slot] = Fotofach oder `profile` für die
 /// Auswahl des Profilbilds).
-String playerPhotoId(String playerId, String slot) =>
-    'pphoto:$playerId:$slot';
+String playerPhotoId(String playerId, String slot) => 'pphoto:$playerId:$slot';
 
 /// Längste Seite beim Speichern eines gewählten Fotos: groß genug für die
 /// Weitergabe in Originalqualität, klein genug für den Cloud-Abgleich.
@@ -106,4 +105,21 @@ String? profileThumbFromDataUrl(String dataUrl) {
       : baked;
   return 'data:image/jpeg;base64,'
       '${base64Encode(img.encodeJpg(small, quality: 85))}';
+}
+
+/// Sehr kleine Kopie (max. 256 px, JPEG) z. B. fürs Trainer-Foto auf den
+/// Bewertungsseiten. Für `compute`.
+String? smallThumbFromDataUrl(String dataUrl) {
+  final bytes = dataUrlBytes(dataUrl);
+  if (bytes == null) return null;
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return null;
+  final baked = img.bakeOrientation(decoded);
+  final small = (baked.width > 256 || baked.height > 256)
+      ? (baked.width >= baked.height
+            ? img.copyResize(baked, width: 256)
+            : img.copyResize(baked, height: 256))
+      : baked;
+  return 'data:image/jpeg;base64,'
+      '${base64Encode(img.encodeJpg(small, quality: 80))}';
 }

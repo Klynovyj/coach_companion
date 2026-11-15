@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -6,6 +9,7 @@ import '../models/peer_rating.dart';
 import '../models/player.dart';
 import '../services/cloud_service.dart';
 import '../services/peer_rating_service.dart';
+import '../services/player_photos.dart' show smallThumbFromDataUrl;
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
@@ -234,6 +238,10 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
     await s.publishRecentPeerRounds(force: true);
     final links = await PeerRatingService.links(teamId);
     final coachLinks = await PeerRatingService.coachLinks(teamId);
+    // Trainer-Fotos (kleine Kopie) an die Links hängen – reine Trainer stehen
+    // nicht als Spieler in der Cloud, die Webseite fände sonst kein Foto.
+    if (coachLinks != null)
+      unawaited(_syncCoachPhotos(teamId, coaches, coachLinks));
     if (!mounted) return;
     setState(() {
       _players = players;
@@ -242,6 +250,30 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
       _coachLinks = coachLinks;
       _loading = false;
     });
+  }
+
+  Future<String?> _thumbOf(Player? p) async {
+    final src = p?.photoPath;
+    if (src == null || src.isEmpty) return null;
+    try {
+      return await compute(smallThumbFromDataUrl, src);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _syncCoachPhotos(
+    String teamId,
+    List<_Coach> coaches,
+    Map<String, String> links,
+  ) async {
+    final photos = <String, String>{};
+    for (final c in coaches) {
+      if (!links.containsKey(c.raterId)) continue;
+      final t = await _thumbOf(c.player);
+      if (t != null) photos[c.raterId] = t;
+    }
+    await PeerRatingService.updateCoachPhotos(teamId, photos);
   }
 
   Future<void> _createMissing() async {
@@ -267,6 +299,7 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
           teamId,
           c.name,
           playerId: c.player?.id,
+          photo: await _thumbOf(c.player),
         );
         if (t != null) {
           cl[c.raterId] = t;
@@ -416,11 +449,12 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
             who: c.name,
             token: token,
             action: a,
-            create: () => PeerRatingService.createCoachLink(
+            create: () async => PeerRatingService.createCoachLink(
               c.raterId,
               teamId,
               c.name,
               playerId: c.player?.id,
+              photo: await _thumbOf(c.player),
             ),
             url: coachRatingLink,
             message: (t) => coachLinkMessage(c.name, t),

@@ -133,6 +133,7 @@ class PeerRatingService {
     String teamId,
     String name, {
     String? playerId,
+    String? photo,
   }) async {
     if (!available) return null;
     final token = newPeerToken();
@@ -143,9 +144,51 @@ class PeerRatingService {
         'token': token,
         'name': name,
         'player_id': ?playerId,
+        'photo': ?photo,
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       return token;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fotos an bestehenden Trainer-Links aktualisieren (Bewerter-ID → kleine
+  /// Data-URL). Reine Trainer haben keine Spieler-Zeile in der Cloud.
+  static Future<void> updateCoachPhotos(
+    String teamId,
+    Map<String, String> photos,
+  ) async {
+    if (!available || photos.isEmpty) return;
+    for (final e in photos.entries) {
+      try {
+        await _c
+            .from('coach_rating_links')
+            .update({'photo': e.value})
+            .eq('team_id', teamId)
+            .eq('rater_id', e.key);
+      } catch (_) {}
+    }
+  }
+
+  /// Kader-Person je Trainer-Link: Bewerter-ID → Spieler-ID (player_id oder
+  /// 'staff:<id>'); `null` = nicht lesbar.
+  static Future<Map<String, String>?> coachLinkPlayers(String teamId) async {
+    if (!available) return null;
+    try {
+      final rows = await _c
+          .from('coach_rating_links')
+          .select('rater_id, player_id')
+          .eq('team_id', teamId);
+      final out = <String, String>{};
+      for (final r in rows) {
+        final rid = r['rater_id'].toString();
+        final pid =
+            r['player_id']?.toString() ??
+            (rid.startsWith('staff:') ? rid.substring(6) : null);
+        if (pid != null) out[rid] = pid;
+      }
+      return out;
     } catch (_) {
       return null;
     }
