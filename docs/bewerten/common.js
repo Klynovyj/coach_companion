@@ -214,7 +214,7 @@ const CC = (() => {
       const opp = parts[1] ? (parts[1] === usName ? parts[2] : parts[1]) : g.title;
       const mo = g.motm ? `<div class="mo">${avatar({ id: g.motm.id, name: g.motm.name }, { [g.motm.id]: g.motm.photo })}👑 ${esc(g.motm.name || '')} <span style="color:var(--muted);font-weight:500">★ ${f1(g.motm.avg)}${g.motm.tie > 1 ? ` · +${g.motm.tie - 1} gleichauf` : ''}</span></div>` : '';
       return `<div class="og ${g.match_id === sel ? 'on' : ''}" data-og="${esc(g.match_id)}">${crest(logos?.[g.match_id], opp)}
-        <div class="bd"><div class="tt">${esc(g.title)}<small>${esc(fmtDate(g.match_date))}${g.open ? ` · <span class="dot"></span>offen bis ${esc(fmtDate(g.closes_at))}` : ' · beendet'}</small></div>
+        <div class="ogb"><div class="tt">${esc(g.title)}<small>${esc(fmtDate(g.match_date))}${g.open ? ` · <span class="dot"></span>offen bis ${esc(fmtDate(g.closes_at))}` : ' · beendet'}</small></div>
         <div class="nums"><span class="t">Trainer <b>${g.coach_avg != null ? f1(g.coach_avg) : '–'}</b> (${g.coach_done}/${g.coach_total})</span>
         <span class="m">Mannschaft <b>${g.team_avg != null ? f1(g.team_avg) : '–'}</b> (${g.voters}/${g.players})</span></div>${mo}</div></div>`;
     }).join('');
