@@ -221,10 +221,26 @@ const CC = (() => {
     return `<details class="all"><summary>Alle Spiele <small>${games.length} Spiele · Trainer &amp; Mannschaft</small></summary>${rows}</details>`;
   }
 
+  /**
+   * „Bestbewertet": alle Spieler mit dem höchsten Trainer-Schnitt (sonst
+   * Mannschafts-Schnitt) – Gleichstand = alle.
+   */
+  function bestRated(trainerAvg, teamAvg, byId, photos) {
+    const pick = Object.keys(trainerAvg || {}).length ? trainerAvg : teamAvg;
+    const label = pick === trainerAvg ? 'Trainer' : 'Mannschaft';
+    const es = Object.entries(pick || {});
+    if (!es.length) return '';
+    const max = Math.max(...es.map(([, v]) => Math.round(v.avg * 100)));
+    const top = es.filter(([, v]) => Math.round(v.avg * 100) === max).map(([id]) => byId[id] || { id, name: 'Unbekannt' });
+    return `<div class="best"><div class="bh"><span>⭐ Bestbewertet (${label})</span><span>${f1(max / 100)}</span></div><div class="bp">${sortPlayers(top).map((p) =>
+      `<div>${avatar(p, photos)}${esc(p.name)}</div>`).join('')}</div></div>`;
+  }
+
   /** Stimmen der Trainer (einzeln, aufklappbar). */
   function coachVotesCard(votes, byId, photos, meId) {
     if (!votes || !votes.length) return '';
-    const sorted = (ids) => sortPlayers(ids.map((id) => byId[id] || { id, name: 'Unbekannt' }));
+    const sorted = (ids, extra) => sortPlayers(ids.map((id) => byId[id] ||
+      (extra?.[id] ? { id, name: extra[id].name || 'Unbekannt', number: extra[id].number } : { id, name: 'Unbekannt' })));
     return '<div class="card"><h2>Stimmen der Trainer</h2><p class="sub">Jede Trainer-Stimme einzeln – tippen zeigt die Spielernoten.</p>' + votes.map((v) => {
       const motm = v.motm_player_id ? (byId[v.motm_player_id]?.name || 'Unbekannt') : null;
       const ids = Object.keys(v.stars || {});
@@ -234,7 +250,8 @@ const CC = (() => {
         v.note ? '📝 Bericht' : null,
         ids.length ? `${ids.length} Spieler` : null,
       ].filter(Boolean).map((x) => `<em style="font-style:normal">${x}</em>`).join('');
-      const pv = sorted(ids).map((p) => `<div class="pv">${avatar(p, photos)}<span class="n">${esc(p.name)}</span>${stars(v.stars[p.id])}</div>`).join('');
+      const ph = Object.assign({}, Object.fromEntries(Object.entries(v.players || {}).map(([k, x]) => [k, x.photo])), photos);
+      const pv = sorted(ids, v.players).map((p) => `<div class="pv">${avatar(p, ph)}<span class="n">${esc(p.name)}</span>${stars(v.stars[p.id])}</div>`).join('');
       return `<details class="cv"><summary>${avatar({ id: v.rater_id, name: v.name }, { [v.rater_id]: v.photo })}
         <div class="who"><b>${esc(v.name)}${v.rater_id === meId ? ' (du)' : ''}</b><span>${info}</span></div></summary>
         ${v.note ? `<div class="rep">${esc(v.note).replace(/\n/g, '<br>')}</div>` : ''}${pv || '<div class="pv" style="color:var(--muted)">Keine Spielernoten.</div>'}</details>`;
@@ -368,6 +385,6 @@ const CC = (() => {
     el.innerHTML = `<div class="card msg"><div class="ic">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
   }
 
-  return { crownCard, applyBadges, overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
+  return { bestRated, crownCard, applyBadges, overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
     playerRow, motmTiles, podium, gradeTiles, bars, sortPlayers, message, safeImg };
 })();

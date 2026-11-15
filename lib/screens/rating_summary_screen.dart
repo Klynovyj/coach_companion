@@ -585,6 +585,56 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
     );
   }
 
+  /// „Bestbewertet": alle Spieler mit dem höchsten Trainer-Schnitt (sonst
+  /// Mannschafts-Schnitt), Gleichstand = alle.
+  Widget? _bestRated(BuildContext context, PeerSummary peer) {
+    final pick = _avg.isNotEmpty ? _avg : peer.avg;
+    if (pick.isEmpty) return null;
+    final label = identical(pick, _avg) ? 'Trainer' : 'Mannschaft';
+    final max = pick.values
+        .map((v) => (v.$1 * 100).round())
+        .reduce((a, b) => a > b ? a : b);
+    final top = [
+      for (final e in pick.entries)
+        if ((e.value.$1 * 100).round() == max) e.key,
+    ]..sort((a, b) => _peerName(a).compareTo(_peerName(b)));
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '⭐ Bestbewertet ($label) · ${starNumber(max / 100)}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            children: [
+              for (final id in top)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_byId[id] != null)
+                      PlayerAvatar(player: _byId[id]!, radius: 12),
+                    const SizedBox(width: 6),
+                    Text(_peerName(id)),
+                  ],
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
   String _peerName(String id) {
     final p = _byId[id];
     if (p != null) return p.fullName;
@@ -732,6 +782,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
                     ],
                   ),
                 ),
+            ?_bestRated(context, peer),
             const Divider(height: 22),
             Row(
               children: [

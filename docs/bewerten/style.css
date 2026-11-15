@@ -162,11 +162,11 @@ textarea:focus { outline: 2px solid var(--green2); border-color: transparent; }
 /* ---------- Auswertung ---------- */
 .grades { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .grade { background: var(--card2); border-radius: 14px; padding: 12px 8px; text-align: center; }
-.grade b { display: block; font: 800 40px/1 "Barlow Condensed", sans-serif; }
+.grade > b { display: block; font: 800 40px/1 "Barlow Condensed", sans-serif; }
 .grade .st { font-size: 15px; }
 .grade span.lb { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
-.grade.t b { color: var(--green2); }
-.grade.m b { color: var(--gold); }
+.grade.t > b { color: var(--green2); }
+.grade.m > b { color: var(--gold); }
 
 .podium { display: grid; grid-template-columns: 1fr 1.15fr 1fr; align-items: end; gap: 8px; margin-top: 18px; }
 .pod { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; min-width: 0; }
@@ -344,3 +344,11 @@ details.cv .rep { margin: 4px 0 8px 50px; background: var(--card2); border-radiu
 .rk .who2 { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 4px; }
 .rk .who2 span { font: 700 10px/1 system-ui, sans-serif; padding: 3px 6px; border-radius: 999px; background: var(--gold-soft); color: var(--gold); }
 .crownbtn.mine { background: var(--gold); color: #2b1d00; }
+
+/* ---------- Bestbewertet ---------- */
+.best { margin-top: 14px; padding: 10px 12px; border-radius: 12px; background: rgba(31,191,116,.08); border: 1px solid rgba(31,191,116,.25); }
+.best .bh { font: 700 13px/1 "Barlow Condensed", sans-serif; letter-spacing: .1em; text-transform: uppercase; color: var(--green2); margin-bottom: 8px; display: flex; justify-content: space-between; }
+.best .bp { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.best .bp div { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
+.best .bp .ava { width: 30px; height: 30px; }
+.best .bp .ava .nr { display: none; }

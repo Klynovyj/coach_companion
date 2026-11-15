@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 <div class="wrap">
@@ -29,7 +29,7 @@
   </div>
 </div>
 
-<script src="common.js?v=11"></script>
+<script src="common.js?v=12"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let info = null;     // {name, team, rounds}
@@ -76,7 +76,7 @@ function resultsHtml() {
   const ps = CC.sortPlayers(detail.round.players);
   const ids = byId();
   let h = `<div class="card"><h2 style="text-align:center">🏆 Spieler des Spiels</h2><p class="sub" style="text-align:center">Gemeinsame Wahl von Mannschaft und Trainern</p>
-    ${CC.podium(res.motm, ids, med.photos)}<p class="voters">${res.voters} von ${ps.length} Spielern${res.motm_coaches ? ` + ${res.motm_coaches} ${res.motm_coaches === 1 ? 'Trainer' : 'Trainer'}` : ''} haben abgestimmt.</p></div>`;
+    ${CC.podium(res.motm, ids, med.photos)}${CC.bestRated(res.trainer_avg, res.team_avg, ids, med.photos)}<p class="voters">${res.voters} von ${ps.length} Spielern${res.motm_coaches ? ` + ${res.motm_coaches} ${res.motm_coaches === 1 ? 'Trainer' : 'Trainer'}` : ''} haben abgestimmt.</p></div>`;
   h += `<div class="card"><h2>Spielnote</h2><p class="sub">Schnitt der Gesamtnoten</p>${CC.gradeTiles([
     { cls: 't', label: 'Trainer', avg: res.trainer_match_avg, n: res.trainer_match_n },
     { cls: 'm', label: 'Mannschaft', avg: res.team_match_avg, n: res.team_match_n },
