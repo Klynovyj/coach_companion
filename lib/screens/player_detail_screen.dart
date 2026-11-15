@@ -28,6 +28,7 @@ import '../widgets/player_photo.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/rich_note_view.dart';
 import '../widgets/star_rating.dart';
+import '../widgets/peer_player_card.dart';
 import 'live_match_screen.dart';
 import 'player_photos_screen.dart';
 import 'note_editor_screen.dart';
@@ -186,6 +187,7 @@ class _PlayerDetailScreenState extends State<PlayerDetailScreen> {
                     _talksCard(context, state),
                     if (isTrainer) _notesCard(context, state, df),
                     if (isTrainer) _bewertungenCard(context, state, df),
+                    if (isTrainer) PeerPlayerCard(player: p),
                   ]),
                 ],
               ),

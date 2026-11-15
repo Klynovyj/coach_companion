@@ -23,6 +23,7 @@ import '../models/player_absence.dart';
 import '../models/player_note.dart';
 import '../models/scout_marker.dart';
 import '../models/team_event.dart';
+import '../models/peer_rating.dart';
 import '../models/player_rating.dart';
 import '../models/player_stat.dart';
 import '../models/team.dart';
@@ -38,6 +39,7 @@ import '../models/todo.dart';
 import '../models/todo_topic.dart';
 import '../services/birthday_notifications.dart';
 import '../services/cloud_service.dart';
+import '../services/peer_rating_service.dart';
 import '../services/live_clock.dart';
 import '../services/push_service.dart';
 import '../services/fupa/fupa_dtos.dart';
@@ -372,9 +374,7 @@ class AppState extends ChangeNotifier {
       if (current == slot) {
         // Profilbild weg → auf FuPa zurückfallen.
         return setProfilePhoto(
-          slot == PlayerPhotoSlot.own
-              ? p.copyWith(clearCustomPhoto: true)
-              : p,
+          slot == PlayerPhotoSlot.own ? p.copyWith(clearCustomPhoto: true) : p,
           PlayerPhotoSlot.fupa,
         );
       }
@@ -496,7 +496,8 @@ class AppState extends ChangeNotifier {
     final localAt = await _repo.getAnnouncementDesignUpdatedAt(id);
     if (localAt == null || (cloudAt != null && cloudAt.isAfter(localAt))) {
       final full = await CloudService.fetchRowById('announcement_designs', id);
-      if (full != null) await _mergeCloudDesign(Map<String, Object?>.from(full));
+      if (full != null)
+        await _mergeCloudDesign(Map<String, Object?>.from(full));
       return;
     }
     final teamId = _activeCloudTeamId;
@@ -662,10 +663,7 @@ class AppState extends ChangeNotifier {
     if (immediate) {
       run();
     } else {
-      _liveTimer = Timer(
-        Duration(seconds: _liveActive ? 3 : 15),
-        run,
-      );
+      _liveTimer = Timer(Duration(seconds: _liveActive ? 3 : 15), run);
     }
   }
 
@@ -709,7 +707,8 @@ class AppState extends ChangeNotifier {
         final ctrlOppChanged =
             (local.liveControllerOpp ?? '') != (ctrlOpp ?? '') ||
             (local.liveDelegateOwn ?? '') != (delOwn ?? '');
-        final reqChanged = (local.liveRequestBy ?? '') != (reqBy ?? '') ||
+        final reqChanged =
+            (local.liveRequestBy ?? '') != (reqBy ?? '') ||
             (local.liveRequestScope ?? '') != (reqScope ?? '');
         if (local.status == st &&
             local.ownScore == own &&
@@ -1062,9 +1061,7 @@ class AppState extends ChangeNotifier {
   Future<bool> _syncLiveEvents(String matchId, String teamId) async {
     try {
       final rows = await CloudService.matchEvents(matchId);
-      final localIds = {
-        for (final e in await _repo.getEvents(matchId)) e.id,
-      };
+      final localIds = {for (final e in await _repo.getEvents(matchId)) e.id};
       final now = DateTime.now();
       var added = false;
       for (final r in rows) {
@@ -1290,9 +1287,7 @@ class AppState extends ChangeNotifier {
     // 2) Zusätzlich über den Namen (fängt Klone OHNE FuPa-ID). Nur dort, wo die
     //    behaltene Zeile eine FuPa-ID hat → es fallen ausschließlich Nicht-FuPa-
     //    Klone weg, nie zwei echte Gleichnamige.
-    final remaining = players
-        .where((p) => !deleteIds.contains(p.id))
-        .toList();
+    final remaining = players.where((p) => !deleteIds.contains(p.id)).toList();
     final deduped = dedupePlayersByName(remaining);
     final keep = {for (final p in deduped) p.id};
     final safeNames = {
@@ -1301,7 +1296,8 @@ class AppState extends ChangeNotifier {
     };
     for (final p in remaining) {
       if (keep.contains(p.id)) continue;
-      if (!safeNames.contains(p.dedupKey)) continue; // mehrdeutig → stehen lassen
+      if (!safeNames.contains(p.dedupKey))
+        continue; // mehrdeutig → stehen lassen
       deleteIds.add(p.id);
     }
 
@@ -3464,6 +3460,7 @@ class AppState extends ChangeNotifier {
           match.status != MatchStatus.finished) {
         final m = await _repo.getMatch(matchId);
         if (m != null) {
+          unawaited(publishPeerRound(matchId));
           await _notifyTeam(
             InboxType.result,
             'Spielergebnis steht',
@@ -3754,15 +3751,14 @@ class AppState extends ChangeNotifier {
   String? fupaPlayerSlug(Player p) {
     final id = p.externalId?.trim();
     if (id == null || id.isEmpty) return null;
-    final name =
-        '${p.firstName} ${p.lastName}'
-            .toLowerCase()
-            .replaceAll('ä', 'ae')
-            .replaceAll('ö', 'oe')
-            .replaceAll('ü', 'ue')
-            .replaceAll('ß', 'ss')
-            .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
-            .replaceAll(RegExp(r'(^-+)|(-+$)'), '');
+    final name = '${p.firstName} ${p.lastName}'
+        .toLowerCase()
+        .replaceAll('ä', 'ae')
+        .replaceAll('ö', 'oe')
+        .replaceAll('ü', 'ue')
+        .replaceAll('ß', 'ss')
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'(^-+)|(-+$)'), '');
     return name.isEmpty ? id : '$name-$id';
   }
 
@@ -3815,9 +3811,7 @@ class AppState extends ChangeNotifier {
     ScoutStatus status,
     DateTime date,
   ) async {
-    await _repo.upsertScoutPlayer(
-      p.copyWith(status: status, statusDate: date),
-    );
+    await _repo.upsertScoutPlayer(p.copyWith(status: status, statusDate: date));
     await _addStatusEntry(p.id, status, date);
     notifyListeners();
   }
@@ -4726,6 +4720,43 @@ class AppState extends ChangeNotifier {
     return end.add(const Duration(days: 3));
   }
 
+  /// Veröffentlicht die Spieler-Bewertungsrunde eines beendeten Spiels in der
+  /// Cloud (Teilnehmer = Spieler mit Einsatz, Frist = [ratingDeadline]). Nur
+  /// Trainer im aktiven Cloud-Team; still ohne Wirkung sonst. true = ok.
+  Future<bool> publishPeerRound(String matchId) async {
+    final m = await _repo.getMatch(matchId);
+    if (m == null || m.status != MatchStatus.finished) return false;
+    if (_activeCloudTeamId == null || m.ownTeamId != _activeCloudTeamId) {
+      return false;
+    }
+    if (!_isTrainerHere || !PeerRatingService.available) return false;
+    final deadline = await ratingDeadline(matchId);
+    if (deadline == null) return false;
+    final played = await playedPlayerIds(matchId, m.ownTeamId);
+    final players = [
+      for (final p in await _repo.getPlayers(m.ownTeamId))
+        if (played.contains(p.id))
+          PeerRoundPlayer(id: p.id, name: p.fullName, number: p.number),
+    ];
+    if (players.isEmpty) return false;
+    final team = await _repo.getTeam(m.ownTeamId);
+    final own = (team?.shortName?.trim().isNotEmpty ?? false)
+        ? team!.shortName!.trim()
+        : (team?.name ?? 'Wir');
+    final home = m.venue == Venue.home;
+    final title = home
+        ? '$own – ${m.opponentName} ${m.ownScore}:${m.opponentScore}'
+        : '${m.opponentName} – $own ${m.opponentScore}:${m.ownScore}';
+    return PeerRatingService.publishRound(
+      matchId: matchId,
+      teamId: m.ownTeamId,
+      title: title,
+      matchDate: m.kickoff,
+      closesAt: deadline,
+      players: players,
+    );
+  }
+
   /// Bewertungen eines Spielers je Spiel (matchId -> Sterne) – fürs Nachholen
   /// und Korrigieren im Profil.
   Future<Map<String, double>> playerRatingsByMatch(String playerId) =>
@@ -4904,7 +4935,8 @@ class AppState extends ChangeNotifier {
   Future<(StandingRow?, List<StandingRow>)> leagueTableCached(String teamId) {
     final fresh =
         _leagueCacheAt != null &&
-        DateTime.now().difference(_leagueCacheAt!) < const Duration(minutes: 15);
+        DateTime.now().difference(_leagueCacheAt!) <
+            const Duration(minutes: 15);
     if (_leagueCache == null || _leagueCacheTeam != teamId || !fresh) {
       _leagueCacheTeam = teamId;
       _leagueCacheAt = DateTime.now();

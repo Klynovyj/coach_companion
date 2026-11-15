@@ -6,6 +6,7 @@ import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
 import '../widgets/team_logo.dart';
+import 'peer_links_screen.dart';
 import 'rating_report_screen.dart';
 import 'rating_summary_screen.dart';
 
@@ -90,6 +91,16 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
   }
 
   List<Widget> _actionButtons() => [
+    if (context.read<AppState>().isTrainerHere &&
+        context.read<AppState>().activeCloudTeamId != null)
+      IconButton(
+        tooltip: 'Spieler-Links (Bewertung ohne App)',
+        icon: const Icon(Icons.link),
+        onPressed: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const PeerLinksScreen()),
+        ),
+      ),
     IconButton(
       tooltip: 'Bericht: alle Noten & Kommentare',
       icon: const Icon(Icons.article_outlined),

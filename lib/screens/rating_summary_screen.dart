@@ -5,11 +5,15 @@ import 'package:provider/provider.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
 import '../models/match_rating.dart';
+import '../models/peer_rating.dart';
 import '../models/player.dart';
 import '../services/cloud_service.dart';
+import '../services/peer_rating_service.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/trainer_mention_field.dart';
+import 'peer_links_screen.dart';
 import 'rating_screen.dart';
 
 /// Auswertung eines Spiels: Gesamtnoten der Trainer (+ Schnitt), ihre
@@ -34,6 +38,11 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
   Map<String, String> _names = {};
   bool _loading = true;
 
+  /// Spieler-Bewertung per Web-Link (nur Trainer im Cloud-Team).
+  bool _peerEnabled = false;
+  PeerSummary? _peer;
+  bool _peerPublished = false;
+
   @override
   void initState() {
     super.initState();
@@ -53,6 +62,19 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
     final avg = await s.ratingAverages(widget.matchId);
     final players = await s.playersOf(match.ownTeamId);
     final names = await s.teamMemberNames(match.ownTeamId);
+    final peerEnabled =
+        s.isTrainerHere &&
+        s.activeCloudTeamId == match.ownTeamId &&
+        PeerRatingService.available;
+    PeerSummary? peer;
+    if (peerEnabled) {
+      // Runde einmal je Oeffnen aktualisieren (Teilnehmer/Frist), dann lesen.
+      if (!_peerPublished && match.status == MatchStatus.finished) {
+        _peerPublished = true;
+        await s.publishPeerRound(widget.matchId);
+      }
+      peer = await PeerRatingService.summary(widget.matchId);
+    }
     if (!mounted) return;
     setState(() {
       _match = match;
@@ -62,6 +84,8 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
       _avg = avg;
       _byId = {for (final p in players) p.id: p};
       _names = names;
+      _peerEnabled = peerEnabled;
+      _peer = peer;
       _loading = false;
     });
   }
@@ -245,9 +269,16 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
     final reports = ratings
         .where((r) => (r.note ?? '').trim().isNotEmpty)
         .toList();
-    // Spieler-Schnitt: nach Durchschnitt absteigend.
-    final rated2 = _avg.entries.where((e) => _byId.containsKey(e.key)).toList()
-      ..sort((a, b) => b.value.$1.compareTo(a.value.$1));
+    // Spieler-Schnitt (Trainer + Mannschaft): nach Trainer-Schnitt, sonst
+    // Mannschafts-Schnitt absteigend.
+    final peerAvg = _peer?.avg ?? const <String, (double, int)>{};
+    final rated2 =
+        {..._avg.keys, ...peerAvg.keys}.where(_byId.containsKey).toList()
+          ..sort((a, b) {
+            final ta = _avg[a]?.$1 ?? -1, tb = _avg[b]?.$1 ?? -1;
+            if (ta != tb) return tb.compareTo(ta);
+            return (peerAvg[b]?.$1 ?? -1).compareTo(peerAvg[a]?.$1 ?? -1);
+          });
 
     return Scaffold(
       appBar: AppBar(
@@ -313,12 +344,20 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
             _hint('Noch kein Bericht geschrieben.')
           else
             for (final r in reports) _reportCard(context, r),
+          // Bewertung durch die Spieler (Web-Link)
+          if (_peerEnabled && match.status == MatchStatus.finished) ...[
+            _sectionTitle(context, 'Bewertung der Mannschaft'),
+            _peerCard(context, match),
+          ],
           // Spieler-Schnitt
           _sectionTitle(context, 'Spieler-Schnitt'),
+          if (_peer != null && rated2.isNotEmpty)
+            _hint('Trainer-Schnitt · daneben Mannschaft (Spieler-Bewertung)'),
           if (rated2.isEmpty)
             _hint('Noch keine Spielerbewertungen.')
           else
-            for (final e in rated2) _playerAvgRow(context, e.key, e.value),
+            for (final id in rated2)
+              _playerAvgRow(context, id, _avg[id], peerAvg[id]),
         ],
       ),
     );
@@ -407,7 +446,8 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
   Widget _playerAvgRow(
     BuildContext context,
     String playerId,
-    (double, int) avg,
+    (double, int)? avg,
+    (double, int)? peer,
   ) {
     final p = _byId[playerId]!;
     return Padding(
@@ -426,10 +466,251 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
           Icon(Icons.star, size: 15, color: Colors.amber.shade700),
           const SizedBox(width: 3),
           Text(
-            '${avg.$1.toStringAsFixed(1)} (${avg.$2})',
+            avg == null ? '–' : '${avg.$1.toStringAsFixed(1)} (${avg.$2})',
             style: const TextStyle(fontWeight: FontWeight.w600),
           ),
+          if (_peer != null) ...[
+            const SizedBox(width: 12),
+            Tooltip(
+              message: 'Mannschafts-Schnitt',
+              child: Icon(
+                Icons.groups,
+                size: 16,
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(width: 3),
+            SizedBox(
+              width: 52,
+              child: Text(
+                peer == null
+                    ? '–'
+                    : '${peer.$1.toStringAsFixed(1)} (${peer.$2})',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
         ],
+      ),
+    );
+  }
+
+  String _peerName(String id) {
+    final p = _byId[id];
+    if (p != null) return p.fullName;
+    for (final r in _peer?.players ?? const <PeerRoundPlayer>[]) {
+      if (r.id == id) return r.name;
+    }
+    return 'Unbekannt';
+  }
+
+  Future<void> _notifyGroup(GameMatch match) async {
+    final peer = _peer;
+    if (peer == null) return;
+    final until = DateFormat(
+      'EEE dd.MM., HH:mm',
+      'de_DE',
+    ).format(peer.closesAt.toLocal());
+    await shareText(
+      '⭐ Spielbewertung gegen ${match.opponentName} ist offen – bis $until Uhr. '
+      'Bitte über euren persönlichen Link bewerten: Mitspieler, eure eigene '
+      'Leistung, das Spiel und den Spieler des Spiels. Wer keinen Link hat, '
+      'meldet sich beim Trainerteam.',
+    );
+  }
+
+  /// Karte „Bewertung der Mannschaft": Status, Spieler des Spiels, Spielnote
+  /// und Kommentare der Spieler (anonym), Aktionen Benachrichtigen/Links.
+  Widget _peerCard(BuildContext context, GameMatch match) {
+    final peer = _peer;
+    final scheme = Theme.of(context).colorScheme;
+    final small = Theme.of(context).textTheme.bodySmall;
+    final linksBtn = OutlinedButton.icon(
+      onPressed: () =>
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const PeerLinksScreen()),
+          ).then((_) {
+            if (mounted) _load();
+          }),
+      icon: const Icon(Icons.link, size: 18),
+      label: const Text('Spieler-Links'),
+    );
+    if (peer == null) {
+      return Card(
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Noch keine Bewertungsrunde für die Spieler. Sie entsteht '
+                'automatisch, sobald eine Aufstellung (oder Zusagen) und ein '
+                'Anstoß hinterlegt sind. Dafür muss die Cloud-Stufe 59 '
+                '(stage59_peer_ratings.sql) ausgeführt sein.',
+              ),
+              const SizedBox(height: 8),
+              linksBtn,
+            ],
+          ),
+        ),
+      );
+    }
+    final until = DateFormat(
+      'EEE dd.MM., HH:mm',
+      'de_DE',
+    ).format(peer.closesAt.toLocal());
+    final missing = peer.missing;
+    final top = peer.motm.isEmpty ? 0 : peer.motm.first.$2;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  peer.open ? Icons.lock_open : Icons.lock,
+                  size: 18,
+                  color: scheme.primary,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    peer.open ? 'Offen bis $until Uhr' : 'Beendet ($until Uhr)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                Text(
+                  '${peer.voters.length} von ${peer.players.length} abgestimmt',
+                  style: small,
+                ),
+              ],
+            ),
+            if (missing.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Fehlt noch: ${missing.map((p) => p.name).join(', ')}',
+                style: small?.copyWith(color: Theme.of(context).hintColor),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                if (peer.open)
+                  FilledButton.tonalIcon(
+                    onPressed: () => _notifyGroup(match),
+                    icon: const Icon(Icons.campaign_outlined, size: 18),
+                    label: const Text('Gruppe benachrichtigen'),
+                  ),
+                linksBtn,
+              ],
+            ),
+            const Divider(height: 22),
+            Row(
+              children: [
+                Icon(Icons.emoji_events, color: Colors.amber.shade700),
+                const SizedBox(width: 6),
+                const Text(
+                  'Spieler des Spiels',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
+            if (peer.motm.isEmpty)
+              _hint('Noch keine Stimmen.')
+            else
+              for (final (id, votes) in peer.motm.take(5))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _peerName(id),
+                          style: TextStyle(
+                            fontWeight: votes == top
+                                ? FontWeight.bold
+                                : FontWeight.normal,
+                          ),
+                        ),
+                      ),
+                      Text('$votes ${votes == 1 ? 'Stimme' : 'Stimmen'}'),
+                    ],
+                  ),
+                ),
+            const Divider(height: 22),
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Spielnote der Mannschaft',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                if (peer.matchAvg != null) ...[
+                  Icon(Icons.star, size: 16, color: Colors.amber.shade700),
+                  const SizedBox(width: 3),
+                  Text(
+                    '${peer.matchAvg!.toStringAsFixed(1)} (${peer.matchCount})',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ] else
+                  Text('–', style: small),
+              ],
+            ),
+            for (final n in peer.matchNotes)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.format_quote,
+                      size: 16,
+                      color: Theme.of(context).hintColor,
+                    ),
+                    const SizedBox(width: 4),
+                    Expanded(child: Text(n)),
+                  ],
+                ),
+              ),
+            if (peer.self.isNotEmpty) ...[
+              const Divider(height: 22),
+              const Text(
+                'Selbsteinschätzung',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              for (final e in peer.self)
+                Padding(
+                  padding: const EdgeInsets.only(top: 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(child: Text(_peerName(e.playerId))),
+                          for (var i = 1; i <= 5; i++)
+                            Icon(
+                              i <= (e.stars ?? 0)
+                                  ? Icons.star
+                                  : Icons.star_border,
+                              size: 15,
+                              color: Colors.amber.shade700,
+                            ),
+                        ],
+                      ),
+                      if ((e.note ?? '').trim().isNotEmpty)
+                        Text((e.note ?? '').trim(), style: small),
+                    ],
+                  ),
+                ),
+            ],
+          ],
+        ),
       ),
     );
   }
