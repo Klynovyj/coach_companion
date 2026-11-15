@@ -305,7 +305,7 @@ details.cv > summary::-webkit-details-marker { display: none; }
 details.cv .ava { width: 40px; height: 40px; }
 details.cv .who { flex: 1; min-width: 0; }
 details.cv .who b { display: block; font-size: 15px; }
-details.cv .who span { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+details.cv .who > span { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 details.cv > summary::after { content: "▾"; color: var(--muted); }
 details.cv[open] > summary::after { transform: rotate(180deg); }
 details.cv .pv { display: flex; align-items: center; gap: 8px; padding: 4px 0 4px 50px; font-size: 14px; }
