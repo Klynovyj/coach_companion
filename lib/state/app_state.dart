@@ -4543,14 +4543,22 @@ class AppState extends ChangeNotifier {
     );
   }
 
-  Future<List<PlayerOfMonth>> honorHistory() => _repo.getPlayersOfMonth();
+  Future<List<PlayerOfMonth>> honorHistory() async => [
+    for (final p in await _repo.getPlayersOfMonth())
+      if (p.playerId.isNotEmpty) p,
+  ];
 
   Future<PlayerOfMonth?> honoredOf(String yearMonth) async {
     for (final p in await _repo.getPlayersOfMonth()) {
-      if (p.yearMonth == yearMonth) return p;
+      // Leere Zeile = Kürung aufgehoben (Zustimmung nicht mehr einstimmig).
+      if (p.yearMonth == yearMonth && p.playerId.isNotEmpty) return p;
     }
     return null;
   }
+
+  /// Im Cloud-Team kürt nicht ein Trainer allein: alle müssen zustimmen.
+  bool get crownByConsensus =>
+      _activeCloudTeamId != null && PeerRatingService.available;
 
   Future<void> honorPlayerOfMonth(String yearMonth, String playerId) async {
     final existing = await honoredOf(yearMonth);

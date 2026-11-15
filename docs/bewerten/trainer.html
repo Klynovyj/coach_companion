@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=10">
+<link rel="stylesheet" href="style.css?v=11">
 </head>
 <body>
 <div class="wrap">
@@ -29,7 +29,7 @@
   </div>
 </div>
 
-<script src="common.js?v=10"></script>
+<script src="common.js?v=11"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let info = null;     // {name, team, rounds}
@@ -184,20 +184,18 @@ function renderMonth() {
   if (!el || !month) return;
   const ym = month.year_month;
   const chips = (month.months || []).map((m) => `<button data-ym="${CC.esc(m)}" class="${m === ym ? 'on' : ''}">${CC.esc(CC.monthLabel(m, true))}</button>`).join('');
-  el.innerHTML = CC.monthCard(month.honored, ym) +
-    `<div class="card"><h2>Rangliste ${CC.esc(CC.monthLabel(ym))}</h2><p class="sub">Nach Trainer-Schnitt der Spiele im Monat · Mannschaft daneben.</p>
-      <div class="mchips">${chips}</div>${CC.rankList(month.ranking, month.honored?.id)}
+  el.innerHTML = CC.crownCard(month) +
+    `<div class="card"><h2>Rangliste ${CC.esc(CC.monthLabel(ym))}</h2><p class="sub">Nach Trainer-Schnitt der Spiele im Monat · Mannschaft daneben. „Zustimmen“ = deine Stimme; gekürt ist erst, wenn alle Trainer denselben Spieler bestätigen.</p>
+      <div class="mchips">${chips}</div>${CC.rankList(month.ranking, month.crown?.crowned, month.crown, month.me)}
       ${(month.history || []).length ? `<h2 style="margin-top:16px;font-size:17px">Bisherige Spieler des Monats</h2>${CC.historyStrip(month.history)}` : ''}</div>`;
   el.querySelectorAll('[data-ym]').forEach((b) => (b.onclick = async () => { monthSel = b.dataset.ym; await loadMonth(); renderMonth(); }));
   el.querySelectorAll('[data-crown]').forEach((b) => (b.onclick = async () => {
     const id = b.dataset.crown;
-    const undo = month.honored?.id === id;
-    const q = undo ? `Kürung von ${b.dataset.name} für ${CC.monthLabel(ym)} aufheben?` : `${b.dataset.name} zum Spieler des Monats ${CC.monthLabel(ym)} küren?`;
-    if (!confirm(q)) return;
+    const undo = b.dataset.mine === '1';
     b.disabled = true;
     try {
-      const res = await CC.rpc('coach_crown_month', { p_token: CC.token, p_year_month: ym, p_player_id: undo ? null : id });
-      if (!res?.ok) alert('Küren hat nicht geklappt.');
+      const res = await CC.rpc('coach_crown_vote', { p_token: CC.token, p_year_month: ym, p_player_id: undo ? null : id });
+      if (!res?.ok) alert('Zustimmen hat nicht geklappt.');
     } catch (e) {
       alert('Keine Verbindung – bitte nochmal versuchen.');
     }

@@ -292,3 +292,66 @@ class CoachVote {
     );
   }
 }
+
+/// Stand der Kürung „Spieler des Monats" (alle Trainer müssen zustimmen).
+class CrownState {
+  const CrownState({
+    required this.yearMonth,
+    this.me,
+    this.required = const [],
+    this.counts = const {},
+    this.crowned,
+    this.leaders = const [],
+  });
+
+  final String yearMonth;
+
+  /// Eigene Bewerter-ID (App-Konto).
+  final String? me;
+
+  /// Pflicht-Trainer: (Bewerter-ID, Name, gewählter Spieler oder null).
+  final List<(String, String, String?)> required;
+
+  /// Zustimmungen je Spieler.
+  final Map<String, int> counts;
+
+  /// Fest gekürter Spieler (alle haben zugestimmt) oder null.
+  final String? crowned;
+
+  /// Platz 1 der Monats-Rangliste (voraussichtlich; Gleichstand = mehrere).
+  final List<String> leaders;
+
+  String? get myVote {
+    for (final r in required) {
+      if (r.$1 == me) return r.$3;
+    }
+    return null;
+  }
+
+  factory CrownState.fromJson(Map<String, dynamic> m) {
+    final st = m['state'] is Map ? Map<String, dynamic>.from(m['state']) : m;
+    final counts = st['counts'];
+    return CrownState(
+      yearMonth: (st['year_month'] ?? '').toString(),
+      me: m['me']?.toString(),
+      required: [
+        for (final r in (st['required'] as List? ?? const []))
+          if (r is Map)
+            (
+              r['rater_id'].toString(),
+              (r['name'] as String?) ?? 'Trainer',
+              r['player_id']?.toString(),
+            ),
+      ],
+      counts: {
+        if (counts is Map)
+          for (final e in counts.entries)
+            if (e.value is num) e.key.toString(): (e.value as num).toInt(),
+      },
+      crowned: st['crowned']?.toString(),
+      leaders: [
+        for (final l in (st['leaders'] as List? ?? const [])) l.toString(),
+      ],
+    );
+  }
+}

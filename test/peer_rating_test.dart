@@ -63,7 +63,11 @@ void main() {
     expect(o.teamAvg, 3.8);
     expect(o.motmId, 'p1');
     expect(o.motmVotes, 5);
-    final none = PeerOverview.fromJson({'match_id': 'm2', 'open': false, 'motm': null});
+    final none = PeerOverview.fromJson({
+      'match_id': 'm2',
+      'open': false,
+      'motm': null,
+    });
     expect(none.motmId, isNull);
     expect(none.teamAvg, isNull);
 
@@ -79,6 +83,28 @@ void main() {
     expect(v.matchStars, 3.5);
     expect(v.stars, {'p1': 4.5, 'p2': 3.0});
     expect(v.motmPlayerId, 'p1');
+  });
+
+  test('CrownState fromJson + eigene Stimme', () {
+    final c = CrownState.fromJson({
+      'me': 'u1',
+      'state': {
+        'year_month': '2026-11',
+        'required': [
+          {'rater_id': 'u1', 'name': 'Andrej', 'player_id': 'p1'},
+          {'rater_id': 'u2', 'name': 'Jan', 'player_id': null},
+        ],
+        'counts': {'p1': 1},
+        'crowned': null,
+        'leaders': ['p1', 'p2'],
+      },
+    });
+    expect(c.yearMonth, '2026-11');
+    expect(c.required.length, 2);
+    expect(c.myVote, 'p1');
+    expect(c.counts['p1'], 1);
+    expect(c.crowned, isNull);
+    expect(c.leaders, ['p1', 'p2']);
   });
 
   test('PeerSummary.fromJson: Schnitte, Stimmen, Fehlende', () {

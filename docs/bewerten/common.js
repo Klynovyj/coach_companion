@@ -66,9 +66,14 @@ const CC = (() => {
    */
   function applyBadges(b) {
     const motm = new Set((b?.motm || []).map((x) => x.id));
-    const pom = b?.pom?.id || null;
-    const html = (id) => (motm.has(id) ? '<span class="bd s" title="Aktueller Stand der Wahl">👑 Spieler des Spiels</span>' : '') +
-      (pom === id ? '<span class="bd m">🏆 Spieler des Monats</span>' : '');
+    const motmFinal = !!b?.motm_final;
+    const pomIds = new Set(b?.pom?.ids || []);
+    const pomFinal = !!b?.pom?.final;
+    const html = (id) => (motm.has(id)
+      ? `<span class="bd s ${motmFinal ? '' : 'pre'}" title="${motmFinal ? 'Gewählt' : 'Aktueller Stand der Wahl'}">👑 ${motmFinal ? '' : 'voraussichtl. '}Spieler des Spiels</span>` : '') +
+      (pomIds.has(id)
+        ? `<span class="bd m ${pomFinal ? '' : 'pre'}" title="${pomFinal ? 'Von allen Trainern gekürt' : 'Platz 1 der Monats-Rangliste'}">🏆 ${pomFinal ? '' : 'voraussichtl. '}Spieler des Monats</span>` : '');
+    const pom = { has: (id) => pomIds.has(id) };
     document.querySelectorAll('[data-bdg]').forEach((el) => {
       const id = el.dataset.bdg;
       const h = html(id);
@@ -77,7 +82,7 @@ const CC = (() => {
     });
     document.querySelectorAll('[data-bdg-mini]').forEach((el) => {
       const id = el.dataset.bdgMini;
-      el.textContent = (motm.has(id) ? '👑' : '') + (pom === id ? '🏆' : '');
+      el.textContent = (motm.has(id) ? '👑' : '') + (pom.has(id) ? '🏆' : '');
     });
   }
 
@@ -140,8 +145,43 @@ const CC = (() => {
       ${avatar(p, { [h.id]: h.photo })}<div class="nm">${esc(p.name)}</div><div class="mo">${esc(monthLabel(h.year_month))}</div></div>`;
   }
 
-  /** Rangliste des Monats (Trainer-Schnitt, daneben Mannschaft) mit „Küren". */
-  function rankList(ranking, honoredId) {
+  /**
+   * Karte „Spieler des Monats" mit Zustimmung aller Trainer: fest gekürt oder
+   * voraussichtlich (Platz 1 der Rangliste) + wer schon bestätigt hat.
+   */
+  function crownCard(month) {
+    const c = month?.crown || {};
+    const ym = month?.year_month;
+    const byId = Object.fromEntries((month?.ranking || []).map((r) => [r.id, r]));
+    const req = c.required || [];
+    const name = (id) => byId[id]?.name || (month?.honored?.id === id ? month.honored.name : 'Unbekannt');
+    const photo = (id) => byId[id]?.photo || (month?.honored?.id === id ? month.honored.photo : null);
+    let head;
+    if (c.crowned) {
+      const p = { id: c.crowned, name: name(c.crowned), number: byId[c.crowned]?.number };
+      head = `<div class="lbl">Spieler des Monats · ${esc(monthLabel(ym))}</div><div class="crown">👑</div>
+        ${avatar(p, { [p.id]: photo(p.id) })}<div class="nm">${esc(p.name)}</div><div class="mo">Von allen Trainern bestätigt</div>`;
+    } else if ((c.leaders || []).length) {
+      const ls = c.leaders.map((id) => ({ id, name: name(id), number: byId[id]?.number }));
+      head = `<div class="lbl">Spieler des Monats · ${esc(monthLabel(ym))}</div>
+        <div class="avs">${ls.slice(0, 4).map((p) => avatar(p, { [p.id]: photo(p.id) })).join('')}</div>
+        <div class="prov">Voraussichtlich</div><div class="names">${esc(ls.map((p) => p.name).join(' · '))}</div>
+        <div class="mo">Noch nicht von allen Trainern bestätigt</div>`;
+    } else {
+      head = `<div class="lbl">Spieler des Monats · ${esc(monthLabel(ym))}</div><p class="none">Noch keine Trainer-Noten.</p>`;
+    }
+    const counts = c.counts || {};
+    const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    const conf = req.length ? `<div class="conf">
+      ${best ? `<div style="font-size:13px;color:var(--muted)">Zustimmung für <b style="color:var(--gold)">${esc(name(best[0]))}</b>: ${best[1]}/${req.length} Trainer</div>
+        <div class="bar2"><div style="width:${(best[1] / req.length) * 100}%"></div></div>` : `<div style="font-size:13px;color:var(--muted)">Noch keine Zustimmung – gekürt wird erst, wenn alle ${req.length} Trainer denselben Spieler bestätigen.</div>`}
+      ${req.map((r) => `<div class="cr"><b>${esc(r.name)}${r.rater_id === month.me ? ' (du)' : ''}</b>${r.player_id ? `<span class="ok">✓ ${esc(name(r.player_id))}</span>` : '<span class="no">noch offen</span>'}</div>`).join('')}
+    </div>` : '';
+    return `<div class="card month">${head}${conf}</div>`;
+  }
+
+  /** Rangliste des Monats (Trainer-Schnitt, daneben Mannschaft) mit „Zustimmen". */
+  function rankList(ranking, honoredId, crown, me) {
     if (!ranking || !ranking.length) return '<p class="sub">Noch keine Trainer-Noten in diesem Monat.</p>';
     let place = 0, last = null;
     return ranking.map((r, i) => {
@@ -149,9 +189,13 @@ const CC = (() => {
       if (a !== last) { place = i + 1; last = a; }
       const p = { id: r.id, name: r.name, number: r.number };
       const on = r.id === honoredId;
+      const voters = (crown?.required || []).filter((x) => x.player_id === r.id);
+      const mine = (crown?.required || []).some((x) => x.rater_id === me && x.player_id === r.id);
+      const initials2 = (n) => String(n || '?').split(/\s+/).map((w) => w[0]).slice(0, 2).join('').toUpperCase();
       return `<div class="rk ${place === 1 ? 'top' : ''} ${on ? 'crowned' : ''}"><div class="pl">${place}</div>${avatar(p, { [r.id]: r.photo })}
-        <div class="nm">${esc(r.name)}<small><b>Trainer ${f1(r.t?.avg)}</b> (${r.t?.n ?? 0})${r.m ? ` · <i>Mannschaft ${f1(r.m.avg)}</i> (${r.m.n})` : ''}</small></div>
-        <button type="button" class="crownbtn ${on ? 'on' : ''}" data-crown="${esc(r.id)}" data-name="${esc(r.name)}">${on ? '👑 Gekürt' : 'Küren'}</button></div>`;
+        <div class="nm">${esc(r.name)}<small><b>Trainer ${f1(r.t?.avg)}</b> (${r.t?.n ?? 0})${r.m ? ` · <i>Mannschaft ${f1(r.m.avg)}</i> (${r.m.n})` : ''}</small>
+        ${voters.length ? `<div class="who2">${voters.map((v) => `<span title="${esc(v.name)}">✓ ${esc(initials2(v.name))}</span>`).join('')}</div>` : ''}</div>
+        <button type="button" class="crownbtn ${mine ? 'mine' : ''}" data-crown="${esc(r.id)}" data-name="${esc(r.name)}" data-mine="${mine ? 1 : 0}">${mine ? '✓ Deine Stimme' : 'Zustimmen'}</button></div>`;
     }).join('');
   }
 
@@ -324,6 +368,6 @@ const CC = (() => {
     el.innerHTML = `<div class="card msg"><div class="ic">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
   }
 
-  return { applyBadges, overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
+  return { crownCard, applyBadges, overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
     playerRow, motmTiles, podium, gradeTiles, bars, sortPlayers, message, safeImg };
 })();

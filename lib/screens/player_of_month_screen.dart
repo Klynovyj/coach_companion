@@ -2,8 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
+import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
+
+import '../models/peer_rating.dart';
 import '../models/player.dart';
 import '../models/player_of_month.dart';
+import '../services/peer_rating_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 import 'club_stats_screen.dart';
@@ -30,6 +34,11 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
   List<PlayerOfMonth> _history = [];
   bool _loading = true;
 
+  /// Kürung im Cloud-Team: alle Trainer müssen zustimmen (Stufe 68).
+  CrownState? _crown;
+  RealtimeChannel? _crownCh;
+  bool _voting = false;
+
   late final AppState _app = context.read<AppState>();
 
   @override
@@ -46,7 +55,35 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
   @override
   void dispose() {
     _app.removeListener(_onChanged);
+    PeerRatingService.unsubscribe(_crownCh);
     super.dispose();
+  }
+
+  Future<void> _loadCrown() async {
+    final teamId = _teamId, month = _month;
+    if (teamId == null || month == null || !_app.crownByConsensus) return;
+    final c = await PeerRatingService.crownState(teamId, month);
+    if (mounted && c != null && c.yearMonth == _month) {
+      setState(() => _crown = c);
+    }
+  }
+
+  /// Eigene Zustimmung setzen/ändern ([playerId] null = zurücknehmen).
+  Future<void> _vote(String? playerId) async {
+    final teamId = _teamId, month = _month;
+    if (teamId == null || month == null) return;
+    setState(() => _voting = true);
+    final c = await PeerRatingService.crownVote(teamId, month, playerId);
+    if (!mounted) return;
+    setState(() {
+      _voting = false;
+      if (c != null) _crown = c;
+    });
+    if (c == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Zum Zustimmen bitte online sein.')),
+      );
+    }
   }
 
   Future<void> _init() async {
@@ -66,6 +103,10 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
       _months = list;
       _month = list.first;
     });
+    if (_app.crownByConsensus) {
+      // Zustimmungen anderer Trainer sofort sehen (Realtime).
+      _crownCh = PeerRatingService.subscribeCrown(team.id, _loadCrown);
+    }
     await _loadMonth();
   }
 
@@ -75,11 +116,15 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
     final ranking = await _app.monthRanking(teamId, month);
     final honored = await _app.honoredOf(month);
     final history = await _app.honorHistory();
+    final crown = _app.crownByConsensus
+        ? await PeerRatingService.crownState(teamId, month)
+        : null;
     if (!mounted) return;
     setState(() {
       _ranking = ranking;
       _honored = honored;
       _history = history;
+      _crown = crown;
       _loading = false;
     });
   }
@@ -103,11 +148,16 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
         child: ListView(
           shrinkWrap: true,
           children: [
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 8),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: Text(
-                'Spieler des Monats küren',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                _crown != null
+                    ? 'Zustimmen: Spieler des Monats'
+                    : 'Spieler des Monats küren',
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
               ),
             ),
             const Divider(height: 1),
@@ -126,15 +176,20 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
       ),
     );
     if (picked == null || _month == null) return;
+    if (_crown != null) {
+      await _vote(picked);
+      return;
+    }
     await _app.honorPlayerOfMonth(_month!, picked);
     await _loadMonth();
   }
 
   /// Öffnet die teilbare Grafik/Urkunde für den gekürten Spieler des Monats.
   void _openExport() {
-    final honored = _honored, month = _month;
-    if (honored == null || month == null) return;
-    final player = _byId[honored.playerId];
+    final honoredId = _crown?.crowned ?? _honored?.playerId;
+    final month = _month;
+    if (honoredId == null || month == null) return;
+    final player = _byId[honoredId];
     if (player == null) return;
     // Ø-Note + Anzahl aus der Monats-Rangliste (null, falls unbewertet).
     double? avg;
@@ -369,7 +424,132 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
     );
   }
 
+  /// Kürung mit Zustimmung aller Trainer: fest gekürt oder voraussichtlich
+  /// (Platz 1 der Rangliste), wer schon bestätigt hat, Zustimmen/Zurücknehmen.
+  Widget _crownCard(CrownState c) {
+    final small = Theme.of(context).textTheme.bodySmall;
+    final crowned = c.crowned;
+    final leaders = c.leaders.where(_byId.containsKey).toList();
+    final mine = c.myVote;
+    final n = c.required.length;
+    final best = c.counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+      color: _gold.withValues(alpha: 0.12),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Text('🏆', style: TextStyle(fontSize: 28)),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        crowned != null
+                            ? 'Spieler des Monats'
+                            : 'Voraussichtlich Spieler des Monats',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        crowned != null
+                            ? _name(crowned)
+                            : (leaders.isEmpty
+                                  ? 'Noch keine Trainer-Noten'
+                                  : leaders.map(_name).join(' · ')),
+                        style: const TextStyle(fontSize: 16),
+                      ),
+                      Text(
+                        crowned != null
+                            ? 'Von allen $n Trainern bestätigt'
+                            : 'Gekürt wird erst, wenn alle $n Trainer '
+                                  'denselben Spieler bestätigen.',
+                        style: small,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (best.isNotEmpty && n > 0) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Zustimmung für ${_name(best.first.key)}: '
+                '${best.first.value}/$n Trainer',
+                style: small,
+              ),
+              const SizedBox(height: 4),
+              LinearProgressIndicator(
+                value: best.first.value / n,
+                color: _gold,
+                backgroundColor: _gold.withValues(alpha: 0.2),
+                minHeight: 6,
+                borderRadius: BorderRadius.circular(3),
+              ),
+            ],
+            const SizedBox(height: 8),
+            for (final r in c.required)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: [
+                    Icon(
+                      r.$3 != null
+                          ? Icons.check_circle
+                          : Icons.radio_button_unchecked,
+                      size: 18,
+                      color: r.$3 != null ? Colors.green : Colors.grey,
+                    ),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(r.$1 == c.me ? '${r.$2} (du)' : r.$2)),
+                    Text(
+                      r.$3 != null ? _name(r.$3!) : 'noch offen',
+                      style: small?.copyWith(
+                        color: r.$3 != null ? null : Colors.grey,
+                        fontWeight: r.$3 != null ? FontWeight.w600 : null,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                FilledButton.icon(
+                  onPressed: _voting || !_ranking.any((e) => e.$2 != null)
+                      ? null
+                      : _honor,
+                  icon: const Icon(Icons.how_to_vote, size: 18),
+                  label: Text(mine == null ? 'Zustimmen' : 'Stimme ändern'),
+                ),
+                if (mine != null)
+                  OutlinedButton(
+                    onPressed: _voting ? null : () => _vote(null),
+                    child: const Text('Zurücknehmen'),
+                  ),
+                if (crowned != null && _byId.containsKey(crowned))
+                  TextButton.icon(
+                    onPressed: _openExport,
+                    icon: const Icon(Icons.ios_share, size: 18),
+                    label: const Text('Teilen / Urkunde'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _honorCard() {
+    if (_crown != null) return _crownCard(_crown!);
     final honoredPlayer = _honored == null ? null : _byId[_honored!.playerId];
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
@@ -427,7 +607,11 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
 
   Widget _rankRow(int index, (Player, double?, int) e) {
     final (p, avg, count) = e;
-    final isHonored = _honored?.playerId == p.id;
+    final isHonored = (_crown?.crowned ?? _honored?.playerId) == p.id;
+    final voters = [
+      for (final r in _crown?.required ?? const <(String, String, String?)>[])
+        if (r.$3 == p.id) r.$2,
+    ];
     final rank = avg != null ? index + 1 : null;
     final top = rank == 1;
     return Container(
@@ -458,7 +642,18 @@ class _PlayerOfMonthScreenState extends State<PlayerOfMonthScreen> {
             fontWeight: top ? FontWeight.bold : FontWeight.normal,
           ),
         ),
-        subtitle: avg == null ? const Text('keine Bewertung') : null,
+        subtitle: avg == null
+            ? const Text('keine Bewertung')
+            : (voters.isEmpty
+                  ? null
+                  : Text(
+                      '✓ ${voters.join(', ')}',
+                      style: TextStyle(
+                        color: _gold,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    )),
         trailing: avg == null
             ? (isHonored ? const Text('🏆') : null)
             : Row(

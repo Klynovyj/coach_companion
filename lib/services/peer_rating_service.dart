@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/peer_rating.dart';
@@ -187,5 +188,75 @@ class PeerRatingService {
       }
     } catch (_) {}
     return null;
+  }
+
+  // ---------------------------------------- Spieler des Monats (Stufe 68)
+  /// Stand der Kürung eines Monats; `null` = nicht verfügbar.
+  static Future<CrownState?> crownState(String teamId, String yearMonth) async {
+    if (!available) return null;
+    try {
+      final res = await _c.rpc(
+        'app_crown_state',
+        params: {'p_team': teamId, 'p_year_month': yearMonth},
+      );
+      if (res is Map && res['ok'] == true) {
+        return CrownState.fromJson(Map<String, dynamic>.from(res));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Eigene Zustimmung setzen ([playerId] null = zurücknehmen). Gekürt wird
+  /// serverseitig erst, wenn alle Trainer denselben Spieler bestätigen.
+  static Future<CrownState?> crownVote(
+    String teamId,
+    String yearMonth,
+    String? playerId,
+  ) async {
+    if (!available) return null;
+    try {
+      final res = await _c.rpc(
+        'app_crown_vote',
+        params: {
+          'p_team': teamId,
+          'p_year_month': yearMonth,
+          'p_player_id': playerId,
+        },
+      );
+      if (res is Map && res['ok'] == true) {
+        return CrownState.fromJson({
+          'me': CloudService.userId,
+          'state': res['state'],
+        });
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /// Live-Änderungen der Zustimmungen eines Teams (Realtime).
+  static RealtimeChannel? subscribeCrown(String teamId, VoidCallback onChange) {
+    if (!available) return null;
+    final ch = _c.channel('crown_$teamId');
+    ch
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'month_crown_votes',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'team_id',
+            value: teamId,
+          ),
+          callback: (_) => onChange(),
+        )
+        .subscribe();
+    return ch;
+  }
+
+  static Future<void> unsubscribe(RealtimeChannel? ch) async {
+    if (ch == null) return;
+    try {
+      await _c.removeChannel(ch);
+    } catch (_) {}
   }
 }
