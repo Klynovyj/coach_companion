@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <div class="wrap">
@@ -26,11 +26,12 @@
   </div>
 </div>
 
-<script src="common.js?v=3"></script>
+<script src="common.js?v=4"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let state = null;
 let med = {};
+let prof = null;     // rating_profile: Foto + eigene Abgaben
 let form = { stars: {}, self_stars: null, self_note: '', match_stars: null, match_note: '', motm_player_id: null };
 
 const mates = () => CC.sortPlayers(state.round.players).filter((p) => p.id !== state.player_id);
@@ -44,7 +45,7 @@ function brand() {
 function header() {
   brand();
   const r = state?.round;
-  $('head').innerHTML = (state?.player_name ? `<p class="hello">Hallo <b>${CC.esc(state.player_name)}</b>!</p>` : '') +
+  $('head').innerHTML = CC.profileCard(prof, state?.player_name, `Spieler · ${state?.team || ''}`) +
     (r ? CC.scoreboard(med, r) : '');
 }
 
@@ -100,14 +101,14 @@ function renderThanks() {
     <p>Deine Bewertung ist gespeichert. Du kannst sie bis ${CC.esc(CC.fmtDate(state.round.closes_at, true))} Uhr noch ändern.</p>
     ${motm ? `<p style="margin-top:10px">Dein Spieler des Spiels: <b style="color:var(--gold)">${CC.esc(motm.name)}</b></p>` : ''}
     <p style="margin-top:10px">Wer Spieler des Spiels geworden ist, siehst du hier nach Ablauf der Frist.</p>
-    <button class="btn ghost" id="edit">Bewertung ändern</button></div>`;
+    <button class="btn ghost" id="edit">Bewertung ändern</button></div>` + CC.entriesCard(prof, med.logos, med.us?.name);
   $('edit').onclick = renderForm;
 }
 
 function renderClosed() {
   $('bar').hidden = true;
   $('main').innerHTML = `<div class="card"><h2 style="text-align:center">🏆 Spieler des Spiels</h2>${CC.podium(state.motm || [], byId(), med.photos)}</div>
-    <p class="hello" style="text-align:center">Nach dem nächsten Spiel kannst du hier wieder bewerten. Speichere dir den Link am besten als Lesezeichen.</p>`;
+    <p class="hello" style="text-align:center">Nach dem nächsten Spiel kannst du hier wieder bewerten. Speichere dir den Link am besten als Lesezeichen.</p>` + CC.entriesCard(prof, med.logos, med.us?.name);
 }
 
 async function send() {
@@ -124,6 +125,8 @@ async function send() {
       if (res?.error === 'closed') setTimeout(load, 1500);
       return;
     }
+    prof = (await CC.profile()) || prof;
+    header();
     renderThanks();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch (e) {
@@ -147,7 +150,7 @@ async function load() {
     return;
   }
   const r = state.round;
-  med = await CC.media(r?.match_id);
+  [med, prof] = await Promise.all([CC.media(r?.match_id), CC.profile()]);
   header();
   if (!r) { CC.message($('main'), '⚽', 'Gerade nichts zu bewerten', 'Nach dem nächsten Spiel kannst du hier deine Bewertung abgeben. Speichere dir den Link am besten als Lesezeichen.'); return; }
   if (!r.open) { renderClosed(); return; }

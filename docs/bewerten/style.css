@@ -199,3 +199,35 @@ textarea:focus { outline: 2px solid var(--green2); border-color: transparent; }
 .quote { background: var(--card2); border-radius: 12px; padding: 10px 12px; margin-top: 8px; }
 .quote .by { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 13px; margin-bottom: 3px; }
 .voters { color: var(--muted); font-size: 13px; text-align: center; margin: 12px 0 0; }
+
+/* ---------- Profil im Kopf ---------- */
+.me { display: flex; align-items: center; gap: 14px; background: var(--card); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 12px 14px; margin: 0 0 12px; }
+.me .ava { width: 64px; height: 64px; }
+.me .ava .ph { border: 2px solid var(--green2); box-shadow: 0 0 0 4px rgba(31,191,116,.15); }
+.me .ava .ph .ini { font-size: 24px; color: var(--text); }
+.me .mi { flex: 1; min-width: 0; }
+.me .mh { color: var(--muted); font-size: 13px; }
+.me .mn { font: 700 24px/1.05 "Barlow Condensed", system-ui, sans-serif; text-transform: uppercase; letter-spacing: .02em; overflow-wrap: anywhere; }
+.me .mr { color: var(--muted); font-size: 13px; margin-top: 2px; }
+.me .ring { flex: none; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; text-align: center;
+  background: conic-gradient(var(--green2) calc(var(--p) * 1%), var(--line) 0); }
+.me .ring div { width: 46px; height: 46px; border-radius: 50%; background: var(--card); display: grid; place-items: center;
+  font: 800 17px/1 "Barlow Condensed", sans-serif; }
+.me .ring small { display: block; font: 600 9px/1 system-ui, sans-serif; color: var(--muted); margin-top: 2px; }
+
+.tile .stt { display: block; margin-top: 2px; font-weight: 600; }
+.tile .stt.ok { color: var(--green2); }
+.tile .stt.todo { color: var(--gold); }
+.tile .stt.miss { color: var(--muted); }
+
+.mine { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); }
+.mine:first-of-type { border-top: 0; }
+.mine .crest { width: 38px; height: 38px; }
+.mine .crest .ini { font-size: 14px; }
+.mine .tx { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; line-height: 1.25; }
+.mine .tx small { display: block; color: var(--muted); font-weight: 500; font-size: 12px; }
+.badge { flex: none; font: 700 12px/1 system-ui, sans-serif; padding: 6px 9px; border-radius: 999px; white-space: nowrap; }
+.badge.ok { background: rgba(31,191,116,.16); color: var(--green2); }
+.badge.todo { background: var(--gold-soft); color: var(--gold); }
+.badge.miss { background: var(--line); color: var(--muted); }

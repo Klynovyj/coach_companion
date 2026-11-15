@@ -10,12 +10,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=3">
+<link rel="stylesheet" href="style.css?v=4">
 </head>
 <body>
 <div class="wrap">
   <div class="brand" id="brand">Trainer-Bewertung</div>
-  <p class="hello" id="hello"></p>
+  <div id="me"></div>
   <div id="tiles"></div>
   <div id="head"></div>
   <div id="main"><div class="card msg"><p>Wird geladen …</p></div></div>
@@ -28,7 +28,7 @@
   </div>
 </div>
 
-<script src="common.js?v=3"></script>
+<script src="common.js?v=4"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let info = null;     // {name, team, rounds}
@@ -36,6 +36,7 @@ let sel = null;
 let detail = null;   // coach_rating_detail
 let med = {};        // rating_media
 let logos = {};      // Gegnerlogos je Spiel (Kacheln)
+let prof = null;     // rating_profile: Foto + eigene Abgaben
 let editing = false;
 let form = { stars: {}, match_stars: null, note: '', abstained: false };
 
@@ -45,8 +46,8 @@ const byId = () => Object.fromEntries((detail?.round?.players || []).map((p) => 
 function header() {
   const logo = CC.safeImg(med.us?.logo);
   $('brand').innerHTML = (logo ? `<img src="${logo}" alt="">` : '') + CC.esc(info?.team || '') + ' · Trainer';
-  $('hello').innerHTML = info?.name ? `Hallo <b>${CC.esc(info.name)}</b>!` : '';
-  $('tiles').innerHTML = CC.matchTiles(info?.rounds, sel, logos, med.us?.name);
+  $('me').innerHTML = CC.profileCard(prof, info?.name, `Trainer · ${info?.team || ''}`);
+  $('tiles').innerHTML = CC.matchTiles(info?.rounds, sel, logos, med.us?.name, prof?.entries);
   $('tiles').querySelectorAll('[data-m]').forEach((b) => (b.onclick = () => select(b.dataset.m)));
   const on = $('tiles').querySelector('.tile.on');
   if (on) on.scrollIntoView({ inline: 'center', block: 'nearest' });
@@ -153,6 +154,7 @@ async function send() {
       return;
     }
     editing = false;
+    prof = (await CC.profile()) || prof;
     await select(sel);
   } catch (e) {
     $('err').textContent = 'Keine Verbindung – bitte nochmal versuchen.';
@@ -196,6 +198,7 @@ async function load() {
     return;
   }
   if (!info?.ok) { info = null; CC.message($('main'), '🚫', 'Link ungültig', 'Dieser Link gilt nicht mehr. Lass dir in der App einen neuen erzeugen.'); return; }
+  prof = await CC.profile();
   if (!(info.rounds || []).length) {
     med = await CC.media('');
     header();

@@ -26,6 +26,16 @@ const CC = (() => {
     }
   }
 
+  /** Profil des Link-Inhabers (Stufe 63): Foto + eigene Abgaben. */
+  async function profile() {
+    try {
+      const p = await rpc('rating_profile', { p_token: token });
+      return p && p.ok ? p : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const safeImg = (u) => (typeof u === 'string' && /^data:image\/(png|jpe?g|webp|gif);base64,/.test(u) ? u : null);
 
@@ -47,6 +57,48 @@ const CC = (() => {
     const src = safeImg(photos?.[p.id]);
     return `<div class="ava"><div class="ph">${src ? `<img src="${src}" alt="" loading="lazy">` : `<span class="ini">${esc(initials(p.name))}</span>`}</div>` +
       (p.number != null ? `<div class="nr">${esc(p.number)}</div>` : '') + '</div>';
+  }
+
+  /** Profil-Karte: Foto, Name, Rolle und Fortschritt der offenen Abgaben. */
+  function profileCard(prof, fallbackName, role) {
+    const name = prof?.name || fallbackName || '';
+    const src = safeImg(prof?.photo);
+    const open = (prof?.entries || []).filter((e) => e.open);
+    const done = open.filter((e) => e.done).length;
+    const ring = open.length
+      ? `<div class="ring" style="--p:${(done / open.length) * 100}"><div><span>${done}/${open.length}<small>bewertet</small></span></div></div>`
+      : '';
+    return `<div class="me"><div class="ava"><div class="ph">${src ? `<img src="${src}" alt="">` : `<span class="ini">${esc(initials(name))}</span>`}</div></div>
+      <div class="mi"><div class="mh">Hallo</div><div class="mn">${esc(name)}</div><div class="mr">${esc(role)}</div></div>${ring}</div>`;
+  }
+
+  /** Statuszeile einer eigenen Abgabe (fuer Kacheln und Listen). */
+  function entryStatus(e, kind) {
+    if (!e) return { cls: 'miss', text: '' };
+    if (e.done) {
+      if (e.abstained) return { cls: 'ok', text: '✓ nicht da' };
+      const st = e.match_stars ? ' ' + '★'.repeat(Math.round(e.match_stars)) : '';
+      return { cls: 'ok', text: `✓ bewertet${st}` };
+    }
+    return e.open ? { cls: 'todo', text: 'offen' } : { cls: 'miss', text: 'verpasst' };
+  }
+
+  /** Liste „Deine Abgaben" (Spieler-Seite). */
+  function entriesCard(prof, logos, usName) {
+    const es = prof?.entries || [];
+    if (!es.length) return '';
+    return '<div class="card"><h2>Deine Abgaben</h2><p class="sub">Die letzten Spiele, in denen du dabei warst.</p>' + es.map((e) => {
+      const parts = String(e.title).match(/^(.*?)\s+–\s+(.*?)\s+\d+:\d+$/) || [];
+      const opp = parts[1] ? (parts[1] === usName ? parts[2] : parts[1]) : e.title;
+      const s = entryStatus(e);
+      const det = e.done ? [
+        e.match_stars ? `Spiel ${'★'.repeat(e.match_stars)}` : null,
+        e.self_stars ? `Du ${'★'.repeat(e.self_stars)}` : null,
+        e.total ? `${e.rated}/${e.total} Mitspieler` : null,
+        e.motm ? '👑' : null,
+      ].filter(Boolean).join(' · ') : fmtDate(e.match_date);
+      return `<div class="mine">${crest(logos?.[e.match_id], opp)}<div class="tx">${esc(e.title)}<small>${esc(det)}</small></div><span class="badge ${s.cls}">${e.done ? '✓' : esc(s.text)}</span></div>`;
+    }).join('') + '</div>';
   }
 
   /** Kopf mit Wappen/Ergebnis. [round] = {title, match_date, closes_at, open}. */
@@ -74,13 +126,14 @@ const CC = (() => {
   }
 
   /** Spiel-Kacheln (Trainer). rounds = [{match_id,title,match_date,open}], logos = {match_id: dataurl}. */
-  function matchTiles(rounds, sel, logos, usName) {
+  function matchTiles(rounds, sel, logos, usName, entries) {
+    const byMatch = Object.fromEntries((entries || []).map((e) => [e.match_id, e]));
     if (!rounds || rounds.length < 2) return '';
     return '<div class="tiles">' + rounds.map((r) => {
       const opp = (String(r.title).match(/^(.*?)\s+–\s+(.*?)\s+\d+:\d+$/) || []);
       const oppName = opp[1] ? (opp[1] === usName ? opp[2] : opp[1]) : r.title;
       return `<button class="tile ${r.match_id === sel ? 'on' : ''}" data-m="${esc(r.match_id)}">${crest(logos?.[r.match_id], oppName)}
-        <span>${esc(oppName)}<small><span class="dot ${r.open ? '' : 'off'}"></span>${esc(fmtDate(r.match_date))}</small></span></button>`;
+        <span>${esc(oppName)}<small><span class="dot ${r.open ? '' : 'off'}"></span>${esc(fmtDate(r.match_date))}${byMatch[r.match_id] ? `<span class="stt ${entryStatus(byMatch[r.match_id]).cls}">${esc(entryStatus(byMatch[r.match_id]).text)}</span>` : ''}</small></span></button>`;
     }).join('') + '</div>';
   }
 
@@ -157,6 +210,6 @@ const CC = (() => {
     el.innerHTML = `<div class="card msg"><div class="ic">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
   }
 
-  return { token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
+  return { profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
     playerRow, motmTiles, podium, gradeTiles, bars, sortPlayers, message, safeImg };
 })();
