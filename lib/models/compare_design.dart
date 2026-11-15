@@ -273,6 +273,10 @@ class CompareDesign {
     this.labelSize = 1.0,
     this.labelLook,
     this.topLook,
+    this.gradShape = 'linear',
+    this.pattern = true,
+    this.patternStrength = 1.0,
+    this.tint = 0,
   }) : left = left ?? CompareSide(label: 'DAMALS'),
        right = right ?? CompareSide(label: 'HEUTE'),
        backgrounds = backgrounds ?? {},
@@ -307,6 +311,17 @@ class CompareDesign {
 
   /// Gestaltung der Texte über den Fotos (TextLook als JSON).
   Map<String, dynamic>? topLook;
+
+  /// Verlaufsform: 'linear' (oben → unten) | 'radial' (Strahl) | 'diagonal'.
+  /// Die Farben kommen aus den Team-Grafik-Einstellungen.
+  String gradShape;
+
+  /// Polygon-Muster über dem Verlauf (an/aus) und seine Stärke (0.1 … 1.5).
+  bool pattern;
+  double patternStrength;
+
+  /// Verlauf als Tönung über einem eigenen Hintergrundbild (0 … 1).
+  double tint;
 
   CompareSide side(int i) => i == 0 ? left : right;
 
@@ -373,6 +388,10 @@ class CompareDesign {
       'labelSize': labelSize,
       if (labelLook != null) 'labelLook': labelLook,
       if (topLook != null) 'topLook': topLook,
+      'gradShape': gradShape,
+      'pattern': pattern,
+      'patternStrength': patternStrength,
+      'tint': tint,
     };
   }
 
@@ -416,6 +435,12 @@ class CompareDesign {
       labelLook: v['labelLook'] is Map
           ? Map<String, dynamic>.from(v['labelLook'] as Map)
           : null,
+      gradShape: const ['linear', 'radial', 'diagonal'].contains(v['gradShape'])
+          ? v['gradShape'] as String
+          : 'linear',
+      pattern: v['pattern'] != false,
+      patternStrength: _d(v['patternStrength'], 1).clamp(0.1, 1.5),
+      tint: _d(v['tint'], 0).clamp(0.0, 1.0),
       topLook: v['topLook'] is Map
           ? Map<String, dynamic>.from(v['topLook'] as Map)
           : null,

@@ -7647,6 +7647,10 @@ const _presets = <(String, String, String, String?)>[
   ('Weinrot', '#7F1D1D', '#111827', null),
 ];
 
+/// Öffentlich für andere Grafik-Editoren (z. B. Vergleich).
+const List<String> kGradientPalette = _palette;
+const List<(String, String, String, String?)> kGradientPresets = _presets;
+
 // Akzentfarben für Highlights (erste = Weiß = „kein Akzent").
 const _accentPalette = <String>[
   '#FFFFFF', // kein Akzent (Weiß wie bisher)

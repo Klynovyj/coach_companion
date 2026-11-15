@@ -21,6 +21,10 @@ void main() {
       labelSize: 1.4,
       labelLook: {'font': 'anton'},
       topLook: {'font': 'bebas'},
+      gradShape: 'radial',
+      pattern: false,
+      patternStrength: 0.5,
+      tint: 0.3,
     );
     d.left.logoText = 'SAISON 13/14';
     d.setBackground('data:bg');
@@ -37,6 +41,11 @@ void main() {
     expect(e.left.logoText, 'SAISON 13/14');
     expect(e.left.hasTop, isTrue);
     expect(e.topLook, {'font': 'bebas'});
+    expect(e.gradShape, 'radial');
+    expect(e.pattern, isFalse);
+    expect(e.patternStrength, 0.5);
+    expect(e.tint, 0.3);
+    expect(CompareDesign.fromJson({}).gradShape, 'linear');
     expect(e.right.label, '2026');
     expect(e.format, 's');
     expect(e.frames, isFalse);

@@ -25,7 +25,13 @@ import '../widgets/player_picker_page.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/text_look.dart';
 import 'photo_editor_screen.dart';
-import 'startelf_graphic_screen.dart' show normalizeImageBytes, posterFontStyle;
+import '../widgets/color_picker_dialog.dart';
+import 'startelf_graphic_screen.dart'
+    show
+        kGradientPalette,
+        kGradientPresets,
+        normalizeImageBytes,
+        posterFontStyle;
 
 /// Logische Breite der Grafik; Export in 1080 px Breite.
 const double _kW = 360;
@@ -251,6 +257,15 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
   }
 
   Color _hex(String? h, Color def) => h == null ? def : hexColor(h);
+
+  Color get _gradTop => _hex(
+    _settings?.gradTop,
+    hexColor(GraphicSettings.defaultGradTop),
+  );
+  Color get _gradBottom => _hex(
+    _settings?.gradBottom,
+    hexColor(GraphicSettings.defaultGradBottom),
+  );
 
   Color get _clubColor => _hex(_settings?.gradTop, const Color(0xFF0E3325));
 
@@ -576,56 +591,256 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
     );
   }
 
+  /// Team-Grafik-Einstellungen ändern (Verlaufsfarben gelten teamweit).
+  Future<void> _applySettings(GraphicSettings s) async {
+    setState(() => _settings = s);
+    _thumbAt = DateTime.fromMillisecondsSinceEpoch(0);
+    _changed();
+    try {
+      await _app.saveGraphicSettings(s);
+    } catch (_) {}
+  }
+
+  Widget _swatchRow(
+    BuildContext ctx,
+    String selected,
+    ValueChanged<String> onPick,
+  ) {
+    Widget box(Widget child, bool sel, VoidCallback onTap) => GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 32,
+        height: 32,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: sel ? Theme.of(ctx).colorScheme.primary : Colors.black26,
+            width: sel ? 3 : 1,
+          ),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+    );
+    final inPalette = kGradientPalette.any(
+      (h) => h.toUpperCase() == selected.toUpperCase(),
+    );
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final hex in kGradientPalette)
+          box(
+            ColoredBox(color: hexColor(hex)),
+            hex.toUpperCase() == selected.toUpperCase(),
+            () => onPick(hex),
+          ),
+        box(
+          inPalette
+              ? const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: SweepGradient(
+                      colors: [
+                        Colors.red,
+                        Colors.yellow,
+                        Colors.green,
+                        Colors.cyan,
+                        Colors.blue,
+                        Colors.purple,
+                        Colors.red,
+                      ],
+                    ),
+                  ),
+                )
+              : ColoredBox(
+                  color: hexColor(selected),
+                  child: const Icon(Icons.colorize, size: 16, color: Colors.white),
+                ),
+          !inPalette,
+          () async {
+            final hex = await showHsvColorPicker(ctx, selected);
+            if (hex != null) onPick(hex);
+          },
+        ),
+      ],
+    );
+  }
+
   Future<void> _backgroundMenu() async {
     final fmt = compareFormatLabel(_design.format);
-    final has = _design.backgrounds[_design.format] != null;
     final choice = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Hintergrund',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                  ),
-                  const SizedBox(height: 2),
+      isScrollControlled: true,
+      barrierColor: Colors.black12,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.55,
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void upd(VoidCallback fn) {
+            setState(fn);
+            setSheet(() {});
+            _changed();
+          }
+
+          Future<void> setColors(GraphicSettings s) async {
+            await _applySettings(s);
+            setSheet(() {});
+          }
+
+          final s = _settings ?? GraphicSettings(id: 'local');
+          final has = _design.backgrounds[_design.format] != null;
+          Widget head(String t) => Padding(
+            padding: const EdgeInsets.only(top: 14, bottom: 6),
+            child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold)),
+          );
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              children: [
+                const Text(
+                  'Hintergrund',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                if (has)
                   Text(
-                    'Hat das Bild schon zwei Foto-Felder (z. B. schwarze '
-                    'Rahmen), werden die Fotos automatisch eingepasst. '
-                    'Feinjustieren unter „Rahmen & Lage".',
+                    'Eigenes Bild aktiv ($fmt). Der Verlauf liegt nur als '
+                    'Tönung darüber (Regler unten).',
                     style: Theme.of(ctx).textTheme.bodySmall,
                   ),
-                ],
-              ),
+                head('Verlauf'),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    for (final (k, label, icon) in const [
+                      ('linear', 'Oben → unten', Icons.gradient),
+                      ('radial', 'Strahl', Icons.flare),
+                      ('diagonal', 'Diagonal', Icons.call_made),
+                    ])
+                      ChoiceChip(
+                        avatar: Icon(icon, size: 18),
+                        label: Text(label),
+                        selected: _design.gradShape == k,
+                        onSelected: (_) => upd(() => _design.gradShape = k),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                const Text('Farbe oben'),
+                const SizedBox(height: 6),
+                _swatchRow(
+                  ctx,
+                  s.gradTop,
+                  (h) => setColors(s.copyWith(gradTop: h)),
+                ),
+                const SizedBox(height: 10),
+                const Text('Farbe unten'),
+                const SizedBox(height: 6),
+                _swatchRow(
+                  ctx,
+                  s.gradBottom,
+                  (h) => setColors(s.copyWith(gradBottom: h)),
+                ),
+                const SizedBox(height: 10),
+                const Text('Vorlagen'),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final p in kGradientPresets)
+                      ActionChip(
+                        avatar: Container(
+                          width: 18,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(4),
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [hexColor(p.$2), hexColor(p.$3)],
+                            ),
+                          ),
+                        ),
+                        label: Text(p.$1),
+                        onPressed: () => setColors(
+                          s.copyWith(
+                            gradTop: p.$2,
+                            gradBottom: p.$3,
+                            accent: p.$4,
+                            clearAccent: p.$4 == null,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Die Verlaufsfarben gelten teamweit – auch für Spieltag, '
+                  'Startelf und Ergebnis.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Muster (Splitter)'),
+                  value: _design.pattern,
+                  onChanged: (v) => upd(() => _design.pattern = v),
+                ),
+                if (_design.pattern)
+                  _slider(
+                    'Stärke',
+                    _design.patternStrength,
+                    0.1,
+                    1.5,
+                    (v) => upd(() => _design.patternStrength = v),
+                    percent: true,
+                  ),
+                const Divider(height: 24),
+                const Text(
+                  'Eigenes Bild',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                Text(
+                  'Hat das Bild schon zwei Foto-Felder (z. B. schwarze '
+                  'Rahmen), werden die Fotos automatisch eingepasst.',
+                  style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                if (has)
+                  _slider(
+                    'Verlauf darüber',
+                    _design.tint,
+                    0,
+                    1,
+                    (v) => upd(() => _design.tint = v),
+                    percent: true,
+                  ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.wallpaper),
+                  title: Text(has ? 'Anderes Bild wählen' : 'Bild wählen'),
+                  subtitle: const Text('Für alle Formate ohne eigenes Bild'),
+                  onTap: () => Navigator.pop(ctx, 'all'),
+                ),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.crop_portrait),
+                  title: Text('Bild nur für $fmt'),
+                  onTap: () => Navigator.pop(ctx, 'one'),
+                ),
+                if (has)
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: const Icon(Icons.gradient),
+                    title: const Text('Bild entfernen → Verlauf'),
+                    subtitle: Text('Für $fmt'),
+                    onTap: () => Navigator.pop(ctx, 'default'),
+                  ),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.wallpaper),
-              title: const Text('Eigenes Bild wählen'),
-              subtitle: const Text('Für alle Formate ohne eigenes Bild'),
-              onTap: () => Navigator.pop(ctx, 'all'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.crop_portrait),
-              title: Text('Eigenes Bild nur für $fmt'),
-              onTap: () => Navigator.pop(ctx, 'one'),
-            ),
-            if (has)
-              ListTile(
-                leading: const Icon(Icons.auto_awesome_mosaic_outlined),
-                title: const Text('Standard-Hintergrund (Vereinsfarben)'),
-                subtitle: Text('Für $fmt'),
-                onTap: () => Navigator.pop(ctx, 'default'),
-              ),
-            const SizedBox(height: 8),
-          ],
-        ),
+          );
+        },
       ),
     );
     if (choice == null || !mounted) return;
@@ -1759,11 +1974,31 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                 ? Image.memory(bg, fit: BoxFit.cover, gaplessPlayback: true)
                 : CustomPaint(
                     painter: _CompareBgPainter(
-                      _hex(_settings?.gradTop, const Color(0xFF0E3325)),
-                      _hex(_settings?.gradBottom, const Color(0xFF071A12)),
+                      _gradTop,
+                      _gradBottom,
+                      _design.gradShape,
+                      _design.pattern ? _design.patternStrength : 0,
                     ),
                   ),
           ),
+          // Verlauf als Tönung über dem eigenen Bild.
+          if (bg != null && _design.tint > 0)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Opacity(
+                  opacity: _design.tint.clamp(0.0, 1.0),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: compareGradient(
+                        _design.gradShape,
+                        _gradTop,
+                        _gradBottom,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
           for (final i in [0, 1]) ...[
             // Bild/Text über dem Foto (z. B. Logo).
             ?_topSlot(i, g, W, H, top),
@@ -2004,13 +2239,35 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
   }
 }
 
-/// Standard-Hintergrund: dunkler Verlauf in Vereinsfarben mit feinen
-/// Polygon-Splittern und Vignette (ähnlich „Low-Poly"-Vorlagen).
+/// Verlauf (oben → unten, Strahl oder diagonal) in den Team-Verlaufsfarben.
+Gradient compareGradient(String shape, Color top, Color bottom) =>
+    switch (shape) {
+      'radial' => RadialGradient(
+        center: const Alignment(0, -0.35),
+        radius: 1.2,
+        colors: [top, bottom],
+      ),
+      'diagonal' => LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [top, bottom],
+      ),
+      _ => LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [top, bottom],
+      ),
+    };
+
+/// Standard-Hintergrund: Verlauf in den Team-Farben, optional mit feinen
+/// Polygon-Splittern und Vignette ([pattern] = Stärke, 0 = aus).
 class _CompareBgPainter extends CustomPainter {
-  _CompareBgPainter(this.top, this.bottom);
+  _CompareBgPainter(this.top, this.bottom, this.shape, this.pattern);
 
   final Color top;
   final Color bottom;
+  final String shape;
+  final double pattern;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -2018,16 +2275,9 @@ class _CompareBgPainter extends CustomPainter {
     canvas.clipRect(rect);
     canvas.drawRect(
       rect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color.lerp(top, Colors.black, 0.72)!,
-            Color.lerp(bottom, Colors.black, 0.86)!,
-          ],
-        ).createShader(rect),
+      Paint()..shader = compareGradient(shape, top, bottom).createShader(rect),
     );
+    if (pattern <= 0) return;
     final rnd = math.Random(11);
     final w = size.width;
     final h = size.height;
@@ -2047,12 +2297,15 @@ class _CompareBgPainter extends CustomPainter {
       }
       path.close();
       final light = rnd.nextBool();
+      final alpha = light
+          ? 0.015 + rnd.nextDouble() * 0.045
+          : 0.08 + rnd.nextDouble() * 0.14;
       canvas.drawPath(
         path,
         Paint()
-          ..color = light
-              ? Colors.white.withValues(alpha: 0.015 + rnd.nextDouble() * 0.045)
-              : Colors.black.withValues(alpha: 0.12 + rnd.nextDouble() * 0.2),
+          ..color = (light ? Colors.white : Colors.black).withValues(
+            alpha: (alpha * pattern).clamp(0.0, 1.0),
+          ),
       );
     }
     canvas.drawRect(
@@ -2060,7 +2313,10 @@ class _CompareBgPainter extends CustomPainter {
       Paint()
         ..shader = RadialGradient(
           radius: 0.9,
-          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.6)],
+          colors: [
+            Colors.transparent,
+            Colors.black.withValues(alpha: (0.45 * pattern).clamp(0.0, 0.8)),
+          ],
           stops: const [0.55, 1.0],
         ).createShader(rect),
     );
@@ -2068,5 +2324,8 @@ class _CompareBgPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_CompareBgPainter old) =>
-      old.top != top || old.bottom != bottom;
+      old.top != top ||
+      old.bottom != bottom ||
+      old.shape != shape ||
+      old.pattern != pattern;
 }
