@@ -585,50 +585,67 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
     );
   }
 
-  /// „Bestbewertet": alle Spieler mit dem höchsten Trainer-Schnitt (sonst
-  /// Mannschafts-Schnitt), Gleichstand = alle.
-  Widget? _bestRated(BuildContext context, PeerSummary peer) {
-    final pick = _avg.isNotEmpty ? _avg : peer.avg;
-    if (pick.isEmpty) return null;
-    final label = identical(pick, _avg) ? 'Trainer' : 'Mannschaft';
-    final max = pick.values
-        .map((v) => (v.$1 * 100).round())
-        .reduce((a, b) => a > b ? a : b);
-    final top = [
-      for (final e in pick.entries)
-        if ((e.value.$1 * 100).round() == max) e.key,
-    ]..sort((a, b) => _peerName(a).compareTo(_peerName(b)));
-    return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: Colors.green.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
-      ),
-      child: Column(
+  /// Eine Podest-Stufe: Platz, alle Spieler mit diesem Schnitt.
+  Widget _podiumRow(
+    BuildContext context,
+    int place,
+    List<(String, double, int)> group,
+  ) {
+    const colors = {
+      1: Color(0xFFE0A526),
+      2: Color(0xFF9FB1A9),
+      3: Color(0xFFC8834A),
+    };
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            '⭐ Bestbewertet ($label) · ${starNumber(max / 100)}',
-            style: const TextStyle(fontWeight: FontWeight.bold),
+          Container(
+            width: 26,
+            height: 26,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: colors[place],
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              '$place',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            children: [
-              for (final id in top)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_byId[id] != null)
-                      PlayerAvatar(player: _byId[id]!, radius: 12),
-                    const SizedBox(width: 6),
-                    Text(_peerName(id)),
-                  ],
-                ),
-            ],
+          const SizedBox(width: 10),
+          Expanded(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 4,
+              children: [
+                for (final e in group)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (_byId[e.$1] != null)
+                        PlayerAvatar(player: _byId[e.$1]!, radius: 11),
+                      const SizedBox(width: 4),
+                      Text(
+                        _peerName(e.$1),
+                        style: TextStyle(
+                          fontWeight: place == 1
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  ),
+              ],
+            ),
+          ),
+          Text(
+            '★ ${starNumber(group.first.$2)}',
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -760,29 +777,27 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
                 ),
               ],
             ),
-            if (peer.motm.isEmpty)
-              _hint('Noch keine Stimmen.')
+            Text(
+              'Podest nach Sternen (${peer.podiumSource == 'team' ? 'Mannschafts' : 'Trainer'}-Schnitt) · Gleichstand teilt den Platz',
+              style: small?.copyWith(color: Theme.of(context).hintColor),
+            ),
+            if (peer.podium.isEmpty)
+              _hint('Noch keine Noten.')
             else
-              for (final (id, votes) in peer.motm.take(5))
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 3),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _peerName(id),
-                          style: TextStyle(
-                            fontWeight: votes == top
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                        ),
-                      ),
-                      Text('$votes ${votes == 1 ? 'Stimme' : 'Stimmen'}'),
-                    ],
-                  ),
-                ),
-            ?_bestRated(context, peer),
+              for (final place in [1, 2, 3])
+                if (peer.podium.any((e) => e.$3 == place))
+                  _podiumRow(context, place, [
+                    for (final e in peer.podium)
+                      if (e.$3 == place) e,
+                  ]),
+            const SizedBox(height: 6),
+            Text(
+              peer.motm.isEmpty
+                  ? '👑 Wahl: noch keine Stimmen'
+                  : '👑 Wahl: ${peer.motm.where((m) => m.$2 == top).map((m) => _peerName(m.$1)).join(', ')} '
+                        '($top ${top == 1 ? 'Stimme' : 'Stimmen'})',
+              style: small,
+            ),
             const Divider(height: 22),
             Row(
               children: [

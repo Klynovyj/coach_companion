@@ -212,7 +212,7 @@ const CC = (() => {
     const rows = games.map((g) => {
       const parts = String(g.title).match(/^(.*?)\s+–\s+(.*?)\s+\d+:\d+$/) || [];
       const opp = parts[1] ? (parts[1] === usName ? parts[2] : parts[1]) : g.title;
-      const mo = g.motm ? `<div class="mo">${avatar({ id: g.motm.id, name: g.motm.name }, { [g.motm.id]: g.motm.photo })}👑 ${esc(g.motm.name || '')} <span style="color:var(--muted);font-weight:500">(${g.motm.votes})</span></div>` : '';
+      const mo = g.motm ? `<div class="mo">${avatar({ id: g.motm.id, name: g.motm.name }, { [g.motm.id]: g.motm.photo })}👑 ${esc(g.motm.name || '')} <span style="color:var(--muted);font-weight:500">★ ${f1(g.motm.avg)}${g.motm.tie > 1 ? ` · +${g.motm.tie - 1} gleichauf` : ''}</span></div>` : '';
       return `<div class="og ${g.match_id === sel ? 'on' : ''}" data-og="${esc(g.match_id)}">${crest(logos?.[g.match_id], opp)}
         <div class="bd"><div class="tt">${esc(g.title)}<small>${esc(fmtDate(g.match_date))}${g.open ? ` · <span class="dot"></span>offen bis ${esc(fmtDate(g.closes_at))}` : ' · beendet'}</small></div>
         <div class="nums"><span class="t">Trainer <b>${g.coach_avg != null ? f1(g.coach_avg) : '–'}</b> (${g.coach_done}/${g.coach_total})</span>
@@ -365,6 +365,37 @@ const CC = (() => {
     }).join('') + '</div>';
   }
 
+  /**
+   * Podest nach Sternen: podium = {source, ranking:[{id, avg, n, place}]}
+   * (dichte Plätze 1–3, Gleichstand teilt sich den Platz).
+   */
+  function starPodium(podium, byId, photos) {
+    const rk = podium?.ranking || [];
+    if (!rk.length) return '<p class="sub" style="text-align:center;color:var(--muted)">Noch keine Noten.</p>';
+    const groups = [1, 2, 3].map((pl) => rk.filter((e) => e.place === pl));
+    const col = (g, pl) => {
+      if (!g.length) return '<div></div>';
+      const ps = sortPlayers(g.map((e) => byId[e.id] || { id: e.id, name: 'Unbekannt' }));
+      const shown = ps.slice(0, pl === 1 ? 6 : 4);
+      const solo = ps.length === 1 ? 'solo' : '';
+      const names = shown.map((p) => esc(p.name.split(' ').slice(-1)[0] || p.name)).join(', ');
+      return `<div class="pod p${pl}"><div class="grp ${solo}">${shown.map((p) => avatar(p, photos)).join('')}</div>
+        <div class="nms">${ps.length === 1 ? esc(ps[0].name) : names}</div>${ps.length > shown.length ? `<div class="more">+${ps.length - shown.length} weitere</div>` : ''}
+        <div class="vt">★ ${f1(g[0].avg)}</div><div class="blk">${pl}</div></div>`;
+    };
+    return `<div class="podium">${col(groups[1], 2)}${col(groups[0], 1)}${col(groups[2], 3)}</div>`;
+  }
+
+  /** Zeile „Wahl": Spieler mit den meisten Stimmen (Mannschaft + Trainer). */
+  function voteLine(motm, byId, photos) {
+    if (!motm || !motm.length) return '<div class="wahl">👑 Wahl: noch keine Stimmen</div>';
+    const top = motm.filter((m) => m.votes === motm[0].votes);
+    return `<div class="wahl">👑 Wahl: ${top.map((m) => {
+      const p = byId[m.id] || { id: m.id, name: 'Unbekannt' };
+      return `${avatar(p, photos)}<b>${esc(p.name)}</b>`;
+    }).join(' ')} (${motm[0].votes} ${motm[0].votes === 1 ? 'Stimme' : 'Stimmen'})</div>`;
+  }
+
   function gradeTiles(tiles) {
     return '<div class="grades">' + tiles.map((t) =>
       `<div class="grade ${t.cls}"><b>${f1(t.avg)}</b>${stars(t.avg)}<span class="lb">${esc(t.label)} · ${t.n} ${t.n === 1 ? 'Note' : 'Noten'}</span></div>`).join('') + '</div>';
@@ -385,6 +416,6 @@ const CC = (() => {
     el.innerHTML = `<div class="card msg"><div class="ic">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
   }
 
-  return { bestRated, crownCard, applyBadges, overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
+  return { starPodium, voteLine, bestRated, crownCard, applyBadges, overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
     playerRow, motmTiles, podium, gradeTiles, bars, sortPlayers, message, safeImg };
 })();

@@ -250,7 +250,9 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
                   const Text('👑', style: TextStyle(fontSize: 12)),
                 const SizedBox(width: 4),
                 Text(
-                  '👑 ${motm?.lastName.isNotEmpty == true ? motm!.lastName : (o.motmName ?? '')} (${o.motmVotes})',
+                  '👑 ${motm?.lastName.isNotEmpty == true ? motm!.lastName : (o.motmName ?? '')}'
+                  '${o.motmAvg != null ? ' ★ ${starNumber(o.motmAvg!)}' : ''}'
+                  '${o.motmTie > 1 ? ' +${o.motmTie - 1}' : ''}',
                   style: small?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ],

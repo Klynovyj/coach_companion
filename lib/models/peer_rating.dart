@@ -67,7 +67,15 @@ class PeerSummary {
     this.matchCount = 0,
     this.matchNotes = const [],
     this.self = const [],
+    this.podium = const [],
+    this.podiumSource = 'trainer',
   });
+
+  /// Podest nach Sternen: (Spieler-ID, Schnitt, Platz 1–3; Gleichstand teilt).
+  final List<(String, double, int)> podium;
+
+  /// Grundlage des Podests: 'trainer' oder 'team'.
+  final String podiumSource;
 
   final String matchId;
   final DateTime closesAt;
@@ -132,6 +140,20 @@ class PeerSummary {
         for (final s in (m['self'] as List? ?? const []))
           if (s is Map) PeerSelf.fromJson(Map<String, dynamic>.from(s)),
       ],
+      podium: [
+        if (m['podium'] is Map)
+          for (final e
+              in ((m['podium'] as Map)['ranking'] as List? ?? const []))
+            if (e is Map)
+              (
+                e['id'].toString(),
+                (e['avg'] as num?)?.toDouble() ?? 0,
+                (e['place'] as num?)?.toInt() ?? 0,
+              ),
+      ],
+      podiumSource: m['podium'] is Map
+          ? ((m['podium'] as Map)['source'] as String? ?? 'trainer')
+          : 'trainer',
     );
   }
 }
@@ -212,7 +234,13 @@ class PeerOverview {
     this.motmId,
     this.motmName,
     this.motmVotes = 0,
+    this.motmAvg,
+    this.motmTie = 1,
   });
+
+  /// Schnitt des Besten (Podest nach Sternen) und Anzahl gleichauf.
+  final double? motmAvg;
+  final int motmTie;
 
   final String matchId;
   final bool open;
@@ -246,6 +274,8 @@ class PeerOverview {
       motmId: motm is Map ? motm['id']?.toString() : null,
       motmName: motm is Map ? motm['name'] as String? : null,
       motmVotes: motm is Map ? (motm['votes'] as num?)?.toInt() ?? 0 : 0,
+      motmAvg: motm is Map ? (motm['avg'] as num?)?.toDouble() : null,
+      motmTie: motm is Map ? (motm['tie'] as num?)?.toInt() ?? 1 : 1,
     );
   }
 }

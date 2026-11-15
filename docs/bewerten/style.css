@@ -352,3 +352,18 @@ details.cv .rep { margin: 4px 0 8px 50px; background: var(--card2); border-radiu
 .best .bp div { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 14px; }
 .best .bp .ava { width: 30px; height: 30px; }
 .best .bp .ava .nr { display: none; }
+
+/* ---------- Podest nach Sternen (Gleichstand teilt den Platz) ---------- */
+.pod .grp { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; }
+.pod .grp .ava { width: 44px; height: 44px; }
+.pod.p1 .grp .ava { width: 56px; height: 56px; }
+.pod .grp.solo .ava { width: 60px; height: 60px; }
+.pod.p1 .grp.solo .ava { width: 84px; height: 84px; }
+.pod .grp .ava .nr { display: none; }
+.pod .grp.solo .ava .nr { display: block; }
+.pod .nms { font-weight: 700; font-size: 12.5px; line-height: 1.2; overflow-wrap: anywhere; }
+.pod .more { font-size: 11px; color: var(--muted); }
+.wahl { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; font-size: 13px; color: var(--muted); }
+.wahl .ava { width: 26px; height: 26px; }
+.wahl .ava .nr { display: none; }
+.wahl b { color: var(--gold); }

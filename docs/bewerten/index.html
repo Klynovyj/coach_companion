@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=13">
 </head>
 <body>
 <div class="wrap">
@@ -26,7 +26,7 @@
   </div>
 </div>
 
-<script src="common.js?v=12"></script>
+<script src="common.js?v=13"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let state = null;
@@ -124,7 +124,7 @@ function liveLine() {
 
 function renderClosed() {
   $('bar').hidden = true;
-  $('main').innerHTML = `<div class="card"><h2 style="text-align:center">🏆 Spieler des Spiels</h2>${CC.podium(state.motm || [], byId(), med.photos)}</div>
+  $('main').innerHTML = `<div class="card"><h2 style="text-align:center">🏆 Spieler des Spiels</h2>${state.podium ? CC.starPodium(state.podium, byId(), med.photos) : CC.podium(state.motm || [], byId(), med.photos)}</div>
     <p class="hello" style="text-align:center">Nach dem nächsten Spiel kannst du hier wieder bewerten. Speichere dir den Link am besten als Lesezeichen.</p>` + (pom ? CC.monthCard(pom) : '') + CC.entriesCard(prof, med.logos, med.us?.name);
   CC.applyBadges(badges);
 }

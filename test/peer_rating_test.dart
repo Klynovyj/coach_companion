@@ -148,6 +148,25 @@ void main() {
     expect(s.self.single.stars, 4);
   });
 
+  test('PeerSummary.fromJson: Podest nach Sternen', () {
+    final s = PeerSummary.fromJson({
+      'match_id': 'm1',
+      'closes_at': '2026-11-29T12:15:00Z',
+      'open': true,
+      'podium': {
+        'source': 'trainer',
+        'ranking': [
+          {'id': 'a', 'avg': 5, 'n': 1, 'place': 1},
+          {'id': 'b', 'avg': 5, 'n': 1, 'place': 1},
+          {'id': 'c', 'avg': 4.5, 'n': 2, 'place': 2},
+        ],
+      },
+    });
+    expect(s.podium.where((e) => e.$3 == 1).length, 2);
+    expect(s.podium.last, ('c', 4.5, 2));
+    expect(s.podiumSource, 'trainer');
+  });
+
   test('PeerSummary.fromJson: leere Runde', () {
     final s = PeerSummary.fromJson({
       'match_id': 'm2',
