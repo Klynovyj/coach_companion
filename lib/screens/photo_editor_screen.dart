@@ -4,6 +4,8 @@ import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 
+import '../widgets/crop_zoom.dart';
+
 /// Einfacher Foto-Editor (wie der Android-Editor): zuschneiden, drehen,
 /// Helligkeit und Kontrast (Live-Vorschau). Gibt die bearbeiteten Bytes zurück
 /// (JPEG), oder null bei Abbruch.
@@ -204,32 +206,36 @@ class _PhotoEditorScreenState extends State<PhotoEditorScreen> {
           Expanded(
             child: ColorFiltered(
               colorFilter: ColorFilter.matrix(_previewMatrix()),
-              child: Crop(
-                key: ValueKey(_rotation),
-                image: _bytes,
-                controller: _controller,
-                aspectRatio: widget.aspectRatio,
-                initialRectBuilder: InitialRectBuilder.withBuilder((
-                  viewport,
-                  _,
-                ) {
-                  final inset = viewport.shortestSide * 0.08;
-                  return Rect.fromLTRB(
-                    viewport.left + inset,
-                    viewport.top + inset,
-                    viewport.right - inset,
-                    viewport.bottom - inset,
-                  );
-                }),
-                baseColor: Colors.black,
-                maskColor: Colors.black.withValues(alpha: 0.6),
-                onStatusChanged: (status) {
-                  final ready = status == CropStatus.ready;
-                  if (ready != _ready && mounted) {
-                    setState(() => _ready = ready);
-                  }
-                },
-                onCropped: _onCropped,
+              child: CropZoomOverlay(
+                child: Crop(
+                  key: ValueKey(_rotation),
+                  image: _bytes,
+                  controller: _controller,
+                  aspectRatio: widget.aspectRatio,
+                  // Bild zoom-/verschiebbar (zwei Finger, Mausrad, −/+).
+                  interactive: true,
+                  initialRectBuilder: InitialRectBuilder.withBuilder((
+                    viewport,
+                    _,
+                  ) {
+                    final inset = viewport.shortestSide * 0.08;
+                    return Rect.fromLTRB(
+                      viewport.left + inset,
+                      viewport.top + inset,
+                      viewport.right - inset,
+                      viewport.bottom - inset,
+                    );
+                  }),
+                  baseColor: Colors.black,
+                  maskColor: Colors.black.withValues(alpha: 0.6),
+                  onStatusChanged: (status) {
+                    final ready = status == CropStatus.ready;
+                    if (ready != _ready && mounted) {
+                      setState(() => _ready = ready);
+                    }
+                  },
+                  onCropped: _onCropped,
+                ),
               ),
             ),
           ),

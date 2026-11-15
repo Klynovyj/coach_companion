@@ -9,6 +9,8 @@ import '../models/player.dart';
 import '../services/player_photos.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
+import '../widgets/zoomable_image.dart';
+import 'photo_editor_screen.dart';
 
 /// Die vier Fotos eines Spielers: FuPa, eigenes FuPa-Foto, Verein, Action.
 /// Jedes Foto in Originalformat ansehen, teilen, ersetzen oder als Profilbild
@@ -39,7 +41,8 @@ class _PlayerPhotosScreenState extends State<PlayerPhotosScreen> {
   Future<void> _readLocal() async {
     final p = await _app.playerById(_p.id) ?? _p;
     final stored = <PlayerPhotoSlot, String?>{
-      for (final s in PlayerPhotoSlot.values) s: await _app.playerPhoto(p.id, s),
+      for (final s in PlayerPhotoSlot.values)
+        s: await _app.playerPhoto(p.id, s),
     };
     final profile = await _app.profilePhotoSlot(p);
     if (!mounted) return;
@@ -75,9 +78,7 @@ class _PlayerPhotosScreenState extends State<PlayerPhotosScreen> {
     setState(() => _busy.remove(PlayerPhotoSlot.fupa));
     if (url == null && !silent) {
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('FuPa-Foto konnte nicht geladen werden.'),
-        ),
+        const SnackBar(content: Text('FuPa-Foto konnte nicht geladen werden.')),
       );
     }
     await _readLocal();
@@ -177,27 +178,50 @@ class _PlayerPhotosScreenState extends State<PlayerPhotosScreen> {
       context,
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (ctx) => Scaffold(
-          backgroundColor: Colors.black,
-          appBar: AppBar(
-            backgroundColor: Colors.black,
-            foregroundColor: Colors.white,
-            title: Text(slot.description),
-            actions: [
-              IconButton(
-                tooltip: 'Teilen',
-                icon: const Icon(Icons.share),
-                onPressed: () => _share(slot),
-              ),
-            ],
-          ),
-          body: InteractiveViewer(
-            maxScale: 6,
-            child: Center(child: Image.memory(bytes, fit: BoxFit.contain)),
-          ),
+        builder: (ctx) => ZoomableImagePage(
+          bytes: bytes,
+          title: slot.description,
+          actions: [
+            IconButton(
+              tooltip: 'Teilen',
+              icon: const Icon(Icons.share),
+              onPressed: () => _share(slot),
+            ),
+          ],
         ),
       ),
     );
+  }
+
+  /// Foto zuschneiden/zoomen (Editor mit −/+, Mausrad, zwei Fingern) und
+  /// gezoomten Ausschnitt in dieses Fach speichern (Profilbild folgt mit).
+  Future<void> _edit(PlayerPhotoSlot slot) async {
+    final bytes = dataUrlBytes(_shown(slot));
+    if (bytes == null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final edited = await Navigator.push<Uint8List?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoEditorScreen(
+          imageBytes: bytes,
+          maxSize: 2000,
+          keepAlpha: true,
+        ),
+      ),
+    );
+    if (edited == null || !mounted) return;
+    setState(() => _busy.add(slot));
+    try {
+      final url = await compute(encodeOriginalPhoto, edited);
+      _p = await _app.setPlayerPhoto(_p, slot, url);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Foto konnte nicht gespeichert werden: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy.remove(slot));
+    }
+    await _readLocal();
   }
 
   Future<void> _actions(PlayerPhotoSlot slot) async {
@@ -225,6 +249,12 @@ class _PlayerPhotosScreenState extends State<PlayerPhotosScreen> {
                 leading: const Icon(Icons.fullscreen),
                 title: const Text('Ansehen'),
                 onTap: () => Navigator.pop(ctx, 'view'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.crop),
+                title: const Text('Zuschneiden & zoomen'),
+                subtitle: const Text('Ausschnitt vergrößern/verkleinern'),
+                onTap: () => Navigator.pop(ctx, 'edit'),
               ),
               ListTile(
                 leading: const Icon(Icons.share),
@@ -269,6 +299,8 @@ class _PlayerPhotosScreenState extends State<PlayerPhotosScreen> {
     switch (choice) {
       case 'view':
         _view(slot);
+      case 'edit':
+        await _edit(slot);
       case 'share':
         await _share(slot);
       case 'profile':

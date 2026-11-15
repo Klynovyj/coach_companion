@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:image/image.dart' as img;
@@ -374,6 +375,121 @@ class _PlayerOfMonthGraphicScreenState
   /// team · occasion · subtitle · honor. Auf dem Gerät gespeichert.
   Map<String, TextLook> _looks = {};
   static const _looksPref = 'pom_text_looks';
+  static const _cropPref = 'pom_photo_crop';
+
+  /// Ausschnitt des runden Spielerfotos (Zoom 0.5 … 4, Verschiebung als
+  /// Anteil des Durchmessers) – je Spieler gespeichert, gilt in allen Formaten.
+  ({double z, double dx, double dy}) _crop = (z: 1.0, dx: 0.0, dy: 0.0);
+  double _cropZ0 = 1.0;
+
+  Future<void> _loadCrop() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final m = jsonDecode(p.getString(_cropPref) ?? '{}');
+      final v = m is Map ? m[widget.player.id] : null;
+      if (v is List && v.length == 3 && mounted) {
+        setState(
+          () => _crop = (
+            z: (v[0] as num).toDouble().clamp(0.5, 4.0),
+            dx: (v[1] as num).toDouble().clamp(-1.0, 1.0),
+            dy: (v[2] as num).toDouble().clamp(-1.0, 1.0),
+          ),
+        );
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveCrop() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final raw = jsonDecode(p.getString(_cropPref) ?? '{}');
+      final m = raw is Map
+          ? Map<String, Object?>.from(raw)
+          : <String, Object?>{};
+      m[widget.player.id] = [_crop.z, _crop.dx, _crop.dy];
+      await p.setString(_cropPref, jsonEncode(m));
+    } catch (_) {}
+  }
+
+  void _setCrop({double? z, double? dx, double? dy, bool save = true}) {
+    setState(
+      () => _crop = (
+        z: (z ?? _crop.z).clamp(0.5, 4.0),
+        dx: (dx ?? _crop.dx).clamp(-1.0, 1.0),
+        dy: (dy ?? _crop.dy).clamp(-1.0, 1.0),
+      ),
+    );
+    if (save) _saveCrop();
+  }
+
+  /// Abschnitt „Spielerfoto-Ausschnitt" im Menü „Grafik anpassen".
+  Widget _cropSection(void Function(VoidCallback) setSheet) {
+    void z(double f) {
+      _setCrop(z: _crop.z * f);
+      setSheet(() {});
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Spielerfoto-Ausschnitt',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        Text(
+          'Im runden Foto ziehen = verschieben, zwei Finger bzw. Mausrad = '
+          'zoomen.',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'Auszoomen',
+              icon: const Icon(Icons.remove_circle_outline),
+              onPressed: () => z(1 / 1.1),
+            ),
+            Expanded(
+              child: Slider(
+                value: _crop.z,
+                min: 0.5,
+                max: 4,
+                onChanged: (v) {
+                  _setCrop(z: v, save: false);
+                  setSheet(() {});
+                },
+                onChangeEnd: (_) => _saveCrop(),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Einzoomen',
+              icon: const Icon(Icons.add_circle_outline),
+              onPressed: () => z(1.1),
+            ),
+            SizedBox(
+              width: 44,
+              child: Text(
+                '${(_crop.z * 100).round()}%',
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
+        ),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            icon: const Icon(Icons.center_focus_strong),
+            label: const Text('Ausschnitt zurücksetzen'),
+            onPressed: () {
+              _setCrop(z: 1, dx: 0, dy: 0);
+              setSheet(() {});
+            },
+          ),
+        ),
+      ],
+    );
+  }
 
   Future<void> _loadLooks() async {
     try {
@@ -452,6 +568,7 @@ class _PlayerOfMonthGraphicScreenState
     super.initState();
     _load();
     _loadLooks();
+    _loadCrop();
     _loadAiLooks();
   }
 
@@ -644,6 +761,8 @@ class _PlayerOfMonthGraphicScreenState
                     'subtitle',
                     'Untertitel',
                   ),
+                  const Divider(height: 28),
+                  _cropSection(setSheet),
                   const Divider(height: 28),
                   _aiLookSection(setSheet),
                   const Divider(height: 28),
@@ -1226,7 +1345,21 @@ class _PlayerOfMonthGraphicScreenState
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          graphic,
+                          _RingCropScope(
+                            crop: _crop,
+                            onStart: () => _cropZ0 = _crop.z,
+                            onUpdate: (d, diameter) => _setCrop(
+                              z: d.pointerCount >= 2 ? _cropZ0 * d.scale : null,
+                              dx: _crop.dx + d.focalPointDelta.dx / diameter,
+                              dy: _crop.dy + d.focalPointDelta.dy / diameter,
+                              save: false,
+                            ),
+                            onEnd: _saveCrop,
+                            onWheel: (dy) => _setCrop(
+                              z: _crop.z * (dy < 0 ? 1.08 : 1 / 1.08),
+                            ),
+                            child: graphic,
+                          ),
                           if (_aiLooks[_fmt] case final look?)
                             if (TeamLogo.decode(look.dataUrl) case final b?)
                               IgnorePointer(
@@ -1317,21 +1450,18 @@ class _PhotoRing extends StatelessWidget {
     final fallback = player.lastName.isNotEmpty
         ? player.lastName[0].toUpperCase()
         : '?';
-    return Container(
+    final scope = _RingCropScope.maybeOf(context);
+    final c = scope?.crop ?? (z: 1.0, dx: 0.0, dy: 0.0);
+    final ring = Container(
       width: diameter,
       height: diameter,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         shape: BoxShape.circle,
         color: _greenDark,
+      ),
+      foregroundDecoration: BoxDecoration(
+        shape: BoxShape.circle,
         border: Border.all(color: _gold, width: 4),
-        image: bytes != null
-            ? DecorationImage(
-                image: MemoryImage(bytes),
-                fit: BoxFit.cover,
-                // Glättet das Hochskalieren kleiner FuPa-Fotos im Export.
-                filterQuality: FilterQuality.high,
-              )
-            : null,
       ),
       alignment: Alignment.center,
       child: bytes == null
@@ -1343,7 +1473,40 @@ class _PhotoRing extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             )
-          : null,
+          : ClipOval(
+              child: Transform.translate(
+                offset: Offset(c.dx * diameter, c.dy * diameter),
+                child: Transform.scale(
+                  scale: c.z,
+                  child: Image.memory(
+                    bytes,
+                    width: diameter,
+                    height: diameter,
+                    fit: BoxFit.cover,
+                    // Glättet das Hochskalieren kleiner FuPa-Fotos im Export.
+                    filterQuality: FilterQuality.high,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+            ),
+    );
+    if (scope == null || bytes == null) return ring;
+    return Listener(
+      onPointerSignal: (e) {
+        if (e is! PointerScrollEvent) return;
+        GestureBinding.instance.pointerSignalResolver.register(
+          e,
+          (ev) => scope.onWheel((ev as PointerScrollEvent).scrollDelta.dy),
+        );
+      },
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onScaleStart: (_) => scope.onStart(),
+        onScaleUpdate: (d) => scope.onUpdate(d, diameter),
+        onScaleEnd: (_) => scope.onEnd(),
+        child: ring,
+      ),
     );
   }
 }
@@ -2122,4 +2285,29 @@ class _UrkundeGraphic extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Gibt den Ausschnitt (Zoom/Verschiebung) und die Gesten-Rückrufe an das
+/// runde Spielerfoto weiter – ohne sie durch alle Grafik-Klassen zu reichen.
+class _RingCropScope extends InheritedWidget {
+  const _RingCropScope({
+    required this.crop,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+    required this.onWheel,
+    required super.child,
+  });
+
+  final ({double z, double dx, double dy}) crop;
+  final VoidCallback onStart;
+  final void Function(ScaleUpdateDetails d, double diameter) onUpdate;
+  final VoidCallback onEnd;
+  final ValueChanged<double> onWheel;
+
+  static _RingCropScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_RingCropScope>();
+
+  @override
+  bool updateShouldNotify(_RingCropScope old) => old.crop != crop;
 }

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -1695,8 +1696,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     return m;
   }
+
   Set<String> get _stdHidden =>
       _stdHiddenF.putIfAbsent(_designKey, () => <String>{});
+
+  /// Element [id] um Faktor [f] größer/kleiner (Mausrad, −/+ Knöpfe).
+  void _scalePoster(String id, double f) {
+    setState(() {
+      _posterSel = id;
+      _posterScale[id] = ((_posterScale[id] ?? 1.0) * f)
+          .clamp(0.2, 6.0)
+          .toDouble();
+    });
+  }
+
   Map<String, double> get _posterScale =>
       _posterScaleF.putIfAbsent(_designKey, () => {});
   Map<String, double> get _posterRot =>
@@ -5213,6 +5226,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         _posterRot[id] = _gRot0 + d.rotation;
       });
     },
+    onPosterWheel: (id, dy) => _scalePoster(id, dy < 0 ? 1.08 : 1 / 1.08),
     stdOffset: _stdOff,
     stdHidden: _stdHidden,
     stdCtx: _stdCtx,
@@ -7637,6 +7651,38 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     ),
                   ),
                 ),
+                // Gewähltes Bild/Element größer/kleiner (links oben).
+                if (_posterSel != null)
+                  Positioned(
+                    left: 8,
+                    top: 8,
+                    child: Material(
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.primaryContainer.withValues(alpha: 0.95),
+                      elevation: 2,
+                      borderRadius: BorderRadius.circular(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          IconButton(
+                            tooltip: 'Auswahl größer',
+                            icon: const Icon(Icons.add_circle_outline),
+                            onPressed: () => _scalePoster(_posterSel!, 1.1),
+                          ),
+                          Text(
+                            '${((_posterScale[_posterSel!] ?? 1.0) * 100).round()}%',
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          IconButton(
+                            tooltip: 'Auswahl kleiner',
+                            icon: const Icon(Icons.remove_circle_outline),
+                            onPressed: () => _scalePoster(_posterSel!, 1 / 1.1),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 // Zoom-Knöpfe (rechts oben).
                 Positioned(
                   right: 8,
@@ -8215,6 +8261,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.onPosterItemMove,
     this.onPosterGestureStart,
     this.onPosterGestureUpdate,
+    this.onPosterWheel,
     this.onPosterLongPress,
     this.onPosterRotateTo,
     this.onBackgroundLongPress,
@@ -8331,6 +8378,9 @@ class _StartelfGraphic extends StatelessWidget {
     double h,
   )?
   onPosterGestureUpdate;
+
+  /// Mausrad über einem Element (bzw. dem gewählten): [dy] < 0 = größer.
+  final void Function(String id, double dy)? onPosterWheel;
   final void Function(String id)?
   onPosterLongPress; // Langdruck → Eigenschaften
   // Dreh-Griff an der Seite: setzt die Drehung absolut (Radiant) für [id].
@@ -8962,23 +9012,39 @@ class _StartelfGraphic extends StatelessWidget {
         final dragLayer = Positioned.fill(
           child: _HitWhere(
             test: (p) => sel != null || hitAt(p) != null,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onScaleStart: (d) {
-                var target = sel;
-                if (d.pointerCount < 2) {
-                  target = hitAt(d.localFocalPoint) ?? sel;
-                }
-                if (target != null && target != sel) {
-                  onPosterSelect?.call(target);
-                }
-                if (target != null && !target.startsWith('std_')) {
-                  anchor(target);
-                }
-                onPosterGestureStart?.call(target);
+            child: Listener(
+              // Mausrad über einem Objekt (oder mit Auswahl) → dieses Objekt
+              // skalieren statt die ganze Ansicht zu zoomen.
+              onPointerSignal: (e) {
+                if (e is! PointerScrollEvent || onPosterWheel == null) return;
+                final target = hitAt(e.localPosition) ?? sel;
+                if (target == null) return;
+                GestureBinding.instance.pointerSignalResolver.register(e, (ev) {
+                  if (target != sel) onPosterSelect?.call(target);
+                  onPosterWheel!(
+                    target,
+                    (ev as PointerScrollEvent).scrollDelta.dy,
+                  );
+                });
               },
-              onScaleUpdate: (d) =>
-                  onPosterGestureUpdate?.call(sel ?? '', d, w, h),
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onScaleStart: (d) {
+                  var target = sel;
+                  if (d.pointerCount < 2) {
+                    target = hitAt(d.localFocalPoint) ?? sel;
+                  }
+                  if (target != null && target != sel) {
+                    onPosterSelect?.call(target);
+                  }
+                  if (target != null && !target.startsWith('std_')) {
+                    anchor(target);
+                  }
+                  onPosterGestureStart?.call(target);
+                },
+                onScaleUpdate: (d) =>
+                    onPosterGestureUpdate?.call(sel ?? '', d, w, h),
+              ),
             ),
           ),
         );
@@ -11664,21 +11730,37 @@ class _StartelfGraphic extends StatelessWidget {
         final dragLayer = Positioned.fill(
           child: _HitWhere(
             test: (p) => sel != null || hitAt(p) != null,
-            child: GestureDetector(
-              behavior: HitTestBehavior.translucent,
-              onScaleStart: (d) {
-                var target = sel;
-                if (d.pointerCount < 2) {
-                  target = hitAt(d.localFocalPoint) ?? sel;
-                }
-                if (target != null && target != sel) {
-                  onPosterSelect?.call(target);
-                }
-                if (target != null) anchor(target);
-                onPosterGestureStart?.call(target);
+            child: Listener(
+              // Mausrad über einem Objekt (oder mit Auswahl) → dieses Objekt
+              // skalieren statt die ganze Ansicht zu zoomen.
+              onPointerSignal: (e) {
+                if (e is! PointerScrollEvent || onPosterWheel == null) return;
+                final target = hitAt(e.localPosition) ?? sel;
+                if (target == null) return;
+                GestureBinding.instance.pointerSignalResolver.register(e, (ev) {
+                  if (target != sel) onPosterSelect?.call(target);
+                  onPosterWheel!(
+                    target,
+                    (ev as PointerScrollEvent).scrollDelta.dy,
+                  );
+                });
               },
-              onScaleUpdate: (d) =>
-                  onPosterGestureUpdate?.call(sel ?? '', d, w, h),
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onScaleStart: (d) {
+                  var target = sel;
+                  if (d.pointerCount < 2) {
+                    target = hitAt(d.localFocalPoint) ?? sel;
+                  }
+                  if (target != null && target != sel) {
+                    onPosterSelect?.call(target);
+                  }
+                  if (target != null) anchor(target);
+                  onPosterGestureStart?.call(target);
+                },
+                onScaleUpdate: (d) =>
+                    onPosterGestureUpdate?.call(sel ?? '', d, w, h),
+              ),
             ),
           ),
         );

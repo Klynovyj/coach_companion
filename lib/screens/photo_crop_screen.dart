@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:crop_your_image/crop_your_image.dart';
 import 'package:flutter/material.dart';
 
+import '../widgets/crop_zoom.dart';
+
 /// Vollbild-Zuschnitt (quadratisch) für Spielerfotos. Der/die Nutzer:in rahmt
 /// das Bild (Auswahlrahmen ziehen) und bestätigt mit „Übernehmen". Gibt die
 /// zugeschnittenen Bytes zurück, oder null bei Abbruch.
@@ -66,31 +68,35 @@ class _PhotoCropScreenState extends State<PhotoCropScreen> {
       body: Column(
         children: [
           Expanded(
-            child: Crop(
-              image: widget.imageBytes,
-              controller: _controller,
-              aspectRatio: widget.aspectRatio,
-              // Start-Rahmen etwas eingerückt, damit die Eck-Punkte nicht am
-              // Bildrand kleben und sich greifen lassen. Freies Format: das
-              // ganze Bild (leicht eingerückt).
-              initialRectBuilder: InitialRectBuilder.withBuilder((
-                viewport,
-                imageRect,
-              ) {
-                if (widget.aspectRatio == null) {
-                  return imageRect.deflate(imageRect.shortestSide * 0.02);
-                }
-                final inset = viewport.shortestSide * 0.1;
-                final side = viewport.shortestSide - inset * 2;
-                return Rect.fromCenter(
-                  center: viewport.center,
-                  width: side,
-                  height: side,
-                );
-              }),
-              baseColor: Colors.black,
-              maskColor: Colors.black.withValues(alpha: 0.6),
-              onCropped: _onCropped,
+            child: CropZoomOverlay(
+              child: Crop(
+                image: widget.imageBytes,
+                controller: _controller,
+                aspectRatio: widget.aspectRatio,
+                // Bild zoom-/verschiebbar (zwei Finger, Mausrad, −/+).
+                interactive: true,
+                // Start-Rahmen etwas eingerückt, damit die Eck-Punkte nicht am
+                // Bildrand kleben und sich greifen lassen. Freies Format: das
+                // ganze Bild (leicht eingerückt).
+                initialRectBuilder: InitialRectBuilder.withBuilder((
+                  viewport,
+                  imageRect,
+                ) {
+                  if (widget.aspectRatio == null) {
+                    return imageRect.deflate(imageRect.shortestSide * 0.02);
+                  }
+                  final inset = viewport.shortestSide * 0.1;
+                  final side = viewport.shortestSide - inset * 2;
+                  return Rect.fromCenter(
+                    center: viewport.center,
+                    width: side,
+                    height: side,
+                  );
+                }),
+                baseColor: Colors.black,
+                maskColor: Colors.black.withValues(alpha: 0.6),
+                onCropped: _onCropped,
+              ),
             ),
           ),
           Padding(
