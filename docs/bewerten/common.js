@@ -60,7 +60,28 @@ const CC = (() => {
   }
 
   /** Profil-Karte: Foto, Name, Rolle und Fortschritt der offenen Abgaben. */
-  function profileCard(prof, fallbackName, role) {
+  /**
+   * Abzeichen setzen: Spieler des Spiels (Zwischenstand, ggf. mehrere) und
+   * Spieler des Monats. Ändert nur die Platzhalter – Eingaben bleiben erhalten.
+   */
+  function applyBadges(b) {
+    const motm = new Set((b?.motm || []).map((x) => x.id));
+    const pom = b?.pom?.id || null;
+    const html = (id) => (motm.has(id) ? '<span class="bd s" title="Aktueller Stand der Wahl">👑 Spieler des Spiels</span>' : '') +
+      (pom === id ? '<span class="bd m">🏆 Spieler des Monats</span>' : '');
+    document.querySelectorAll('[data-bdg]').forEach((el) => {
+      const id = el.dataset.bdg;
+      const h = html(id);
+      if (el.innerHTML !== h) el.innerHTML = h;
+      el.closest('.prow, .me')?.classList.toggle('hon', h !== '');
+    });
+    document.querySelectorAll('[data-bdg-mini]').forEach((el) => {
+      const id = el.dataset.bdgMini;
+      el.textContent = (motm.has(id) ? '👑' : '') + (pom === id ? '🏆' : '');
+    });
+  }
+
+  function profileCard(prof, fallbackName, role, selfId) {
     const name = prof?.name || fallbackName || '';
     const src = safeImg(prof?.photo);
     const open = (prof?.entries || []).filter((e) => e.open);
@@ -69,7 +90,7 @@ const CC = (() => {
       ? `<div class="ring" style="--p:${(done / open.length) * 100}"><div><span>${done}/${open.length}<small>bewertet</small></span></div></div>`
       : '';
     return `<div class="me"><div class="ava"><div class="ph">${src ? `<img src="${src}" alt="">` : `<span class="ini">${esc(initials(name))}</span>`}</div></div>
-      <div class="mi"><div class="mh">Hallo</div><div class="mn">${esc(name)}</div><div class="mr">${esc(role)}</div></div>${ring}</div>`;
+      <div class="mi"><div class="mh">Hallo</div><div class="mn">${esc(name)}</div><div class="mr">${esc(role)}</div>${selfId ? `<div class="bdgs" data-bdg="${esc(selfId)}"></div>` : ''}</div>${ring}</div>`;
   }
 
   /** Statuszeile einer eigenen Abgabe (fuer Kacheln und Listen). */
@@ -259,12 +280,12 @@ const CC = (() => {
   }
 
   function playerRow(p, photos, key, value, sub) {
-    return `<div class="prow ${value ? 'done' : ''}">${avatar(p, photos)}<div class="nm">${esc(p.name)}${sub ? `<small>${esc(sub)}</small>` : ''}</div>${starsInput(key, value, 'sm')}</div>`;
+    return `<div class="prow ${value ? 'done' : ''}">${avatar(p, photos)}<div class="nm">${esc(p.name)}${sub ? `<small>${esc(sub)}</small>` : ''}<div class="bdgs" data-bdg="${esc(p.id)}"></div></div>${starsInput(key, value, 'sm')}</div>`;
   }
 
   function motmTiles(players, photos, selected) {
     return '<div class="motm">' + players.map((p) =>
-      `<button type="button" class="mt ${selected === p.id ? 'on' : ''}" data-motm="${esc(p.id)}">${avatar(p, photos)}<span class="nm">${esc(p.name)}</span></button>`).join('') + '</div>';
+      `<button type="button" class="mt ${selected === p.id ? 'on' : ''}" data-motm="${esc(p.id)}"><span class="mini" data-bdg-mini="${esc(p.id)}"></span>${avatar(p, photos)}<span class="nm">${esc(p.name)}</span></button>`).join('') + '</div>';
   }
 
   /** Podest (Platz 1–3) aus [{id, votes}] – Gleichstand teilt sich den Platz. */
@@ -303,6 +324,6 @@ const CC = (() => {
     el.innerHTML = `<div class="card msg"><div class="ic">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
   }
 
-  return { overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
+  return { applyBadges, overviewList, coachVotesCard, starText, monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
     playerRow, motmTiles, podium, gradeTiles, bars, sortPlayers, message, safeImg };
 })();

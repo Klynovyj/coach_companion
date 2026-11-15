@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=9">
+<link rel="stylesheet" href="style.css?v=10">
 </head>
 <body>
 <div class="wrap">
@@ -26,13 +26,14 @@
   </div>
 </div>
 
-<script src="common.js?v=7"></script>
+<script src="common.js?v=10"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let state = null;
 let med = {};
 let prof = null;     // rating_profile: Foto + eigene Abgaben
 let pom = null;      // gekürter Spieler des Monats
+let badges = null;   // peer_badges: Zwischenstand Spieler des Spiels + Monat
 let form = { stars: {}, self_stars: null, self_note: '', match_stars: null, match_note: '', motm_player_id: null };
 
 const mates = () => CC.sortPlayers(state.round.players).filter((p) => p.id !== state.player_id);
@@ -46,8 +47,9 @@ function brand() {
 function header() {
   brand();
   const r = state?.round;
-  $('head').innerHTML = CC.profileCard(prof, state?.player_name, `Spieler · ${state?.team || ''}`) +
+  $('head').innerHTML = CC.profileCard(prof, state?.player_name, `Spieler · ${state?.team || ''}`, state?.player_id) +
     (r ? CC.scoreboard(med, r) : '');
+  CC.applyBadges(badges);
 }
 
 function progress() {
@@ -74,6 +76,7 @@ function renderForm() {
   $('bar').hidden = false;
   $('err').textContent = '';
   progress();
+  CC.applyBadges(badges);
 
   CC.bindStars($('main'),
     (k) => (k === 'match' ? form.match_stars : k === 'self' ? form.self_stars : form.stars[k.slice(2)]),
@@ -101,15 +104,29 @@ function renderThanks() {
   $('main').innerHTML = `<div class="card msg"><div class="check">✓</div><h2>Danke!</h2>
     <p>Deine Bewertung ist gespeichert. Du kannst sie bis ${CC.esc(CC.fmtDate(state.round.closes_at, true))} Uhr noch ändern.</p>
     ${motm ? `<p style="margin-top:10px">Dein Spieler des Spiels: <b style="color:var(--gold)">${CC.esc(motm.name)}</b></p>` : ''}
-    <p style="margin-top:10px">Wer Spieler des Spiels geworden ist, siehst du hier nach Ablauf der Frist.</p>
+    <p style="margin-top:10px" id="live"></p>
     <button class="btn ghost" id="edit">Bewertung ändern</button></div>` + (pom ? CC.monthCard(pom) : '') + CC.entriesCard(prof, med.logos, med.us?.name);
   $('edit').onclick = renderForm;
+  CC.applyBadges(badges);
+  liveLine();
+}
+
+/** Zwischenstand Spieler des Spiels in der Danke-Ansicht. */
+function liveLine() {
+  const el = $('live');
+  if (!el) return;
+  const ids = (badges?.motm || []).map((x) => x.id);
+  const names = ids.map((id) => byId()[id]?.name).filter(Boolean);
+  el.innerHTML = names.length
+    ? `Aktuell vorne beim Spieler des Spiels: <b style="color:var(--gold)">👑 ${CC.esc(names.join(', '))}</b>`
+    : 'Beim Spieler des Spiels gibt es noch keine Stimmen.';
 }
 
 function renderClosed() {
   $('bar').hidden = true;
   $('main').innerHTML = `<div class="card"><h2 style="text-align:center">🏆 Spieler des Spiels</h2>${CC.podium(state.motm || [], byId(), med.photos)}</div>
     <p class="hello" style="text-align:center">Nach dem nächsten Spiel kannst du hier wieder bewerten. Speichere dir den Link am besten als Lesezeichen.</p>` + (pom ? CC.monthCard(pom) : '') + CC.entriesCard(prof, med.logos, med.us?.name);
+  CC.applyBadges(badges);
 }
 
 async function send() {
@@ -155,6 +172,7 @@ async function load() {
   [med, prof, pm] = await Promise.all([CC.media(r?.match_id), CC.profile(),
     CC.rpc('peer_month', { p_token: CC.token }).catch(() => null)]);
   pom = pm?.ok ? pm.honored : null;
+  await refreshBadges();
   header();
   if (!r) { CC.message($('main'), '⚽', 'Gerade nichts zu bewerten', 'Nach dem nächsten Spiel kannst du hier deine Bewertung abgeben. Speichere dir den Link am besten als Lesezeichen.'); return; }
   if (!r.open) { renderClosed(); return; }
@@ -168,7 +186,20 @@ async function load() {
   }
 }
 
+/** Abzeichen neu laden und setzen (ohne die Eingaben neu aufzubauen). */
+async function refreshBadges() {
+  try {
+    const b = await CC.rpc('peer_badges', { p_token: CC.token });
+    if (b?.ok) badges = b;
+  } catch (e) {}
+  CC.applyBadges(badges);
+  liveLine();
+}
+
 $('send').addEventListener('click', send);
+// Zwischenstand regelmäßig nachladen – das Abzeichen wandert mit.
+setInterval(() => { if (state?.ok && !document.hidden) refreshBadges(); }, 30000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && state?.ok) refreshBadges(); });
 window.addEventListener('hashchange', () => location.reload());
 load();
 </script>
