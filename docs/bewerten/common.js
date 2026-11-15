@@ -139,7 +139,7 @@ const CC = (() => {
 
   function gradeTiles(tiles) {
     return '<div class="grades">' + tiles.map((t) =>
-      `<div class="grade ${t.cls}"><b>${f1(t.avg)}</b>${stars(t.avg)}<span>${esc(t.label)} · ${t.n} ${t.n === 1 ? 'Note' : 'Noten'}</span></div>`).join('') + '</div>';
+      `<div class="grade ${t.cls}"><b>${f1(t.avg)}</b>${stars(t.avg)}<span class="lb">${esc(t.label)} · ${t.n} ${t.n === 1 ? 'Note' : 'Noten'}</span></div>`).join('') + '</div>';
   }
 
   /** Balken je Spieler: rows = [{p, t:{avg,n}|null, m:{avg,n}|null}]. */

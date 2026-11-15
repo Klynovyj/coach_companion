@@ -164,7 +164,7 @@ textarea:focus { outline: 2px solid var(--green2); border-color: transparent; }
 .grade { background: var(--card2); border-radius: 14px; padding: 12px 8px; text-align: center; }
 .grade b { display: block; font: 800 40px/1 "Barlow Condensed", sans-serif; }
 .grade .st { font-size: 15px; }
-.grade span { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.grade span.lb { display: block; color: var(--muted); font-size: 12px; margin-top: 4px; }
 .grade.t b { color: var(--green2); }
 .grade.m b { color: var(--gold); }
 
