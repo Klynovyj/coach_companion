@@ -160,3 +160,10 @@ class PeerSelfEntry {
     note: (m['note'] as String?)?.trim(),
   );
 }
+
+/// Persönlicher Bewertungs-Link eines Trainers (Trainer-Seite, Stufe 60).
+String coachRatingLink(String token) =>
+    '${kPeerRatingBaseUrl}trainer.html#t=$token';
+
+/// Bewerter-ID für Trainer/Betreuer aus dem Kader ohne App-Konto.
+String staffRaterId(String playerId) => 'staff:$playerId';

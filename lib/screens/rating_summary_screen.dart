@@ -534,7 +534,7 @@ class _RatingSummaryScreenState extends State<RatingSummaryScreen> {
             if (mounted) _load();
           }),
       icon: const Icon(Icons.link, size: 18),
-      label: const Text('Spieler-Links'),
+      label: const Text('Bewertungs-Links'),
     );
     if (peer == null) {
       return Card(

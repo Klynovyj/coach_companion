@@ -106,4 +106,45 @@ class PeerRatingService {
     } catch (_) {}
     return null;
   }
+
+  // ---------------------------------------------------------- Trainer-Links
+  /// Trainer-Links des Teams: Bewerter-ID → Token. `null` = nicht lesbar
+  /// (Cloud-Stufe 60 fehlt oder offline).
+  static Future<Map<String, String>?> coachLinks(String teamId) async {
+    if (!available) return null;
+    try {
+      final rows = await _c
+          .from('coach_rating_links')
+          .select('rater_id, token')
+          .eq('team_id', teamId);
+      return {
+        for (final r in rows) r['rater_id'].toString(): r['token'].toString(),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Trainer-Link anlegen oder neu erzeugen. [raterId] = User-ID (App) oder
+  /// `staff:<playerId>`; [name] erscheint auf der Seite und bei Berichten.
+  static Future<String?> createCoachLink(
+    String raterId,
+    String teamId,
+    String name,
+  ) async {
+    if (!available) return null;
+    final token = newPeerToken();
+    try {
+      await _c.from('coach_rating_links').upsert({
+        'rater_id': raterId,
+        'team_id': teamId,
+        'token': token,
+        'name': name,
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      });
+      return token;
+    } catch (_) {
+      return null;
+    }
+  }
 }

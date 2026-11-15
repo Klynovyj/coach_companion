@@ -20,6 +20,14 @@ void main() {
     );
   });
 
+  test('Trainer-Link und Kader-Bewerter-ID', () {
+    expect(
+      coachRatingLink('xyz'),
+      'https://klynovyj.github.io/coach_companion/bewerten/trainer.html#t=xyz',
+    );
+    expect(staffRaterId('p1'), 'staff:p1');
+  });
+
   test('PeerSummary.fromJson: Schnitte, Stimmen, Fehlende', () {
     final s = PeerSummary.fromJson({
       'match_id': 'm1',

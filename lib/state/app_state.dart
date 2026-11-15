@@ -4671,10 +4671,16 @@ class AppState extends ChangeNotifier {
   }
 
   Future<Map<String, String>> teamMemberNames(String teamId) async {
-    if (!CloudService.ready || !CloudService.signedIn) return const {};
+    // Trainer/Betreuer aus dem Kader, die per Trainer-Link bewerten
+    // (Bewerter-ID `staff:<playerId>`).
+    final staff = <String, String>{
+      for (final p in await _repo.getPlayers(teamId))
+        if (p.isStaff) staffRaterId(p.id): p.fullName,
+    };
+    if (!CloudService.ready || !CloudService.signedIn) return staff;
     try {
       final rows = await CloudService.teamMembers(teamId);
-      final map = <String, String>{};
+      final map = <String, String>{...staff};
       for (final r in rows) {
         final uid = r['user_id'] as String?;
         if (uid == null) continue;
@@ -4685,7 +4691,7 @@ class AppState extends ChangeNotifier {
       }
       return map;
     } catch (_) {
-      return const {};
+      return staff;
     }
   }
 

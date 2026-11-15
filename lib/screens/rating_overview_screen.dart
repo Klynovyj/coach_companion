@@ -94,7 +94,7 @@ class _RatingOverviewScreenState extends State<RatingOverviewScreen> {
     if (context.read<AppState>().isTrainerHere &&
         context.read<AppState>().activeCloudTeamId != null)
       IconButton(
-        tooltip: 'Spieler-Links (Bewertung ohne App)',
+        tooltip: 'Bewertungs-Links (Trainer & Spieler)',
         icon: const Icon(Icons.link),
         onPressed: () => Navigator.push(
           context,
