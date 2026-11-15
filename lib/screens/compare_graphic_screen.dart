@@ -28,6 +28,7 @@ import '../widgets/player_picker_page.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/text_look.dart';
 import 'photo_editor_screen.dart';
+import '../widgets/bg_pattern.dart';
 import '../widgets/color_picker_dialog.dart';
 import '../widgets/logo_chip.dart';
 import 'startelf_graphic_screen.dart'
@@ -2388,13 +2389,23 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
           Positioned.fill(
             child: bg != null
                 ? Image.memory(bg, fit: BoxFit.cover, gaplessPlayback: true)
-                : CustomPaint(
-                    painter: _CompareBgPainter(
-                      _gradTop,
-                      _gradBottom,
-                      _design.gradShape,
-                      _design.pattern ? _design.patternStrength : 0,
-                    ),
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: bgGradient(
+                            _design.gradShape,
+                            _gradTop,
+                            _gradBottom,
+                          ),
+                        ),
+                      ),
+                      if (_design.pattern)
+                        CustomPaint(
+                          painter: BgPatternPainter(_design.patternStrength),
+                        ),
+                    ],
                   ),
           ),
           // Verlauf als Tönung über dem eigenen Bild.
@@ -2405,7 +2416,7 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                   opacity: _design.tint.clamp(0.0, 1.0),
                   child: DecoratedBox(
                     decoration: BoxDecoration(
-                      gradient: compareGradient(
+                      gradient: bgGradient(
                         _design.gradShape,
                         _gradTop,
                         _gradBottom,
@@ -2663,95 +2674,4 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
       ),
     );
   }
-}
-
-/// Verlauf (oben → unten, Strahl oder diagonal) in den Team-Verlaufsfarben.
-Gradient compareGradient(String shape, Color top, Color bottom) =>
-    switch (shape) {
-      'radial' => RadialGradient(
-        center: const Alignment(0, -0.35),
-        radius: 1.2,
-        colors: [top, bottom],
-      ),
-      'diagonal' => LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [top, bottom],
-      ),
-      _ => LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [top, bottom],
-      ),
-    };
-
-/// Standard-Hintergrund: Verlauf in den Team-Farben, optional mit feinen
-/// Polygon-Splittern und Vignette ([pattern] = Stärke, 0 = aus).
-class _CompareBgPainter extends CustomPainter {
-  _CompareBgPainter(this.top, this.bottom, this.shape, this.pattern);
-
-  final Color top;
-  final Color bottom;
-  final String shape;
-  final double pattern;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    canvas.clipRect(rect);
-    canvas.drawRect(
-      rect,
-      Paint()..shader = compareGradient(shape, top, bottom).createShader(rect),
-    );
-    if (pattern <= 0) return;
-    final rnd = math.Random(11);
-    final w = size.width;
-    final h = size.height;
-    for (var k = 0; k < 38; k++) {
-      final c = Offset(
-        (rnd.nextDouble() * 1.3 - 0.15) * w,
-        (rnd.nextDouble() * 1.3 - 0.15) * h,
-      );
-      final r = (0.18 + rnd.nextDouble() * 0.35) * w;
-      final a0 = rnd.nextDouble() * math.pi * 2;
-      final path = Path();
-      for (var j = 0; j < 3; j++) {
-        final a = a0 + j * (math.pi * 2 / 3) + (rnd.nextDouble() - 0.5) * 1.1;
-        final rr = r * (0.55 + rnd.nextDouble() * 0.45);
-        final p = c + Offset(math.cos(a) * rr, math.sin(a) * rr);
-        j == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
-      }
-      path.close();
-      final light = rnd.nextBool();
-      final alpha = light
-          ? 0.015 + rnd.nextDouble() * 0.045
-          : 0.08 + rnd.nextDouble() * 0.14;
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = (light ? Colors.white : Colors.black).withValues(
-            alpha: (alpha * pattern).clamp(0.0, 1.0),
-          ),
-      );
-    }
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = RadialGradient(
-          radius: 0.9,
-          colors: [
-            Colors.transparent,
-            Colors.black.withValues(alpha: (0.45 * pattern).clamp(0.0, 0.8)),
-          ],
-          stops: const [0.55, 1.0],
-        ).createShader(rect),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_CompareBgPainter old) =>
-      old.top != top ||
-      old.bottom != bottom ||
-      old.shape != shape ||
-      old.pattern != pattern;
 }

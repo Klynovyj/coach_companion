@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 70;
+  static const _dbVersion = 71;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -569,6 +569,15 @@ class AppDatabase {
     if (oldV < 70) {
       await db.execute(_prepPlansTableSql);
     }
+    // v70 -> v71: Verlaufsform + Splitter-Muster für alle Grafiken (teamweit).
+    if (oldV < 71) {
+      await db.execute(
+        'ALTER TABLE graphic_settings ADD COLUMN grad_shape TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE graphic_settings ADD COLUMN bg_pattern REAL',
+      );
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -913,7 +922,9 @@ class AppDatabase {
         accent TEXT,
         logo_shape TEXT,
         bg_opacity INTEGER,
-        bg_blend TEXT
+        bg_blend TEXT,
+        grad_shape TEXT,
+        bg_pattern REAL
       )
   ''';
 

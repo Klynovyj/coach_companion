@@ -18,6 +18,7 @@ import '../models/sponsor.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
+import '../widgets/bg_pattern.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/ai_look.dart';
 import '../widgets/text_look.dart';
@@ -801,6 +802,19 @@ class _PlayerOfMonthGraphicScreenState
                         ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  // Verlaufsform + Splitter-Muster (teamweit, Post/Story).
+                  BgStyleControls(
+                    shape: _settings.gradShape,
+                    pattern: _settings.bgPattern,
+                    onShape: (v) => apply(
+                      _settings.copyWith(
+                        gradShape: v,
+                        clearGradShape: v == null,
+                      ),
+                    ),
+                    onPattern: (v) => apply(_settings.copyWith(bgPattern: v)),
+                  ),
                   const SizedBox(height: 8),
                   const Divider(),
                   const Text(
@@ -1156,6 +1170,8 @@ class _PlayerOfMonthGraphicScreenState
             barSponsors: _barSponsors,
             gradTop: _hex(_settings.gradTop),
             gradBottom: _hex(_settings.gradBottom),
+            gradShape: _settings.gradShape,
+            bgPattern: _settings.bgPattern,
             bgImage: _settings.bgImage,
             overlayOpacity: _settings.overlayOpacity / 100,
             showRating: _showRating,
@@ -1396,6 +1412,8 @@ class _SocialGraphic extends StatelessWidget {
     required this.barSponsors,
     required this.gradTop,
     required this.gradBottom,
+    this.gradShape,
+    this.bgPattern = 0,
     required this.bgImage,
     required this.overlayOpacity,
     required this.showRating,
@@ -1421,6 +1439,8 @@ class _SocialGraphic extends StatelessWidget {
   final List<Sponsor> barSponsors;
   final Color gradTop;
   final Color gradBottom;
+  final String? gradShape;
+  final double bgPattern;
   final String? bgImage;
   final double overlayOpacity; // 0..1
   final bool showRating;
@@ -1440,13 +1460,10 @@ class _SocialGraphic extends StatelessWidget {
       children: [
         Container(
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [gradTop, gradBottom],
-            ),
+            gradient: bgGradient(gradShape ?? 'linear', gradTop, gradBottom),
           ),
         ),
+        if (bgPattern > 0) CustomPaint(painter: BgPatternPainter(bgPattern)),
         if (bgBytes != null) ...[
           Image.memory(bgBytes, fit: BoxFit.cover, gaplessPlayback: true),
           Container(

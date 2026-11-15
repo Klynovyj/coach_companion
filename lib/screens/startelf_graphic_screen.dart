@@ -24,6 +24,7 @@ import '../services/cloud_service.dart';
 import '../services/share_service.dart';
 import '../services/player_photos.dart';
 import '../state/app_state.dart';
+import '../widgets/bg_pattern.dart';
 import '../widgets/player_picker_page.dart';
 import '../widgets/logo_chip.dart';
 import '../widgets/team_logo.dart';
@@ -3563,6 +3564,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                         ),
                     ],
                   ),
+                  const SizedBox(height: 12),
+                  // Verlaufsform + Splitter-Muster (teamweit) -------------
+                  BgStyleControls(
+                    shape: _settings.gradShape,
+                    pattern: _settings.bgPattern,
+                    onShape: (v) => apply(
+                      _settings.copyWith(
+                        gradShape: v,
+                        clearGradShape: v == null,
+                      ),
+                    ),
+                    onPattern: (v) => apply(_settings.copyWith(bgPattern: v)),
+                  ),
                   const SizedBox(height: 10),
                   // Eigene Hintergrund-Vorlagen (kompletter Look) -----------
                   SizedBox(
@@ -3653,6 +3667,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       final bg = _currentFupaBg();
       setState(() => _fupaBgSnap = bg.toMap());
       await state.saveGraphicPreset(bg);
+      // Verlaufsform/Muster gelten teamweit – auch hier mitspeichern.
+      final team = await state.graphicSettings();
+      if (team.gradShape != _settings.gradShape ||
+          team.bgPattern != _settings.bgPattern) {
+        final upd = team.copyWith(
+          gradShape: _settings.gradShape,
+          clearGradShape: _settings.gradShape == null,
+          bgPattern: _settings.bgPattern,
+        );
+        _teamSettings = upd;
+        await state.saveGraphicSettings(upd);
+        await state.pushGraphicSettingsToCloud();
+      }
       return;
     }
     await state.saveGraphicSettings(_settings);
@@ -5015,6 +5042,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     bgImage: _settings.bgImage,
     gradTop: _hex(_settings.gradTop),
     gradBottom: _hex(_settings.gradBottom),
+    gradShape: _settings.gradShape,
+    bgPattern: _settings.bgPattern,
     overlayOpacity: _settings.overlayOpacity / 100,
     matchDate: widget.matchDate,
     isHome: widget.isHome,
@@ -7841,6 +7870,8 @@ class _StartelfGraphic extends StatelessWidget {
     required this.bgImage,
     required this.gradTop,
     required this.gradBottom,
+    this.gradShape,
+    this.bgPattern = 0,
     required this.overlayOpacity,
     required this.matchDate,
     required this.isHome,
@@ -7929,6 +7960,10 @@ class _StartelfGraphic extends StatelessWidget {
   final String? bgImage;
   final Color gradTop;
   final Color gradBottom;
+
+  /// Verlaufsform (null = Standard des Layouts) und Splitter-Muster (0 = aus).
+  final String? gradShape;
+  final double bgPattern;
   final double overlayOpacity; // 0..1
   final DateTime? matchDate;
   final bool isHome;
@@ -9463,7 +9498,10 @@ class _StartelfGraphic extends StatelessWidget {
     final bgBytes = TeamLogo.decode(photoBg) ?? TeamLogo.decode(bgImage);
     // radial = Strahl/Vignette (heller Punkt oben-mitte → dunkel zu den Rändern),
     // wie beim Spieler-Poster; sonst klassischer Verlauf oben→unten.
-    final Gradient baseGradient = radial
+    final shape = gradShape;
+    final Gradient baseGradient = shape != null
+        ? bgGradient(shape, gradTop, gradBottom)
+        : radial
         ? RadialGradient(
             center: const Alignment(0, -0.35),
             radius: 1.2,
@@ -9478,6 +9516,7 @@ class _StartelfGraphic extends StatelessWidget {
       fit: StackFit.expand,
       children: [
         Container(decoration: BoxDecoration(gradient: baseGradient)),
+        if (bgPattern > 0) CustomPaint(painter: BgPatternPainter(bgPattern)),
         if (bgBytes != null) ...[
           if (bgOpacity < 1.0 || bgBlend != BlendMode.srcOver)
             _BlendLayer(
@@ -11560,8 +11599,12 @@ Widget debugGraphicForTest({
   bool logoCircle = false,
   Map<String, ({String text, String font, String color})> posterTexts =
       const {},
+  String? gradShape,
+  double bgPattern = 0,
 }) => _StartelfGraphic(
   posterTexts: posterTexts,
+  gradShape: gradShape,
+  bgPattern: bgPattern,
   title: 'Garather SV',
   logo: logo,
   starters: const [],

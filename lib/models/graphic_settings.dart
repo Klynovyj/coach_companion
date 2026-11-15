@@ -56,6 +56,13 @@ class GraphicSettings {
   /// 'softlight'.
   final String bgBlend;
 
+  /// Verlaufsform für alle Grafiken: 'linear' | 'radial' | 'diagonal';
+  /// null = Standard der jeweiligen Grafik.
+  final String? gradShape;
+
+  /// Polygon-Muster („Splitter") über dem Verlauf, Stärke 0 = aus … 1.5.
+  final double bgPattern;
+
   static const defaultGradTop = '#0E3325';
   static const defaultGradBottom = '#15603F';
   static const defaultOverlay = 85;
@@ -78,6 +85,8 @@ class GraphicSettings {
     this.infoY = 0.72,
     this.accent,
     this.logoShape = 'rounded',
+    this.gradShape,
+    this.bgPattern = 0,
     this.bgOpacity = 100,
     this.bgBlend = 'normal',
   });
@@ -108,6 +117,9 @@ class GraphicSettings {
     String? logoShape,
     int? bgOpacity,
     String? bgBlend,
+    String? gradShape,
+    bool clearGradShape = false,
+    double? bgPattern,
   }) => GraphicSettings(
     id: id ?? this.id,
     title: clearTitle ? null : (title ?? this.title),
@@ -128,6 +140,8 @@ class GraphicSettings {
     logoShape: logoShape ?? this.logoShape,
     bgOpacity: bgOpacity ?? this.bgOpacity,
     bgBlend: bgBlend ?? this.bgBlend,
+    gradShape: clearGradShape ? null : (gradShape ?? this.gradShape),
+    bgPattern: bgPattern ?? this.bgPattern,
   );
 
   Map<String, Object?> toMap() => {
@@ -150,6 +164,8 @@ class GraphicSettings {
     'logo_shape': logoShape,
     'bg_opacity': bgOpacity,
     'bg_blend': bgBlend,
+    'grad_shape': gradShape,
+    'bg_pattern': bgPattern,
   };
 
   factory GraphicSettings.fromMap(Map<String, Object?> m) => GraphicSettings(
@@ -186,5 +202,9 @@ class GraphicSettings {
     bgBlend: (m['bg_blend'] as String?)?.trim().isNotEmpty == true
         ? m['bg_blend'] as String
         : 'normal',
+    gradShape: const ['linear', 'radial', 'diagonal'].contains(m['grad_shape'])
+        ? m['grad_shape'] as String
+        : null,
+    bgPattern: ((m['bg_pattern'] as num?)?.toDouble() ?? 0).clamp(0.0, 1.5),
   );
 }
