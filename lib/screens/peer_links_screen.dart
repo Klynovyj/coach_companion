@@ -167,7 +167,7 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
       return an != bn ? an.compareTo(bn) : a.lastName.compareTo(b.lastName);
     }
 
-    final players = all.where((p) => !p.isStaffOnly).toList()..sort(byNumber);
+    final players = all.where((p) => !p.isStaff).toList()..sort(byNumber);
     // Ein Link je Trainer: App-Konten, die zu einer Person aus dem Kader
     // passen, werden mit ihr zusammengelegt (Name/Foto aus dem Kader, Bewerter
     // = App-Konto – so zählen Link- und App-Noten für dieselbe Person).

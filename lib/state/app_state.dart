@@ -4767,7 +4767,8 @@ class AppState extends ChangeNotifier {
     final played = await playedPlayerIds(matchId, m.ownTeamId);
     final players = [
       for (final p in await _repo.getPlayers(m.ownTeamId))
-        if (played.contains(p.id))
+        // Trainer/Betreuer (auch spielende) sind keine bewertbaren Spieler.
+        if (played.contains(p.id) && !p.isStaff)
           PeerRoundPlayer(id: p.id, name: p.fullName, number: p.number),
     ];
     if (players.isEmpty) return false;
@@ -5574,8 +5575,15 @@ class AppState extends ChangeNotifier {
     return items;
   }
 
-  Future<Set<String>> _ratingRoster(GameMatch m) =>
-      playedPlayerIds(m.id, m.ownTeamId);
+  /// Bewertbare Spieler eines Spiels: gespielt und kein Trainer/Betreuer.
+  Future<Set<String>> _ratingRoster(GameMatch m) async {
+    final played = await playedPlayerIds(m.id, m.ownTeamId);
+    final staff = {
+      for (final p in await _repo.getPlayers(m.ownTeamId))
+        if (p.isStaff) p.id,
+    };
+    return played.difference(staff);
+  }
 
   /// Spieler, die im Spiel tatsächlich gespielt haben: Startelf + Eingewechselte
   /// (aus den Wechsel-Ereignissen). Ohne Aufstellung ersatzweise die Zugesagten

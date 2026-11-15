@@ -70,8 +70,9 @@ class _RatingScreenState extends State<RatingScreen> {
     );
     final roster =
         <Player>[
+          // Trainer/Betreuer (auch spielende) werden nicht als Spieler bewertet.
           for (final id in playedIds)
-            if (byId[id] != null) byId[id]!,
+            if (byId[id] != null && !byId[id]!.isStaff) byId[id]!,
         ]..sort((a, b) {
           final an = a.number ?? 9999, bn = b.number ?? 9999;
           return an != bn ? an.compareTo(bn) : a.lastName.compareTo(b.lastName);
