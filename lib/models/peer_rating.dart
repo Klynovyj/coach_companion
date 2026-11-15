@@ -165,5 +165,32 @@ class PeerSelfEntry {
 String coachRatingLink(String token) =>
     '${kPeerRatingBaseUrl}trainer.html#t=$token';
 
+/// Gehört ein App-Konto (Anzeigename/E-Mail) zu einer Person aus dem Kader?
+/// Treffer bei gleichem Namen, wenn der E-Mail-Teil vor dem @ den Nachnamen
+/// (≥ 4 Zeichen) enthält oder mit dem ersten Teil des Vornamens (≥ 3 Zeichen)
+/// beginnt – z. B. „a.chenfeld" ↔ Andrej Chenfeld, „jan…" ↔ Jan-Niklas Ped.
+bool accountMatchesPerson({
+  required String displayName,
+  required String email,
+  required String firstName,
+  required String lastName,
+}) {
+  String norm(String s) => s
+      .toLowerCase()
+      .replaceAll('ä', 'ae')
+      .replaceAll('ö', 'oe')
+      .replaceAll('ü', 'ue')
+      .replaceAll('ß', 'ss')
+      .replaceAll(RegExp(r'[^a-z0-9]'), '');
+  final full = norm('$firstName $lastName');
+  if (full.isNotEmpty && norm(displayName) == full) return true;
+  final local = norm(email.split('@').first);
+  if (local.isEmpty) return false;
+  final last = norm(lastName);
+  if (last.length >= 4 && local.contains(last)) return true;
+  final first = norm(firstName.split(RegExp(r'[\s-]')).first);
+  return first.length >= 3 && local.startsWith(first);
+}
+
 /// Bewerter-ID für Trainer/Betreuer aus dem Kader ohne App-Konto.
 String staffRaterId(String playerId) => 'staff:$playerId';

@@ -130,8 +130,9 @@ class PeerRatingService {
   static Future<String?> createCoachLink(
     String raterId,
     String teamId,
-    String name,
-  ) async {
+    String name, {
+    String? playerId,
+  }) async {
     if (!available) return null;
     final token = newPeerToken();
     try {
@@ -140,6 +141,7 @@ class PeerRatingService {
         'team_id': teamId,
         'token': token,
         'name': name,
+        'player_id': ?playerId,
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
       return token;

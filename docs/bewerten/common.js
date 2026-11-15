@@ -101,6 +101,46 @@ const CC = (() => {
     }).join('') + '</div>';
   }
 
+  const MONTHS = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+  /** „2026-11" → „November 2026" (kurz: „Nov 26"). */
+  function monthLabel(ym, short) {
+    const [y, m] = String(ym || '').split('-').map(Number);
+    if (!y || !m) return ym || '';
+    return short ? `${MONTHS[m - 1].slice(0, 3)} ${String(y).slice(2)}` : `${MONTHS[m - 1]} ${y}`;
+  }
+
+  /** Große Karte des gekürten Spielers des Monats. */
+  function monthCard(h, ym) {
+    if (!h) {
+      return `<div class="card month"><div class="lbl">Spieler des Monats · ${esc(monthLabel(ym))}</div><p class="none">Noch nicht gekürt.</p></div>`;
+    }
+    const p = { id: h.id, name: h.name || 'Unbekannt', number: h.number };
+    return `<div class="card month"><div class="lbl">Spieler des Monats</div><div class="crown">👑</div>
+      ${avatar(p, { [h.id]: h.photo })}<div class="nm">${esc(p.name)}</div><div class="mo">${esc(monthLabel(h.year_month))}</div></div>`;
+  }
+
+  /** Rangliste des Monats (Trainer-Schnitt, daneben Mannschaft) mit „Küren". */
+  function rankList(ranking, honoredId) {
+    if (!ranking || !ranking.length) return '<p class="sub">Noch keine Trainer-Noten in diesem Monat.</p>';
+    let place = 0, last = null;
+    return ranking.map((r, i) => {
+      const a = Math.round((r.t?.avg ?? 0) * 100);
+      if (a !== last) { place = i + 1; last = a; }
+      const p = { id: r.id, name: r.name, number: r.number };
+      const on = r.id === honoredId;
+      return `<div class="rk ${place === 1 ? 'top' : ''} ${on ? 'crowned' : ''}"><div class="pl">${place}</div>${avatar(p, { [r.id]: r.photo })}
+        <div class="nm">${esc(r.name)}<small><b>Trainer ${f1(r.t?.avg)}</b> (${r.t?.n ?? 0})${r.m ? ` · <i>Mannschaft ${f1(r.m.avg)}</i> (${r.m.n})` : ''}</small></div>
+        <button type="button" class="crownbtn ${on ? 'on' : ''}" data-crown="${esc(r.id)}" data-name="${esc(r.name)}">${on ? '👑 Gekürt' : 'Küren'}</button></div>`;
+    }).join('');
+  }
+
+  /** Verlauf der letzten Gekürten. */
+  function historyStrip(history) {
+    if (!history || !history.length) return '';
+    return '<div class="hist">' + history.map((h) =>
+      `<div>${avatar({ id: h.id, name: h.name, number: null }, { [h.id]: h.photo })}<b>${esc(h.name || '–')}</b><span>${esc(monthLabel(h.year_month, true))}</span></div>`).join('') + '</div>';
+  }
+
   /** Kopf mit Wappen/Ergebnis. [round] = {title, match_date, closes_at, open}. */
   function scoreboard(m, round) {
     const parts = String(round?.title || '').match(/^(.*?)\s+–\s+(.*?)\s+(\d+):(\d+)$/);
@@ -210,6 +250,6 @@ const CC = (() => {
     el.innerHTML = `<div class="card msg"><div class="ic">${icon}</div><h2>${esc(title)}</h2><p>${esc(text)}</p></div>`;
   }
 
-  return { profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
+  return { monthLabel, monthCard, rankList, historyStrip, profile, profileCard, entriesCard, entryStatus, token, rpc, media, esc, fmtDate, f1, crest, avatar, scoreboard, matchTiles, starsInput, stars, bindStars,
     playerRow, motmTiles, podium, gradeTiles, bars, sortPlayers, message, safeImg };
 })();

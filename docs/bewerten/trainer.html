@@ -10,7 +10,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=4">
+<link rel="stylesheet" href="style.css?v=5">
 </head>
 <body>
 <div class="wrap">
@@ -28,7 +28,7 @@
   </div>
 </div>
 
-<script src="common.js?v=4"></script>
+<script src="common.js?v=5"></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let info = null;     // {name, team, rounds}
@@ -38,7 +38,9 @@ let med = {};        // rating_media
 let logos = {};      // Gegnerlogos je Spiel (Kacheln)
 let prof = null;     // rating_profile: Foto + eigene Abgaben
 let editing = false;
-let form = { stars: {}, match_stars: null, note: '', abstained: false };
+let form = { stars: {}, match_stars: null, note: '', abstained: false, motm_player_id: null };
+let month = null;    // coach_month: Rangliste + Gekürter
+let monthSel = '';   // gewählter Monat (YYYY-MM), leer = Monat des Spiels
 
 const players = () => CC.sortPlayers(detail?.round?.players).filter((p) => p.id !== detail?.self_player_id);
 const byId = () => Object.fromEntries((detail?.round?.players || []).map((p) => [p.id, p]));
@@ -58,7 +60,7 @@ function progress() {
   const n = players().length;
   const done = Object.keys(form.stars).length;
   $('prog').innerHTML = form.abstained ? '<span>Als „nicht da“ eintragen</span>'
-    : (n ? `<span>${done}/${n} Spieler</span><div class="trk"><div style="width:${(done / n) * 100}%"></div></div><span>Note ${form.match_stars ? '✓' : '–'}</span>` : '');
+    : (n ? `<span>${done}/${n} Spieler</span><div class="trk"><div style="width:${(done / n) * 100}%"></div></div><span>Note ${form.match_stars ? '✓' : '–'} · 👑 ${form.motm_player_id ? '✓' : '–'}</span>` : '');
 }
 
 function resultsHtml() {
@@ -66,8 +68,8 @@ function resultsHtml() {
   if (!res) return '';
   const ps = CC.sortPlayers(detail.round.players);
   const ids = byId();
-  let h = `<div class="card"><h2 style="text-align:center">🏆 Spieler des Spiels</h2><p class="sub" style="text-align:center">Wahl der Mannschaft</p>
-    ${CC.podium(res.motm, ids, med.photos)}<p class="voters">${res.voters} von ${ps.length} Spielern haben abgestimmt.</p></div>`;
+  let h = `<div class="card"><h2 style="text-align:center">🏆 Spieler des Spiels</h2><p class="sub" style="text-align:center">Gemeinsame Wahl von Mannschaft und Trainern</p>
+    ${CC.podium(res.motm, ids, med.photos)}<p class="voters">${res.voters} von ${ps.length} Spielern${res.motm_coaches ? ` + ${res.motm_coaches} ${res.motm_coaches === 1 ? 'Trainer' : 'Trainer'}` : ''} haben abgestimmt.</p></div>`;
   h += `<div class="card"><h2>Spielnote</h2><p class="sub">Schnitt der Gesamtnoten</p>${CC.gradeTiles([
     { cls: 't', label: 'Trainer', avg: res.trainer_match_avg, n: res.trainer_match_n },
     { cls: 'm', label: 'Mannschaft', avg: res.team_match_avg, n: res.team_match_n },
@@ -110,8 +112,10 @@ function render() {
       : 'Du hast für dieses Spiel nicht bewertet.'}</p></div>`;
   }
   h += resultsHtml();
+  h += '<div id="month"></div>';
   $('main').innerHTML = h;
   if ($('edit')) $('edit').onclick = () => { editing = true; render(); };
+  renderMonth();
 }
 
 function renderForm() {
@@ -123,9 +127,20 @@ function renderForm() {
     <textarea id="note" maxlength="4000" placeholder="Dein Kommentar/Bericht zum Spiel …">${CC.esc(form.note)}</textarea></div>`;
   h += `<div class="card"><h2>Spieler</h2><p class="sub">Alle mit Einsatz · nochmal tippen nimmt die Note zurück.</p>`;
   h += ps.length ? ps.map((p) => CC.playerRow(p, med.photos, 'p:' + p.id, form.stars[p.id])).join('') : '<p class="sub">Keine Spieler in diesem Spiel.</p>';
-  h += '</div></div>';
+  h += '</div>';
+  h += `<div class="card"><h2>Spieler des Spiels</h2><p class="sub">Deine Stimme – zählt zusammen mit der Mannschaft.</p>${CC.motmTiles(ps, med.photos, form.motm_player_id)}</div>`;
+  h += '</div>';
   if (detail.results) h += resultsHtml();
+  h += '<div id="month"></div>';
   $('main').innerHTML = h;
+  renderMonth();
+  $('main').querySelectorAll('[data-motm]').forEach((b) => {
+    b.addEventListener('click', () => {
+      form.motm_player_id = form.motm_player_id === b.dataset.motm ? null : b.dataset.motm;
+      $('main').querySelectorAll('[data-motm]').forEach((x) => x.classList.toggle('on', x.dataset.motm === form.motm_player_id));
+      progress();
+    });
+  });
   $('bar').hidden = false;
   $('err').textContent = '';
   progress();
@@ -142,8 +157,50 @@ function renderForm() {
     });
 }
 
+function matchMonth() {
+  const d = detail?.round?.match_date ? new Date(detail.round.match_date) : new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+async function loadMonth() {
+  try {
+    const m = await CC.rpc('coach_month', { p_token: CC.token, p_year_month: monthSel || matchMonth() });
+    month = m?.ok ? m : null;
+  } catch (e) {
+    month = null;
+  }
+}
+
+function renderMonth() {
+  const el = $('month');
+  if (!el || !month) return;
+  const ym = month.year_month;
+  const chips = (month.months || []).map((m) => `<button data-ym="${CC.esc(m)}" class="${m === ym ? 'on' : ''}">${CC.esc(CC.monthLabel(m, true))}</button>`).join('');
+  el.innerHTML = CC.monthCard(month.honored, ym) +
+    `<div class="card"><h2>Rangliste ${CC.esc(CC.monthLabel(ym))}</h2><p class="sub">Nach Trainer-Schnitt der Spiele im Monat · Mannschaft daneben.</p>
+      <div class="mchips">${chips}</div>${CC.rankList(month.ranking, month.honored?.id)}
+      ${(month.history || []).length ? `<h2 style="margin-top:16px;font-size:17px">Bisherige Spieler des Monats</h2>${CC.historyStrip(month.history)}` : ''}</div>`;
+  el.querySelectorAll('[data-ym]').forEach((b) => (b.onclick = async () => { monthSel = b.dataset.ym; await loadMonth(); renderMonth(); }));
+  el.querySelectorAll('[data-crown]').forEach((b) => (b.onclick = async () => {
+    const id = b.dataset.crown;
+    const undo = month.honored?.id === id;
+    const q = undo ? `Kürung von ${b.dataset.name} für ${CC.monthLabel(ym)} aufheben?` : `${b.dataset.name} zum Spieler des Monats ${CC.monthLabel(ym)} küren?`;
+    if (!confirm(q)) return;
+    b.disabled = true;
+    try {
+      const res = await CC.rpc('coach_crown_month', { p_token: CC.token, p_year_month: ym, p_player_id: undo ? null : id });
+      if (!res?.ok) alert('Küren hat nicht geklappt.');
+    } catch (e) {
+      alert('Keine Verbindung – bitte nochmal versuchen.');
+    }
+    monthSel = ym;
+    await loadMonth();
+    renderMonth();
+  }));
+}
+
 async function send() {
-  const empty = !form.abstained && form.match_stars == null && !form.note.trim() && Object.keys(form.stars).length === 0;
+  const empty = !form.abstained && form.match_stars == null && !form.note.trim() && Object.keys(form.stars).length === 0 && !form.motm_player_id;
   if (empty) { $('err').textContent = 'Bitte gib mindestens eine Note ab oder wähle „War nicht da“.'; return; }
   $('send').disabled = true;
   $('err').textContent = '';
@@ -183,8 +240,10 @@ async function select(matchId) {
   const mine = d.mine;
   form = mine
     ? { stars: Object.fromEntries(Object.entries(mine.stars || {}).map(([k, v]) => [k, Math.round(v)])),
-        match_stars: mine.match_stars != null ? Math.round(mine.match_stars) : null, note: mine.note || '', abstained: !!mine.abstained }
-    : { stars: {}, match_stars: null, note: '', abstained: false };
+        match_stars: mine.match_stars != null ? Math.round(mine.match_stars) : null, note: mine.note || '', abstained: !!mine.abstained,
+        motm_player_id: mine.motm_player_id || null }
+    : { stars: {}, match_stars: null, note: '', abstained: false, motm_player_id: null };
+  await loadMonth();
   render();
   window.scrollTo(0, 0);
 }

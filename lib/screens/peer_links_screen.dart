@@ -168,6 +168,11 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
     }
 
     final players = all.where((p) => !p.isStaffOnly).toList()..sort(byNumber);
+    // Ein Link je Trainer: App-Konten, die zu einer Person aus dem Kader
+    // passen, werden mit ihr zusammengelegt (Name/Foto aus dem Kader, Bewerter
+    // = App-Konto – so zählen Link- und App-Noten für dieselbe Person).
+    final staff = all.where((p) => p.isStaff).toList()..sort(byNumber);
+    final linked = <String, String>{}; // playerId -> uid
     final coaches = <_Coach>[];
     try {
       for (final m in await CloudService.teamMembers(teamId)) {
@@ -176,16 +181,45 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
         if (!isTrainer || uid == null) continue;
         final dn = (m['display_name'] as String?)?.trim() ?? '';
         final mail = (m['email'] as String?)?.trim() ?? '';
-        coaches.add(
-          _Coach(
-            raterId: uid,
-            name: dn.isNotEmpty ? dn : (mail.isNotEmpty ? mail : 'Trainer'),
-            subtitle: 'App-Konto${m['is_me'] == true ? ' (du)' : ''}',
-          ),
-        );
+        final me = m['is_me'] == true ? ' (du)' : '';
+        Player? person;
+        for (final p in staff) {
+          if (linked.containsKey(p.id)) continue;
+          if (accountMatchesPerson(
+            displayName: dn,
+            email: mail,
+            firstName: p.firstName,
+            lastName: p.lastName,
+          )) {
+            person = p;
+            break;
+          }
+        }
+        if (person != null) {
+          linked[person.id] = uid;
+          coaches.add(
+            _Coach(
+              raterId: uid,
+              name: person.fullName,
+              subtitle: 'Kader · ${person.staffRole} · App-Konto$me',
+              player: person,
+            ),
+          );
+        } else {
+          coaches.add(
+            _Coach(
+              raterId: uid,
+              name: dn.isNotEmpty
+                  ? dn
+                  : (mail.contains('@') ? mail.split('@').first : 'Trainer'),
+              subtitle: 'App-Konto$me',
+            ),
+          );
+        }
       }
     } catch (_) {}
-    for (final p in all.where((p) => p.isStaff).toList()..sort(byNumber)) {
+    for (final p in staff) {
+      if (linked.containsKey(p.id)) continue;
       coaches.add(
         _Coach(
           raterId: staffRaterId(p.id),
@@ -232,6 +266,7 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
           c.raterId,
           teamId,
           c.name,
+          playerId: c.player?.id,
         );
         if (t != null) {
           cl[c.raterId] = t;
@@ -381,8 +416,12 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
             who: c.name,
             token: token,
             action: a,
-            create: () =>
-                PeerRatingService.createCoachLink(c.raterId, teamId, c.name),
+            create: () => PeerRatingService.createCoachLink(
+              c.raterId,
+              teamId,
+              c.name,
+              playerId: c.player?.id,
+            ),
             url: coachRatingLink,
             message: (t) => coachLinkMessage(c.name, t),
           );

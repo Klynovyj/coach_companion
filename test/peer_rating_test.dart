@@ -28,6 +28,20 @@ void main() {
     expect(staffRaterId('p1'), 'staff:p1');
   });
 
+  test('App-Konto passt zur Kader-Person', () {
+    bool m(String dn, String mail, String f, String l) => accountMatchesPerson(
+      displayName: dn,
+      email: mail,
+      firstName: f,
+      lastName: l,
+    );
+    expect(m('', 'a.chenfeld@example.com', 'Andrej', 'Chenfeld'), isTrue);
+    expect(m('', 'jan.p@example.com', 'Jan-Niklas', 'Ped'), isTrue);
+    expect(m('Patrick Piel', '', 'Patrick', 'Piel'), isTrue);
+    expect(m('', 'a.chenfeld@example.com', 'Patrick', 'Piel'), isFalse);
+    expect(m('', 'max@example.com', 'Jo', 'Li'), isFalse);
+  });
+
   test('PeerSummary.fromJson: Schnitte, Stimmen, Fehlende', () {
     final s = PeerSummary.fromJson({
       'match_id': 'm1',
