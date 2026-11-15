@@ -69,14 +69,15 @@ const CC = (() => {
     const motmFinal = !!b?.motm_final;
     const pomIds = new Set(b?.pom?.ids || []);
     const pomFinal = !!b?.pom?.final;
-    const html = (id) => (motm.has(id)
-      ? `<span class="bd s ${motmFinal ? '' : 'pre'}" title="${motmFinal ? 'Gewählt' : 'Aktueller Stand der Wahl'}">👑 ${motmFinal ? '' : 'voraussichtl. '}Spieler des Spiels</span>` : '') +
+    // In der Spielerliste kurz (Platz neben den Sternen ist knapp), im Profil lang.
+    const html = (id, short) => (motm.has(id)
+      ? `<span class="bd s ${motmFinal ? '' : 'pre'}" title="${motmFinal ? '' : 'Voraussichtlich '}Spieler des Spiels">👑 ${short ? 'Spiel' : 'Spieler des Spiels'}${motmFinal ? '' : (short ? ' · vorauss.' : ' · voraussichtlich')}</span>` : '') +
       (pomIds.has(id)
-        ? `<span class="bd m ${pomFinal ? '' : 'pre'}" title="${pomFinal ? 'Von allen Trainern gekürt' : 'Platz 1 der Monats-Rangliste'}">🏆 ${pomFinal ? '' : 'voraussichtl. '}Spieler des Monats</span>` : '');
+        ? `<span class="bd m ${pomFinal ? '' : 'pre'}" title="${pomFinal ? '' : 'Voraussichtlich '}Spieler des Monats">🏆 ${short ? 'Monat' : 'Spieler des Monats'}${pomFinal ? '' : (short ? ' · vorauss.' : ' · voraussichtlich')}</span>` : '');
     const pom = { has: (id) => pomIds.has(id) };
     document.querySelectorAll('[data-bdg]').forEach((el) => {
       const id = el.dataset.bdg;
-      const h = html(id);
+      const h = html(id, !!el.closest('.prow'));
       if (el.innerHTML !== h) el.innerHTML = h;
       el.closest('.prow, .me')?.classList.toggle('hon', h !== '');
     });

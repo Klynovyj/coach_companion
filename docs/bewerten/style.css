@@ -371,3 +371,7 @@ details.cv .rep { margin: 4px 0 8px 50px; background: var(--card2); border-radiu
 .wahl .ava { width: 26px; height: 26px; }
 .wahl .ava .nr { display: none; }
 .wahl b { color: var(--gold); }
+
+/* Abzeichen in der Spielerliste: nie über die Sterne laufen */
+.prow .nm { overflow: hidden; }
+.prow .bd { white-space: normal; max-width: 100%; line-height: 1.15; }
