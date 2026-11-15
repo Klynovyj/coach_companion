@@ -195,6 +195,9 @@ class _PeerLinksScreenState extends State<PeerLinksScreen> {
         ),
       );
     }
+    // Runden für beendete Spiele nachtragen, damit die Links sofort etwas
+    // zum Bewerten zeigen.
+    await s.publishRecentPeerRounds(force: true);
     final links = await PeerRatingService.links(teamId);
     final coachLinks = await PeerRatingService.coachLinks(teamId);
     if (!mounted) return;

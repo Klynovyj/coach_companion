@@ -849,6 +849,9 @@ class AppState extends ChangeNotifier {
       _canAiCoach = canAiCoach;
       _myPlayerIds = myPlayers;
       if (changed) notifyListeners();
+      // Bewertungsrunden für kürzlich beendete Spiele nachtragen (einmal je
+      // Sitzung) – z. B. Spiele, die vor dieser Funktion abgepfiffen wurden.
+      if (isTrainer) unawaited(publishRecentPeerRounds());
     } catch (_) {
       // Bei Fehler Rechte nicht entziehen.
     }
@@ -4724,6 +4727,29 @@ class AppState extends ChangeNotifier {
     }
     final end = fulltime ?? kickoff.add(const Duration(hours: 2));
     return end.add(const Duration(days: 3));
+  }
+
+  String? _peerBackfillTeam;
+
+  /// Trägt die Bewertungsrunden aller beendeten Spiele nach, deren Frist noch
+  /// läuft oder höchstens 14 Tage vorbei ist (Trainer im Cloud-Team). Ohne
+  /// [force] nur einmal je Sitzung und Team. Liefert die Anzahl der Runden.
+  Future<int> publishRecentPeerRounds({bool force = false}) async {
+    final teamId = _activeCloudTeamId;
+    if (teamId == null || !_isTrainerHere || !PeerRatingService.available) {
+      return 0;
+    }
+    if (!force && _peerBackfillTeam == teamId) return 0;
+    _peerBackfillTeam = teamId;
+    final cutoff = DateTime.now().subtract(const Duration(days: 14));
+    var n = 0;
+    for (final m in await _repo.getMatches(teamId)) {
+      if (m.status != MatchStatus.finished) continue;
+      final deadline = await ratingDeadline(m.id);
+      if (deadline == null || deadline.isBefore(cutoff)) continue;
+      if (await publishPeerRound(m.id)) n++;
+    }
+    return n;
   }
 
   /// Veröffentlicht die Spieler-Bewertungsrunde eines beendeten Spiels in der
