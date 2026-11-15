@@ -748,67 +748,414 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
   Future<void> _logoMenu(int i) async {
     final side = _design.side(i);
     final clubLogo = _app.ownTeam?.logoPath;
+    final hasOpp = _opponentLogos().isNotEmpty;
     final choice = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
+      isScrollControlled: true,
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Bild über dem Foto ${_sideName(i)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Über dem Foto ${_sideName(i)}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (side.hasTop) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        Platform.isAndroid || Platform.isIOS
+                            ? 'Im Feld ziehen = verschieben, mit zwei Fingern '
+                                  'größer/kleiner.'
+                            : 'Im Feld ziehen = verschieben, Mausrad = '
+                                  'größer/kleiner.',
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              if (clubLogo != null)
+                ListTile(
+                  leading: const Icon(Icons.shield_outlined),
+                  title: const Text('Vereinslogo'),
+                  onTap: () => Navigator.pop(ctx, 'club'),
+                ),
+              if (hasOpp)
+                ListTile(
+                  leading: const Icon(Icons.groups_2_outlined),
+                  title: const Text('Gegner-Logo'),
+                  subtitle: const Text('Aus deinen Spielen'),
+                  onTap: () => Navigator.pop(ctx, 'opp'),
+                ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Bild/Logo aus Galerie oder Datei'),
+                subtitle: const Text('Transparente PNGs bleiben transparent'),
+                onTap: () => Navigator.pop(ctx, 'gallery'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.text_fields),
+                title: Text(
+                  side.logoText != null ? 'Text bearbeiten' : 'Text statt Bild',
+                ),
+                subtitle: const Text('z. B. „SAISON 13/14"'),
+                onTap: () => Navigator.pop(ctx, 'text'),
+              ),
+              if (side.hasTop) ...[
+                ListTile(
+                  leading: const Icon(Icons.center_focus_strong),
+                  title: const Text('Größe & Lage zurücksetzen'),
+                  onTap: () => Navigator.pop(ctx, 'reset'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text(
+                    'Entfernen',
+                    style: TextStyle(color: Colors.red),
                   ),
+                  onTap: () => Navigator.pop(ctx, 'remove'),
                 ),
-              ),
-            ),
-            if (clubLogo != null)
-              ListTile(
-                leading: const Icon(Icons.shield_outlined),
-                title: const Text('Vereinslogo'),
-                onTap: () => Navigator.pop(ctx, 'club'),
-              ),
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Bild/Logo wählen'),
-              subtitle: const Text('Transparente PNGs bleiben transparent'),
-              onTap: () => Navigator.pop(ctx, 'gallery'),
-            ),
-            if (side.logo != null)
-              ListTile(
-                leading: const Icon(Icons.delete_outline, color: Colors.red),
-                title: const Text(
-                  'Entfernen',
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () => Navigator.pop(ctx, 'remove'),
-              ),
-            const SizedBox(height: 8),
-          ],
+              ],
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
     if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'reset':
+        setState(side.resetLogoPos);
+        _changed();
+        return;
+      case 'remove':
+        setState(() {
+          side.logo = null;
+          side.logoText = null;
+          side.resetLogoPos();
+        });
+        _changed();
+        return;
+      case 'text':
+        await _editTopText(i);
+        return;
+    }
     String? url;
     if (choice == 'club') {
       url = clubLogo;
+    } else if (choice == 'opp') {
+      url = await _pickOpponentLogo();
     } else if (choice == 'gallery') {
       url = await _pickFromDevice(
         ImageSource.gallery,
         maxSize: 900,
         keepAlpha: true,
       );
-      if (url == null) return;
     }
-    if (!mounted) return;
-    setState(() => side.logo = url);
+    if (url == null || !mounted) return;
+    setState(() {
+      side.logo = url;
+      side.logoText = null;
+      side.resetLogoPos();
+    });
     _changed();
+  }
+
+  /// Gegner-Logos aus den Spielen (je Verein einmal, alphabetisch).
+  List<(String, String)> _opponentLogos() {
+    final seen = <String>{};
+    final out = <(String, String)>[];
+    for (final m in _app.matches) {
+      final logo = m.opponentLogoPath;
+      final name = m.opponentName.trim();
+      if (logo == null || logo.isEmpty || name.isEmpty) continue;
+      if (!seen.add(name.toLowerCase())) continue;
+      if (_bytesOf(logo) == null) continue;
+      out.add((name, logo));
+    }
+    out.sort((a, b) => a.$1.toLowerCase().compareTo(b.$1.toLowerCase()));
+    return out;
+  }
+
+  Future<String?> _pickOpponentLogo() {
+    final logos = _opponentLogos();
+    return showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.7,
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Gegner-Logo wählen',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+            Expanded(
+              child: GridView.extent(
+                maxCrossAxisExtent: 110,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                mainAxisSpacing: 8,
+                crossAxisSpacing: 8,
+                childAspectRatio: 0.85,
+                children: [
+                  for (final (name, logo) in logos)
+                    InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: () => Navigator.pop(ctx, logo),
+                      child: Column(
+                        children: [
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.all(6),
+                              child: Image.memory(
+                                _bytesOf(logo)!,
+                                fit: BoxFit.contain,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            name,
+                            maxLines: 2,
+                            textAlign: TextAlign.center,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  TextLook get _topLook => _design.topLook == null
+      ? const TextLook()
+      : TextLook.fromJson(_design.topLook!);
+
+  /// Text über dem Foto [i] eingeben (statt eines Bildes).
+  Future<void> _editTopText(int i) async {
+    final side = _design.side(i);
+    final ctrl = TextEditingController(text: side.logoText ?? '');
+    final t = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Text über dem Foto ${_sideName(i)}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              maxLines: null,
+              decoration: const InputDecoration(
+                hintText: 'z. B. SAISON 13/14',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Zeilenumbruch nur mit Enter. Schrift, Farbe und Schatten '
+              'gelten für beide Seiten.',
+              style: Theme.of(ctx).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.text_format),
+              label: const Text('Schrift, Farbe, Schatten, Ausrichtung'),
+              onPressed: () => showTextLookSheet(
+                context,
+                title: 'Text über den Fotos',
+                initial: _topLook,
+                palette: _palette,
+                onChanged: (l) {
+                  setState(
+                    () => _design.topLook = l.isDefault ? null : l.toJson(),
+                  );
+                  _changed();
+                },
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Übernehmen'),
+          ),
+        ],
+      ),
+    );
+    if (t == null || !mounted) return;
+    setState(() {
+      if (t.trim().isEmpty) {
+        side.logoText = null;
+      } else {
+        if (side.logoText == null) side.resetLogoPos();
+        side.logoText = t;
+        side.logo = null;
+      }
+    });
+    _changed();
+  }
+
+  /// Feld über dem Foto [i]: Bild/Logo oder Text, verschieb- und zoombar.
+  /// Leer → Platzhalter (nur im Editor und nur beim Standard-Hintergrund).
+  Widget? _topSlot(int i, CompareGeom g, double W, double H, double top) {
+    if (g.logoHeight <= 0) return null;
+    final side = _design.side(i);
+    final bw = g.widthOf(i) * W;
+    final bh = g.logoHeight * H;
+    final showPlaceholder =
+        !side.hasTop &&
+        !_exporting &&
+        _design.backgrounds[_design.format] == null;
+    if (!side.hasTop && !showPlaceholder) return null;
+    Widget content;
+    if (!side.hasTop) {
+      content = Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.05),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.35),
+            width: 0.8,
+          ),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.add_photo_alternate_outlined,
+              color: Colors.white.withValues(alpha: 0.7),
+              size: math.min(26, bh * 0.35),
+            ),
+            if (bh > 50)
+              Text(
+                'Logo ${_sideName(i)}',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 11,
+                ),
+              ),
+          ],
+        ),
+      );
+    } else {
+      final Widget inner;
+      if (side.logoText != null) {
+        final look = _topLook;
+        final fs = bh * 0.34;
+        var base = TextStyle(
+          color: Colors.white,
+          fontSize: fs,
+          fontWeight: FontWeight.w700,
+          height: 1.05,
+          shadows: look.shadow == null
+              ? textShadowsFor('soft', fs, _clubColor)
+              : null,
+        );
+        if (look.font == null) base = posterFontStyle('barlow', base);
+        inner = Center(
+          child: OverflowBox(
+            minWidth: 0,
+            minHeight: 0,
+            maxWidth: double.infinity,
+            maxHeight: double.infinity,
+            fit: OverflowBoxFit.deferToChild,
+            child: Text(
+              side.logoText!,
+              softWrap: false,
+              textAlign: look.textAlign(TextAlign.center),
+              style: look.apply(base, glow: _clubColor),
+            ),
+          ),
+        );
+      } else {
+        inner = Image.memory(
+          _bytesOf(side.logo)!,
+          fit: BoxFit.contain,
+          gaplessPlayback: true,
+        );
+      }
+      content = Transform.translate(
+        offset: Offset(side.logoDx * bw, side.logoDy * bh),
+        child: Transform.scale(scale: side.logoZoom, child: inner),
+      );
+    }
+    void zoomBy(double f) {
+      setState(() => side.logoZoom = (side.logoZoom * f).clamp(0.3, 3.0));
+      _changed();
+    }
+
+    return Positioned(
+      left: g.frameLeft(i) * W,
+      width: bw,
+      top: math.max(0, top - bh - 0.012 * H),
+      height: bh,
+      child: Listener(
+        onPointerSignal: (e) {
+          if (e is PointerScrollEvent && side.hasTop) {
+            zoomBy(e.scrollDelta.dy < 0 ? 1.08 : 0.926);
+          }
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _logoMenu(i),
+          onScaleStart: (d) {
+            _lastFocal = d.localFocalPoint;
+            _startZoom = side.logoZoom;
+          },
+          onScaleUpdate: (d) {
+            if (!side.hasTop) return;
+            final last = _lastFocal;
+            _lastFocal = d.localFocalPoint;
+            if (last == null) return;
+            final delta = d.localFocalPoint - last;
+            setState(() {
+              if (d.pointerCount >= 2) {
+                side.logoZoom = (_startZoom * d.scale).clamp(0.3, 3.0);
+              }
+              side.logoDx = (side.logoDx + delta.dx / bw).clamp(-0.6, 0.6);
+              side.logoDy = (side.logoDy + delta.dy / bh).clamp(-0.6, 0.6);
+            });
+          },
+          onScaleEnd: (_) {
+            _lastFocal = null;
+            _changed();
+          },
+          child: content,
+        ),
+      ),
+    );
   }
 
   Future<void> _logosMenu() async {
@@ -824,7 +1171,7 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  'Bilder über den Fotos (z. B. Logos)',
+                  'Über den Fotos (Logo, Bild oder Text)',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
               ),
@@ -832,7 +1179,11 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
             for (final i in [0, 1])
               ListTile(
                 leading: _design.side(i).logo == null
-                    ? const Icon(Icons.add_photo_alternate_outlined)
+                    ? Icon(
+                        _design.side(i).logoText != null
+                            ? Icons.text_fields
+                            : Icons.add_photo_alternate_outlined,
+                      )
                     : SizedBox(
                         width: 40,
                         height: 40,
@@ -1414,22 +1765,8 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                   ),
           ),
           for (final i in [0, 1]) ...[
-            // Bild über dem Foto (z. B. Logo).
-            if (_design.side(i).logo != null && g.logoHeight > 0)
-              Positioned(
-                left: g.frameLeft(i) * W,
-                width: g.widthOf(i) * W,
-                top: math.max(0, top - g.logoHeight * H - 0.012 * H),
-                height: g.logoHeight * H,
-                child: GestureDetector(
-                  onTap: () => _logoMenu(i),
-                  child: Image.memory(
-                    _bytesOf(_design.side(i).logo)!,
-                    fit: BoxFit.contain,
-                    gaplessPlayback: true,
-                  ),
-                ),
-              ),
+            // Bild/Text über dem Foto (z. B. Logo).
+            ?_topSlot(i, g, W, H, top),
             // Foto im Rahmen.
             Positioned(
               left: g.frameLeft(i) * W,

@@ -9,12 +9,20 @@ void main() {
   test('CompareDesign: JSON hin und zurück, Hintergrund nur einmal', () {
     final d = CompareDesign(
       left: CompareSide(photo: 'data:a', label: '2013', zoom: 1.5, dx: 0.3),
-      right: CompareSide(photo: 'data:b', label: '2026', logo: 'data:l'),
+      right: CompareSide(
+        photo: 'data:b',
+        label: '2026',
+        logo: 'data:l',
+        logoZoom: 1.6,
+        logoDx: -0.2,
+      ),
       format: 's',
       frames: false,
       labelSize: 1.4,
       labelLook: {'font': 'anton'},
+      topLook: {'font': 'bebas'},
     );
+    d.left.logoText = 'SAISON 13/14';
     d.setBackground('data:bg');
     d.geomOf('f').applyDetected((0.05, 0.2, 0.4, 0.6), (0.5, 0.21, 0.45, 0.6));
     final j = d.toJson();
@@ -24,6 +32,11 @@ void main() {
     expect(e.left.zoom, 1.5);
     expect(e.left.dx, 0.3);
     expect(e.right.logo, 'data:l');
+    expect(e.right.logoZoom, 1.6);
+    expect(e.right.logoDx, -0.2);
+    expect(e.left.logoText, 'SAISON 13/14');
+    expect(e.left.hasTop, isTrue);
+    expect(e.topLook, {'font': 'bebas'});
     expect(e.right.label, '2026');
     expect(e.format, 's');
     expect(e.frames, isFalse);

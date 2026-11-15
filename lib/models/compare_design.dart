@@ -34,6 +34,10 @@ class CompareSide {
     this.dx = 0,
     this.dy = 0,
     this.logo,
+    this.logoText,
+    this.logoZoom = 1.0,
+    this.logoDx = 0,
+    this.logoDy = 0,
     this.label = '',
   });
 
@@ -48,6 +52,23 @@ class CompareSide {
 
   /// Optionales Bild über dem Foto (z. B. Logo), data:-URL.
   String? logo;
+
+  /// Text statt Bild über dem Foto (z. B. „SAISON 13/14"); hat Vorrang.
+  String? logoText;
+
+  /// Bild/Text über dem Foto: Zoom (0.3 … 3) und Verschiebung (Anteil der
+  /// Feldbreite/-höhe, −0.6 … 0.6).
+  double logoZoom;
+  double logoDx;
+  double logoDy;
+
+  bool get hasTop => logo != null || (logoText?.trim().isNotEmpty ?? false);
+
+  void resetLogoPos() {
+    logoZoom = 1.0;
+    logoDx = 0;
+    logoDy = 0;
+  }
 
   /// Beschriftung unter dem Foto (z. B. „2013").
   String label;
@@ -64,6 +85,10 @@ class CompareSide {
     'dx': dx,
     'dy': dy,
     if (logo != null) 'logo': logo,
+    if (logoText != null) 'logoText': logoText,
+    'logoZoom': logoZoom,
+    'logoDx': logoDx,
+    'logoDy': logoDy,
     'label': label,
   };
 
@@ -75,6 +100,10 @@ class CompareSide {
       dx: _d(v['dx'], 0).clamp(-1.0, 1.0),
       dy: _d(v['dy'], 0).clamp(-1.0, 1.0),
       logo: v['logo'] is String ? v['logo'] as String : null,
+      logoText: v['logoText'] is String ? v['logoText'] as String : null,
+      logoZoom: _d(v['logoZoom'], 1).clamp(0.3, 3.0),
+      logoDx: _d(v['logoDx'], 0).clamp(-0.6, 0.6),
+      logoDy: _d(v['logoDy'], 0).clamp(-0.6, 0.6),
       label: v['label'] is String ? v['label'] as String : label,
     );
   }
@@ -243,6 +272,7 @@ class CompareDesign {
     this.labels = true,
     this.labelSize = 1.0,
     this.labelLook,
+    this.topLook,
   }) : left = left ?? CompareSide(label: 'DAMALS'),
        right = right ?? CompareSide(label: 'HEUTE'),
        backgrounds = backgrounds ?? {},
@@ -274,6 +304,9 @@ class CompareDesign {
 
   /// Gestaltung der Beschriftung (TextLook als JSON).
   Map<String, dynamic>? labelLook;
+
+  /// Gestaltung der Texte über den Fotos (TextLook als JSON).
+  Map<String, dynamic>? topLook;
 
   CompareSide side(int i) => i == 0 ? left : right;
 
@@ -339,6 +372,7 @@ class CompareDesign {
       'labels': labels,
       'labelSize': labelSize,
       if (labelLook != null) 'labelLook': labelLook,
+      if (topLook != null) 'topLook': topLook,
     };
   }
 
@@ -381,6 +415,9 @@ class CompareDesign {
       labelSize: _d(v['labelSize'], 1.0).clamp(0.3, 2.5),
       labelLook: v['labelLook'] is Map
           ? Map<String, dynamic>.from(v['labelLook'] as Map)
+          : null,
+      topLook: v['topLook'] is Map
+          ? Map<String, dynamic>.from(v['topLook'] as Map)
           : null,
     );
   }
