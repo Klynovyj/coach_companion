@@ -8088,7 +8088,14 @@ class _StartelfGraphic extends StatelessWidget {
   /// Freier Text: bricht NUR an eigenen Zeilenumbrüchen (Enter) um, nie
   /// automatisch an der Bildbreite; lange Zeilen bleiben einzeilig (Größe
   /// über den Regler).
-  Widget _freeText(String id, String text, TextStyle style) => UnconstrainedBox(
+  // OverflowBox statt UnconstrainedBox: gleiche Wirkung, aber ohne
+  // Überlauf-Warnung (gelb-schwarze Streifen im Debug-Build).
+  Widget _freeText(String id, String text, TextStyle style) => OverflowBox(
+    minWidth: 0,
+    minHeight: 0,
+    maxWidth: double.infinity,
+    maxHeight: double.infinity,
+    fit: OverflowBoxFit.deferToChild,
     child: Text(
       text,
       textAlign: _alignOf(id),

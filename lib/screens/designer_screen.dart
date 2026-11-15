@@ -13,6 +13,7 @@ import '../models/player.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/team_logo.dart';
+import 'compare_graphic_screen.dart';
 import 'startelf_graphic_screen.dart';
 
 /// Zentraler Designer (Mehr → Designer): Grafiken unabhängig von Spieltag/
@@ -59,7 +60,17 @@ class _DesignerScreenState extends State<DesignerScreen> {
   // ------------------------------------------------------------- Öffnen
 
   /// Editor für [d] öffnen (neu oder gespeichert).
-  Future<void> _openEditor(DesignerData d) async {
+  Future<void> _openEditor(DesignerData d, {bool isNew = false}) async {
+    if (d.template == 'compare') {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CompareGraphicScreen(designer: d, isNew: isNew),
+        ),
+      );
+      await _reload();
+      return;
+    }
     final team = _app.ownTeam;
     await Navigator.push(
       context,
@@ -118,6 +129,11 @@ class _DesignerScreenState extends State<DesignerScreen> {
       'motm' => await _wizardMotm(),
       'occasion' => await _wizardOccasion(),
       'fupa' => await _wizardFupa(),
+      'compare' => DesignerData(
+        id: _newId(),
+        template: 'compare',
+        title: 'Vergleich ${DateFormat('dd.MM.').format(DateTime.now())}',
+      ),
       _ => DesignerData(
         id: _newId(),
         template: 'free',
@@ -137,7 +153,7 @@ class _DesignerScreenState extends State<DesignerScreen> {
         }
       }
     }
-    await _openEditor(d);
+    await _openEditor(d, isNew: true);
   }
 
   /// Tor: Spiel wählen → eigenes Tor wählen → Angaben prüfen/ändern.
@@ -630,6 +646,12 @@ class _DesignerScreenState extends State<DesignerScreen> {
         'Geburtstag, Neuzugang …',
       ),
       (
+        'compare',
+        Icons.compare_outlined,
+        'Vergleich',
+        'Zwei Fotos: damals & heute',
+      ),
+      (
         'fupa',
         Icons.portrait_outlined,
         'FuPa-Foto',
@@ -749,6 +771,7 @@ class _DesignerScreenState extends State<DesignerScreen> {
     'goal': 'Tore',
     'motm': 'Spieler des Spiels',
     'occasion': 'Anlässe',
+    'compare': 'Vergleiche',
     'free': 'Freie Designs',
   };
 

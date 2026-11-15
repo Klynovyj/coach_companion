@@ -20,7 +20,7 @@ class DesignerData {
   /// Speicher-ID (`designer:<uuid>`).
   final String id;
 
-  /// Vorlage: `goal` | `motm` | `occasion` | `free`.
+  /// Vorlage: `goal` | `motm` | `occasion` | `compare` | `fupa` | `free`.
   final String template;
 
   /// Anzeigename in „Meine Designs".
@@ -46,7 +46,14 @@ class DesignerData {
   /// Verknüpfter Spieler (z. B. FuPa-Foto → als Spielerfoto übernehmen).
   final String? playerId;
 
-  static const templates = ['goal', 'motm', 'occasion', 'fupa', 'free'];
+  static const templates = [
+    'goal',
+    'motm',
+    'occasion',
+    'compare',
+    'fupa',
+    'free',
+  ];
 
   /// Lesbarer Name der Vorlage.
   static String labelOf(String template) => switch (template) {
@@ -54,6 +61,7 @@ class DesignerData {
     'motm' => 'Spieler des Spiels',
     'occasion' => 'Anlass',
     'fupa' => 'FuPa-Foto',
+    'compare' => 'Vergleich',
     _ => 'Freies Design',
   };
 

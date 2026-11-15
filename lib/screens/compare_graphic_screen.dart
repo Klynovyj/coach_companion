@@ -1,0 +1,1735 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:image/image.dart' as img;
+import 'package:image_picker/image_picker.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import '../models/compare_design.dart';
+import '../models/designer_data.dart';
+import '../models/graphic_settings.dart';
+import '../models/player.dart';
+import '../services/player_photos.dart';
+import '../services/share_service.dart';
+import '../state/app_state.dart';
+import '../widgets/player_picker_page.dart';
+import '../widgets/team_logo.dart';
+import '../widgets/text_look.dart';
+import 'photo_editor_screen.dart';
+import 'startelf_graphic_screen.dart' show normalizeImageBytes, posterFontStyle;
+
+/// Logische Breite der Grafik; Export in 1080 px Breite.
+const double _kW = 360;
+const double _kExportWidth = 1080;
+
+/// Rohpixel (RGBA) → JPEG-Data-URL fürs Vorschaubild (läuft im Isolate).
+String _rgbaToJpegDataUrl(Map<String, Object> a) {
+  final px = a['px'] as Uint8List;
+  final im = img.Image.fromBytes(
+    width: a['w'] as int,
+    height: a['h'] as int,
+    bytes: px.buffer,
+    bytesOffset: px.offsetInBytes,
+    numChannels: 4,
+  );
+  return 'data:image/jpeg;base64,${base64Encode(img.encodeJpg(im, quality: 80))}';
+}
+
+/// Designer-Vorlage „Vergleich": zwei Fotos nebeneinander – erst links, dann
+/// rechts – auf austauschbarem Hintergrund (eigenes Bild oder Standard in
+/// Vereinsfarben). Rahmen und Beschriftung zeichnet die App (abschaltbar,
+/// falls sie schon im Hintergrundbild stecken).
+class CompareGraphicScreen extends StatefulWidget {
+  const CompareGraphicScreen({
+    super.key,
+    required this.designer,
+    this.isNew = false,
+  });
+
+  final DesignerData designer;
+
+  /// Neu angelegt → direkt nacheinander Foto links und rechts wählen.
+  final bool isNew;
+
+  @override
+  State<CompareGraphicScreen> createState() => _CompareGraphicScreenState();
+}
+
+class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
+  late final AppState _app = context.read<AppState>();
+  final _boundaryKey = GlobalKey();
+
+  CompareDesign _design = CompareDesign();
+  GraphicSettings? _settings;
+  bool _loaded = false;
+  bool _dirty = false;
+  bool _exporting = false;
+  bool _busy = false;
+  late String _title = widget.designer.title;
+
+  Timer? _saveTimer;
+  String? _lastSaved;
+  String? _thumb;
+  DateTime _thumbAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  // Bild-Cache: dieselbe Bytes-Instanz je URL → kein Flackern beim Ziehen.
+  final Map<String, Uint8List> _bytes = {};
+  final Map<String, Size> _sizes = {};
+  final Set<String> _sizing = {};
+
+  // Gesten (Ausschnitt verschieben/zoomen).
+  Offset? _lastFocal;
+  double _startZoom = 1;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _saveTimer?.cancel();
+    _flushSave();
+    super.dispose();
+  }
+
+  // ---------------------------------------------------------------- Laden
+
+  Future<void> _load() async {
+    final settings = await _app.graphicSettings();
+    final json = await _app.loadAnnouncementDesign(widget.designer.id);
+    if (!mounted) return;
+    setState(() {
+      _settings = settings;
+      _apply(json);
+      _loaded = true;
+    });
+    if (widget.isNew && (json == null || json.isEmpty)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startFlow());
+    } else {
+      // Neuere Fassung von einem anderen Gerät im Hintergrund holen.
+      unawaited(_refreshFromCloud(json));
+    }
+  }
+
+  void _apply(String? json) {
+    if (json == null || json.isEmpty) return;
+    try {
+      final m = jsonDecode(json);
+      if (m is Map) {
+        _design = CompareDesign.fromJson(m['compare']);
+        _thumb = null;
+        _lastSaved = json;
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _refreshFromCloud(String? local) async {
+    try {
+      await _app.refreshAnnouncementDesign(widget.designer.id);
+      final json = await _app.loadAnnouncementDesign(widget.designer.id);
+      if (!mounted || _dirty || json == null || json == local) return;
+      setState(() => _apply(json));
+    } catch (_) {}
+  }
+
+  /// Neues Design: erst Foto links, dann Foto rechts wählen.
+  Future<void> _startFlow() async {
+    await _pickPhoto(0);
+    if (!mounted) return;
+    await _pickPhoto(1);
+  }
+
+  // ------------------------------------------------------------ Speichern
+
+  void _changed() {
+    _dirty = true;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 800), _flushSave);
+  }
+
+  void _flushSave() {
+    _saveTimer?.cancel();
+    if (!_loaded) return;
+    final String data;
+    try {
+      data = jsonEncode({
+        'designer': widget.designer.copyWith(title: _title).toJson(),
+        'compare': _design.toJson(),
+      });
+    } catch (_) {
+      return;
+    }
+    if (data == _lastSaved) return;
+    _lastSaved = data;
+    unawaited(
+      _app.saveAnnouncementDesign(
+        widget.designer.id,
+        widget.designer.matchId,
+        data,
+        title: _title,
+        kind: 'compare',
+        thumb: _thumb,
+      ),
+    );
+    if (mounted &&
+        DateTime.now().difference(_thumbAt) > const Duration(seconds: 5)) {
+      unawaited(_refreshThumb());
+    }
+  }
+
+  /// Vorschaubild (~220 px) für „Meine Designs" auffrischen und mitspeichern.
+  Future<void> _refreshThumb() async {
+    _thumbAt = DateTime.now();
+    try {
+      final boundary =
+          _boundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) return;
+      final image = await boundary.toImage(pixelRatio: 220 / _kW);
+      final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      if (data == null) return;
+      final url = await compute(_rgbaToJpegDataUrl, <String, Object>{
+        'w': image.width,
+        'h': image.height,
+        'px': data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+      });
+      if (url == _thumb) return;
+      _thumb = url;
+      _lastSaved = null; // erneut speichern, jetzt mit Vorschau
+      _flushSave();
+    } catch (_) {
+      // Vorschau ist optional.
+    }
+  }
+
+  Future<void> _leave() async {
+    if (_dirty || _thumb == null) {
+      _thumbAt = DateTime.fromMillisecondsSinceEpoch(0);
+      await _refreshThumb();
+    }
+    _flushSave();
+    if (mounted) Navigator.pop(context);
+  }
+
+  // --------------------------------------------------------------- Bilder
+
+  Uint8List? _bytesOf(String? url) {
+    if (url == null) return null;
+    final c = _bytes[url];
+    if (c != null) return c;
+    final b = TeamLogo.decode(url);
+    if (b != null) _bytes[url] = b;
+    return b;
+  }
+
+  Size? _sizeOf(String? url) {
+    if (url == null) return null;
+    final s = _sizes[url];
+    if (s != null) return s;
+    final b = _bytesOf(url);
+    if (b != null && _sizing.add(url)) {
+      decodeImageFromList(b).then((im) {
+        if (!mounted) return;
+        setState(
+          () => _sizes[url] = Size(im.width.toDouble(), im.height.toDouble()),
+        );
+        im.dispose();
+      }, onError: (_) {});
+    }
+    return null;
+  }
+
+  Color _hex(String? h, Color def) => h == null ? def : hexColor(h);
+
+  Color get _clubColor => _hex(_settings?.gradTop, const Color(0xFF0E3325));
+
+  // ---------------------------------------------------------- Auswahl Foto
+
+  String _sideName(int i) => i == 0 ? 'links' : 'rechts';
+
+  Future<String?> _askSource(String title) => showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    builder: (ctx) => SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.photo_library),
+            title: const Text('Aus Galerie'),
+            onTap: () => Navigator.pop(ctx, 'gallery'),
+          ),
+          if (Platform.isAndroid || Platform.isIOS)
+            ListTile(
+              leading: const Icon(Icons.photo_camera),
+              title: const Text('Foto aufnehmen'),
+              onTap: () => Navigator.pop(ctx, 'camera'),
+            ),
+          ListTile(
+            leading: const Icon(Icons.photo),
+            title: const Text('Google Fotos'),
+            subtitle: Text(
+              Platform.isAndroid
+                  ? 'Im Foto-Picker auf Google Fotos wechseln'
+                  : 'Öffnet Google Fotos im Browser zum Herunterladen',
+            ),
+            onTap: () => Navigator.pop(ctx, 'google'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.groups),
+            title: const Text('Kader-Foto'),
+            subtitle: const Text('Gespeichertes Spielerfoto'),
+            onTap: () => Navigator.pop(ctx, 'kader'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.portrait),
+            title: const Text('FuPa-Foto'),
+            subtitle: const Text('Spielerbild von FuPa (960×1200)'),
+            onTap: () => Navigator.pop(ctx, 'fupa'),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ),
+    ),
+  );
+
+  /// Foto aus Galerie/Kamera laden und als JPEG-data:-URL liefern.
+  Future<String?> _pickFromDevice(
+    ImageSource source, {
+    int maxSize = 1600,
+    bool keepAlpha = false,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final file = await ImagePicker().pickImage(source: source);
+      if (file == null) return null;
+      final raw = await file.readAsBytes();
+      final bytes = await compute(normalizeImageBytes, <String, dynamic>{
+        'data': raw,
+        'keepAlpha': keepAlpha,
+        'maxSize': maxSize,
+      });
+      return _toDataUrl(bytes);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Bild konnte nicht geladen werden: $e')),
+      );
+      return null;
+    }
+  }
+
+  String _toDataUrl(Uint8List bytes) {
+    final png =
+        bytes.length > 4 &&
+        bytes[0] == 0x89 &&
+        bytes[1] == 0x50 &&
+        bytes[2] == 0x4E &&
+        bytes[3] == 0x47;
+    return 'data:image/${png ? 'png' : 'jpeg'};base64,${base64Encode(bytes)}';
+  }
+
+  /// Google Fotos: Android = System-Picker (dort Google Fotos wählbar);
+  /// Desktop = im Browser öffnen, Hinweis zeigen.
+  Future<String?> _resolveGoogle(String src) async {
+    if (src != 'google') return src;
+    if (Platform.isAndroid) return 'gallery';
+    final messenger = ScaffoldMessenger.of(context);
+    await launchUrl(
+      Uri.parse('https://photos.google.com'),
+      mode: LaunchMode.externalApplication,
+    );
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Bild in Google Fotos herunterladen, dann über „Aus Galerie" wählen.',
+        ),
+        duration: Duration(seconds: 4),
+      ),
+    );
+    return null;
+  }
+
+  Future<Player?> _pickPlayer(String title) async {
+    final team = _app.ownTeam;
+    if (team == null) return null;
+    final players = await _app.playersOf(team.id, onlyActive: true);
+    if (!mounted) return null;
+    if (players.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Kein Kader vorhanden.')));
+      return null;
+    }
+    players.sort((a, b) => a.fullName.compareTo(b.fullName));
+    final id = await Navigator.push<String?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PlayerPickerPage(
+          players: players,
+          allowNone: false,
+          title: title,
+        ),
+      ),
+    );
+    if (id == null || id == kPlayerPickNone) return null;
+    for (final p in players) {
+      if (p.id == id) return p;
+    }
+    return null;
+  }
+
+  /// Foto für Seite [i] wählen (Quelle abfragen).
+  Future<void> _pickPhoto(int i) async {
+    final src0 = await _askSource('Foto ${_sideName(i)}');
+    if (src0 == null || !mounted) return;
+    final src = await _resolveGoogle(src0);
+    if (src == null || !mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    String? url;
+    switch (src) {
+      case 'gallery':
+      case 'camera':
+        url = await _pickFromDevice(
+          src == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        );
+      case 'kader':
+        final p = await _pickPlayer('Kader-Foto ${_sideName(i)}');
+        if (p == null) return;
+        url = p.photoPath;
+        if (url == null) {
+          messenger.showSnackBar(
+            SnackBar(content: Text('${p.fullName} hat kein Kader-Foto.')),
+          );
+          return;
+        }
+      case 'fupa':
+        final p = await _pickPlayer('FuPa-Foto ${_sideName(i)}');
+        if (p == null || !mounted) return;
+        setState(() => _busy = true);
+        try {
+          url =
+              await _app.playerPhoto(p.id, PlayerPhotoSlot.fupa) ??
+              await _app.fetchFupaOriginalPhoto(p);
+        } catch (_) {
+          url = null;
+        } finally {
+          if (mounted) setState(() => _busy = false);
+        }
+        if (url == null) {
+          messenger.showSnackBar(
+            SnackBar(
+              content: Text(
+                'Kein FuPa-Foto für ${p.fullName} gefunden '
+                '(FuPa-Verknüpfung im Kader prüfen).',
+              ),
+            ),
+          );
+          return;
+        }
+    }
+    if (url == null || !mounted) return;
+    final side = _design.side(i);
+    setState(() {
+      side.photo = url;
+      side.resetCrop();
+    });
+    _changed();
+  }
+
+  /// Foto im Editor bearbeiten (Zuschnitt, Drehen, Helligkeit …).
+  Future<void> _editPhoto(int i) async {
+    final side = _design.side(i);
+    final bytes = _bytesOf(side.photo);
+    if (bytes == null) return;
+    final edited = await Navigator.push<Uint8List?>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PhotoEditorScreen(imageBytes: bytes, maxSize: 1600),
+      ),
+    );
+    if (edited == null || !mounted) return;
+    final norm = await compute(normalizeImageBytes, <String, dynamic>{
+      'data': edited,
+      'keepAlpha': false,
+      'maxSize': 1600,
+    });
+    if (!mounted) return;
+    setState(() {
+      side.photo = _toDataUrl(norm);
+      side.resetCrop();
+    });
+    _changed();
+  }
+
+  // ---------------------------------------------------------------- Menüs
+
+  Future<void> _sideMenu(int i) async {
+    final side = _design.side(i);
+    if (side.photo == null) return _pickPhoto(i);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Foto ${_sideName(i)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    Platform.isAndroid || Platform.isIOS
+                        ? 'Im Bild ziehen = verschieben, mit zwei Fingern zoomen.'
+                        : 'Im Bild ziehen = verschieben, Mausrad = zoomen.',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.swap_horiz),
+              title: const Text('Anderes Foto wählen'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickPhoto(i);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.tune),
+              title: const Text('Bearbeiten'),
+              subtitle: const Text('Zuschneiden, drehen, Helligkeit'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _editPhoto(i);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.center_focus_strong),
+              title: const Text('Ausschnitt zurücksetzen'),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(side.resetCrop);
+                _changed();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.compare_arrows),
+              title: const Text('Fotos tauschen (links ↔ rechts)'),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(_design.swapSides);
+                _changed();
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text(
+                'Foto entfernen',
+                style: TextStyle(color: Colors.red),
+              ),
+              onTap: () {
+                Navigator.pop(ctx);
+                setState(() {
+                  side.photo = null;
+                  side.resetCrop();
+                });
+                _changed();
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _backgroundMenu() async {
+    final fmt = compareFormatLabel(_design.format);
+    final has = _design.backgrounds[_design.format] != null;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Hintergrund',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Hat das Bild schon zwei Foto-Felder (z. B. schwarze '
+                    'Rahmen), werden die Fotos automatisch eingepasst. '
+                    'Feinjustieren unter „Rahmen & Lage".',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.wallpaper),
+              title: const Text('Eigenes Bild wählen'),
+              subtitle: const Text('Für alle Formate ohne eigenes Bild'),
+              onTap: () => Navigator.pop(ctx, 'all'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.crop_portrait),
+              title: Text('Eigenes Bild nur für $fmt'),
+              onTap: () => Navigator.pop(ctx, 'one'),
+            ),
+            if (has)
+              ListTile(
+                leading: const Icon(Icons.auto_awesome_mosaic_outlined),
+                title: const Text('Standard-Hintergrund (Vereinsfarben)'),
+                subtitle: Text('Für $fmt'),
+                onTap: () => Navigator.pop(ctx, 'default'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    if (choice == 'default') {
+      setState(() {
+        _design.setBackground(null, allFormats: false);
+        _design.geom[_design.format] = CompareGeom.defaults(_design.format);
+        _design.frames = true;
+        _design.labels = true;
+      });
+      _changed();
+      return;
+    }
+    final url = await _pickFromDevice(ImageSource.gallery, maxSize: 1920);
+    if (url == null || !mounted) return;
+    final before = Map<String, String>.of(_design.backgrounds);
+    setState(() => _design.setBackground(url, allFormats: choice == 'all'));
+    _changed();
+    // Foto-Felder im Bild suchen – für jedes Format, das das Bild bekam.
+    await _detectFrames([
+      for (final f in kCompareFormats)
+        if (_design.backgrounds[f] == url && before[f] != url) f,
+    ]);
+  }
+
+  /// Foto-Felder im Hintergrund der Formate [formats] erkennen und die Fotos
+  /// darin einpassen (mit Rückfrage, ob eigene Rahmen/Texte ausgehen).
+  Future<void> _detectFrames(List<String> formats, {bool manual = false}) async {
+    final found = <String, List<double>>{};
+    setState(() => _busy = true);
+    try {
+      for (final f in formats) {
+        final bytes = _bytesOf(_design.backgrounds[f]);
+        if (bytes == null) continue;
+        final r = await compute(detectCompareFrames, <String, Object>{
+          'data': bytes,
+          'aspect': compareAspect(f),
+        });
+        if (r != null) found[f] = r;
+      }
+    } catch (_) {
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    if (!mounted) return;
+    if (found.isEmpty) {
+      if (manual || formats.contains(_design.format)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Keine Foto-Felder im Bild erkannt – Lage unter „Rahmen & Lage" '
+              'anpassen.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+    var hideFrames = _design.frames;
+    var hideLabels = _design.labels;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Foto-Felder erkannt'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Die Fotos werden genau in die zwei Felder des Hintergrunds '
+                'gesetzt (${found.keys.map(compareFormatLabel).join(', ')}).',
+              ),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: hideFrames,
+                onChanged: (v) => setD(() => hideFrames = v ?? false),
+                title: const Text('Eigene Rahmen ausblenden'),
+                subtitle: const Text('Die Rahmen stecken schon im Bild'),
+              ),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: hideLabels,
+                onChanged: (v) => setD(() => hideLabels = v ?? false),
+                title: const Text('Eigene Beschriftung ausblenden'),
+                subtitle: const Text('z. B. Jahreszahlen stehen schon im Bild'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Nicht einpassen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Einpassen'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      for (final e in found.entries) {
+        final v = e.value;
+        _design
+            .geomOf(e.key)
+            .applyDetected((v[0], v[1], v[2], v[3]), (v[4], v[5], v[6], v[7]));
+      }
+      if (hideFrames) _design.frames = false;
+      if (hideLabels) _design.labels = false;
+      _design.left.resetCrop();
+      _design.right.resetCrop();
+    });
+    _changed();
+  }
+
+  Future<void> _logoMenu(int i) async {
+    final side = _design.side(i);
+    final clubLogo = _app.ownTeam?.logoPath;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Bild über dem Foto ${_sideName(i)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+            ),
+            if (clubLogo != null)
+              ListTile(
+                leading: const Icon(Icons.shield_outlined),
+                title: const Text('Vereinslogo'),
+                onTap: () => Navigator.pop(ctx, 'club'),
+              ),
+            ListTile(
+              leading: const Icon(Icons.photo_library),
+              title: const Text('Bild/Logo wählen'),
+              subtitle: const Text('Transparente PNGs bleiben transparent'),
+              onTap: () => Navigator.pop(ctx, 'gallery'),
+            ),
+            if (side.logo != null)
+              ListTile(
+                leading: const Icon(Icons.delete_outline, color: Colors.red),
+                title: const Text(
+                  'Entfernen',
+                  style: TextStyle(color: Colors.red),
+                ),
+                onTap: () => Navigator.pop(ctx, 'remove'),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    String? url;
+    if (choice == 'club') {
+      url = clubLogo;
+    } else if (choice == 'gallery') {
+      url = await _pickFromDevice(
+        ImageSource.gallery,
+        maxSize: 900,
+        keepAlpha: true,
+      );
+      if (url == null) return;
+    }
+    if (!mounted) return;
+    setState(() => side.logo = url);
+    _changed();
+  }
+
+  Future<void> _logosMenu() async {
+    final i = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Bilder über den Fotos (z. B. Logos)',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+            for (final i in [0, 1])
+              ListTile(
+                leading: _design.side(i).logo == null
+                    ? const Icon(Icons.add_photo_alternate_outlined)
+                    : SizedBox(
+                        width: 40,
+                        height: 40,
+                        child: Image.memory(
+                          _bytesOf(_design.side(i).logo)!,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                title: Text('Über dem Foto ${_sideName(i)}'),
+                onTap: () => Navigator.pop(ctx, i),
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+    if (i != null && mounted) await _logoMenu(i);
+  }
+
+  List<(String, Color)> get _palette => [
+    ('Weiß', Colors.white),
+    ('Gold', const Color(0xFFD4AF37)),
+    ('Vereinsfarbe', _clubColor),
+    ('Schwarz', Colors.black),
+    ('Rot', const Color(0xFFD32F2F)),
+  ];
+
+  TextLook get _labelLook => _design.labelLook == null
+      ? const TextLook()
+      : TextLook.fromJson(_design.labelLook!);
+
+  Future<void> _labelsMenu() async {
+    final lc = TextEditingController(text: _design.left.label);
+    final rc = TextEditingController(text: _design.right.label);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      barrierColor: Colors.black12,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void upd(VoidCallback fn) {
+            setState(fn);
+            setSheet(() {});
+            _changed();
+          }
+
+          final g = _design.current;
+          return SafeArea(
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                16,
+                0,
+                16,
+                12 + MediaQuery.of(ctx).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Beschriftung unter den Fotos',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      subtitle: const Text(
+                        'Ausschalten, wenn sie schon im Hintergrund steht',
+                      ),
+                      value: _design.labels,
+                      onChanged: (v) => upd(() => _design.labels = v),
+                    ),
+                    if (_design.labels) ...[
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: lc,
+                              maxLines: null,
+                              decoration: const InputDecoration(
+                                labelText: 'Links',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              onChanged: (v) =>
+                                  upd(() => _design.left.label = v),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: rc,
+                              maxLines: null,
+                              decoration: const InputDecoration(
+                                labelText: 'Rechts',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              onChanged: (v) =>
+                                  upd(() => _design.right.label = v),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      _slider(
+                        'Größe',
+                        _design.labelSize,
+                        0.4,
+                        2.0,
+                        (v) => upd(() => _design.labelSize = v),
+                        percent: true,
+                      ),
+                      _slider(
+                        'Abstand',
+                        g.labelGap,
+                        0,
+                        0.12,
+                        (v) => upd(() => g.labelGap = v),
+                      ),
+                      const SizedBox(height: 4),
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.text_format),
+                        label: const Text(
+                          'Schrift, Farbe, Schatten, Ausrichtung',
+                        ),
+                        onPressed: () => showTextLookSheet(
+                          context,
+                          title: 'Beschriftung',
+                          initial: _labelLook,
+                          palette: _palette,
+                          onChanged: (l) {
+                            setState(
+                              () => _design.labelLook = l.isDefault
+                                  ? null
+                                  : l.toJson(),
+                            );
+                            _changed();
+                          },
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _slider(
+    String label,
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged, {
+    bool percent = false,
+  }) => Row(
+    children: [
+      SizedBox(
+        width: 96,
+        child: Text(label, style: const TextStyle(fontSize: 13)),
+      ),
+      Expanded(
+        child: Slider(
+          value: value.clamp(min, max),
+          min: min,
+          max: max,
+          onChanged: onChanged,
+        ),
+      ),
+      SizedBox(
+        width: 44,
+        child: Text(
+          percent
+              ? '${(value * 100).round()}%'
+              : (value * 100).toStringAsFixed(1),
+          textAlign: TextAlign.right,
+          style: const TextStyle(fontSize: 12),
+        ),
+      ),
+    ],
+  );
+
+  Future<void> _frameMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      barrierColor: Colors.black12,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.5,
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void upd(VoidCallback fn) {
+            setState(fn);
+            setSheet(() {});
+            _changed();
+          }
+
+          final g = _design.current;
+          final colors = <(String, Color)>[
+            ('Weiß', Colors.white),
+            ('Gold', const Color(0xFFD4AF37)),
+            ('Vereinsfarbe', _clubColor),
+            ('Schwarz', Colors.black),
+          ];
+          String hexOf(Color c) =>
+              '#${(c.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+          return SafeArea(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              shrinkWrap: true,
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Rahmen um die Fotos',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: const Text(
+                    'Ausschalten, wenn er schon im Hintergrund steckt',
+                  ),
+                  value: _design.frames,
+                  onChanged: (v) => upd(() => _design.frames = v),
+                ),
+                if (_design.frames) ...[
+                  Wrap(
+                    spacing: 10,
+                    children: [
+                      for (final (name, c) in colors)
+                        Tooltip(
+                          message: name,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () =>
+                                upd(() => _design.frameColor = hexOf(c)),
+                            child: Container(
+                              width: 32,
+                              height: 32,
+                              decoration: BoxDecoration(
+                                color: c,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color:
+                                      _design.frameColor.toUpperCase() ==
+                                          hexOf(c)
+                                      ? Theme.of(ctx).colorScheme.primary
+                                      : Colors.grey,
+                                  width:
+                                      _design.frameColor.toUpperCase() ==
+                                          hexOf(c)
+                                      ? 3
+                                      : 1,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                  _slider(
+                    'Stärke',
+                    _design.frameWidth / 6,
+                    0.05,
+                    1,
+                    (v) => upd(() => _design.frameWidth = v * 6),
+                    percent: true,
+                  ),
+                ],
+                const Divider(height: 20),
+                Text(
+                  'Lage der Fotos (${compareFormatLabel(_design.format)})',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                _slider(
+                  'Oben',
+                  g.top,
+                  0,
+                  0.6,
+                  (v) => upd(() => g.top = v),
+                ),
+                _slider(
+                  'Höhe',
+                  g.height,
+                  0.2,
+                  0.95,
+                  (v) => upd(() => g.height = v),
+                ),
+                _slider(
+                  'Rand außen',
+                  g.margin,
+                  0,
+                  0.2,
+                  (v) => upd(() {
+                    g.clearExact();
+                    g.margin = v;
+                  }),
+                ),
+                _slider(
+                  'Abstand Mitte',
+                  g.gap,
+                  0,
+                  0.2,
+                  (v) => upd(() {
+                    g.clearExact();
+                    g.gap = v;
+                  }),
+                ),
+                _slider(
+                  'Bild oben',
+                  g.logoHeight,
+                  0,
+                  0.35,
+                  (v) => upd(() => g.logoHeight = v),
+                ),
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    if (_design.backgrounds[_design.format] != null)
+                      TextButton.icon(
+                        icon: const Icon(Icons.auto_fix_high),
+                        label: const Text('Felder im Bild erkennen'),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _detectFrames([_design.format], manual: true);
+                        },
+                      ),
+                    TextButton.icon(
+                      icon: const Icon(Icons.restart_alt),
+                      label: const Text('Lage zurücksetzen'),
+                      onPressed: () => upd(
+                        () => _design.geom[_design.format] =
+                            CompareGeom.defaults(_design.format),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Future<void> _rename() async {
+    final ctrl = TextEditingController(text: _title);
+    final t = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Design umbenennen'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+          onSubmitted: (v) => Navigator.pop(ctx, v),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('Speichern'),
+          ),
+        ],
+      ),
+    );
+    if (t == null || t.trim().isEmpty || !mounted) return;
+    setState(() => _title = t.trim());
+    _changed();
+  }
+
+  // --------------------------------------------------------------- Export
+
+  Future<Uint8List?> _capturePng() async {
+    setState(() => _exporting = true);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      final boundary =
+          _boundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+      final image = await boundary.toImage(pixelRatio: _kExportWidth / _kW);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      return data?.buffer.asUint8List();
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
+  }
+
+  Future<void> _share() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await _capturePng();
+      if (bytes == null) return;
+      final path = await shareOrSaveImage(
+        bytes,
+        'Vergleich_$_title',
+        text: _title,
+      );
+      if (path != null) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text('Als Bild gespeichert und geöffnet:\n$path'),
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _saveImage() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final bytes = await _capturePng();
+      if (bytes == null) return;
+      final path = await saveImage(bytes, 'Vergleich_$_title');
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Gespeichert:\n$path'),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+      try {
+        await OpenFilex.open(path);
+      } catch (_) {}
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Speichern fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  // ----------------------------------------------------------------- Grafik
+
+  void _onScale(int i, ScaleUpdateDetails d, double fw, double fh) {
+    final side = _design.side(i);
+    final size = _sizeOf(side.photo);
+    final last = _lastFocal;
+    _lastFocal = d.localFocalPoint;
+    if (size == null || last == null) return;
+    if (d.pointerCount >= 2) {
+      side.zoom = (_startZoom * d.scale).clamp(1.0, 5.0);
+    }
+    _pan(side, d.localFocalPoint - last, fw, fh, size);
+  }
+
+  void _pan(CompareSide side, Offset delta, double fw, double fh, Size size) {
+    final r = compareCoverRect(
+      fw: fw,
+      fh: fh,
+      iw: size.width,
+      ih: size.height,
+      zoom: side.zoom,
+    );
+    final ox = (r.$3 - fw) / 2;
+    final oy = (r.$4 - fh) / 2;
+    setState(() {
+      side.dx = ox > 0.5 ? (side.dx - delta.dx / ox).clamp(-1.0, 1.0) : 0;
+      side.dy = oy > 0.5 ? (side.dy - delta.dy / oy).clamp(-1.0, 1.0) : 0;
+    });
+  }
+
+  Widget _photo(int i, double fw, double fh) {
+    final side = _design.side(i);
+    final bytes = _bytesOf(side.photo);
+    if (bytes == null) {
+      if (_exporting) return const SizedBox.expand();
+      return Container(
+        color: Colors.white.withValues(alpha: 0.06),
+        alignment: Alignment.center,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.add_photo_alternate_outlined,
+              color: Colors.white70,
+              size: 34,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Foto ${_sideName(i)}\nwählen',
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Colors.white70, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+    final size = _sizeOf(side.photo);
+    if (size == null) {
+      return Image.memory(bytes, fit: BoxFit.cover, gaplessPlayback: true);
+    }
+    final r = compareCoverRect(
+      fw: fw,
+      fh: fh,
+      iw: size.width,
+      ih: size.height,
+      zoom: side.zoom,
+      dx: side.dx,
+      dy: side.dy,
+    );
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Positioned(
+          left: r.$1,
+          top: r.$2,
+          width: r.$3,
+          height: r.$4,
+          child: Image.memory(
+            bytes,
+            fit: BoxFit.fill,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+          ),
+        ),
+      ],
+    );
+  }
+
+  TextStyle get _labelStyle {
+    final look = _labelLook;
+    var base = TextStyle(
+      color: Colors.white,
+      fontSize: _kW * 0.085 * _design.labelSize,
+      fontWeight: FontWeight.w700,
+      height: 1.05,
+      shadows: look.shadow == null
+          ? textShadowsFor('soft', _kW * 0.085 * _design.labelSize, _clubColor)
+          : null,
+    );
+    if (look.font == null) base = posterFontStyle('barlow', base);
+    return look.apply(base, glow: _clubColor);
+  }
+
+  Widget _graphic(double W, double H) {
+    final g = _design.current;
+    final bg = _bytesOf(_design.backgrounds[_design.format]);
+    final fh = g.height * H;
+    final top = g.top * H;
+    final look = _labelLook;
+    final labelStyle = _labelStyle;
+    final frameColor = _hex(_design.frameColor, Colors.white);
+    return SizedBox(
+      width: W,
+      height: H,
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          Positioned.fill(
+            child: bg != null
+                ? Image.memory(bg, fit: BoxFit.cover, gaplessPlayback: true)
+                : CustomPaint(
+                    painter: _CompareBgPainter(
+                      _hex(_settings?.gradTop, const Color(0xFF0E3325)),
+                      _hex(_settings?.gradBottom, const Color(0xFF071A12)),
+                    ),
+                  ),
+          ),
+          for (final i in [0, 1]) ...[
+            // Bild über dem Foto (z. B. Logo).
+            if (_design.side(i).logo != null && g.logoHeight > 0)
+              Positioned(
+                left: g.frameLeft(i) * W,
+                width: g.widthOf(i) * W,
+                top: math.max(0, top - g.logoHeight * H - 0.012 * H),
+                height: g.logoHeight * H,
+                child: GestureDetector(
+                  onTap: () => _logoMenu(i),
+                  child: Image.memory(
+                    _bytesOf(_design.side(i).logo)!,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                ),
+              ),
+            // Foto im Rahmen.
+            Positioned(
+              left: g.frameLeft(i) * W,
+              top: top,
+              width: g.widthOf(i) * W,
+              height: fh,
+              child: Listener(
+                onPointerSignal: (e) {
+                  if (e is! PointerScrollEvent) return;
+                  final side = _design.side(i);
+                  final size = _sizeOf(side.photo);
+                  if (size == null) return;
+                  side.zoom = (side.zoom * (e.scrollDelta.dy < 0 ? 1.08 : 0.926))
+                      .clamp(1.0, 5.0);
+                  _pan(side, Offset.zero, g.widthOf(i) * W, fh, size);
+                  _changed();
+                },
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => _sideMenu(i),
+                  onScaleStart: (d) {
+                    _lastFocal = d.localFocalPoint;
+                    _startZoom = _design.side(i).zoom;
+                  },
+                  onScaleUpdate: (d) => _onScale(i, d, g.widthOf(i) * W, fh),
+                  onScaleEnd: (_) {
+                    _lastFocal = null;
+                    _changed();
+                  },
+                  child: Container(
+                    decoration: _design.frames
+                        ? BoxDecoration(
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.55),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          )
+                        : null,
+                    foregroundDecoration: _design.frames
+                        ? BoxDecoration(
+                            border: Border.all(
+                              color: frameColor,
+                              width: _design.frameWidth,
+                            ),
+                          )
+                        : null,
+                    child: ClipRect(child: _photo(i, g.widthOf(i) * W, fh)),
+                  ),
+                ),
+              ),
+            ),
+            // Beschriftung.
+            if (_design.labels && _design.side(i).label.trim().isNotEmpty)
+              Positioned(
+                left: g.frameLeft(i) * W,
+                width: g.widthOf(i) * W,
+                top: top + fh + g.labelGap * H,
+                child: GestureDetector(
+                  onTap: _labelsMenu,
+                  child: Text(
+                    _design.side(i).label,
+                    textAlign: look.textAlign(TextAlign.center),
+                    softWrap: false,
+                    overflow: TextOverflow.visible,
+                    style: labelStyle,
+                  ),
+                ),
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _tool(IconData icon, String label, VoidCallback onTap) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 2),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: _busy ? null : onTap,
+      child: SizedBox(
+        width: 78,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon),
+              const SizedBox(height: 3),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                style: const TextStyle(fontSize: 11, height: 1.1),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final aspect = compareAspect(_design.format);
+    final h = _kW / aspect;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _leave();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(_title, overflow: TextOverflow.ellipsis),
+          actions: [
+            IconButton(
+              tooltip: 'Teilen',
+              icon: _busy
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.share),
+              onPressed: _loaded && !_busy ? _share : null,
+            ),
+            PopupMenuButton<String>(
+              onSelected: (v) {
+                if (v == 'save') _saveImage();
+                if (v == 'rename') _rename();
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: 'save',
+                  child: ListTile(
+                    leading: Icon(Icons.download),
+                    title: Text('Als Bild speichern'),
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'rename',
+                  child: ListTile(
+                    leading: Icon(Icons.edit),
+                    title: Text('Umbenennen'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+        body: !_loaded
+            ? const Center(child: CircularProgressIndicator())
+            : SafeArea(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(10),
+                        child: Center(
+                          child: AspectRatio(
+                            aspectRatio: aspect,
+                            child: FittedBox(
+                              child: RepaintBoundary(
+                                key: _boundaryKey,
+                                child: _graphic(_kW, h),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: SegmentedButton<String>(
+                        showSelectedIcon: false,
+                        segments: const [
+                          ButtonSegment(value: 'f', label: Text('4:5')),
+                          ButtonSegment(value: 's', label: Text('Story')),
+                          ButtonSegment(value: 'p', label: Text('1:1')),
+                        ],
+                        selected: {_design.format},
+                        onSelectionChanged: (s) {
+                          setState(() => _design.format = s.first);
+                          _changed();
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      child: Row(
+                        children: [
+                          _tool(
+                            Icons.looks_one_outlined,
+                            'Foto links',
+                            () => _sideMenu(0),
+                          ),
+                          _tool(
+                            Icons.looks_two_outlined,
+                            'Foto rechts',
+                            () => _sideMenu(1),
+                          ),
+                          _tool(
+                            Icons.wallpaper,
+                            'Hinter-\ngrund',
+                            _backgroundMenu,
+                          ),
+                          _tool(Icons.title, 'Beschrif-\ntung', _labelsMenu),
+                          _tool(
+                            Icons.crop_square,
+                            'Rahmen &\nLage',
+                            _frameMenu,
+                          ),
+                          _tool(
+                            Icons.add_photo_alternate_outlined,
+                            'Bilder\noben',
+                            _logosMenu,
+                          ),
+                          _tool(Icons.compare_arrows, 'Fotos\ntauschen', () {
+                            setState(_design.swapSides);
+                            _changed();
+                          }),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                ),
+              ),
+      ),
+    );
+  }
+}
+
+/// Standard-Hintergrund: dunkler Verlauf in Vereinsfarben mit feinen
+/// Polygon-Splittern und Vignette (ähnlich „Low-Poly"-Vorlagen).
+class _CompareBgPainter extends CustomPainter {
+  _CompareBgPainter(this.top, this.bottom);
+
+  final Color top;
+  final Color bottom;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    canvas.clipRect(rect);
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color.lerp(top, Colors.black, 0.72)!,
+            Color.lerp(bottom, Colors.black, 0.86)!,
+          ],
+        ).createShader(rect),
+    );
+    final rnd = math.Random(11);
+    final w = size.width;
+    final h = size.height;
+    for (var k = 0; k < 38; k++) {
+      final c = Offset(
+        (rnd.nextDouble() * 1.3 - 0.15) * w,
+        (rnd.nextDouble() * 1.3 - 0.15) * h,
+      );
+      final r = (0.18 + rnd.nextDouble() * 0.35) * w;
+      final a0 = rnd.nextDouble() * math.pi * 2;
+      final path = Path();
+      for (var j = 0; j < 3; j++) {
+        final a = a0 + j * (math.pi * 2 / 3) + (rnd.nextDouble() - 0.5) * 1.1;
+        final rr = r * (0.55 + rnd.nextDouble() * 0.45);
+        final p = c + Offset(math.cos(a) * rr, math.sin(a) * rr);
+        j == 0 ? path.moveTo(p.dx, p.dy) : path.lineTo(p.dx, p.dy);
+      }
+      path.close();
+      final light = rnd.nextBool();
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = light
+              ? Colors.white.withValues(alpha: 0.015 + rnd.nextDouble() * 0.045)
+              : Colors.black.withValues(alpha: 0.12 + rnd.nextDouble() * 0.2),
+      );
+    }
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..shader = RadialGradient(
+          radius: 0.9,
+          colors: [Colors.transparent, Colors.black.withValues(alpha: 0.6)],
+          stops: const [0.55, 1.0],
+        ).createShader(rect),
+    );
+  }
+
+  @override
+  bool shouldRepaint(_CompareBgPainter old) =>
+      old.top != top || old.bottom != bottom;
+}
