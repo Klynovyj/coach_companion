@@ -532,9 +532,29 @@ _kAnnouncementLayout = {
   },
 };
 
-/// Grundgröße der Startelf-Kästen je Format (vom Trainer festgelegt).
+/// Grundgröße der Startelf-Kästen je Format (vom Trainer festgelegt,
+/// Vorbild: Startelf gegen DSC 99 Düsseldorf, 15.11.2026).
 const Map<String, Map<String, Size>> _kStartelfBoxDefaults = {
-  'p': {'std_lineup': Size(340, 203.5)},
+  'p': {'std_lineup': Size(342.7, 148.8)},
+};
+
+/// Grundposition (Verschiebung in Grafik-Punkten) der festen Startelf-Teile je
+/// Format – vom Trainer gestaltet (Startelf gegen DSC 99, 15.11.2026) und als
+/// Standard für jede neue bzw. zurückgesetzte Startelf übernommen.
+const Map<String, Map<String, Offset>> _kStartelfOffDefaults = {
+  'p': {
+    'std_info': Offset(-1.4, 27.7),
+    'std_lineup': Offset(-0.7, 5.1),
+    'std_title': Offset(-1.4, 30.4),
+    'std_vs': Offset(-1.4, 31.7),
+  },
+  's': {
+    'std_info': Offset(2.9, 14.9),
+    'std_logo': Offset(-4.8, -1.2),
+    'std_sponsor': Offset(4.4, -0.1),
+    'std_title': Offset(-1.3, 21.9),
+    'std_vs': Offset(-2.7, 17.4),
+  },
 };
 
 /// Startwerte nach dem Freistellen: weiche Kante + „Rand verschmelzen".
@@ -1666,7 +1686,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     };
   }
 
-  Map<String, Offset> get _stdOff => _stdOffF.putIfAbsent(_designKey, () => {});
+  Map<String, Offset> get _stdOff {
+    final m = _stdOffF.putIfAbsent(_designKey, () => {});
+    // Startelf noch nie verschoben (neu, leer gespeichert oder zurückgesetzt):
+    // Grundposition wie vom Trainer festgelegt.
+    if (m.isEmpty && _kind == 'Startelf') {
+      m.addAll(_kStartelfOffDefaults[_designKey] ?? const {});
+    }
+    return m;
+  }
   Set<String> get _stdHidden =>
       _stdHiddenF.putIfAbsent(_designKey, () => <String>{});
   Map<String, double> get _posterScale =>
