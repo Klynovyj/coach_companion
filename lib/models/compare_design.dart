@@ -44,7 +44,7 @@ class CompareSide {
   /// Foto als data:-URL (null = noch keins gewählt).
   String? photo;
 
-  /// Ausschnitt: Zoom ≥ 1 und Verschiebung −1 … 1 (Anteil des überstehenden
+  /// Ausschnitt: Zoom (0.3 … 5; < 1 = kleiner als der Rahmen) und Verschiebung −1 … 1 (Anteil des überstehenden
   /// Bildes; 0 = mittig) – dadurch formatunabhängig.
   double zoom;
   double dx;
@@ -96,7 +96,7 @@ class CompareSide {
     if (v is! Map) return CompareSide(label: label);
     return CompareSide(
       photo: v['photo'] is String ? v['photo'] as String : null,
-      zoom: _d(v['zoom'], 1).clamp(1.0, 5.0),
+      zoom: _d(v['zoom'], 1).clamp(0.3, 5.0),
       dx: _d(v['dx'], 0).clamp(-1.0, 1.0),
       dy: _d(v['dy'], 0).clamp(-1.0, 1.0),
       logo: v['logo'] is String ? v['logo'] as String : null,
@@ -201,8 +201,7 @@ class CompareGeom {
   double get frameWidth => ((1 - 2 * margin - gap) / 2).clamp(0.05, 0.5);
 
   /// Breite des Rahmens [side] (0 = links, 1 = rechts), × W.
-  double widthOf(int side) =>
-      hasExact ? (side == 0 ? lw! : rw!) : frameWidth;
+  double widthOf(int side) => hasExact ? (side == 0 ? lw! : rw!) : frameWidth;
 
   /// Linke Kante des Rahmens [side] (0 = links, 1 = rechts), × W.
   double frameLeft(int side) => hasExact
@@ -277,6 +276,11 @@ class CompareDesign {
     this.pattern = true,
     this.patternStrength = 1.0,
     this.tint = 0,
+    this.sponsors = false,
+    this.sponsorIds,
+    this.sponsorZoom = 1.0,
+    this.sponsorDx = 0,
+    this.sponsorDy = 0,
   }) : left = left ?? CompareSide(label: 'DAMALS'),
        right = right ?? CompareSide(label: 'HEUTE'),
        backgrounds = backgrounds ?? {},
@@ -322,6 +326,14 @@ class CompareDesign {
 
   /// Verlauf als Tönung über einem eigenen Hintergrundbild (0 … 1).
   double tint;
+
+  /// Sponsoren-Leiste unten: an/aus, Auswahl (null = alle aktiven mit Logo),
+  /// Zoom und Verschiebung (Anteil der Breite/Höhe).
+  bool sponsors;
+  List<String>? sponsorIds;
+  double sponsorZoom;
+  double sponsorDx;
+  double sponsorDy;
 
   CompareSide side(int i) => i == 0 ? left : right;
 
@@ -392,6 +404,11 @@ class CompareDesign {
       'pattern': pattern,
       'patternStrength': patternStrength,
       'tint': tint,
+      'sponsors': sponsors,
+      if (sponsorIds != null) 'sponsorIds': sponsorIds,
+      'sponsorZoom': sponsorZoom,
+      'sponsorDx': sponsorDx,
+      'sponsorDy': sponsorDy,
     };
   }
 
@@ -441,6 +458,13 @@ class CompareDesign {
       pattern: v['pattern'] != false,
       patternStrength: _d(v['patternStrength'], 1).clamp(0.1, 1.5),
       tint: _d(v['tint'], 0).clamp(0.0, 1.0),
+      sponsors: v['sponsors'] == true,
+      sponsorIds: v['sponsorIds'] is List
+          ? (v['sponsorIds'] as List).whereType<String>().toList()
+          : null,
+      sponsorZoom: _d(v['sponsorZoom'], 1).clamp(0.3, 3.0),
+      sponsorDx: _d(v['sponsorDx'], 0).clamp(-0.5, 0.5),
+      sponsorDy: _d(v['sponsorDy'], 0).clamp(-0.95, 0.04),
       topLook: v['topLook'] is Map
           ? Map<String, dynamic>.from(v['topLook'] as Map)
           : null,

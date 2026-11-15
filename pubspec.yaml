@@ -62,6 +62,8 @@ dependencies:
   google_fonts: ^6.2.1
   # Vorbereitungsplan als DIN-A4-PDF.
   pdf: ^3.12.0
+  flutter_svg: ^2.3.4
+  file_picker: ^11.0.3
 
 # pdf 3.12 erlaubt archive nur <4.1, image 4.12 braucht ^4.5. pdf nutzt
 # archive ausschließlich im Web-Build (native: dart:io-zlib) → gefahrlos.

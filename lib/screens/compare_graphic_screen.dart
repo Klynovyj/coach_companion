@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -18,14 +19,17 @@ import '../models/compare_design.dart';
 import '../models/designer_data.dart';
 import '../models/graphic_settings.dart';
 import '../models/player.dart';
+import '../models/sponsor.dart';
 import '../services/player_photos.dart';
 import '../services/share_service.dart';
+import '../services/svg_png.dart';
 import '../state/app_state.dart';
 import '../widgets/player_picker_page.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/text_look.dart';
 import 'photo_editor_screen.dart';
 import '../widgets/color_picker_dialog.dart';
+import '../widgets/logo_chip.dart';
 import 'startelf_graphic_screen.dart'
     show
         kGradientPalette,
@@ -76,6 +80,7 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
 
   CompareDesign _design = CompareDesign();
   GraphicSettings? _settings;
+  List<Sponsor> _sponsors = [];
   bool _loaded = false;
   bool _dirty = false;
   bool _exporting = false;
@@ -113,10 +118,12 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
 
   Future<void> _load() async {
     final settings = await _app.graphicSettings();
+    final sponsors = await _app.sponsors();
     final json = await _app.loadAnnouncementDesign(widget.designer.id);
     if (!mounted) return;
     setState(() {
       _settings = settings;
+      _sponsors = sponsors.where((e) => e.enabled).toList();
       _apply(json);
       _loaded = true;
     });
@@ -258,14 +265,10 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
 
   Color _hex(String? h, Color def) => h == null ? def : hexColor(h);
 
-  Color get _gradTop => _hex(
-    _settings?.gradTop,
-    hexColor(GraphicSettings.defaultGradTop),
-  );
-  Color get _gradBottom => _hex(
-    _settings?.gradBottom,
-    hexColor(GraphicSettings.defaultGradBottom),
-  );
+  Color get _gradTop =>
+      _hex(_settings?.gradTop, hexColor(GraphicSettings.defaultGradTop));
+  Color get _gradBottom =>
+      _hex(_settings?.gradBottom, hexColor(GraphicSettings.defaultGradBottom));
 
   Color get _clubColor => _hex(_settings?.gradTop, const Color(0xFF0E3325));
 
@@ -403,11 +406,8 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
     final id = await Navigator.push<String?>(
       context,
       MaterialPageRoute(
-        builder: (_) => PlayerPickerPage(
-          players: players,
-          allowNone: false,
-          title: title,
-        ),
+        builder: (_) =>
+            PlayerPickerPage(players: players, allowNone: false, title: title),
       ),
     );
     if (id == null || id == kPlayerPickNone) return null;
@@ -502,93 +502,496 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
 
   // ---------------------------------------------------------------- Menüs
 
+  /// Bild aus einer Datei wählen – auch SVG (wird scharf in PNG umgewandelt).
+  Future<String?> _pickFile({
+    int maxSize = 1600,
+    bool keepAlpha = false,
+  }) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final res = await FilePicker.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: const [
+          'png',
+          'jpg',
+          'jpeg',
+          'webp',
+          'gif',
+          'bmp',
+          'svg',
+        ],
+        withData: true,
+      );
+      final f = res?.files.firstOrNull;
+      if (f == null) return null;
+      var bytes = f.bytes;
+      if (bytes == null && f.path != null) {
+        bytes = await File(f.path!).readAsBytes();
+      }
+      if (bytes == null) return null;
+      if ((f.extension ?? '').toLowerCase() == 'svg' || looksLikeSvg(bytes)) {
+        final png = await svgToPng(bytes, maxSize: maxSize.toDouble());
+        if (png == null) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text('Das SVG konnte nicht gelesen werden.'),
+            ),
+          );
+          return null;
+        }
+        return _toDataUrl(png);
+      }
+      final norm = await compute(normalizeImageBytes, <String, dynamic>{
+        'data': bytes,
+        'keepAlpha': keepAlpha,
+        'maxSize': maxSize,
+      });
+      return _toDataUrl(norm);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Bild konnte nicht geladen werden: $e')),
+      );
+      return null;
+    }
+  }
+
+  /// Zoom-Zeile: − / Regler / + (für Fotos, Logos, Sponsoren).
+  Widget _zoomRow(
+    double value,
+    double min,
+    double max,
+    ValueChanged<double> onChanged,
+  ) {
+    double clampV(double v) => v.clamp(min, max).toDouble();
+    return Row(
+      children: [
+        const SizedBox(
+          width: 44,
+          child: Text('Zoom', style: TextStyle(fontSize: 13)),
+        ),
+        IconButton(
+          tooltip: 'Kleiner',
+          icon: const Icon(Icons.remove_circle_outline),
+          onPressed: () => onChanged(clampV(value / 1.1)),
+        ),
+        Expanded(
+          child: Slider(
+            value: clampV(value),
+            min: min,
+            max: max,
+            onChanged: onChanged,
+          ),
+        ),
+        IconButton(
+          tooltip: 'Größer',
+          icon: const Icon(Icons.add_circle_outline),
+          onPressed: () => onChanged(clampV(value * 1.1)),
+        ),
+        SizedBox(
+          width: 40,
+          child: Text(
+            '${(value * 100).round()}%',
+            textAlign: TextAlign.right,
+            style: const TextStyle(fontSize: 12),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// Sponsoren mit Logo, die auf der Grafik erscheinen (Auswahl je Design).
+  List<Sponsor> get _shownSponsors {
+    final ids = _design.sponsorIds;
+    return [
+      for (final s in _sponsors)
+        if (s.logo != null && (ids == null || ids.contains(s.id))) s,
+    ];
+  }
+
+  Future<void> _sponsorMenu() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      barrierColor: Colors.black12,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.55,
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          void upd(VoidCallback fn) {
+            setState(fn);
+            setSheet(() {});
+            _changed();
+          }
+
+          final withLogo = _sponsors.where((s) => s.logo != null).toList();
+          return SafeArea(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              children: [
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text(
+                    'Sponsoren-Leiste',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  subtitle: Text(
+                    Platform.isAndroid || Platform.isIOS
+                        ? 'Auf der Grafik ziehen = verschieben, zwei Finger = '
+                              'zoomen'
+                        : 'Auf der Grafik ziehen = verschieben, Mausrad = zoomen',
+                  ),
+                  value: _design.sponsors,
+                  onChanged: (v) => upd(() => _design.sponsors = v),
+                ),
+                if (_design.sponsors) ...[
+                  _zoomRow(
+                    _design.sponsorZoom,
+                    0.3,
+                    3,
+                    (v) => upd(() => _design.sponsorZoom = v),
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.restart_alt),
+                      label: const Text('Größe & Lage zurücksetzen'),
+                      onPressed: () => upd(() {
+                        _design.sponsorZoom = 1;
+                        _design.sponsorDx = 0;
+                        _design.sponsorDy = 0;
+                      }),
+                    ),
+                  ),
+                  const Divider(),
+                  if (withLogo.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('Noch keine Sponsoren mit Logo.'),
+                    ),
+                  for (final s in withLogo)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: SizedBox(
+                        width: 56,
+                        height: 32,
+                        child: Image.memory(
+                          _bytesOf(s.logo)!,
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                      title: Text(s.name.isEmpty ? 'Sponsor' : s.name),
+                      subtitle: s.isMain ? const Text('Hauptsponsor') : null,
+                      value:
+                          _design.sponsorIds == null ||
+                          _design.sponsorIds!.contains(s.id),
+                      onChanged: (v) => upd(() {
+                        final ids =
+                            _design.sponsorIds ??
+                            withLogo.map((e) => e.id).toList();
+                        _design.sponsorIds = [
+                          for (final e in withLogo)
+                            if (e.id == s.id ? v == true : ids.contains(e.id))
+                              e.id,
+                        ];
+                      }),
+                    ),
+                ],
+                const SizedBox(height: 4),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.add_business_outlined),
+                  label: const Text('Neuen Sponsor anlegen'),
+                  onPressed: () async {
+                    await _addSponsor();
+                    setSheet(() {});
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Neuen Sponsor anlegen (Name + Logo, auch SVG) – landet in der
+  /// Sponsorenliste des Teams und direkt auf dieser Grafik.
+  Future<void> _addSponsor() async {
+    final nameCtrl = TextEditingController();
+    String? logo;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Neuer Sponsor'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              TextField(
+                controller: nameCtrl,
+                autofocus: true,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Name',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 10),
+              if (logo != null)
+                SizedBox(
+                  height: 70,
+                  child: Image.memory(_bytesOf(logo)!, fit: BoxFit.contain),
+                ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.image_outlined),
+                label: Text(
+                  logo == null
+                      ? 'Logo wählen (PNG, JPG, SVG …)'
+                      : 'Anderes Logo',
+                ),
+                onPressed: () async {
+                  final url = await _pickFile(maxSize: 900, keepAlpha: true);
+                  if (url != null) setD(() => logo = url);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (nameCtrl.text.trim().isEmpty || logo == null) return;
+                Navigator.pop(ctx, true);
+              },
+              child: const Text('Anlegen'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final s = await _app.addSponsor(nameCtrl.text, logo: logo);
+    final list = await _app.sponsors();
+    if (!mounted) return;
+    setState(() {
+      _sponsors = list.where((e) => e.enabled).toList();
+      _design.sponsors = true;
+      final ids = _design.sponsorIds;
+      if (ids != null && !ids.contains(s.id)) ids.add(s.id);
+    });
+    _changed();
+  }
+
+  /// Sponsoren-Leiste (unten), verschieb- und zoombar.
+  Widget? _sponsorBar(double W, double H) {
+    if (!_design.sponsors) return null;
+    final list = _shownSponsors;
+    if (list.isEmpty) return null;
+    final barH = 0.055 * H;
+    final cy = (0.955 + _design.sponsorDy) * H;
+    void zoomBy(double f) {
+      setState(
+        () => _design.sponsorZoom = (_design.sponsorZoom * f).clamp(0.3, 3.0),
+      );
+      _changed();
+    }
+
+    return Positioned(
+      left: 0,
+      width: W,
+      top: cy - barH / 2,
+      height: barH,
+      child: Transform.translate(
+        offset: Offset(_design.sponsorDx * W, 0),
+        child: Transform.scale(
+          scale: _design.sponsorZoom,
+          child: Center(
+            child: Listener(
+              onPointerSignal: (e) {
+                if (e is PointerScrollEvent) {
+                  zoomBy(e.scrollDelta.dy < 0 ? 1.08 : 0.926);
+                }
+              },
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _sponsorMenu,
+                onScaleStart: (d) {
+                  _lastFocal = d.focalPoint;
+                  _startZoom = _design.sponsorZoom;
+                },
+                onScaleUpdate: (d) {
+                  final last = _lastFocal;
+                  _lastFocal = d.focalPoint;
+                  if (last == null) return;
+                  // Globale Verschiebung → Grafik-Koordinaten.
+                  final box =
+                      _boundaryKey.currentContext?.findRenderObject()
+                          as RenderBox?;
+                  final scr = box?.getTransformTo(null).getMaxScaleOnAxis();
+                  final k = scr == null || scr == 0 ? 1.0 : 1 / scr;
+                  final delta = (d.focalPoint - last) * k;
+                  setState(() {
+                    if (d.pointerCount >= 2) {
+                      _design.sponsorZoom = (_startZoom * d.scale).clamp(
+                        0.3,
+                        3.0,
+                      );
+                    }
+                    _design.sponsorDx = (_design.sponsorDx + delta.dx / W)
+                        .clamp(-0.5, 0.5);
+                    _design.sponsorDy = (_design.sponsorDy + delta.dy / H)
+                        .clamp(-0.95, 0.04);
+                  });
+                },
+                onScaleEnd: (_) {
+                  _lastFocal = null;
+                  _changed();
+                },
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxWidth: W * 0.94),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (var k = 0; k < list.length; k++) ...[
+                          if (k > 0) SizedBox(width: barH * 0.35),
+                          LogoChip(
+                            bytes: _bytesOf(list[k].logo)!,
+                            height: barH,
+                            mode: list[k].chip,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _sideMenu(int i) async {
     final side = _design.side(i);
     if (side.photo == null) return _pickPhoto(i);
     await showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Foto ${_sideName(i)}',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
+      isScrollControlled: true,
+      barrierColor: Colors.black12,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Foto ${_sideName(i)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        Platform.isAndroid || Platform.isIOS
+                            ? 'Im Bild ziehen = verschieben, mit zwei Fingern zoomen.'
+                            : 'Im Bild ziehen = verschieben, Mausrad = zoomen.',
+                        style: Theme.of(ctx).textTheme.bodySmall,
+                      ),
+                      _zoomRow(side.zoom, 0.3, 5, (v) {
+                        _setPhotoZoom(i, v);
+                        setSheet(() {});
+                      }),
+                    ],
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    Platform.isAndroid || Platform.isIOS
-                        ? 'Im Bild ziehen = verschieben, mit zwei Fingern zoomen.'
-                        : 'Im Bild ziehen = verschieben, Mausrad = zoomen.',
-                    style: Theme.of(ctx).textTheme.bodySmall,
+                ),
+                ListTile(
+                  leading: const Icon(Icons.swap_horiz),
+                  title: const Text('Anderes Foto wählen'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _pickPhoto(i);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.tune),
+                  title: const Text('Bearbeiten'),
+                  subtitle: const Text('Zuschneiden, drehen, Helligkeit'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _editPhoto(i);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.center_focus_strong),
+                  title: const Text('Ausschnitt zurücksetzen'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(side.resetCrop);
+                    _changed();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.compare_arrows),
+                  title: const Text('Fotos tauschen (links ↔ rechts)'),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(_design.swapSides);
+                    _changed();
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline, color: Colors.red),
+                  title: const Text(
+                    'Foto entfernen',
+                    style: TextStyle(color: Colors.red),
                   ),
-                ],
-              ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    setState(() {
+                      side.photo = null;
+                      side.resetCrop();
+                    });
+                    _changed();
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
             ),
-            ListTile(
-              leading: const Icon(Icons.swap_horiz),
-              title: const Text('Anderes Foto wählen'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _pickPhoto(i);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.tune),
-              title: const Text('Bearbeiten'),
-              subtitle: const Text('Zuschneiden, drehen, Helligkeit'),
-              onTap: () {
-                Navigator.pop(ctx);
-                _editPhoto(i);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.center_focus_strong),
-              title: const Text('Ausschnitt zurücksetzen'),
-              onTap: () {
-                Navigator.pop(ctx);
-                setState(side.resetCrop);
-                _changed();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.compare_arrows),
-              title: const Text('Fotos tauschen (links ↔ rechts)'),
-              onTap: () {
-                Navigator.pop(ctx);
-                setState(_design.swapSides);
-                _changed();
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.red),
-              title: const Text(
-                'Foto entfernen',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () {
-                Navigator.pop(ctx);
-                setState(() {
-                  side.photo = null;
-                  side.resetCrop();
-                });
-                _changed();
-              },
-            ),
-            const SizedBox(height: 8),
-          ],
+          ),
         ),
       ),
     );
+  }
+
+  /// Foto-Zoom setzen (Ausschnitt bleibt gültig).
+  void _setPhotoZoom(int i, double z) {
+    final side = _design.side(i);
+    side.zoom = z.clamp(0.3, 5.0);
+    final size = _sizeOf(side.photo);
+    final g = _design.current;
+    final h = _kW / compareAspect(_design.format);
+    if (size != null) {
+      _pan(side, Offset.zero, g.widthOf(i) * _kW, g.height * h, size);
+    } else {
+      setState(() {});
+    }
+    _changed();
   }
 
   /// Team-Grafik-Einstellungen ändern (Verlaufsfarben gelten teamweit).
@@ -654,7 +1057,11 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                 )
               : ColoredBox(
                   color: hexColor(selected),
-                  child: const Icon(Icons.colorize, size: 16, color: Colors.white),
+                  child: const Icon(
+                    Icons.colorize,
+                    size: 16,
+                    color: Colors.white,
+                  ),
                 ),
           !inPalette,
           () async {
@@ -820,7 +1227,9 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(Icons.wallpaper),
                   title: Text(has ? 'Anderes Bild wählen' : 'Bild wählen'),
-                  subtitle: const Text('Für alle Formate ohne eigenes Bild'),
+                  subtitle: const Text(
+                    'Für alle Formate ohne eigenes Bild · PNG, JPG, SVG …',
+                  ),
                   onTap: () => Navigator.pop(ctx, 'all'),
                 ),
                 ListTile(
@@ -854,7 +1263,7 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
       _changed();
       return;
     }
-    final url = await _pickFromDevice(ImageSource.gallery, maxSize: 1920);
+    final url = await _pickFile(maxSize: 1920);
     if (url == null || !mounted) return;
     final before = Map<String, String>.of(_design.backgrounds);
     setState(() => _design.setBackground(url, allFormats: choice == 'all'));
@@ -868,7 +1277,10 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
 
   /// Foto-Felder im Hintergrund der Formate [formats] erkennen und die Fotos
   /// darin einpassen (mit Rückfrage, ob eigene Rahmen/Texte ausgehen).
-  Future<void> _detectFrames(List<String> formats, {bool manual = false}) async {
+  Future<void> _detectFrames(
+    List<String> formats, {
+    bool manual = false,
+  }) async {
     final found = <String, List<double>>{};
     setState(() => _busy = true);
     try {
@@ -968,81 +1380,94 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Über dem Foto ${_sideName(i)}',
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                    ),
-                    if (side.hasTop) ...[
-                      const SizedBox(height: 2),
+      barrierColor: Colors.black12,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        Platform.isAndroid || Platform.isIOS
-                            ? 'Im Feld ziehen = verschieben, mit zwei Fingern '
-                                  'größer/kleiner.'
-                            : 'Im Feld ziehen = verschieben, Mausrad = '
-                                  'größer/kleiner.',
-                        style: Theme.of(ctx).textTheme.bodySmall,
+                        'Über dem Foto ${_sideName(i)}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
                       ),
+                      if (side.hasTop) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          Platform.isAndroid || Platform.isIOS
+                              ? 'Im Feld ziehen = verschieben, mit zwei Fingern '
+                                    'größer/kleiner.'
+                              : 'Im Feld ziehen = verschieben, Mausrad = '
+                                    'größer/kleiner.',
+                          style: Theme.of(ctx).textTheme.bodySmall,
+                        ),
+                        _zoomRow(side.logoZoom, 0.3, 3, (v) {
+                          setState(() => side.logoZoom = v);
+                          setSheet(() {});
+                          _changed();
+                        }),
+                      ],
                     ],
-                  ],
-                ),
-              ),
-              if (clubLogo != null)
-                ListTile(
-                  leading: const Icon(Icons.shield_outlined),
-                  title: const Text('Vereinslogo'),
-                  onTap: () => Navigator.pop(ctx, 'club'),
-                ),
-              if (hasOpp)
-                ListTile(
-                  leading: const Icon(Icons.groups_2_outlined),
-                  title: const Text('Gegner-Logo'),
-                  subtitle: const Text('Aus deinen Spielen'),
-                  onTap: () => Navigator.pop(ctx, 'opp'),
-                ),
-              ListTile(
-                leading: const Icon(Icons.photo_library),
-                title: const Text('Bild/Logo aus Galerie oder Datei'),
-                subtitle: const Text('Transparente PNGs bleiben transparent'),
-                onTap: () => Navigator.pop(ctx, 'gallery'),
-              ),
-              ListTile(
-                leading: const Icon(Icons.text_fields),
-                title: Text(
-                  side.logoText != null ? 'Text bearbeiten' : 'Text statt Bild',
-                ),
-                subtitle: const Text('z. B. „SAISON 13/14"'),
-                onTap: () => Navigator.pop(ctx, 'text'),
-              ),
-              if (side.hasTop) ...[
-                ListTile(
-                  leading: const Icon(Icons.center_focus_strong),
-                  title: const Text('Größe & Lage zurücksetzen'),
-                  onTap: () => Navigator.pop(ctx, 'reset'),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: const Text(
-                    'Entfernen',
-                    style: TextStyle(color: Colors.red),
                   ),
-                  onTap: () => Navigator.pop(ctx, 'remove'),
                 ),
+                if (clubLogo != null)
+                  ListTile(
+                    leading: const Icon(Icons.shield_outlined),
+                    title: const Text('Vereinslogo'),
+                    onTap: () => Navigator.pop(ctx, 'club'),
+                  ),
+                if (hasOpp)
+                  ListTile(
+                    leading: const Icon(Icons.groups_2_outlined),
+                    title: const Text('Gegner-Logo'),
+                    subtitle: const Text('Aus deinen Spielen'),
+                    onTap: () => Navigator.pop(ctx, 'opp'),
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.photo_library),
+                  title: const Text('Bild/Logo aus Datei'),
+                  subtitle: const Text('PNG, JPG, SVG … (Transparenz bleibt)'),
+                  onTap: () => Navigator.pop(ctx, 'gallery'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.text_fields),
+                  title: Text(
+                    side.logoText != null
+                        ? 'Text bearbeiten'
+                        : 'Text statt Bild',
+                  ),
+                  subtitle: const Text('z. B. „SAISON 13/14"'),
+                  onTap: () => Navigator.pop(ctx, 'text'),
+                ),
+                if (side.hasTop) ...[
+                  ListTile(
+                    leading: const Icon(Icons.center_focus_strong),
+                    title: const Text('Größe & Lage zurücksetzen'),
+                    onTap: () => Navigator.pop(ctx, 'reset'),
+                  ),
+                  ListTile(
+                    leading: const Icon(
+                      Icons.delete_outline,
+                      color: Colors.red,
+                    ),
+                    title: const Text(
+                      'Entfernen',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: () => Navigator.pop(ctx, 'remove'),
+                  ),
+                ],
+                const SizedBox(height: 8),
               ],
-              const SizedBox(height: 8),
-            ],
+            ),
           ),
         ),
       ),
@@ -1071,11 +1496,7 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
     } else if (choice == 'opp') {
       url = await _pickOpponentLogo();
     } else if (choice == 'gallery') {
-      url = await _pickFromDevice(
-        ImageSource.gallery,
-        maxSize: 900,
-        keepAlpha: true,
-      );
+      url = await _pickFile(maxSize: 900, keepAlpha: true);
     }
     if (url == null || !mounted) return;
     setState(() {
@@ -1678,13 +2099,7 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                   'Lage der Fotos (${compareFormatLabel(_design.format)})',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
-                _slider(
-                  'Oben',
-                  g.top,
-                  0,
-                  0.6,
-                  (v) => upd(() => g.top = v),
-                ),
+                _slider('Oben', g.top, 0, 0.6, (v) => upd(() => g.top = v)),
                 _slider(
                   'Höhe',
                   g.height,
@@ -1861,7 +2276,7 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
     _lastFocal = d.localFocalPoint;
     if (size == null || last == null) return;
     if (d.pointerCount >= 2) {
-      side.zoom = (_startZoom * d.scale).clamp(1.0, 5.0);
+      side.zoom = (_startZoom * d.scale).clamp(0.3, 5.0);
     }
     _pan(side, d.localFocalPoint - last, fw, fh, size);
   }
@@ -1877,8 +2292,9 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
     final ox = (r.$3 - fw) / 2;
     final oy = (r.$4 - fh) / 2;
     setState(() {
-      side.dx = ox > 0.5 ? (side.dx - delta.dx / ox).clamp(-1.0, 1.0) : 0;
-      side.dy = oy > 0.5 ? (side.dy - delta.dy / oy).clamp(-1.0, 1.0) : 0;
+      // ox/oy < 0: Bild kleiner als der Rahmen → innerhalb verschieben.
+      side.dx = ox.abs() > 0.5 ? (side.dx - delta.dx / ox).clamp(-1.0, 1.0) : 0;
+      side.dy = oy.abs() > 0.5 ? (side.dy - delta.dy / oy).clamp(-1.0, 1.0) : 0;
     });
   }
 
@@ -2014,8 +2430,11 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                   final side = _design.side(i);
                   final size = _sizeOf(side.photo);
                   if (size == null) return;
-                  side.zoom = (side.zoom * (e.scrollDelta.dy < 0 ? 1.08 : 0.926))
-                      .clamp(1.0, 5.0);
+                  side.zoom =
+                      (side.zoom * (e.scrollDelta.dy < 0 ? 1.08 : 0.926)).clamp(
+                        0.3,
+                        5.0,
+                      );
                   _pan(side, Offset.zero, g.widthOf(i) * W, fh, size);
                   _changed();
                 },
@@ -2074,6 +2493,8 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                 ),
               ),
           ],
+          // Sponsoren-Leiste (unten, verschieb- und zoombar).
+          ?_sponsorBar(W, H),
         ],
       ),
     );
@@ -2222,6 +2643,11 @@ class _CompareGraphicScreenState extends State<CompareGraphicScreen> {
                             Icons.add_photo_alternate_outlined,
                             'Bilder\noben',
                             _logosMenu,
+                          ),
+                          _tool(
+                            Icons.handshake_outlined,
+                            'Sponsoren',
+                            _sponsorMenu,
                           ),
                           _tool(Icons.compare_arrows, 'Fotos\ntauschen', () {
                             setState(_design.swapSides);

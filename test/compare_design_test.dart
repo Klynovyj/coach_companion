@@ -25,6 +25,10 @@ void main() {
       pattern: false,
       patternStrength: 0.5,
       tint: 0.3,
+      sponsors: true,
+      sponsorIds: ['s1'],
+      sponsorZoom: 1.5,
+      sponsorDy: -0.2,
     );
     d.left.logoText = 'SAISON 13/14';
     d.setBackground('data:bg');
@@ -45,6 +49,12 @@ void main() {
     expect(e.pattern, isFalse);
     expect(e.patternStrength, 0.5);
     expect(e.tint, 0.3);
+    expect(e.sponsors, isTrue);
+    expect(e.sponsorIds, ['s1']);
+    expect(e.sponsorZoom, 1.5);
+    expect(e.sponsorDy, -0.2);
+    expect(CompareDesign.fromJson({}).sponsors, isFalse);
+    expect(CompareSide.fromJson({'zoom': 0.5}).zoom, 0.5);
     expect(CompareDesign.fromJson({}).gradShape, 'linear');
     expect(e.right.label, '2026');
     expect(e.format, 's');
@@ -88,6 +98,19 @@ void main() {
     expect(r.$1, -150); // mittig
     final l = compareCoverRect(fw: 100, fh: 200, iw: 400, ih: 200, dx: -1);
     expect(l.$1, 0); // linker Bildrand sichtbar
+    // Kleiner als der Rahmen: Bild liegt mittig, verschiebbar nach links.
+    final k = compareCoverRect(fw: 100, fh: 200, iw: 400, ih: 200, zoom: 0.2);
+    expect(k.$3, 80);
+    expect(k.$1, 10);
+    final kl = compareCoverRect(
+      fw: 100,
+      fh: 200,
+      iw: 400,
+      ih: 200,
+      zoom: 0.2,
+      dx: -1,
+    );
+    expect(kl.$1, 0);
     final z = compareCoverRect(fw: 100, fh: 200, iw: 400, ih: 200, zoom: 2);
     expect(z.$4, 400);
   });
