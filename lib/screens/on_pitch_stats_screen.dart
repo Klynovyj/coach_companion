@@ -1,8 +1,4 @@
-import 'dart:typed_data';
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -620,7 +616,7 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
     final messenger = ScaffoldMessenger.of(context);
     setState(() => _sharing = true);
     try {
-      final bytes = await _captureOffscreen(_shareImage());
+      final bytes = await captureOffscreen(context, _shareImage());
       if (bytes == null) return;
       final names = [
         for (final id in _selected)
@@ -642,36 +638,6 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
       );
     } finally {
       if (mounted) setState(() => _sharing = false);
-    }
-  }
-
-  /// Rendert [child] unsichtbar (off-screen) und gibt ein PNG davon zurück.
-  Future<Uint8List?> _captureOffscreen(Widget child) async {
-    final key = GlobalKey();
-    final overlay = Overlay.of(context);
-    final entry = OverlayEntry(
-      builder: (_) => Positioned(
-        left: -4000,
-        top: 0,
-        child: Material(
-          type: MaterialType.transparency,
-          child: RepaintBoundary(key: key, child: child),
-        ),
-      ),
-    );
-    overlay.insert(entry);
-    try {
-      await WidgetsBinding.instance.endOfFrame;
-      // Kurz warten, damit Fotos/Logo (Image.memory) dekodiert und gemalt sind.
-      await Future.delayed(const Duration(milliseconds: 250));
-      final boundary =
-          key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
-      if (boundary == null) return null;
-      final image = await boundary.toImage(pixelRatio: 3);
-      final data = await image.toByteData(format: ui.ImageByteFormat.png);
-      return data?.buffer.asUint8List();
-    } finally {
-      entry.remove();
     }
   }
 

@@ -1,5 +1,9 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -249,3 +253,39 @@ String buildEventText({
 /// Team für Berichts-Namen (Kurzname bevorzugt).
 String teamDisplay(Team? team, String fallback) =>
     team?.shortName ?? team?.name ?? fallback;
+
+/// Rendert [child] unsichtbar (off-screen über das Overlay) und gibt ein PNG
+/// davon zurück – für „Als Bild teilen" von Inhalten, die so nicht auf dem
+/// Bildschirm stehen.
+Future<Uint8List?> captureOffscreen(
+  BuildContext context,
+  Widget child, {
+  double pixelRatio = 3,
+}) async {
+  final key = GlobalKey();
+  final overlay = Overlay.of(context);
+  final entry = OverlayEntry(
+    builder: (_) => Positioned(
+      left: -4000,
+      top: 0,
+      child: Material(
+        type: MaterialType.transparency,
+        child: RepaintBoundary(key: key, child: child),
+      ),
+    ),
+  );
+  overlay.insert(entry);
+  try {
+    await WidgetsBinding.instance.endOfFrame;
+    // Kurz warten, damit Fotos/Logo (Image.memory) dekodiert und gemalt sind.
+    await Future.delayed(const Duration(milliseconds: 250));
+    final boundary =
+        key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) return null;
+    final image = await boundary.toImage(pixelRatio: pixelRatio);
+    final data = await image.toByteData(format: ui.ImageByteFormat.png);
+    return data?.buffer.asUint8List();
+  } finally {
+    entry.remove();
+  }
+}

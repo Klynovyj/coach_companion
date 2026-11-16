@@ -1,5 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
+import '../models/stat_group.dart';
+import '../models/stat_template.dart';
 import '../models/card_entry.dart';
 import '../models/enums.dart';
 import '../models/lineup.dart';
@@ -1450,6 +1452,33 @@ class CoachRepository {
     await db.delete('prep_plans', where: 'id = ?', whereArgs: [id]);
     _syncDelete('prep_plans', {'id': id});
   }
+
+  // ------------------------------------------------- Statistik-Baukasten
+  Future<List<StatGroup>> getStatGroups() async {
+    final db = await _db;
+    final rows = await db.query('stat_groups', orderBy: 'name COLLATE NOCASE');
+    return [for (final r in rows) ?StatGroup.fromRow(r)];
+  }
+
+  Future<void> upsertStatGroup(StatGroup g) =>
+      _upsertById('stat_groups', g.toRow());
+
+  Future<void> deleteStatGroup(String id) => _deleteById('stat_groups', id);
+
+  Future<List<StatTemplate>> getStatTemplates() async {
+    final db = await _db;
+    final rows = await db.query(
+      'stat_templates',
+      orderBy: 'name COLLATE NOCASE',
+    );
+    return [for (final r in rows) ?StatTemplate.fromRow(r)];
+  }
+
+  Future<void> upsertStatTemplate(StatTemplate t) =>
+      _upsertById('stat_templates', t.toRow());
+
+  Future<void> deleteStatTemplate(String id) =>
+      _deleteById('stat_templates', id);
 
   // ------------------------------------------------------------- Sponsoren
   /// Sponsoren (teamweit) – Haupt-Sponsor zuerst, dann nach Reihenfolge.

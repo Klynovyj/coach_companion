@@ -6,6 +6,8 @@ import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 import 'package:uuid/uuid.dart';
 
 import '../data/coach_repository.dart';
+import '../models/stat_group.dart';
+import '../models/stat_template.dart';
 import '../models/activity.dart';
 import '../models/inbox_message.dart';
 import '../models/exercise.dart';
@@ -142,6 +144,9 @@ class AppState extends ChangeNotifier {
     'exercises',
     'training_sessions',
     'session_items',
+    // Statistik-Baukasten: eigene Gruppen + gespeicherte Vorlagen.
+    'stat_groups',
+    'stat_templates',
     // Persönlicher Posteingang: Pull liefert dank RLS nur die eigenen Zeilen.
     'inbox',
     // Nach den Ereignissen (siehe _pullEventsFromCloud), damit die
@@ -5033,6 +5038,56 @@ class AppState extends ChangeNotifier {
 
   Future<void> deletePrepPlan(String id) async {
     await _repo.deletePrepPlan(id);
+    notifyListeners();
+  }
+
+  // ------------------------------------------------- Statistik-Baukasten
+  Future<List<StatGroup>> statGroups() => _repo.getStatGroups();
+
+  /// Legt eine Gruppe an bzw. speichert sie (neue id, wenn [id] fehlt).
+  Future<StatGroup> saveStatGroup({
+    String? id,
+    required String name,
+    required List<String> playerIds,
+  }) async {
+    final g = StatGroup(
+      id: id ?? _uuid.v4(),
+      name: name,
+      playerIds: playerIds,
+      createdBy: CloudService.userId,
+      updatedAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    await _repo.upsertStatGroup(g);
+    notifyListeners();
+    return g;
+  }
+
+  Future<void> deleteStatGroup(String id) async {
+    await _repo.deleteStatGroup(id);
+    notifyListeners();
+  }
+
+  Future<List<StatTemplate>> statTemplates() => _repo.getStatTemplates();
+
+  Future<StatTemplate> saveStatTemplate({
+    String? id,
+    required String name,
+    required Map<String, dynamic> config,
+  }) async {
+    final t = StatTemplate(
+      id: id ?? _uuid.v4(),
+      name: name,
+      config: config,
+      createdBy: CloudService.userId,
+      updatedAt: DateTime.now().toUtc().toIso8601String(),
+    );
+    await _repo.upsertStatTemplate(t);
+    notifyListeners();
+    return t;
+  }
+
+  Future<void> deleteStatTemplate(String id) async {
+    await _repo.deleteStatTemplate(id);
     notifyListeners();
   }
 

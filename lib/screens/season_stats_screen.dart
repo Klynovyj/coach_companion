@@ -8,6 +8,7 @@ import '../models/enums.dart';
 import '../models/match_event.dart';
 import '../models/team.dart';
 import '../services/share_service.dart';
+import '../services/stats_engine.dart';
 import '../state/app_state.dart';
 import '../widgets/stat_compare_row.dart';
 import '../widgets/team_logo.dart';
@@ -28,34 +29,8 @@ class SeasonStatsScreen extends StatefulWidget {
 class _SeasonStatsScreenState extends State<SeasonStatsScreen> {
   static const _oppColor = Color(0xFFB26A00);
 
-  // Aktionen (Label → Ereignistypen) – wie im Spiel-Dashboard.
-  static const _rows = <(String, Set<MatchEventType>)>[
-    ('Tore', {MatchEventType.goal, MatchEventType.penalty}),
-    ('Eigentore', {MatchEventType.ownGoal}),
-    ('Schüsse', {MatchEventType.shot}),
-    ('Distanzschüsse', {MatchEventType.longShot}),
-    ('Kopfbälle', {MatchEventType.header}),
-    ('Großchancen', {MatchEventType.bigChance}),
-    (
-      'Elfmeter',
-      {
-        MatchEventType.penalty,
-        MatchEventType.penaltyMissed,
-        MatchEventType.penaltySaved,
-      },
-    ),
-    ('Ecken', {MatchEventType.corner}),
-    ('Freistöße', {MatchEventType.freeKick}),
-    ('Fouls', {MatchEventType.foul}),
-    ('Gelbe Karten', {MatchEventType.yellowCard}),
-    ('Gelb-Rote Karten', {MatchEventType.secondYellow}),
-    ('Rote Karten', {MatchEventType.redCard}),
-    ('Paraden', {MatchEventType.save}),
-    ('Meckern', {MatchEventType.meckern}),
-    ('Behandlungen', {MatchEventType.injury}),
-    ('Verletzt raus', {MatchEventType.injuredOff}),
-    ('Wechsel', {MatchEventType.substitution}),
-  ];
+  // Aktionen (Label → Ereignistypen) – gemeinsam mit dem Baukasten.
+  static const _rows = kStatActionRows;
 
   final GlobalKey _statsKey = GlobalKey();
   List<MatchEvent> _events = [];

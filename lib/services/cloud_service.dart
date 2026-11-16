@@ -709,6 +709,8 @@ class CloudService {
     'player_absences',
     'sponsors',
     'prep_plans',
+    'stat_groups',
+    'stat_templates',
     'graphic_settings',
     'graphic_presets',
     'match_ratings',

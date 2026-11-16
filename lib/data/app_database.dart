@@ -22,7 +22,7 @@ class AppDatabase {
   Database? _db;
 
   static const _dbName = 'coach_companion.db';
-  static const _dbVersion = 71;
+  static const _dbVersion = 72;
 
   Future<Database> get database async {
     if (_db != null) return _db!;
@@ -578,6 +578,11 @@ class AppDatabase {
         'ALTER TABLE graphic_settings ADD COLUMN bg_pattern REAL',
       );
     }
+    // v71 -> v72: Statistik-Baukasten – eigene Gruppen + Vorlagen (teamweit).
+    if (oldV < 72) {
+      await db.execute(_statGroupsTableSql);
+      await db.execute(_statTemplatesTableSql);
+    }
     // v7 -> v8: Spieler-Notizen, Mannschafts-Termine + Teilnahme.
     if (oldV < 8) {
       await db.execute(_playerNotesTableSql);
@@ -621,6 +626,28 @@ class AppDatabase {
       CREATE TABLE prep_plans (
         id TEXT PRIMARY KEY,
         data TEXT NOT NULL,
+        updated_at TEXT
+      )
+    ''';
+
+  // Statistik-Baukasten: eigene Spieler-Gruppen und gespeicherte Vorlagen.
+  // Team-weit geteilt; lokal ohne team_id (die Cloud-Zeile bekommt es).
+  static const _statGroupsTableSql = '''
+      CREATE TABLE stat_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        player_ids TEXT NOT NULL,
+        created_by TEXT,
+        updated_at TEXT
+      )
+    ''';
+
+  static const _statTemplatesTableSql = '''
+      CREATE TABLE stat_templates (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        config TEXT NOT NULL,
+        created_by TEXT,
         updated_at TEXT
       )
     ''';
@@ -1222,6 +1249,8 @@ class AppDatabase {
     await _addDesignerColumns(db);
     await db.execute('ALTER TABLE announcement_designs ADD COLUMN folder TEXT');
     await db.execute(_prepPlansTableSql);
+    await db.execute(_statGroupsTableSql);
+    await db.execute(_statTemplatesTableSql);
 
     await db.execute('''
       CREATE TABLE settings (

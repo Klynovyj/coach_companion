@@ -7,6 +7,7 @@ import 'club_stats_screen.dart';
 import 'on_pitch_stats_screen.dart';
 import 'rating_overview_screen.dart';
 import 'season_stats_screen.dart';
+import 'stats_builder_screen.dart';
 import 'stats_screen.dart';
 
 /// Zentrale Statistik-Seite: alle Statistiken in einem Ort, als Reiter.
@@ -24,7 +25,7 @@ class StatisticsHubScreen extends StatefulWidget {
 class _StatisticsHubScreenState extends State<StatisticsHubScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab = TabController(
-    length: 6,
+    length: 7,
     vsync: this,
     initialIndex: widget.initialTab,
   );
@@ -66,6 +67,7 @@ class _StatisticsHubScreenState extends State<StatisticsHubScreen>
             Tab(text: 'Noten'),
             Tab(text: 'Karten'),
             Tab(text: 'Auf dem Feld'),
+            Tab(text: 'Baukasten'),
           ],
         ),
       ),
@@ -94,6 +96,9 @@ class _StatisticsHubScreenState extends State<StatisticsHubScreen>
                 const CardsSuspensionsScreen(embedded: true),
                 _visited.contains(5)
                     ? const OnPitchStatsScreen()
+                    : const SizedBox.shrink(),
+                _visited.contains(6)
+                    ? const StatsBuilderScreen()
                     : const SizedBox.shrink(),
               ],
             ),
