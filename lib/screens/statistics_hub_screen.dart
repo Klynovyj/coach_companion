@@ -4,12 +4,13 @@ import 'package:provider/provider.dart';
 import '../state/app_state.dart';
 import 'cards_suspensions_screen.dart';
 import 'club_stats_screen.dart';
+import 'on_pitch_stats_screen.dart';
 import 'rating_overview_screen.dart';
 import 'season_stats_screen.dart';
 import 'stats_screen.dart';
 
 /// Zentrale Statistik-Seite: alle Statistiken in einem Ort, als Reiter.
-/// Team · Spieler · Verein · Noten · Karten. Der Verein-Reiter (FuPa-Laufbahn
+/// Team · Spieler · Verein · Noten · Karten · Auf dem Feld. Der Verein-Reiter (FuPa-Laufbahn
 /// aller Spieler, Netzwerk) wird erst beim ersten Öffnen geladen.
 class StatisticsHubScreen extends StatefulWidget {
   const StatisticsHubScreen({super.key, this.initialTab = 0});
@@ -23,7 +24,7 @@ class StatisticsHubScreen extends StatefulWidget {
 class _StatisticsHubScreenState extends State<StatisticsHubScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tab = TabController(
-    length: 5,
+    length: 6,
     vsync: this,
     initialIndex: widget.initialTab,
   );
@@ -64,6 +65,7 @@ class _StatisticsHubScreenState extends State<StatisticsHubScreen>
             Tab(text: 'Verein'),
             Tab(text: 'Noten'),
             Tab(text: 'Karten'),
+            Tab(text: 'Auf dem Feld'),
           ],
         ),
       ),
@@ -90,6 +92,9 @@ class _StatisticsHubScreenState extends State<StatisticsHubScreen>
                     : const _LoadOnOpen(),
                 const RatingOverviewScreen(embedded: true),
                 const CardsSuspensionsScreen(embedded: true),
+                _visited.contains(5)
+                    ? const OnPitchStatsScreen()
+                    : const SizedBox.shrink(),
               ],
             ),
     );
