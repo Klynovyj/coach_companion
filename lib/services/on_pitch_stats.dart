@@ -31,9 +31,13 @@ class OnPitchMatch {
     required this.minutes,
     required this.missingFor,
     required this.missingAgainst,
+    this.length = 90,
   });
 
   final GameMatch match;
+
+  /// Spieldauer in Minuten (Abpfiff-Marke, sonst mind. 90).
+  final int length;
   final List<OnPitchGoal> goals;
 
   /// Gespielte Minuten je eigenem Spieler (nur wer auf dem Feld war).
@@ -44,6 +48,21 @@ class OnPitchMatch {
   final int missingAgainst;
 
   bool played(String playerId) => minutes.containsKey(playerId);
+
+  /// Tore/Gegentore mit bzw. ohne [playerId] auf dem Feld:
+  /// (mitTore, mitGegentore, ohneTore, ohneGegentore).
+  (int, int, int, int) split(String playerId) {
+    var wf = 0, wa = 0, of = 0, oa = 0;
+    for (final g in goals) {
+      final on = g.onPitch.contains(playerId);
+      if (g.forUs) {
+        on ? wf++ : of++;
+      } else {
+        on ? wa++ : oa++;
+      }
+    }
+    return (wf, wa, of, oa);
+  }
 }
 
 /// Bilanz eines Spielers über mehrere Spiele.
@@ -53,9 +72,24 @@ class OnPitchSummary {
     required this.minutes,
     required this.goalsFor,
     required this.goalsAgainst,
+    this.withoutMinutes = 0,
+    this.withoutFor = 0,
+    this.withoutAgainst = 0,
   });
 
   final int games;
+
+  /// Spielzeit, Tore und Gegentore der ausgewerteten Spiele, in denen der
+  /// Spieler NICHT auf dem Feld stand (auch Spiele ohne Einsatz).
+  final int withoutMinutes;
+  final int withoutFor;
+  final int withoutAgainst;
+
+  int get withoutDiff => withoutFor - withoutAgainst;
+  double? get withoutForPer90 =>
+      withoutMinutes > 0 ? withoutFor * 90 / withoutMinutes : null;
+  double? get withoutAgainstPer90 =>
+      withoutMinutes > 0 ? withoutAgainst * 90 / withoutMinutes : null;
   final int minutes;
   final int goalsFor;
   final int goalsAgainst;
@@ -154,29 +188,32 @@ OnPitchMatch analyzeOnPitch(
     minutes: minutes,
     missingFor: (match.ownScore - gFor).clamp(0, 99),
     missingAgainst: (match.opponentScore - gAgainst).clamp(0, 99),
+    length: end,
   );
 }
 
 /// Bilanz eines Spielers über die ausgewerteten Spiele.
 OnPitchSummary summarizeOnPitch(String playerId, List<OnPitchMatch> matches) {
   var games = 0, minutes = 0, gf = 0, ga = 0;
+  var total = 0, of = 0, oa = 0;
   for (final m in matches) {
+    total += m.length;
+    final (wf, wa, nf, na) = m.split(playerId);
+    gf += wf;
+    ga += wa;
+    of += nf;
+    oa += na;
     if (!m.played(playerId)) continue;
     games++;
     minutes += m.minutes[playerId] ?? 0;
-    for (final g in m.goals) {
-      if (!g.onPitch.contains(playerId)) continue;
-      if (g.forUs) {
-        gf++;
-      } else {
-        ga++;
-      }
-    }
   }
   return OnPitchSummary(
     games: games,
     minutes: minutes,
     goalsFor: gf,
     goalsAgainst: ga,
+    withoutMinutes: (total - minutes).clamp(0, total),
+    withoutFor: of,
+    withoutAgainst: oa,
   );
 }

@@ -141,5 +141,16 @@ void main() {
     expect(d.goalsAgainst, 1);
     expect(d.diff, -1);
     expect(summarizeOnPitch('zz', [r]).games, 0);
+    // Ohne ihn: b war beim Gegentor schon draussen, d beim Tor noch nicht drin.
+    expect(b.withoutFor, 0);
+    expect(b.withoutAgainst, 1);
+    expect(b.withoutMinutes, 45);
+    expect(b.withoutAgainstPer90, 2.0);
+    expect(d.withoutFor, 1);
+    expect(d.withoutAgainst, 0);
+    expect(d.withoutMinutes, 45);
+    expect(r.split('d'), (0, 1, 1, 0));
+    final z = summarizeOnPitch('zz', [r]);
+    expect((z.withoutFor, z.withoutAgainst, z.withoutMinutes), (1, 1, 90));
   });
 }

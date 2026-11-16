@@ -296,87 +296,133 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
   Widget _playerCard(Player p) {
     final s = summarizeOnPitch(p.id, _matches);
     final hint = Theme.of(context).hintColor;
-    final diffColor = s.diff > 0
-        ? _green
-        : s.diff < 0
-        ? _red
-        : hint;
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          tilePadding: const EdgeInsets.fromLTRB(12, 6, 8, 6),
-          childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-          leading: PlayerAvatar(player: p, radius: 22),
-          title: Text(
-            p.displayName,
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: s.games == 0
-                ? const Text('In keinem ausgewerteten Spiel eingesetzt.')
-                : Column(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+            child: Row(
+              children: [
+                PlayerAvatar(player: p, radius: 20),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          _stat('${s.goalsFor}', 'Tore dabei', _green),
-                          _stat('${s.goalsAgainst}', 'Gegentore', _red),
-                          _stat(
-                            '${s.diff > 0 ? '+' : ''}${s.diff}',
-                            'Bilanz',
-                            diffColor,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 6),
                       Text(
-                        '${s.games} ${s.games == 1 ? 'Spiel' : 'Spiele'} · '
-                        '${s.minutes} Min. · je 90 Min.: '
-                        '${_num(s.forPer90)} Tore · '
-                        '${_num(s.againstPer90)} Gegentore',
+                        p.displayName,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        s.games == 0
+                            ? 'In keinem ausgewerteten Spiel eingesetzt'
+                            : '${s.games} ${s.games == 1 ? 'Spiel' : 'Spiele'}'
+                                  ' · ${s.minutes} Min. mit ihm · '
+                                  '${s.withoutMinutes} Min. ohne ihn',
                         style: TextStyle(fontSize: 12, color: hint),
                       ),
                     ],
                   ),
+                ),
+              ],
+            ),
           ),
-          children: [
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+            child: _compareTable(s),
+          ),
+          Theme(
+            data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              tilePadding: const EdgeInsets.symmetric(horizontal: 12),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              title: Text(
                 'Alle Tore',
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
+                  fontSize: 14,
                   color: Theme.of(context).colorScheme.primary,
                 ),
               ),
+              children: [for (final m in _matches) _matchBlock(m, p.id)],
             ),
-            for (final m in _matches) _matchBlock(m, p.id),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _stat(String value, String label, Color color) => Expanded(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 22,
-            fontWeight: FontWeight.w800,
-            color: color,
+  /// Gegenüberstellung: Tore/Gegentore mit ihm auf dem Feld und ohne ihn
+  /// (absolut und je 90 Minuten).
+  Widget _compareTable(OnPitchSummary s) {
+    final hint = Theme.of(context).hintColor;
+    final head = TextStyle(fontSize: 11, color: hint);
+    Color diffC(int d) => d > 0
+        ? _green
+        : d < 0
+        ? _red
+        : hint;
+    Widget cell(String t, {Color? c, bool bold = false, bool right = true}) =>
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 3),
+          child: Text(
+            t,
+            textAlign: right ? TextAlign.right : TextAlign.left,
+            style: TextStyle(
+              color: c,
+              fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+              fontSize: bold ? 17 : 13,
+            ),
           ),
+        );
+    Widget h(String t) => Text(t, textAlign: TextAlign.right, style: head);
+    TableRow row(String label, int f, int a, double? f90, double? a90) =>
+        TableRow(
+          children: [
+            cell(label, right: false),
+            cell('$f', c: _green, bold: true),
+            cell('$a', c: _red, bold: true),
+            cell(
+              '${f - a > 0 ? '+' : ''}${f - a}',
+              c: diffC(f - a),
+              bold: true,
+            ),
+            cell('${_num(f90)} : ${_num(a90)}', c: hint),
+          ],
+        );
+    return Table(
+      columnWidths: const {
+        0: FlexColumnWidth(1.25),
+        1: FlexColumnWidth(0.8),
+        2: FlexColumnWidth(1.1),
+        3: FlexColumnWidth(0.9),
+        4: FlexColumnWidth(1.4),
+      },
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        TableRow(
+          children: [
+            const SizedBox(),
+            h('Tore'),
+            h('Gegentore'),
+            h('Bilanz'),
+            h('je 90 Min.'),
+          ],
         ),
-        Text(label, style: const TextStyle(fontSize: 12)),
+        row('Mit ihm', s.goalsFor, s.goalsAgainst, s.forPer90, s.againstPer90),
+        row(
+          'Ohne ihn',
+          s.withoutFor,
+          s.withoutAgainst,
+          s.withoutForPer90,
+          s.withoutAgainstPer90,
+        ),
       ],
-    ),
-  );
+    );
+  }
 
   Widget _matchBlock(OnPitchMatch m, String playerId) {
     final hint = Theme.of(context).hintColor;
@@ -405,6 +451,16 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
               ),
             ],
           ),
+          if (m.goals.isNotEmpty)
+            Builder(
+              builder: (_) {
+                final (wf, wa, of, oa) = m.split(playerId);
+                return Text(
+                  'Mit ihm $wf:$wa · ohne ihn $of:$oa',
+                  style: TextStyle(fontSize: 12, color: hint),
+                );
+              },
+            ),
           if (m.goals.isEmpty)
             Text('Keine Tore erfasst.', style: TextStyle(color: hint)),
           for (final g in m.goals) _goalRow(g, playerId, played),
