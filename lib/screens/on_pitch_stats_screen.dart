@@ -1,4 +1,8 @@
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -7,8 +11,10 @@ import '../models/enums.dart';
 import '../models/match_event.dart';
 import '../models/player.dart';
 import '../services/on_pitch_stats.dart';
+import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/player_avatar.dart';
+import '../widgets/team_logo.dart';
 
 /// Statistik „Auf dem Feld": Spieler auswählen und sehen, ob sie bei unseren
 /// Toren bzw. Gegentoren auf dem Platz standen. Grundlage: Startelf der
@@ -25,7 +31,10 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
   static const _red = Color(0xFFC62828);
 
   bool _loading = true;
+  bool _sharing = false;
   String? _teamId;
+  String _teamName = '';
+  String? _teamLogo;
   List<Player> _squad = [];
   Map<String, Player> _byId = {};
   List<OnPitchMatch> _matches = [];
@@ -88,6 +97,8 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
       });
     setState(() {
       _teamId = team.id;
+      _teamName = team.name;
+      _teamLogo = team.logoPath;
       _squad = squad;
       _byId = {for (final p in players) p.id: p};
       _matches = analyzed;
@@ -231,6 +242,18 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
                 icon: const Icon(Icons.person_search, size: 18),
                 label: const Text('Spieler auswählen'),
               ),
+              if (_selected.isNotEmpty && _matches.isNotEmpty)
+                OutlinedButton.icon(
+                  onPressed: _sharing ? null : _share,
+                  icon: _sharing
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.ios_share, size: 18),
+                  label: const Text('Als Bild teilen'),
+                ),
               for (final id in _selected)
                 InputChip(
                   avatar: _byId[id] == null
@@ -293,9 +316,46 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
     );
   }
 
+  /// Kopf (Foto, Name, Minuten) + Gegenüberstellung mit/ohne – für die
+  /// Karte im Reiter und fürs Teilen-Bild.
+  Widget _summaryBlock(Player p, OnPitchSummary s) {
+    final hint = Theme.of(context).hintColor;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            PlayerAvatar(player: p, radius: 20),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    p.displayName,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Text(
+                    s.games == 0
+                        ? 'In keinem ausgewerteten Spiel eingesetzt'
+                        : '${s.games} ${s.games == 1 ? 'Spiel' : 'Spiele'}'
+                              ' · ${s.minutes} Min. mit ihm · '
+                              '${s.withoutMinutes} Min. ohne ihn',
+                    style: TextStyle(fontSize: 12, color: hint),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        _compareTable(s),
+      ],
+    );
+  }
+
   Widget _playerCard(Player p) {
     final s = summarizeOnPitch(p.id, _matches);
-    final hint = Theme.of(context).hintColor;
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
       clipBehavior: Clip.antiAlias,
@@ -303,36 +363,8 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
-            child: Row(
-              children: [
-                PlayerAvatar(player: p, radius: 20),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        p.displayName,
-                        style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                      Text(
-                        s.games == 0
-                            ? 'In keinem ausgewerteten Spiel eingesetzt'
-                            : '${s.games} ${s.games == 1 ? 'Spiel' : 'Spiele'}'
-                                  ' · ${s.minutes} Min. mit ihm · '
-                                  '${s.withoutMinutes} Min. ohne ihn',
-                        style: TextStyle(fontSize: 12, color: hint),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-            child: _compareTable(s),
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            child: _summaryBlock(p, s),
           ),
           Theme(
             data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
@@ -353,6 +385,160 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
         ],
       ),
     );
+  }
+
+  // ------------------------------------------------------------ Teilen
+  /// Zeitraum der ausgewerteten Spiele, z. B. „25.10.–15.11.2026".
+  String _rangeLabel() {
+    final dates = [
+      for (final m in _matches)
+        if (m.match.kickoff != null) m.match.kickoff!,
+    ]..sort();
+    if (dates.isEmpty) return '';
+    final a = DateFormat('dd.MM.').format(dates.first);
+    final b = DateFormat('dd.MM.yyyy').format(dates.last);
+    return dates.length == 1 ? b : '$a–$b';
+  }
+
+  /// Bild aller gewählten Spieler (Kopf + Gegenüberstellung) zum Teilen.
+  Widget _shareImage() {
+    final scheme = Theme.of(context).colorScheme;
+    final hint = Theme.of(context).hintColor;
+    final range = _rangeLabel();
+    return Container(
+      width: 420,
+      color: scheme.surface,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            color: scheme.primary,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Row(
+              children: [
+                if (_teamLogo != null) ...[
+                  TeamLogo(logoPath: _teamLogo, size: 40),
+                  const SizedBox(width: 12),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Auf dem Feld',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      Text(
+                        'Tore & Gegentore mit und ohne Spieler · $_teamName',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final id in _selected)
+                  if (_byId[id] != null)
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
+                        child: _summaryBlock(
+                          _byId[id]!,
+                          summarizeOnPitch(id, _matches),
+                        ),
+                      ),
+                    ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: Text(
+              'Ausgewertet: ${_matches.length} '
+              '${_matches.length == 1 ? 'Spiel' : 'Spiele'}'
+              '${range.isEmpty ? '' : ' ($range)'} · '
+              'Startelf + erfasste Wechsel und Tore',
+              style: TextStyle(fontSize: 11, color: hint),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _share() async {
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _sharing = true);
+    try {
+      final bytes = await _captureOffscreen(_shareImage());
+      if (bytes == null) return;
+      final names = [
+        for (final id in _selected)
+          if (_byId[id] != null) _byId[id]!.lastName,
+      ];
+      final path = await shareOrSaveImage(
+        bytes,
+        'Auf_dem_Feld_${names.take(3).join('_')}',
+        text: 'Auf dem Feld – ${names.join(', ')}',
+      );
+      if (path != null && mounted) {
+        messenger.showSnackBar(
+          SnackBar(content: Text('Als Bild gespeichert:\n$path')),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  /// Rendert [child] unsichtbar (off-screen) und gibt ein PNG davon zurück.
+  Future<Uint8List?> _captureOffscreen(Widget child) async {
+    final key = GlobalKey();
+    final overlay = Overlay.of(context);
+    final entry = OverlayEntry(
+      builder: (_) => Positioned(
+        left: -4000,
+        top: 0,
+        child: Material(
+          type: MaterialType.transparency,
+          child: RepaintBoundary(key: key, child: child),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+    try {
+      await WidgetsBinding.instance.endOfFrame;
+      // Kurz warten, damit Fotos/Logo (Image.memory) dekodiert und gemalt sind.
+      await Future.delayed(const Duration(milliseconds: 250));
+      final boundary =
+          key.currentContext?.findRenderObject() as RenderRepaintBoundary?;
+      if (boundary == null) return null;
+      final image = await boundary.toImage(pixelRatio: 3);
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      return data?.buffer.asUint8List();
+    } finally {
+      entry.remove();
+    }
   }
 
   /// Gegenüberstellung: Tore/Gegentore mit ihm auf dem Feld und ohne ihn
