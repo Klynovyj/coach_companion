@@ -188,6 +188,7 @@ class CloudService {
     required String kind,
     required String format,
     required int seconds,
+    String? note,
   }) async {
     final res = await _c.functions.invoke(
       provider == 'gemini' ? 'ai-image' : 'ai-coach',
@@ -198,6 +199,7 @@ class CloudService {
         'kind': kind,
         'format': format,
         'seconds': seconds,
+        'note': ?note,
         // ai-image verlangt sonst einen Wunsch-Text.
         'prompt': 'animation',
       },

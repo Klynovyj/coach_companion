@@ -6686,9 +6686,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   }
 
   /// „Mit KI animieren": KI wählt je Element Effekt/Zeit/Zähler.
-  Future<bool> _aiAnimate({bool play = true}) async {
-    final els = _animElements();
-    if (els.isEmpty || _aiBusy) return false;
+  Future<bool> _aiAnimate({
+    bool play = true,
+    Set<String>? ids,
+    bool withBg = true,
+  }) async {
+    final els = [
+      for (final e in _animElements())
+        if (ids == null || ids.contains(e.id)) e,
+    ];
+    if (_aiBusy || (els.isEmpty && !withBg)) return false;
     final messenger = ScaffoldMessenger.of(context);
     _stopAnim();
     setState(() {
@@ -6717,14 +6724,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         kind: _kind,
         format: _format,
         seconds: _anim.seconds,
+        note: ids == null
+            ? null
+            : 'Der Trainer hat diese Elemente gezielt ausgewaehlt: animiere '
+                  'JEDES uebergebene Element. Hintergrund bewegen: '
+                  '${withBg ? 'ja' : 'nein (bg = none)'}.',
       );
       if (res == null) throw Exception('Keine Antwort der KI');
-      final a = GraphicAnim.fromJson(
-        res,
-        ids: {for (final e in els) e.id},
-        seconds: _anim.seconds,
-      )..preset = 'ai';
+      final picked = {for (final e in els) e.id};
+      final ai = GraphicAnim.fromJson(res, ids: picked, seconds: _anim.seconds);
       if (!mounted) return false;
+      final a = mergeAnim(_anim, ai, picked, withBg: withBg);
       setState(() => _animF[_designKey] = a);
       if (play) _playAnim();
       return true;
@@ -6991,7 +7001,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   /// „Alles mit KI": KI animiert die Elemente, erzeugt den bewegten
   /// Hintergrund und erstellt danach direkt das Video zum Teilen.
-  Future<void> _aiAll() async {
+  Future<void> _aiAll({Set<String>? ids, bool withBg = true}) async {
     final app = context.read<AppState>();
     final withVideo = VideoEncoder.isSupported && app.canAiImage;
     if (withVideo) {
@@ -6999,10 +7009,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Alles mit KI'),
-          content: const Text(
-            'Die KI animiert alle Elemente, erzeugt einen bewegten Hintergrund '
-            '(Google-Guthaben, meist 1–3 Minuten) und macht daraus das Video '
-            'zum Teilen. Schrift und Logos bleiben gestochen scharf.',
+          content: Text(
+            withBg
+                ? 'Die KI animiert die gewählten Elemente, erzeugt einen '
+                      'bewegten Hintergrund (Google-Guthaben, meist 1–3 '
+                      'Minuten) und macht daraus das Video zum Teilen. Schrift '
+                      'und Logos bleiben gestochen scharf.'
+                : 'Die KI animiert die gewählten Elemente und macht daraus '
+                      'das Video zum Teilen.',
           ),
           actions: [
             TextButton(
@@ -7018,11 +7032,196 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       );
       if (ok != true || !mounted) return;
     }
-    if (!await _aiAnimate(play: !withVideo)) return;
+    if (!await _aiAnimate(play: !withVideo, ids: ids, withBg: withBg)) return;
     if (!withVideo || !mounted) return;
-    if (!await _aiVideo(full: false)) return;
+    if (withBg && !await _aiVideo(full: false)) return;
     if (!mounted) return;
     await _exportVideo();
+  }
+
+  // ------------------------------------- KI: Elemente gezielt auswählen
+  /// Auswahlmodus „Elemente für die KI antippen" (null = aus).
+  Set<String>? _aiPick;
+  bool _aiPickBg = true;
+  String _aiPickAction = 'effects'; // 'effects' | 'all'
+  final Map<String, Set<String>> _aiPickLastF = {};
+  final GlobalKey _aiPickKey = GlobalKey();
+  Map<String, Rect> _aiPickRects = {};
+
+  /// Auswählbare Elemente, oberstes zuerst (für das Antippen).
+  List<String> _aiPickCandidates() {
+    final ids = {for (final e in _animElements()) e.id};
+    return [
+      for (final id in _posterOrder.reversed)
+        if (ids.contains(id)) id,
+      for (final id in _kStdOrder)
+        if (ids.contains(id)) id,
+    ];
+  }
+
+  void _startAiPick(String action) {
+    _stopAnim();
+    final all = {for (final e in _animElements()) e.id};
+    final last = _aiPickLastF[_designKey];
+    setState(() {
+      _posterSel = null;
+      _aiPickAction = action;
+      _aiPick = last == null ? all : last.intersection(all);
+      _aiPickRects = {};
+    });
+  }
+
+  void _endAiPick() => setState(() {
+    _aiPick = null;
+    _aiPickRects = {};
+  });
+
+  void _runAiPick() {
+    final ids = {...?_aiPick};
+    final bg = _aiPickBg;
+    final action = _aiPickAction;
+    _aiPickLastF[_designKey] = ids;
+    _endAiPick();
+    if (action == 'all') {
+      _aiAll(ids: ids, withBg: bg);
+    } else {
+      _aiAnimate(ids: ids, withBg: bg);
+    }
+  }
+
+  /// Lage der Elemente in der Auswahl-Ebene messen (auch gedreht/skaliert
+  /// und in der verkleinerten Vorschau).
+  void _measureAiPick() {
+    final layer = _aiPickKey.currentContext?.findRenderObject();
+    if (layer is! RenderBox || !layer.attached || !layer.hasSize) return;
+    final rects = <String, Rect>{};
+    for (final id in _aiPickCandidates()) {
+      final c = _stdCtx[id];
+      if (c == null || !c.mounted) continue;
+      final b = c.findRenderObject();
+      if (b is! RenderBox || !b.attached || !b.hasSize) continue;
+      try {
+        rects[id] = MatrixUtils.transformRect(
+          b.getTransformTo(layer),
+          Offset.zero & b.size,
+        );
+      } catch (_) {}
+    }
+    if (!mapEquals(rects, _aiPickRects)) setState(() => _aiPickRects = rects);
+  }
+
+  /// Ebene über der Vorschau: Antippen wählt Elemente für die KI (nichts
+  /// wird verschoben). Liegt außerhalb der Grafik → nie im Export.
+  Widget _aiPickLayer() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _aiPick != null) _measureAiPick();
+    });
+    final pick = _aiPick ?? const <String>{};
+    return Positioned.fill(
+      child: GestureDetector(
+        key: _aiPickKey,
+        behavior: HitTestBehavior.opaque,
+        onTapUp: (d) {
+          final p = d.localPosition;
+          for (final id in _aiPickCandidates()) {
+            final r = _aiPickRects[id];
+            if (r == null || !r.contains(p)) continue;
+            setState(() {
+              final s = _aiPick ?? <String>{};
+              s.contains(id) ? s.remove(id) : s.add(id);
+              _aiPick = s;
+            });
+            return;
+          }
+        },
+        child: Stack(
+          children: [
+            for (final e in _aiPickRects.entries)
+              Positioned.fromRect(
+                rect: e.value.inflate(2),
+                child: IgnorePointer(
+                  child: Container(
+                    alignment: Alignment.topRight,
+                    decoration: BoxDecoration(
+                      color: pick.contains(e.key)
+                          ? Colors.greenAccent.withValues(alpha: 0.12)
+                          : null,
+                      border: Border.all(
+                        color: pick.contains(e.key)
+                            ? Colors.greenAccent
+                            : Colors.white.withValues(alpha: 0.45),
+                        width: pick.contains(e.key) ? 3 : 1,
+                      ),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: pick.contains(e.key)
+                        ? const Icon(
+                            Icons.check_circle,
+                            color: Colors.greenAccent,
+                            size: 20,
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Leiste über der Vorschau im Auswahlmodus.
+  Widget _aiPickBar() {
+    final n = _aiPick?.length ?? 0;
+    final scheme = Theme.of(context).colorScheme;
+    return Material(
+      color: scheme.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'Tippe in der Grafik an, was die KI animieren soll · $n gewählt',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                FilterChip(
+                  label: const Text('Hintergrund'),
+                  selected: _aiPickBg,
+                  onSelected: (v) => setState(() => _aiPickBg = v),
+                ),
+                TextButton(
+                  onPressed: () =>
+                      setState(() => _aiPick = {..._aiPickCandidates()}),
+                  child: const Text('Alle'),
+                ),
+                TextButton(
+                  onPressed: () => setState(() => _aiPick = <String>{}),
+                  child: const Text('Keine'),
+                ),
+                TextButton(
+                  onPressed: _endAiPick,
+                  child: const Text('Abbrechen'),
+                ),
+                FilledButton.icon(
+                  onPressed: n == 0 && !_aiPickBg ? null : _runAiPick,
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('KI animieren'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Fortschritt (Video-Export/KI-Video) über der Vorschau – nicht im Bild.
@@ -7128,7 +7327,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: _aiBusy || _videoBusy ? null : _aiAll,
+              onPressed: _aiBusy || _videoBusy
+                  ? null
+                  : () => _startAiPick('all'),
               icon: const Icon(Icons.auto_awesome),
               label: Text(
                 VideoEncoder.isSupported && canGemini
@@ -7155,7 +7356,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               ],
               Expanded(
                 child: FilledButton.tonalIcon(
-                  onPressed: _aiBusy || _videoBusy ? null : _aiAnimate,
+                  onPressed: _aiBusy || _videoBusy
+                      ? null
+                      : () => _startAiPick('effects'),
                   icon: const Icon(Icons.auto_awesome, size: 18),
                   label: const Text('Nur Effekte'),
                 ),
@@ -8490,6 +8693,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           lockForTap ? IgnorePointer(child: mainGraphic) : mainGraphic,
           if (_aiBusy || _bgBusy) _busyOverlay(_busyText ?? 'Bitte warten …'),
           if (_videoBusy) _videoOverlay(),
+          if (_aiPick != null && !interactive) _aiPickLayer(),
         ],
       ),
     );
@@ -8893,6 +9097,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 ],
               ),
             ),
+          if (_aiPick != null) _aiPickBar(),
           Expanded(
             flex: 3,
             child: Align(

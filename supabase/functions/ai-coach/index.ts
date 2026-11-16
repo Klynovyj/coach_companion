@@ -283,7 +283,9 @@ function buildMessages(body: Record<string, unknown>) {
               `Grafik: ${String(body.kind ?? "")}, Format ` +
               `${body.format === "p" ? "Post 1:1" : "Story 9:16"}, ` +
               `Videolaenge ${Number(body.seconds ?? 8)} s.\n` +
-              `Elemente: ${JSON.stringify(body.elements ?? [])}`,
+              `Elemente: ${JSON.stringify(body.elements ?? [])}` +
+              (body.note ? `
+Hinweis: ${String(body.note)}` : ""),
           },
         ],
       },

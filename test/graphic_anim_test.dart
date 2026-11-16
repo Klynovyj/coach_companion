@@ -88,4 +88,27 @@ void main() {
     expect(ai.items.keys, ['a']);
     expect(ai.items['a']!.start, lessThanOrEqualTo(8));
   });
+
+  test('Gezielte KI-Animation: nur gewählte Elemente ersetzen', () {
+    final base = GraphicAnim(
+      bg: 'pan',
+      items: {
+        'a': ElementAnim(fx: 'fade'),
+        'b': ElementAnim(fx: 'pop'),
+        'c': ElementAnim(fx: 'zoomIn'),
+      },
+    );
+    final ai = GraphicAnim(
+      bg: 'zoom',
+      items: {'a': ElementAnim(fx: 'slideUp', count: 'up')},
+    );
+    final m = mergeAnim(base, ai, {'a', 'b'}, withBg: false);
+    expect(m.items['a']!.fx, 'slideUp');
+    expect(m.items.containsKey('b'), isFalse);
+    expect(m.items['c']!.fx, 'zoomIn');
+    expect(m.bg, 'pan');
+    expect(mergeAnim(base, ai, {'a'}, withBg: true).bg, 'zoom');
+    // Ausgangsobjekt bleibt unverändert.
+    expect(base.items['a']!.fx, 'fade');
+  });
 }

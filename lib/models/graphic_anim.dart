@@ -352,3 +352,26 @@ GraphicAnim applyPreset(
   }
   return a;
 }
+
+/// KI-Ergebnis [ai] gezielt in [base] übernehmen: nur die Elemente [ids]
+/// werden ersetzt (bzw. entfernt, wenn die KI keinen Effekt liefert), alle
+/// anderen bleiben unverändert. Hintergrund nur bei [withBg].
+GraphicAnim mergeAnim(
+  GraphicAnim base,
+  GraphicAnim ai,
+  Set<String> ids, {
+  required bool withBg,
+}) {
+  final out = base.copy();
+  for (final id in ids) {
+    final e = ai.items[id];
+    if (e != null && e.isActive) {
+      out.items[id] = e.copy();
+    } else {
+      out.items.remove(id);
+    }
+  }
+  if (withBg) out.bg = ai.bg;
+  out.preset = 'ai';
+  return out;
+}
