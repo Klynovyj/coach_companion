@@ -37,10 +37,22 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
   String? _teamLogo;
   List<Player> _squad = [];
   Map<String, Player> _byId = {};
-  List<OnPitchMatch> _matches = [];
+
+  /// Alle auswertbaren Spiele (neueste zuerst).
+  List<OnPitchMatch> _allMatches = [];
+
+  /// Abgewählte Spiele (IDs) – neue Spiele sind automatisch ausgewählt.
+  Set<String> _excluded = {};
+
+  /// Die ausgewählten Spiele, auf denen alle Zahlen beruhen.
+  List<OnPitchMatch> get _matches => [
+    for (final m in _allMatches)
+      if (!_excluded.contains(m.match.id)) m,
+  ];
   List<String> _selected = [];
 
   String get _prefKey => 'on_pitch_selected_${_teamId ?? ''}';
+  String get _prefKeyGames => 'on_pitch_excluded_${_teamId ?? ''}';
 
   @override
   void initState() {
@@ -84,9 +96,11 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
       analyzed.add(analyzeOnPitch(m, byMatch[m.id] ?? const [], starters));
     }
     List<String> saved = [];
+    List<String> excluded = [];
     try {
       final prefs = await SharedPreferences.getInstance();
       saved = prefs.getStringList('on_pitch_selected_${team.id}') ?? [];
+      excluded = prefs.getStringList('on_pitch_excluded_${team.id}') ?? [];
     } catch (_) {}
     if (!mounted) return;
     final squad = players.where((p) => !p.isStaffOnly).toList()
@@ -101,7 +115,11 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
       _teamLogo = team.logoPath;
       _squad = squad;
       _byId = {for (final p in players) p.id: p};
-      _matches = analyzed;
+      _allMatches = analyzed;
+      _excluded = {
+        for (final id in excluded)
+          if (analyzed.any((m) => m.match.id == id)) id,
+      };
       _selected = saved.where(_byId.containsKey).toList();
       _loading = false;
     });
@@ -111,7 +129,109 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList(_prefKey, _selected);
+      await prefs.setStringList(_prefKeyGames, _excluded.toList());
     } catch (_) {}
+  }
+
+  String _matchLabel(OnPitchMatch m) {
+    final k = m.match.kickoff;
+    final date = k == null ? '' : '${DateFormat('dd.MM.').format(k)} ';
+    return '$date${m.match.opponentName}';
+  }
+
+  /// Spiele an-/abwählen (wie die Spieler-Auswahl).
+  Future<void> _pickGames() async {
+    final chosen = {
+      for (final m in _allMatches)
+        if (!_excluded.contains(m.match.id)) m.match.id,
+    };
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: 0.7,
+        maxChildSize: 0.95,
+        builder: (ctx, scroll) => StatefulBuilder(
+          builder: (ctx, setSheet) => Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 8, 4),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Spiele auswählen',
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () => setSheet(() {
+                        chosen
+                          ..clear()
+                          ..addAll(_allMatches.map((m) => m.match.id));
+                      }),
+                      child: const Text('Alle'),
+                    ),
+                    TextButton(
+                      onPressed: () => setSheet(chosen.clear),
+                      child: const Text('Keine'),
+                    ),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      child: const Text('Fertig'),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: ListView(
+                  controller: scroll,
+                  children: [
+                    for (final m in _allMatches)
+                      CheckboxListTile(
+                        value: chosen.contains(m.match.id),
+                        onChanged: (v) => setSheet(() {
+                          if (v == true) {
+                            chosen.add(m.match.id);
+                          } else {
+                            chosen.remove(m.match.id);
+                          }
+                        }),
+                        title: Text(_matchLabel(m)),
+                        subtitle: Text(
+                          'Ergebnis ${m.match.ownScore}:${m.match.opponentScore}'
+                          '${m.missingFor + m.missingAgainst > 0 ? ' · ${m.missingFor + m.missingAgainst} Tor(e) nicht erfasst' : ''}',
+                        ),
+                        secondary: Text(
+                          m.match.ownScore > m.match.opponentScore
+                              ? '🟢'
+                              : m.match.ownScore < m.match.opponentScore
+                              ? '🔴'
+                              : '🟡',
+                          style: const TextStyle(fontSize: 18),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _excluded = {
+        for (final m in _allMatches)
+          if (!chosen.contains(m.match.id)) m.match.id,
+      };
+    });
+    await _save();
   }
 
   Future<void> _pick() async {
@@ -242,6 +362,16 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
                 icon: const Icon(Icons.person_search, size: 18),
                 label: const Text('Spieler auswählen'),
               ),
+              if (_allMatches.isNotEmpty)
+                FilledButton.tonalIcon(
+                  onPressed: _pickGames,
+                  icon: const Icon(Icons.event_note, size: 18),
+                  label: Text(
+                    _excluded.isEmpty
+                        ? 'Alle ${_allMatches.length} Spiele'
+                        : 'Spiele ${_matches.length}/${_allMatches.length}',
+                  ),
+                ),
               if (_selected.isNotEmpty && _matches.isNotEmpty)
                 OutlinedButton.icon(
                   onPressed: _sharing ? null : _share,
@@ -265,11 +395,13 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          if (_matches.isEmpty)
+          if (_allMatches.isEmpty)
             _infoCard(
               'Noch keine auswertbaren Spiele. Nötig sind eine Aufstellung '
               '(Startelf) und die Live-Erfassung von Wechseln und Toren.',
             )
+          else if (_matches.isEmpty)
+            _infoCard('Keine Spiele ausgewählt – oben unter „Spiele“ wählen.')
           else if (_selected.isEmpty)
             _infoCard(
               'Wähle oben einen oder mehrere Spieler aus. Für jeden siehst du, '
@@ -301,7 +433,8 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
       children: [
         Text(
           'Ausgewertet: ${_matches.length} '
-          '${_matches.length == 1 ? 'Spiel' : 'Spiele'} '
+          '${_matches.length == 1 ? 'Spiel' : 'Spiele'}'
+          '${_excluded.isEmpty ? '' : ' von ${_allMatches.length}'} '
           '(mit Aufstellung + Live-Erfassung)',
           style: small,
         ),
@@ -472,8 +605,9 @@ class _OnPitchStatsScreenState extends State<OnPitchStatsScreen> {
             child: Text(
               'Ausgewertet: ${_matches.length} '
               '${_matches.length == 1 ? 'Spiel' : 'Spiele'}'
-              '${range.isEmpty ? '' : ' ($range)'} · '
-              'Startelf + erfasste Wechsel und Tore',
+              '${range.isEmpty ? '' : ' ($range)'}'
+              '${_excluded.isEmpty ? '' : ': ${_matches.map((m) => '${m.match.opponentName} ${m.match.ownScore}:${m.match.opponentScore}').join(', ')}'}'
+              ' · Startelf + erfasste Wechsel und Tore',
               style: TextStyle(fontSize: 11, color: hint),
             ),
           ),
