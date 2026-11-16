@@ -1673,9 +1673,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Neue (oder zurückgesetzte) Spielankündigung: Grundposition der Elemente
   /// wie vom Trainer festgelegt (Story: Sponsor oben, SPIELTAG, Datum, Logos;
   /// Post: Logos + SPIELTAG rechts). Bereits gestaltete Formate bleiben.
-  void _seedAnnouncementLayout() {
+  void _seedAnnouncementLayout([String? key]) {
     if (!widget.isAnnouncement || widget.designer != null || _isFupa) return;
-    final k = _designKey;
+    final k = key ?? _designKey;
     final layout = _kAnnouncementLayout[k];
     // Leer gespeichert ({}) = nie verschoben → ebenfalls Grundposition.
     if (layout == null || (_posterPosF[k]?.isNotEmpty ?? false)) return;
@@ -5610,6 +5610,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 apply(() => _posterRot[id] = d * math.pi / 180);
               }, '${rotDeg.round()}°'),
               const SizedBox(height: 4),
+              if (_canCopyFormats) ...[
+                _copyToOtherButton(id, ctx),
+                const SizedBox(height: 4),
+              ],
               if (isStd)
                 OutlinedButton.icon(
                   icon: const Icon(Icons.undo, size: 18),
@@ -5973,6 +5977,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           ),
                         ],
                       ),
+                    if (_canCopyFormats) ...[
+                      const SizedBox(height: 4),
+                      _copyToOtherButton(id, ctx),
+                    ],
                     if (isImage) ...[
                       const SizedBox(height: 4),
                       Row(
@@ -6254,6 +6262,272 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _posterSel = id;
     });
   }
+
+  // ------------------------------------------- Story ↔ Post übernehmen
+  /// Übernehmen zwischen Story und Post möglich (nicht im FuPa-Format).
+  bool get _canCopyFormats => !_isFupa && (_format == 's' || _format == 'p');
+
+  String get _otherFormat => _format == 's' ? 'p' : 's';
+
+  static String _formatName(String k) => k == 's' ? 'Story' : 'Post';
+
+  Size _canvasOf(String k) => k == 's'
+      ? const Size(_storyW, _storyH)
+      : (k == 'f' ? const Size(_fupaW, _fupaH) : const Size(_postW, _postH));
+
+  /// Einpassen der Quell- in die Ziel-Leinwand („contain", mittig): Faktor
+  /// für Größen und Umrechnung relativer Positionen.
+  (double, Offset Function(Offset)) _fitMap(String src, String dst) {
+    final s = _canvasOf(src), d = _canvasOf(dst);
+    final f = math.min(d.width / s.width, d.height / s.height);
+    final ox = (d.width - s.width * f) / 2;
+    final oy = (d.height - s.height * f) / 2;
+    return (
+      f,
+      (Offset rel) => Offset(
+        (rel.dx * s.width * f + ox) / d.width,
+        (rel.dy * s.height * f + oy) / d.height,
+      ),
+    );
+  }
+
+  /// Ziel-Format mit seinen Grundwerten anlegen, bevor etwas hineinkopiert
+  /// wird (sonst fehlten Grundpositionen/Startelf-Vorgaben später).
+  void _prepareFormat(String k) {
+    _seedAnnouncementLayout(k);
+    _posterOrderF.putIfAbsent(
+      k,
+      () => widget.isAnnouncement
+          ? List<String>.from(_kPosterBaseOrder)
+          : <String>[],
+    );
+    if (_kind == 'Startelf') {
+      final off = _stdOffF.putIfAbsent(k, () => {});
+      if (off.isEmpty) off.addAll(_kStartelfOffDefaults[k] ?? const {});
+      final box = _boxSizeF.putIfAbsent(k, () => {});
+      if (box.isEmpty) box.addAll(_kStartelfBoxDefaults[k] ?? const {});
+    }
+  }
+
+  /// Bild-Daten (angezeigtes Bild, Original, Effekte) von [src] nach [dst].
+  void _copyImageData(String id, String src, String dst) {
+    if (id == 'player') {
+      // Ohne Spielerfoto in der Quelle bleibt das Foto im Ziel.
+      if (_posterMainF[src] == null) return;
+      _posterMainF[dst] = _posterMainF[src];
+    } else {
+      final o = (_posterOverlaysF[src] ?? const []).where((o) => o.id == id);
+      if (o.isNotEmpty) {
+        final list = _posterOverlaysF.putIfAbsent(dst, () => []);
+        final i = list.indexWhere((x) => x.id == id);
+        if (i >= 0) {
+          list[i] = o.first;
+        } else {
+          list.add(o.first);
+        }
+      }
+    }
+    final orig = _imgOrigF[src]?[id];
+    if (orig != null) _imgOrigF.putIfAbsent(dst, () => {})[id] = orig;
+    for (final m in [_imgFeatherF, _imgInnerF, _imgRimF]) {
+      final v = m[src]?[id];
+      if (v != null) m.putIfAbsent(dst, () => {})[id] = v;
+    }
+  }
+
+  /// Text-Inhalt und -Stil von [src] nach [dst] (fehlende Werte = Standard).
+  void _copyTextData(String id, String src, String dst) {
+    for (final m in [
+      _textContentF,
+      _textFontF,
+      _textColorF,
+      _textShadowF,
+      _textAlignF,
+    ]) {
+      final v = m[src]?[id];
+      final t = m.putIfAbsent(dst, () => {});
+      if (v == null) {
+        t.remove(id);
+      } else {
+        t[id] = v;
+      }
+    }
+    if (id.startsWith('text_')) {
+      final ids = _textIdsF.putIfAbsent(dst, () => []);
+      if (!ids.contains(id)) ids.add(id);
+    }
+  }
+
+  /// Ist [id] im Format [k] vorhanden (sichtbar)?
+  bool _hasElement(String id, String k) {
+    if (id.startsWith('std_')) return !(_stdHiddenF[k]?.contains(id) ?? false);
+    final inOrder = _posterOrderF[k]?.contains(id) ?? false;
+    if (id == 'player') return inOrder && _posterMainF[k] != null;
+    if (id.startsWith('text_')) {
+      return inOrder && (_textIdsF[k]?.contains(id) ?? false);
+    }
+    if (id.startsWith('overlay_')) {
+      return inOrder && (_posterOverlaysF[k]?.any((o) => o.id == id) ?? false);
+    }
+    return inOrder;
+  }
+
+  /// Element [id] von [src] nach [dst] übernehmen: Inhalt + Stil immer;
+  /// Position/Größe nur, wenn es im Ziel noch nicht vorhanden ist (dann ins
+  /// Ziel eingepasst).
+  void _copyElement(String id, String src, String dst) {
+    _prepareFormat(dst);
+    final existed = _hasElement(id, dst);
+    if (id == 'player' || id.startsWith('overlay_')) {
+      _copyImageData(id, src, dst);
+    }
+    // Texte (eigene, Grundtexte und feste Teile) tragen ihren Stil in den
+    // Text-Maps – für Bild-Elemente sind diese leer.
+    if (!id.startsWith('overlay_') && id != 'player') {
+      _copyTextData(id, src, dst);
+    }
+    if (existed) return;
+    final (f, map) = _fitMap(src, dst);
+    if (id.startsWith('std_')) {
+      _stdHiddenF[dst]?.remove(id);
+      final off = _stdOffF[src]?[id];
+      if (off != null) _stdOffF.putIfAbsent(dst, () => {})[id] = off * f;
+    } else {
+      final order = _posterOrderF[dst]!;
+      if (!order.contains(id)) order.add(id);
+      final pos =
+          _posterPosF[src]?[id] ??
+          _kCenteredItemDefaults[id] ??
+          const Offset(0.5, 0.5);
+      _posterPosF.putIfAbsent(dst, () => {})[id] = map(pos);
+      final centered = _posCenteredF.putIfAbsent(dst, () => <String>{});
+      if (_posCenteredF[src]?.contains(id) ?? false) {
+        centered.add(id);
+      } else {
+        centered.remove(id);
+      }
+    }
+    _posterScaleF.putIfAbsent(dst, () => {})[id] =
+        ((_posterScaleF[src]?[id] ?? 1.0) * f).clamp(0.2, 6.0).toDouble();
+    final rot = _posterRotF[src]?[id];
+    if (rot != null) _posterRotF.putIfAbsent(dst, () => {})[id] = rot;
+    final box = _boxSizeF[src]?[id];
+    if (box != null) _boxSizeF.putIfAbsent(dst, () => {})[id] = box * f;
+  }
+
+  /// Ausgewähltes Element ins andere Format (Story ↔ Post) übernehmen.
+  void _copyElementToOther(String id) {
+    final src = _format, dst = _otherFormat;
+    setState(() => _copyElement(id, src, dst));
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('In ${_formatName(dst)} übernommen'),
+        action: SnackBarAction(
+          label: 'Ansehen',
+          onPressed: () {
+            if (!mounted) return;
+            setState(() {
+              _format = dst;
+              _posterSel = id;
+            });
+            _syncFtCtrl();
+          },
+        ),
+      ),
+    );
+  }
+
+  /// Ganzes Design aus dem anderen Format ins aktuelle übernehmen: Inhalte und
+  /// Stil ersetzen, vorhandene Positionen bleiben, fehlende Elemente kommen
+  /// eingepasst dazu. Ausgeblendetes wird auch hier ausgeblendet.
+  Future<void> _copyDesignFromOther() async {
+    final src = _otherFormat, dst = _format;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Design aus ${_formatName(src)} übernehmen?'),
+        content: Text(
+          'Texte, Bilder und Stil aus ${_formatName(src)} werden in '
+          '${_formatName(dst)} übernommen. Was es in ${_formatName(dst)} schon '
+          'gibt, behält seine Position; neue Elemente werden passend '
+          'eingesetzt.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Übernehmen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(() {
+      _prepareFormat(src);
+      _prepareFormat(dst);
+      final srcOrder = List<String>.from(_posterOrderF[src] ?? const []);
+      // Elemente der Quelle (Ebenen + feste Teile) übernehmen.
+      for (final id in srcOrder) {
+        _copyElement(id, src, dst);
+      }
+      if (!widget.isAnnouncement) {
+        for (final id in _kStdOrder) {
+          if (!(_stdHiddenF[src]?.contains(id) ?? false)) {
+            _copyElement(id, src, dst);
+          }
+        }
+        _stdHiddenF[dst] = {...?_stdHiddenF[src]};
+      }
+      // Ebenen-Reihenfolge wie in der Quelle; nur im Ziel vorhandene eigene
+      // Elemente bleiben oben drauf. In der Quelle ausgeblendete
+      // Grundelemente werden auch im Ziel ausgeblendet.
+      final dstOrder = _posterOrderF[dst]!;
+      final extra = [
+        for (final id in dstOrder)
+          if (!srcOrder.contains(id) && !_kPosterBaseOrder.contains(id)) id,
+      ];
+      _posterOrderF[dst] = [...srcOrder, ...extra];
+      // Formatweite Einstellungen.
+      final look = _lookF[src];
+      if (look == null) {
+        _lookF.remove(dst);
+      } else {
+        final l = _AiLook.fromJson(look.toJson());
+        if (l != null) _lookF[dst] = l;
+      }
+      final grade = _gradeF[src];
+      if (grade != null) _gradeF[dst] = _Grade.fromJson(grade.toJson());
+      if (_aiBgSelF.containsKey(src)) _aiBgSelF[dst] = _aiBgSelF[src];
+      final ft = _ftPhotoF[src];
+      if (ft != null) _ftPhotoF[dst] = ft;
+      final split = _ftSplitF[src];
+      if (split != null) _ftSplitF[dst] = split;
+      _posterSel = null;
+    });
+    _syncFtCtrl();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Design aus ${_formatName(src)} übernommen')),
+    );
+  }
+
+  /// Knopf im Element-Sheet: Element ins andere Format übernehmen.
+  Widget _copyToOtherButton(String id, BuildContext sheetCtx) => SizedBox(
+    width: double.infinity,
+    child: OutlinedButton.icon(
+      icon: const Icon(Icons.copy_all, size: 18),
+      label: Text('In ${_formatName(_otherFormat)} übernehmen'),
+      onPressed: () {
+        Navigator.pop(sheetCtx);
+        _copyElementToOther(id);
+      },
+    ),
+  );
 
   /// Ausgeblendete Grundteile dieses Formats (zum Wieder-Einblenden):
   /// Ergebnis/Startelf = ausgeblendete feste Teile, Ankündigung = aus der
@@ -7798,6 +8072,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                   setState(() => _format = s.first ? 's' : 'p');
                   _syncFtCtrl(); // Foto-Ausschnitt des anderen Formats laden
                 },
+              ),
+            ),
+          if (_editable && _canCopyFormats)
+            Center(
+              child: TextButton.icon(
+                onPressed: _copyDesignFromOther,
+                icon: const Icon(Icons.copy_all, size: 18),
+                label: Text('Aus ${_formatName(_otherFormat)} übernehmen'),
               ),
             ),
           // Ergebnis: Standard oder „Mit Foto" (ENDSTAND, Foto oben).
