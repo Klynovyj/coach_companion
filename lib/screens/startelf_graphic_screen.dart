@@ -6686,9 +6686,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   }
 
   /// „Mit KI animieren": KI wählt je Element Effekt/Zeit/Zähler.
-  Future<void> _aiAnimate() async {
+  Future<bool> _aiAnimate({bool play = true}) async {
     final els = _animElements();
-    if (els.isEmpty || _aiBusy) return;
+    if (els.isEmpty || _aiBusy) return false;
     final messenger = ScaffoldMessenger.of(context);
     _stopAnim();
     setState(() {
@@ -6724,13 +6724,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ids: {for (final e in els) e.id},
         seconds: _anim.seconds,
       )..preset = 'ai';
-      if (!mounted) return;
+      if (!mounted) return false;
       setState(() => _animF[_designKey] = a);
-      _playAnim();
+      if (play) _playAnim();
+      return true;
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('KI-Animation fehlgeschlagen: $e')),
       );
+      return false;
     } finally {
       if (mounted) {
         setState(() {
@@ -6846,9 +6848,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('KI-Video erzeugen'),
-        content: const Text(
-          'Die KI macht aus dem Bild ein bewegtes Video (Hochformat 9:16). '
-          'Das kostet Google-Guthaben und dauert meist 1–3 Minuten.',
+        content: Text(
+          'Die KI macht aus dem Bild ein bewegtes Video. Das kostet '
+          'Google-Guthaben und dauert meist 1–3 Minuten.'
+          '${_format == 'p' ? ' Für den Post wird das Video quadratisch '
+                    'zugeschnitten.' : ''}',
         ),
         actions: [
           TextButton(
@@ -6870,7 +6874,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     await _aiVideo(full: choice == 'full');
   }
 
-  Future<void> _aiVideo({required bool full}) async {
+  Future<bool> _aiVideo({required bool full}) async {
     final messenger = ScaffoldMessenger.of(context);
     _stopAnim();
     setState(() {
@@ -6904,7 +6908,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       final op = start.operation;
       final t0 = DateTime.now();
       while (video == null && op != null) {
-        if (_videoCancel) return;
+        if (_videoCancel) return false;
         final secs = DateTime.now().difference(t0).inSeconds;
         if (secs > 600) throw Exception('Zeitüberschreitung');
         if (mounted) {
@@ -6920,9 +6924,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       );
       await File(path).writeAsBytes(video);
       if (full) {
-        await shareFile(path, text: _kind);
+        // KI liefert Hochformat 9:16 → für den Post quadratisch zuschneiden.
+        final out = _format == 's' ? path : await _cropVideoToFormat(path);
+        if (out == null) return false;
+        await shareFile(out, text: _kind);
       } else {
-        if (!mounted) return;
+        if (!mounted) return false;
         setState(() {
           _aiVideoF[_designKey] = path;
         });
@@ -6935,13 +6942,87 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           ),
         );
       }
+      return true;
     } catch (e) {
       messenger.showSnackBar(
         SnackBar(content: Text('KI-Video fehlgeschlagen: $e')),
       );
+      return false;
     } finally {
       if (mounted) setState(() => _videoBusy = false);
     }
+  }
+
+  /// Video ([src], 9:16) auf das aktuelle Format zuschneiden (mittig, füllend)
+  /// – über den Encoder mit dem Video als Hintergrund und leeren Frames.
+  Future<String?> _cropVideoToFormat(String src) async {
+    const fps = 30;
+    final w = 1080, h = (_ch * 1080 / _cw).round();
+    final path = await appFilePath(
+      'ki_video_${_format}_${DateTime.now().millisecondsSinceEpoch}.mp4',
+      temp: true,
+    );
+    if (!await VideoEncoder.start(
+      path: path,
+      width: w,
+      height: h,
+      fps: fps,
+      bgVideo: src,
+    )) {
+      return null;
+    }
+    final empty = Uint8List(w * h * 4); // komplett transparent
+    final total = _anim.seconds * fps;
+    for (var i = 0; i < total; i++) {
+      if (_videoCancel) {
+        await VideoEncoder.cancel();
+        return null;
+      }
+      await VideoEncoder.frame(empty, i);
+      if (i % 15 == 0 && mounted) {
+        setState(
+          () => _videoStatus =
+              'Video wird zugeschnitten … ${(i * 100 / total).round()} %',
+        );
+      }
+    }
+    return VideoEncoder.finish();
+  }
+
+  /// „Alles mit KI": KI animiert die Elemente, erzeugt den bewegten
+  /// Hintergrund und erstellt danach direkt das Video zum Teilen.
+  Future<void> _aiAll() async {
+    final app = context.read<AppState>();
+    final withVideo = VideoEncoder.isSupported && app.canAiImage;
+    if (withVideo) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Alles mit KI'),
+          content: const Text(
+            'Die KI animiert alle Elemente, erzeugt einen bewegten Hintergrund '
+            '(Google-Guthaben, meist 1–3 Minuten) und macht daraus das Video '
+            'zum Teilen. Schrift und Logos bleiben gestochen scharf.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Los'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+    if (!await _aiAnimate(play: !withVideo)) return;
+    if (!withVideo || !mounted) return;
+    if (!await _aiVideo(full: false)) return;
+    if (!mounted) return;
+    await _exportVideo();
   }
 
   /// Fortschritt (Video-Export/KI-Video) über der Vorschau – nicht im Bild.
@@ -7044,6 +7125,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ),
         const SizedBox(height: 8),
         if (canClaude || canGemini) ...[
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _aiBusy || _videoBusy ? null : _aiAll,
+              icon: const Icon(Icons.auto_awesome),
+              label: Text(
+                VideoEncoder.isSupported && canGemini
+                    ? 'Alles mit KI (animieren + Video)'
+                    : 'Alles mit KI animieren',
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
           Row(
             children: [
               if (canClaude && canGemini) ...[
@@ -7063,7 +7157,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 child: FilledButton.tonalIcon(
                   onPressed: _aiBusy || _videoBusy ? null : _aiAnimate,
                   icon: const Icon(Icons.auto_awesome, size: 18),
-                  label: const Text('Mit KI animieren'),
+                  label: const Text('Nur Effekte'),
                 ),
               ),
             ],
@@ -7085,11 +7179,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton.icon(
-                  onPressed:
-                      VideoEncoder.isSupported &&
-                          _format == 's' &&
-                          !_videoBusy &&
-                          !_aiBusy
+                  onPressed: VideoEncoder.isSupported && !_videoBusy && !_aiBusy
                       ? _askAiVideo
                       : null,
                   icon: const Icon(Icons.movie_creation_outlined, size: 18),
@@ -7125,8 +7215,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     'und KI-Video gibt es in der Android-App.',
           style: hint,
         ),
-        if (canGemini && _format == 'p')
-          Text('KI-Video nur im Format Story (9:16).', style: hint),
       ],
     );
   }
