@@ -16,11 +16,88 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-2.5-flash-image";
+// Grafik-Animation (Modus `anim`): Text-Modell mit JSON-Antwort.
+const TEXT_MODEL = Deno.env.get("GEMINI_TEXT_MODEL") ?? "gemini-2.5-flash";
+// KI-Video (Modi `video_start`/`video_poll`): Bild -> Video (Interactions-API).
+// Veo-3.1-Preview wurde am 22.10.2026 abgeschaltet -> Gemini Omni Flash.
+const VIDEO_MODEL = Deno.env.get("GEMINI_VIDEO_MODEL") ??
+  "gemini-omni-1.2-flash";
+const API = "https://generativelanguage.googleapis.com/v1beta";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 // Feste Leitplanke: die Grafik soll als Ganzes bearbeitet werden, aber die
 // Kern-Infos (Spielstand, Namen, Logos) moeglichst erhalten bleiben.
+const ANIM_SYSTEM = `Du bist Motion-Designer fuer Social-Media-Grafiken eines Fussballvereins
+(Instagram Story/Reel/Post). Du bekommst das Bild der fertigen Grafik und eine
+Liste ihrer Elemente (id, type, text, x/y-Lage 0..1, layer). Lege eine kurze,
+hochwertige Animation fest – wie bei Profi-Vereinen (Bundesliga-Accounts).
+
+Gib AUSSCHLIESSLICH dieses JSON zurueck (keine Erklaerung, kein Markdown):
+{ "bg": "none"|"zoom"|"pan",
+  "items": { "<id>": { "fx": "none"|"fade"|"slideUp"|"slideDown"|"slideLeft"|
+    "slideRight"|"zoomIn"|"pop", "start": Sekunden, "len": Sekunden,
+    "count": "none"|"up"|"roll", "shine": bool, "pulse": bool } } }
+
+Regeln:
+- Verwende NUR ids aus der Liste. Nicht jedes Element braucht einen Effekt.
+- Hintergrund ruhig bewegen ("zoom" fast immer, "pan" fuer Abwechslung).
+- Wichtigstes zuerst (Ueberschrift bzw. Ergebnis), dann gestaffelt mit
+  0,15–0,4 s Abstand, von oben nach unten oder nach Bedeutung. Nicht alles
+  gleichzeitig. Alles soll nach spaetestens ~3 s stehen, danach ruhig bleiben.
+- Logos/Wappen gern "pop", Spielerfoto "slideUp" oder "zoomIn", Texte
+  "fade"/"slideUp", Sponsor dezent "fade".
+- Zahlen (z. B. "100", Jubilaeen, Ergebnis/type "score"): "count" = "up"
+  (hochzaehlen) bzw. bei Ergebnissen "roll" (Zahlen rollen bis zum Endstand),
+  len dafuer 1,2–2 s.
+- Glanz ("shine") sparsam: hoechstens 1 Element (Ueberschrift oder Zahl).
+  Pulsieren ("pulse") hoechstens 1 Element, nur wenn es passt.
+- len meist 0,4–0,8 s (Zaehler laenger). start >= 0 und < Videolaenge - 1.`;
+
+/** Erstes JSON-Objekt aus einem Text (Codefences entfernt). */
+function extractJson(text: string): unknown {
+  let t = text.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const a = t.indexOf("{");
+  const b = t.lastIndexOf("}");
+  if (a >= 0 && b > a) t = t.substring(a, b + 1);
+  return JSON.parse(t);
+}
+
+/** Video (base64) aus einer fertigen Interaction holen – inline oder per
+ *  Datei-URI (dann mit API-Key herunterladen). */
+async function videoOf(inter: Record<string, unknown>): Promise<string | null> {
+  const items: Array<Record<string, unknown>> = [];
+  const steps = Array.isArray(inter.steps) ? inter.steps : [];
+  for (const st of steps) {
+    const c = (st as Record<string, unknown>).content;
+    if (Array.isArray(c)) items.push(...(c as Array<Record<string, unknown>>));
+  }
+  const outs = Array.isArray(inter.outputs) ? inter.outputs : [];
+  items.push(...(outs as Array<Record<string, unknown>>));
+  for (const it of items) {
+    if (it.type !== "video") continue;
+    if (typeof it.data === "string" && it.data) return it.data;
+    if (typeof it.uri === "string" && it.uri) {
+      const u = new URL(it.uri);
+      if (!u.pathname.endsWith(":download")) {
+        u.pathname = u.pathname + ":download";
+        u.searchParams.set("alt", "media");
+      }
+      const r = await fetch(u.toString(), {
+        headers: { "x-goog-api-key": GEMINI_API_KEY },
+      });
+      if (!r.ok) throw new Error("Video-Download: " + r.status);
+      const bytes = new Uint8Array(await r.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) {
+        bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      }
+      return btoa(bin);
+    }
+  }
+  return null;
+}
+
 // Data-URL-Prefix (data:image/...;base64,) abschneiden; liefert mime + data.
 function stripDataUrl(s: string): { mime: string; data: string } {
   const m = s.match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.*)$/s);
@@ -157,6 +234,114 @@ Deno.serve(async (req) => {
     const body = (await req.json()) as Record<string, unknown>;
     const mode = String(body.mode ?? "compose");
     const aspect = String(body.aspect ?? "9:16");
+
+    // ---- Grafik-Animation einstellen (JSON statt Bild)
+    if (mode === "anim") {
+      const s0 = stripDataUrl(String(body.image ?? ""));
+      const r = await fetch(`${API}/models/${TEXT_MODEL}:generateContent`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": GEMINI_API_KEY,
+        },
+        signal: AbortSignal.timeout(90_000),
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: ANIM_SYSTEM }] },
+          contents: [{
+            role: "user",
+            parts: [
+              { inline_data: { mime_type: s0.mime, data: s0.data } },
+              {
+                text: `Grafik: ${String(body.kind ?? "")}, Format ` +
+                  `${body.format === "p" ? "Post 1:1" : "Story 9:16"}, ` +
+                  `Videolaenge ${Number(body.seconds ?? 8)} s.\n` +
+                  `Elemente: ${JSON.stringify(body.elements ?? [])}`,
+              },
+            ],
+          }],
+          generationConfig: { responseMimeType: "application/json" },
+        }),
+      });
+      if (!r.ok) {
+        return new Response("Gemini-Fehler: " + await r.text(), {
+          status: 502,
+        });
+      }
+      const j = await r.json();
+      const parts = (j?.candidates?.[0]?.content?.parts ?? []) as Array<
+        Record<string, unknown>
+      >;
+      const text = parts.map((p) => String(p.text ?? "")).join("\n");
+      return Response.json({ anim: extractJson(text) });
+    }
+
+    // ---- KI-Video: Bild → Video (Gemini Omni Flash, Interactions-API)
+    if (mode === "video_start") {
+      const s0 = stripDataUrl(String(body.image ?? ""));
+      const secs = Math.min(15, Math.max(3, Number(body.seconds ?? 8)));
+      const payload = (background: boolean) => ({
+        model: VIDEO_MODEL,
+        input: [
+          { type: "image", data: s0.data, mime_type: s0.mime },
+          { type: "text", text: String(body.prompt ?? "") },
+        ],
+        response_format: {
+          type: "video",
+          aspect_ratio: "9:16",
+          duration: `${Math.round(secs)}s`,
+          resolution: "720p",
+        },
+        ...(background ? { background: true } : {}),
+      });
+      const send = (background: boolean) =>
+        fetch(`${API}/interactions`, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-goog-api-key": GEMINI_API_KEY,
+          },
+          signal: AbortSignal.timeout(140_000),
+          body: JSON.stringify(payload(background)),
+        });
+      // Bevorzugt im Hintergrund (die App fragt nach); kennt die API das Feld
+      // nicht, synchron warten.
+      let r = await send(true);
+      if (r.status === 400) r = await send(false);
+      if (!r.ok) {
+        return new Response("Video-Fehler: " + await r.text(), {
+          status: 502,
+        });
+      }
+      const inter = (await r.json()) as Record<string, unknown>;
+      if (inter.status === "failed") {
+        return new Response("Video fehlgeschlagen", { status: 502 });
+      }
+      const video = inter.status === "completed" ? await videoOf(inter) : null;
+      if (video) return Response.json({ done: true, video });
+      return Response.json({ done: false, operation: String(inter.id ?? "") });
+    }
+    if (mode === "video_poll") {
+      const id = String(body.operation ?? "");
+      if (!/^[A-Za-z0-9_.-]+$/.test(id)) {
+        return new Response("operation fehlt", { status: 400 });
+      }
+      const r = await fetch(`${API}/interactions/${id}`, {
+        headers: { "x-goog-api-key": GEMINI_API_KEY },
+      });
+      if (!r.ok) {
+        return new Response("Video-Status: " + await r.text(), {
+          status: 502,
+        });
+      }
+      const inter = (await r.json()) as Record<string, unknown>;
+      if (inter.status === "failed" || inter.status === "cancelled") {
+        return new Response("Video fehlgeschlagen", { status: 502 });
+      }
+      if (inter.status !== "completed") return Response.json({ done: false });
+      const video = await videoOf(inter);
+      if (!video) return new Response("Kein Video erhalten", { status: 502 });
+      return Response.json({ done: true, video });
+    }
 
     // Bilder sammeln: images[] (mehrere Bausteine) bevorzugt, sonst Einzelbild.
     type Img = { mime: string; data: string; role: string };

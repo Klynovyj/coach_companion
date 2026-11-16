@@ -178,6 +178,78 @@ class CloudService {
     return null;
   }
 
+  /// Grafik-Animation von der KI einstellen lassen: [provider] 'claude'
+  /// (Edge-Function „ai-coach") oder 'gemini' („ai-image"). Liefert das
+  /// Animations-JSON ({bg, items:{id:{fx,start,len,count,shine,pulse}}}).
+  static Future<Map<String, dynamic>?> aiAnim({
+    required String provider,
+    required String image,
+    required List<Map<String, dynamic>> elements,
+    required String kind,
+    required String format,
+    required int seconds,
+  }) async {
+    final res = await _c.functions.invoke(
+      provider == 'gemini' ? 'ai-image' : 'ai-coach',
+      body: {
+        'mode': 'anim',
+        'image': image,
+        'elements': elements,
+        'kind': kind,
+        'format': format,
+        'seconds': seconds,
+        // ai-image verlangt sonst einen Wunsch-Text.
+        'prompt': 'animation',
+      },
+    );
+    final data = res.data;
+    if (data is Map && data['anim'] is Map) {
+      return Map<String, dynamic>.from(data['anim'] as Map);
+    }
+    return null;
+  }
+
+  /// KI-Video starten (Bild → 9:16-Video, Gemini Omni Flash). Liefert
+  /// entweder sofort das Video oder eine Operation zum Nachfragen.
+  static Future<({String? operation, Uint8List? video})> aiVideoStart({
+    required String image,
+    required String prompt,
+    int seconds = 8,
+  }) async {
+    final res = await _c.functions.invoke(
+      'ai-image',
+      body: {
+        'mode': 'video_start',
+        'image': image,
+        'prompt': prompt,
+        'seconds': seconds,
+      },
+    );
+    final data = res.data;
+    if (data is Map && data['video'] is String) {
+      return (operation: null, video: base64Decode(data['video'] as String));
+    }
+    if (data is Map && data['operation'] is String) {
+      return (operation: data['operation'] as String, video: null);
+    }
+    throw Exception('Keine Antwort vom KI-Video');
+  }
+
+  /// Stand eines KI-Videos abfragen.
+  static Future<({bool done, Uint8List? video})> aiVideoPoll(
+    String operation,
+  ) async {
+    final res = await _c.functions.invoke(
+      'ai-image',
+      body: {'mode': 'video_poll', 'operation': operation, 'prompt': 'poll'},
+    );
+    final data = res.data;
+    if (data is Map && data['video'] is String) {
+      return (done: true, video: base64Decode(data['video'] as String));
+    }
+    return (done: false, video: null);
+  }
+
   /// KI-Bildbearbeitung: ruft die Edge-Function „ai-image" (Gemini) auf und
   /// liefert das Ergebnis-Bild als Bytes. [images] sind die Bausteine
   /// ({mime, data, role}; role z.B. base/home_logo/away_logo/sponsor/photo).

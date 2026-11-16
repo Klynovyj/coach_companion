@@ -289,3 +289,18 @@ Future<Uint8List?> captureOffscreen(
     entry.remove();
   }
 }
+
+/// Datei über das System-Teilen-Menü teilen (z. B. ein MP4 für Instagram).
+Future<void> shareFile(String path, {String? text}) async {
+  await SharePlus.instance.share(ShareParams(files: [XFile(path)], text: text));
+}
+
+/// Pfad für eine App-Datei [name]: [temp] = temporär (zum Teilen), sonst im
+/// App-Dokumentenordner (bleibt erhalten).
+Future<String> appFilePath(String name, {bool temp = false}) async {
+  final dir = temp
+      ? await getTemporaryDirectory()
+      : await getApplicationDocumentsDirectory();
+  final safe = name.replaceAll(RegExp(r'[^A-Za-z0-9_.-]'), '_');
+  return '${dir.path}/$safe';
+}

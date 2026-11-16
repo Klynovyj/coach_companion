@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io' show Platform;
+import 'dart:io' show File, Platform;
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
@@ -18,12 +19,14 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:uuid/uuid.dart';
 
 import '../models/designer_data.dart';
+import '../models/graphic_anim.dart';
 import '../models/graphic_preset.dart';
 import '../models/graphic_settings.dart';
 import '../models/sponsor.dart';
 import '../services/cloud_service.dart';
 import '../services/share_service.dart';
 import '../services/player_photos.dart';
+import '../services/video_export.dart';
 import '../state/app_state.dart';
 import '../widgets/bg_pattern.dart';
 import '../widgets/player_picker_page.dart';
@@ -1542,7 +1545,7 @@ class StartelfGraphicScreen extends StatefulWidget {
 }
 
 class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, TickerProviderStateMixin {
   final GlobalKey _boundaryKey = GlobalKey();
   final GlobalKey _bgBoundaryKey = GlobalKey(); // nur die Hintergrund-Ebene
   // Format: 's' = Story 9:16, 'p' = Post 1:1, 'f' = FuPa-Spielerfoto 4:5.
@@ -2039,6 +2042,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     _flushSave(); // letzten Stand beim Verlassen sichern
     _photoCtrl.dispose();
     _ftCtrl.dispose();
+    _animTicker?.dispose();
     super.dispose();
   }
 
@@ -2452,6 +2456,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       'imgInner': dblMap(_imgInnerF),
       'imgRim': dblMap(_imgRimF),
       'grade': {for (final e in _gradeF.entries) e.key: e.value.toJson()},
+      'anim': {
+        for (final e in _animF.entries)
+          if (e.value.isActive) e.key: e.value.toJson(),
+      },
+      'aiVideo': Map<String, String>.from(_aiVideoF),
       'headMode': _annHeadMode,
       'headText': _annHeadText,
       'logoDisc': _posterLogoDisc,
@@ -2534,6 +2543,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (v is List) {
           _posCenteredF[k.toString()] = v.map((e) => e.toString()).toSet();
         }
+      });
+    }
+    _animF.clear();
+    if (m['anim'] is Map) {
+      (m['anim'] as Map).forEach((k, v) {
+        _animF[k.toString()] = GraphicAnim.fromJson(v);
+      });
+    }
+    _aiVideoF.clear();
+    if (m['aiVideo'] is Map) {
+      (m['aiVideo'] as Map).forEach((k, v) {
+        if (v is String) _aiVideoF[k.toString()] = v;
       });
     }
     _lookF.clear();
@@ -5158,6 +5179,9 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     bgBlend: _blendModeOf(_settings.bgBlend),
     logoCircle: _settings.logoShape == 'circle',
     backgroundOnly: backgroundOnly,
+    anim: _animT == null ? null : _anim,
+    animT: _animT,
+    hideBackground: _hideBg,
     showScorers: _settings.showScorers,
     infoPos: Offset(_settings.infoX, _settings.infoY),
     onInfoMove: (p) => setState(
@@ -5287,7 +5311,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     posterTexts: {
       for (final id in _textIds)
         id: (
-          text: _textContent[id] ?? '',
+          text: _animStr(id, _textContent[id] ?? ''),
           font: _textFont[id] ?? 'standard',
           color: _textColor[id] ?? 'white',
         ),
@@ -5610,6 +5634,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 apply(() => _posterRot[id] = d * math.pi / 180);
               }, '${rotDeg.round()}°'),
               const SizedBox(height: 4),
+              if (_format != 'f') _animSection(id, apply),
               if (_canCopyFormats) ...[
                 _copyToOtherButton(id, ctx),
                 const SizedBox(height: 4),
@@ -5977,6 +6002,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                           ),
                         ],
                       ),
+                    if (_format != 'f') _animSection(id, apply),
                     if (_canCopyFormats) ...[
                       const SizedBox(height: 4),
                       _copyToOtherButton(id, ctx),
@@ -6386,6 +6412,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (!id.startsWith('overlay_') && id != 'player') {
       _copyTextData(id, src, dst);
     }
+    final ea = _animF[src]?.items[id];
+    if (ea != null) {
+      _animF.putIfAbsent(dst, () => GraphicAnim()).items[id] = ea.copy();
+    }
     if (existed) return;
     final (f, map) = _fitMap(src, dst);
     if (id.startsWith('std_')) {
@@ -6493,6 +6523,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       ];
       _posterOrderF[dst] = [...srcOrder, ...extra];
       // Formatweite Einstellungen.
+      final an = _animF[src];
+      if (an != null) _animF[dst] = an.copy();
       final look = _lookF[src];
       if (look == null) {
         _lookF.remove(dst);
@@ -6528,6 +6560,670 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       },
     ),
   );
+
+  // ------------------------------------------------------------ Animation
+  /// Animation je Format (Story/Post): Vorlage, Länge, Effekte je Element.
+  final Map<String, GraphicAnim> _animF = {};
+  GraphicAnim get _anim => _animF.putIfAbsent(_designKey, () => GraphicAnim());
+
+  /// KI-Video als bewegter Hintergrund je Format (lokaler Pfad, je Gerät).
+  final Map<String, String> _aiVideoF = {};
+  String? get _aiVideoPath {
+    final p = _aiVideoF[_designKey];
+    return p != null && File(p).existsSync() ? p : null;
+  }
+
+  double? _animT; // Zeitpunkt beim Abspielen/Export (null = Standbild)
+  Ticker? _animTicker;
+  bool _hideBg = false; // Video-Export über KI-Video: Hintergrund weglassen
+  bool _videoBusy = false;
+  bool _videoCancel = false;
+  String _videoStatus = '';
+  String _aiAnimProvider = 'claude';
+
+  bool get _animPlaying => _animTicker?.isActive ?? false;
+
+  /// Animation einmal abspielen (Vorschau).
+  void _playAnim() {
+    _animTicker?.dispose();
+    setState(() {
+      _posterSel = null;
+      _animT = 0;
+    });
+    _animTicker = createTicker((elapsed) {
+      if (!mounted) return;
+      final t = elapsed.inMicroseconds / 1e6;
+      if (t >= _anim.seconds) {
+        _stopAnim();
+        return;
+      }
+      setState(() => _animT = t);
+    })..start();
+  }
+
+  void _stopAnim() {
+    _animTicker?.dispose();
+    _animTicker = null;
+    if (mounted) setState(() => _animT = null);
+  }
+
+  /// Text für den Zähler (Zahlen hochzählen/rollen) beim Abspielen.
+  String _animStr(String id, String text) {
+    final t = _animT;
+    if (t == null) return text;
+    return countText(text, _anim.items[id], t, seed: id);
+  }
+
+  String _animType(String id) {
+    if (id == 'player') return 'player';
+    if (id.startsWith('overlay_')) return 'image';
+    if (id == 'std_score') return 'score';
+    const logos = {
+      'logos',
+      'sponsor',
+      'std_logo',
+      'std_sponsor',
+      'std_ft_sponsor',
+    };
+    if (logos.contains(id)) return 'logo';
+    const other = {
+      'std_lineup',
+      'std_scorers',
+      'std_ft_scorers',
+      'std_ft_banner',
+      'sponsorbar',
+      'std_sponsorbar',
+      'std_ft_sponsorbar',
+    };
+    if (other.contains(id)) return 'other';
+    return 'text';
+  }
+
+  String? _animTextOf(String id) {
+    if (id == 'std_score') {
+      final r = widget.result;
+      return r == null ? null : '${r.ownScore} : ${r.oppScore}';
+    }
+    if (id == 'headline') return _annHeadText;
+    return _textContent[id];
+  }
+
+  /// Sichtbare Elemente des aktuellen Formats (oben → unten) für Vorlagen/KI.
+  List<AnimElement> _animElements() {
+    final ids = <String>[];
+    if (!widget.isAnnouncement) {
+      for (final id in _kStdOrder) {
+        if (_stdCtx.containsKey(id) && !_stdHidden.contains(id)) ids.add(id);
+      }
+    }
+    final free = [
+      for (final id in _posterOrder)
+        if (!(id == 'player' && _posterMainF[_designKey] == null) &&
+            !ids.contains(id))
+          id,
+    ];
+    double yOf(String id) =>
+        (_posterPosF[_designKey]?[id] ?? _kCenteredItemDefaults[id])?.dy ?? 0.5;
+    free.sort((a, b) => yOf(a).compareTo(yOf(b)));
+    ids.addAll(free);
+    return [
+      for (final id in ids)
+        (id: id, type: _animType(id), text: _animTextOf(id)),
+    ];
+  }
+
+  void _applyAnimPreset(String preset) {
+    final secs = _anim.seconds;
+    setState(() {
+      _animF[_designKey] = applyPreset(
+        preset,
+        _animElements(),
+        kind: _kind,
+        seconds: secs,
+      );
+    });
+    if (preset != 'none') _playAnim();
+  }
+
+  /// „Mit KI animieren": KI wählt je Element Effekt/Zeit/Zähler.
+  Future<void> _aiAnimate() async {
+    final els = _animElements();
+    if (els.isEmpty || _aiBusy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    _stopAnim();
+    setState(() {
+      _aiBusy = true;
+      _aiBusyLabel = 'KI plant die Animation …';
+    });
+    try {
+      final shot = await _captureForAi();
+      if (shot == null) throw Exception('Aufnahme fehlgeschlagen');
+      final res = await CloudService.aiAnim(
+        provider: _aiAnimProvider,
+        image: shot,
+        elements: [
+          for (var i = 0; i < els.length; i++)
+            {
+              'id': els[i].id,
+              'type': els[i].type,
+              if (els[i].text != null) 'text': els[i].text,
+              if (_posterPosF[_designKey]?[els[i].id] case final p?) ...{
+                'x': double.parse(p.dx.toStringAsFixed(2)),
+                'y': double.parse(p.dy.toStringAsFixed(2)),
+              },
+              'layer': i,
+            },
+        ],
+        kind: _kind,
+        format: _format,
+        seconds: _anim.seconds,
+      );
+      if (res == null) throw Exception('Keine Antwort der KI');
+      final a = GraphicAnim.fromJson(
+        res,
+        ids: {for (final e in els) e.id},
+        seconds: _anim.seconds,
+      )..preset = 'ai';
+      if (!mounted) return;
+      setState(() => _animF[_designKey] = a);
+      _playAnim();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('KI-Animation fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _aiBusy = false;
+        });
+      }
+    }
+  }
+
+  /// Grafik bzw. nur Hintergrund als JPEG-Data-URL (für das KI-Video).
+  Future<String?> _captureJpegDataUrl(GlobalKey key, double widthPx) async {
+    final image = await _captureImage(key, widthPx);
+    if (image == null) return null;
+    final data = await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+    if (data == null) return null;
+    return compute(_rgbaToJpegDataUrl, <String, Object>{
+      'w': image.width,
+      'h': image.height,
+      'px': data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+    });
+  }
+
+  /// MP4 aus der Animation erzeugen (Frame für Frame) und teilen.
+  Future<void> _exportVideo() async {
+    if (!VideoEncoder.isSupported || _videoBusy) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final bgVideo = _aiVideoPath;
+    const fps = 30;
+    final total = _anim.seconds * fps;
+    _stopAnim();
+    setState(() {
+      _posterSel = null;
+      _videoBusy = true;
+      _videoCancel = false;
+      _videoStatus = 'Video wird erstellt … 0 %';
+      _hideBg = bgVideo != null;
+      _animT = 0;
+    });
+    var started = false;
+    try {
+      try {
+        await GoogleFonts.pendingFonts();
+      } catch (_) {}
+      await WidgetsBinding.instance.endOfFrame;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      final boundary =
+          _boundaryKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) throw Exception('Grafik nicht bereit');
+      final ratio = 1080 / _cw;
+      final path = await appFilePath(
+        '${_kind}_${DateFormat('yyyyMMdd_HHmmss').format(DateTime.now())}.mp4',
+        temp: true,
+      );
+      for (var i = 0; i < total; i++) {
+        if (_videoCancel) {
+          if (started) await VideoEncoder.cancel();
+          return;
+        }
+        if (i > 0) {
+          setState(() => _animT = i / fps);
+          await WidgetsBinding.instance.endOfFrame;
+        }
+        final img = await boundary.toImage(pixelRatio: ratio);
+        final data = await img.toByteData(format: ui.ImageByteFormat.rawRgba);
+        final w = img.width, h = img.height;
+        img.dispose();
+        if (data == null) throw Exception('Bild konnte nicht gelesen werden');
+        if (!started) {
+          started = await VideoEncoder.start(
+            path: path,
+            width: w,
+            height: h,
+            fps: fps,
+            bgVideo: bgVideo,
+          );
+          if (!started) throw Exception('Encoder startet nicht');
+        }
+        await VideoEncoder.frame(
+          data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+          i,
+        );
+        if (i % 6 == 0 && mounted) {
+          setState(
+            () => _videoStatus =
+                'Video wird erstellt … ${(i * 100 / total).round()} %',
+          );
+        }
+      }
+      setState(() => _videoStatus = 'Video wird gespeichert …');
+      final out = await VideoEncoder.finish();
+      started = false;
+      if (out != null) await shareFile(out, text: _kind);
+    } catch (e) {
+      if (started) await VideoEncoder.cancel();
+      messenger.showSnackBar(
+        SnackBar(content: Text('Video fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _videoBusy = false;
+          _animT = null;
+          _hideBg = false;
+        });
+      }
+    }
+  }
+
+  /// KI-Video: Variante wählen, erzeugen lassen (Gemini Omni Flash, 9:16).
+  Future<void> _askAiVideo() async {
+    final choice = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('KI-Video erzeugen'),
+        content: const Text(
+          'Die KI macht aus dem Bild ein bewegtes Video (Hochformat 9:16). '
+          'Das kostet Google-Guthaben und dauert meist 1–3 Minuten.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.pop(ctx, 'full'),
+            child: const Text('Ganze Grafik'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, 'bg'),
+            child: const Text('Nur Hintergrund (Schrift scharf)'),
+          ),
+        ],
+      ),
+    );
+    if (choice == null || !mounted) return;
+    await _aiVideo(full: choice == 'full');
+  }
+
+  Future<void> _aiVideo({required bool full}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    _stopAnim();
+    setState(() {
+      _videoBusy = true;
+      _videoCancel = false;
+      _videoStatus = 'KI erstellt das Video …';
+    });
+    try {
+      final img = await _captureJpegDataUrl(
+        full ? _boundaryKey : _bgBoundaryKey,
+        720,
+      );
+      if (img == null) throw Exception('Aufnahme fehlgeschlagen');
+      final prompt = full
+          ? 'Erwecke diese Fussball-Social-Media-Grafik dezent zum Leben: '
+                'langsame, ruhige Kamerafahrt, Licht und Atmosphaere bewegen '
+                'sich, der Spieler wirkt lebendig. Schrift, Zahlen und Logos '
+                'bleiben exakt unveraendert, scharf und an ihrem Platz. Keine '
+                'Schnitte, kein Ton.'
+          : 'Erwecke diesen Hintergrund einer Fussball-Social-Media-Grafik '
+                'zum Leben: langsame Kamerafahrt, Lichtstrahlen, leichter '
+                'Nebel und Partikel, Stadion-Atmosphaere. Gleiche Farben und '
+                'Stimmung. Keine Texte, Logos oder Personen hinzufuegen, keine '
+                'Schnitte, kein Ton.';
+      final start = await CloudService.aiVideoStart(
+        image: img,
+        prompt: prompt,
+        seconds: _anim.seconds.clamp(5, 15),
+      );
+      var video = start.video;
+      final op = start.operation;
+      final t0 = DateTime.now();
+      while (video == null && op != null) {
+        if (_videoCancel) return;
+        final secs = DateTime.now().difference(t0).inSeconds;
+        if (secs > 600) throw Exception('Zeitüberschreitung');
+        if (mounted) {
+          setState(() => _videoStatus = 'KI erstellt das Video … $secs s');
+        }
+        await Future<void>.delayed(const Duration(seconds: 10));
+        final p = await CloudService.aiVideoPoll(op);
+        if (p.done) video = p.video;
+      }
+      if (video == null) throw Exception('Kein Video erhalten');
+      final path = await appFilePath(
+        'ki_video_${DateTime.now().millisecondsSinceEpoch}.mp4',
+      );
+      await File(path).writeAsBytes(video);
+      if (full) {
+        await shareFile(path, text: _kind);
+      } else {
+        if (!mounted) return;
+        setState(() {
+          _aiVideoF[_designKey] = path;
+        });
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'KI-Hintergrund fertig – „Als Video teilen" legt alles '
+              'scharf darüber.',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('KI-Video fehlgeschlagen: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _videoBusy = false);
+    }
+  }
+
+  /// Fortschritt (Video-Export/KI-Video) über der Vorschau – nicht im Bild.
+  Widget _videoOverlay() => Positioned.fill(
+    child: AbsorbPointer(
+      absorbing: false,
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.35),
+        child: Center(
+          child: Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 12),
+                  Text(_videoStatus, textAlign: TextAlign.center),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () => setState(() => _videoCancel = true),
+                    child: const Text('Abbrechen'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+
+  /// Bereich „Animation" im Hauptscreen.
+  Widget _animControls() {
+    final a = _anim;
+    final app = context.watch<AppState>();
+    final canClaude = app.canAiCoach, canGemini = app.canAiImage;
+    if (!canClaude && _aiAnimProvider == 'claude' && canGemini) {
+      _aiAnimProvider = 'gemini';
+    }
+    final hint = TextStyle(fontSize: 12, color: Theme.of(context).hintColor);
+    return ExpansionTile(
+      leading: const Icon(Icons.movie_filter_outlined),
+      title: const Text('Animation (Video für Instagram)'),
+      subtitle: a.isActive
+          ? Text(
+              '${a.preset == 'ai' ? 'KI' : GraphicAnim.presets[a.preset] ?? 'Eigene'}'
+              ' · ${a.seconds} s',
+            )
+          : null,
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final e in GraphicAnim.presets.entries)
+                ChoiceChip(
+                  label: Text(e.value),
+                  selected: a.preset == e.key,
+                  onSelected: (_) => _applyAnimPreset(e.key),
+                ),
+            ],
+          ),
+        ),
+        Row(
+          children: [
+            const Text('Länge'),
+            Expanded(
+              child: Slider(
+                value: a.seconds.toDouble(),
+                min: 5,
+                max: 15,
+                divisions: 10,
+                label: '${a.seconds} s',
+                onChanged: (v) => setState(() => a.seconds = v.round()),
+              ),
+            ),
+            Text('${a.seconds} s'),
+          ],
+        ),
+        Row(
+          children: [
+            const Text('Hintergrund'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final e in GraphicAnim.backgrounds.entries)
+                    ButtonSegment(value: e.key, label: Text(e.value)),
+                ],
+                selected: {a.bg},
+                onSelectionChanged: (s) => setState(() => a.bg = s.first),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (canClaude || canGemini) ...[
+          Row(
+            children: [
+              if (canClaude && canGemini) ...[
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: 'claude', label: Text('Claude')),
+                    ButtonSegment(value: 'gemini', label: Text('Gemini')),
+                  ],
+                  selected: {_aiAnimProvider},
+                  onSelectionChanged: (s) =>
+                      setState(() => _aiAnimProvider = s.first),
+                ),
+                const SizedBox(width: 8),
+              ],
+              Expanded(
+                child: FilledButton.tonalIcon(
+                  onPressed: _aiBusy || _videoBusy ? null : _aiAnimate,
+                  icon: const Icon(Icons.auto_awesome, size: 18),
+                  label: const Text('Mit KI animieren'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: !a.isActive || _videoBusy
+                    ? null
+                    : (_animPlaying ? _stopAnim : _playAnim),
+                icon: Icon(_animPlaying ? Icons.stop : Icons.play_arrow),
+                label: Text(_animPlaying ? 'Stopp' : 'Abspielen'),
+              ),
+            ),
+            if (canGemini) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed:
+                      VideoEncoder.isSupported &&
+                          _format == 's' &&
+                          !_videoBusy &&
+                          !_aiBusy
+                      ? _askAiVideo
+                      : null,
+                  icon: const Icon(Icons.movie_creation_outlined, size: 18),
+                  label: const Text('KI-Video'),
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (_aiVideoPath != null)
+          Row(
+            children: [
+              const Icon(Icons.videocam_outlined, size: 18),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'KI-Hintergrundvideo aktiv – bewegt sich im Video-Export',
+                  style: hint,
+                ),
+              ),
+              TextButton(
+                onPressed: () => setState(() => _aiVideoF.remove(_designKey)),
+                child: const Text('Entfernen'),
+              ),
+            ],
+          ),
+        const SizedBox(height: 4),
+        Text(
+          VideoEncoder.isSupported
+              ? 'Einzelne Elemente: Element antippen → Animation. '
+                    '„Als Video teilen" erzeugt ein MP4 (Instagram, WhatsApp).'
+              : 'Einzelne Elemente: Element antippen → Animation. Video-Export '
+                    'und KI-Video gibt es in der Android-App.',
+          style: hint,
+        ),
+        if (canGemini && _format == 'p')
+          Text('KI-Video nur im Format Story (9:16).', style: hint),
+      ],
+    );
+  }
+
+  /// Abschnitt „Animation" im Element-Sheet.
+  Widget _animSection(String id, void Function(VoidCallback fn) apply) {
+    final cur = _anim.items[id] ?? ElementAnim();
+    final maxStart = math.max(1, _anim.seconds - 1).toDouble();
+    void upd(void Function(ElementAnim x) f) => apply(() {
+      final x = _anim.items[id] ?? ElementAnim();
+      f(x);
+      if (x.isActive) {
+        _anim.items[id] = x;
+      } else {
+        _anim.items.remove(id);
+      }
+    });
+    final txt = _animTextOf(id);
+    final canCount = id == 'std_score' || (txt != null && hasNumber(txt));
+    return ExpansionTile(
+      leading: const Icon(Icons.animation),
+      title: const Text('Animation'),
+      subtitle: cur.isActive
+          ? Text(
+              '${ElementAnim.effects[cur.fx]} · ab '
+              '${cur.start.toStringAsFixed(1).replaceAll('.', ',')} s',
+            )
+          : null,
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      shape: const Border(),
+      collapsedShape: const Border(),
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: cur.fx,
+          decoration: const InputDecoration(labelText: 'Effekt'),
+          items: [
+            for (final e in ElementAnim.effects.entries)
+              DropdownMenuItem(value: e.key, child: Text(e.value)),
+          ],
+          onChanged: (v) => upd((x) => x.fx = v ?? 'none'),
+        ),
+        Row(
+          children: [
+            const Text('Start'),
+            Expanded(
+              child: Slider(
+                value: cur.start.clamp(0, maxStart).toDouble(),
+                min: 0,
+                max: maxStart,
+                divisions: (maxStart * 10).round(),
+                label: '${cur.start.toStringAsFixed(1)} s',
+                onChanged: (v) => upd((x) => x.start = v),
+              ),
+            ),
+            Text('${cur.start.toStringAsFixed(1).replaceAll('.', ',')} s'),
+          ],
+        ),
+        if (canCount)
+          Row(
+            children: [
+              const Text('Zahl'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: [
+                    for (final e in ElementAnim.counts.entries)
+                      ButtonSegment(value: e.key, label: Text(e.value)),
+                  ],
+                  selected: {cur.count},
+                  onSelectionChanged: (s) => upd((x) {
+                    x.count = s.first;
+                    if (x.count != 'none' && x.len < 1.2) x.len = 1.5;
+                  }),
+                ),
+              ),
+            ],
+          ),
+        Wrap(
+          spacing: 8,
+          children: [
+            FilterChip(
+              label: const Text('Glanz'),
+              selected: cur.shine,
+              onSelected: (v) => upd((x) => x.shine = v),
+            ),
+            FilterChip(
+              label: const Text('Pulsieren'),
+              selected: cur.pulse,
+              onSelected: (v) => upd((x) => x.pulse = v),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
   /// Ausgeblendete Grundteile dieses Formats (zum Wieder-Einblenden):
   /// Ergebnis/Startelf = ausgeblendete feste Teile, Ankündigung = aus der
@@ -7705,6 +8401,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           ),
           lockForTap ? IgnorePointer(child: mainGraphic) : mainGraphic,
           if (_aiBusy || _bgBusy) _busyOverlay(_busyText ?? 'Bitte warten …'),
+          if (_videoBusy) _videoOverlay(),
         ],
       ),
     );
@@ -8177,6 +8874,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     if (_editable) _announcementControls(),
                     // Profi-Finish (globale Bildkorrektur) – alle Grafiktypen.
                     _gradeControls(),
+                    if (_editable && _format != 'f') _animControls(),
                     const SizedBox(height: 8),
                     // KI-Bearbeitung nur, wenn die Grafik-KI (Gemini) frei ist.
                     if (context.watch<AppState>().canAiImage)
@@ -8232,6 +8930,27 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                       ),
                     ],
                   ),
+                  if (_anim.isActive && _format != 'f') ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.tonalIcon(
+                        onPressed:
+                            VideoEncoder.isSupported &&
+                                !_sharing &&
+                                !_aiBusy &&
+                                !_videoBusy
+                            ? _exportVideo
+                            : null,
+                        icon: const Icon(Icons.movie_outlined),
+                        label: Text(
+                          VideoEncoder.isSupported
+                              ? 'Als Video teilen (Instagram)'
+                              : 'Video nur in der Android-App',
+                        ),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -8500,6 +9219,9 @@ class _StartelfGraphic extends StatelessWidget {
     this.bgOpacity = 1.0,
     this.bgBlend = BlendMode.srcOver,
     this.backgroundOnly = false,
+    this.anim,
+    this.animT,
+    this.hideBackground = false,
     this.showScorers = true,
     this.posterStyle = false,
     this.posterHeadline = 'SPIELTAG',
@@ -8594,6 +9316,11 @@ class _StartelfGraphic extends StatelessWidget {
   final double bgOpacity; // Deckkraft des Hintergrundbilds (0..1)
   final BlendMode bgBlend; // Mischmodus des Hintergrundbilds mit dem Verlauf
   final bool backgroundOnly; // nur die Hintergrund-Ebene (für Export)
+  // Animation: Effekte je Element + Zeitpunkt (null = Standbild wie bisher).
+  final GraphicAnim? anim;
+  final double? animT;
+  // Hintergrund weglassen (KI-Video liegt im Video-Export darunter).
+  final bool hideBackground;
   final bool showScorers; // Torschützen-Block in der Ergebnis-Grafik zeigen
   final bool posterStyle; // Spielankündigung: Spieler-Poster statt zentriert
   final String posterHeadline; // Poster-Überschrift (SPIELTAG / HEIMSPIEL / …)
@@ -8834,6 +9561,51 @@ class _StartelfGraphic extends StatelessWidget {
   /// Sonst alte Align-Semantik (für noch nicht umgerechnete, gespeicherte
   /// Positionen). Gleiche Widget-Struktur in beiden Modi, damit beim Umschalten
   /// nichts neu aufgebaut wird (laufender Langdruck bleibt erhalten).
+  /// Element-Animation zum Zeitpunkt [animT] anwenden (Einblenden, Bewegung,
+  /// Skalierung, Pulsieren, Glanz). Ohne Animation: unverändert.
+  Widget _animWrap(String id, Widget child) {
+    final a = anim, t = animT;
+    if (a == null || t == null) return child;
+    final e = a.items[id];
+    if (e == null) return child;
+    final st = animState(e, t);
+    var out = child;
+    final sh = shineAt(e, t);
+    if (sh != null) {
+      double c(double v) => v.clamp(0.0, 1.0);
+      out = ShaderMask(
+        blendMode: BlendMode.srcATop,
+        shaderCallback: (r) => LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            Colors.white.withValues(alpha: 0),
+            Colors.white.withValues(alpha: 0.75),
+            Colors.white.withValues(alpha: 0),
+          ],
+          stops: [c(sh - 0.15), c(sh), c(sh + 0.15)],
+        ).createShader(r),
+        child: out,
+      );
+    }
+    // Versatz relativ zur Grafikbreite (logisch immer 360).
+    out = Transform.translate(
+      offset: st.offset * 360,
+      child: Transform.scale(scale: st.scale, child: out),
+    );
+    if (st.opacity < 1) {
+      out = Opacity(opacity: st.opacity.clamp(0.0, 1.0), child: out);
+    }
+    return out;
+  }
+
+  /// Text mit animierten Zahlen (Zähler) für Element [id].
+  String _countStr(String id, String text) {
+    final a = anim, t = animT;
+    if (a == null || t == null) return text;
+    return countText(text, a.items[id], t, seed: id);
+  }
+
   Widget _placeElement({
     required Key key,
     required Offset pos,
@@ -8857,10 +9629,18 @@ class _StartelfGraphic extends StatelessWidget {
                   (pos.dx * 2 - 1).clamp(-1.0, 1.0),
                   (pos.dy * 2 - 1).clamp(-1.0, 1.0),
                 ),
-          child: child,
+          child: _animWrap(_idOfKey(key), child),
         ),
       ),
     );
+  }
+
+  /// Element-ID aus dem Schlüssel `posterEl_<id>` bzw. `ovlEl_<id>`.
+  static String _idOfKey(Key key) {
+    if (key is! ValueKey<String>) return '';
+    final v = key.value;
+    final i = v.indexOf('_');
+    return i < 0 ? v : v.substring(i + 1);
   }
 
   /// Liegt der Canvas-Punkt [canvasPt] (logische px) im Element [c]? Beachtet
@@ -8927,6 +9707,7 @@ class _StartelfGraphic extends StatelessWidget {
     final scale = posterItemScale[id] ?? 1.0;
     final rot = posterItemRot[id] ?? 0.0;
     final selected = posterSelected == id;
+    if (anim != null && animT != null) child = _animWrap(id, child);
     return Builder(
       builder: (nctx) {
         stdNatCtx?[id] = nctx;
@@ -9487,8 +10268,8 @@ class _StartelfGraphic extends StatelessWidget {
       children.add(
         Text(
           isHome
-              ? '${r.ownScore} : ${r.oppScore}'
-              : '${r.oppScore} : ${r.ownScore}',
+              ? _countStr('std_score', '${r.ownScore} : ${r.oppScore}')
+              : _countStr('std_score', '${r.oppScore} : ${r.ownScore}'),
           style: TextStyle(
             color: _accent,
             fontSize: 56,
@@ -10121,6 +10902,20 @@ class _StartelfGraphic extends StatelessWidget {
   /// Hintergrund-Basis: Verlauf, optional mit eigenem Hintergrundbild + Tönung.
   /// Wird von allen Layouts genutzt.
   Widget _bgBase({bool radial = false}) {
+    if (hideBackground) return const SizedBox.expand();
+    final raw = _bgBaseRaw(radial: radial);
+    final a = anim, t = animT;
+    if (a == null || t == null || a.bg == 'none') return raw;
+    final b = bgTransform(a.bg, t, a.seconds);
+    return ClipRect(
+      child: Transform.scale(
+        scale: b.scale,
+        child: FractionalTranslation(translation: b.offset, child: raw),
+      ),
+    );
+  }
+
+  Widget _bgBaseRaw({bool radial = false}) {
     // Hinzugefügtes Hintergrund-Foto hat Vorrang vor dem eingestellten Bild.
     final bgBytes = TeamLogo.decode(photoBg) ?? TeamLogo.decode(bgImage);
     // radial = Strahl/Vignette (heller Punkt oben-mitte → dunkel zu den Rändern),
@@ -11057,8 +11852,8 @@ class _StartelfGraphic extends StatelessWidget {
               child: _resultBand(
                 Text(
                   isHome
-                      ? '${r.ownScore} : ${r.oppScore}'
-                      : '${r.oppScore} : ${r.ownScore}',
+                      ? _countStr('std_score', '${r.ownScore} : ${r.oppScore}')
+                      : _countStr('std_score', '${r.oppScore} : ${r.ownScore}'),
                   maxLines: 1,
                   softWrap: false,
                   style: TextStyle(

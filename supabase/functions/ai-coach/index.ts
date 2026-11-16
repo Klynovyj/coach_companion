@@ -1,7 +1,7 @@
 // Supabase Edge Function: ai-coach
 // Erzeugt/dokumentiert Trainings-Übungen mit der Anthropic (Claude) API.
 // Modi (Body `mode`):
-//   generate | bullets | video | photo
+//   generate | bullets | video | photo | grade | anim (Grafik-Animation)
 // Gibt ein striktes JSON-Objekt (Übungs-Entwurf) zurück.
 //
 // Benötigte Secrets (supabase secrets set ...):
@@ -106,6 +106,33 @@ WICHTIG:
   helle Logos und Text duerfen NICHT ausbrennen oder absaufen.
 - Ist das Bild schon sehr dunkel/flau/uebersaettigt, korrigiere entsprechend
   gegen (Werte duerfen auch negativ sein).`;
+
+// Grafik-Animation (Modus `anim`): Effekte je Element als JSON.
+const ANIM_SYSTEM = `Du bist Motion-Designer fuer Social-Media-Grafiken eines Fussballvereins
+(Instagram Story/Reel/Post). Du bekommst das Bild der fertigen Grafik und eine
+Liste ihrer Elemente (id, type, text, x/y-Lage 0..1, layer). Lege eine kurze,
+hochwertige Animation fest – wie bei Profi-Vereinen (Bundesliga-Accounts).
+
+Gib AUSSCHLIESSLICH dieses JSON zurueck (keine Erklaerung, kein Markdown):
+{ "bg": "none"|"zoom"|"pan",
+  "items": { "<id>": { "fx": "none"|"fade"|"slideUp"|"slideDown"|"slideLeft"|
+    "slideRight"|"zoomIn"|"pop", "start": Sekunden, "len": Sekunden,
+    "count": "none"|"up"|"roll", "shine": bool, "pulse": bool } } }
+
+Regeln:
+- Verwende NUR ids aus der Liste. Nicht jedes Element braucht einen Effekt.
+- Hintergrund ruhig bewegen ("zoom" fast immer, "pan" fuer Abwechslung).
+- Wichtigstes zuerst (Ueberschrift bzw. Ergebnis), dann gestaffelt mit
+  0,15–0,4 s Abstand, von oben nach unten oder nach Bedeutung. Nicht alles
+  gleichzeitig. Alles soll nach spaetestens ~3 s stehen, danach ruhig bleiben.
+- Logos/Wappen gern "pop", Spielerfoto "slideUp" oder "zoomIn", Texte
+  "fade"/"slideUp", Sponsor dezent "fade".
+- Zahlen (z. B. "100", Jubilaeen, Ergebnis/type "score"): "count" = "up"
+  (hochzaehlen) bzw. bei Ergebnissen "roll" (Zahlen rollen bis zum Endstand),
+  len dafuer 1,2–2 s.
+- Glanz ("shine") sparsam: hoechstens 1 Element (Ueberschrift oder Zahl).
+  Pulsieren ("pulse") hoechstens 1 Element, nur wenn es passt.
+- len meist 0,4–0,8 s (Zaehler laenger). start >= 0 und < Videolaenge - 1.`;
 
 function textContent(s: string) {
   return [{ type: "text", text: s }];
@@ -235,6 +262,33 @@ function buildMessages(body: Record<string, unknown>) {
       },
     ];
   }
+  if (mode === "anim") {
+    const dataUrl = String(body.image ?? "");
+    const m = dataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/s);
+    return [
+      {
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: {
+              type: "base64",
+              media_type: m ? m[1] : "image/jpeg",
+              data: m ? m[2] : dataUrl,
+            },
+          },
+          {
+            type: "text",
+            text:
+              `Grafik: ${String(body.kind ?? "")}, Format ` +
+              `${body.format === "p" ? "Post 1:1" : "Story 9:16"}, ` +
+              `Videolaenge ${Number(body.seconds ?? 8)} s.\n` +
+              `Elemente: ${JSON.stringify(body.elements ?? [])}`,
+          },
+        ],
+      },
+    ];
+  }
   if (mode === "grade") {
     const dataUrl = String(body.image ?? "");
     const m = dataUrl.match(/^data:(image\/[a-zA-Z]+);base64,(.*)$/s);
@@ -310,7 +364,12 @@ Deno.serve(async (req) => {
     const body = (await req.json()) as Record<string, unknown>;
     const mode = String(body.mode ?? "generate");
     const messages = buildMessages(body);
-    const system = mode === "grade" ? GRADE_SYSTEM : SYSTEM;
+    const quick = mode === "grade" || mode === "anim";
+    const system = mode === "grade"
+      ? GRADE_SYSTEM
+      : mode === "anim"
+      ? ANIM_SYSTEM
+      : SYSTEM;
 
     const headers: Record<string, string> = {
       "x-api-key": ANTHROPIC_API_KEY,
@@ -323,7 +382,7 @@ Deno.serve(async (req) => {
     // niedrig, kurze Antwort. Opus 5.5/Fable lehnen `disabled` ab → dort weglassen.
     const gradeBody = (model: string) => ({
       model,
-      max_tokens: 200,
+      max_tokens: mode === "anim" ? 1500 : 200,
       system,
       messages,
       ...(/^claude-(opus-5-5|fable)/.test(model)
@@ -339,13 +398,13 @@ Deno.serve(async (req) => {
       });
 
     let resp = await send(
-      mode === "grade"
+      quick
         ? gradeBody(GRADE_MODEL)
         : { model: MODEL, max_tokens: 4000, system, messages },
     );
     // Schnelles Modell nicht verfuegbar (z. B. im Workspace gesperrt) → einmal
     // mit dem Standard-Modell erneut versuchen.
-    if (mode === "grade" && !resp.ok && GRADE_MODEL !== MODEL &&
+    if (quick && !resp.ok && GRADE_MODEL !== MODEL &&
         (resp.status === 400 || resp.status === 403 || resp.status === 404)) {
       resp = await send(gradeBody(MODEL));
     }
@@ -362,6 +421,9 @@ Deno.serve(async (req) => {
     // Bild-Finish: nur die Korrekturwerte zurueckgeben (keine Uebung).
     if (mode === "grade") {
       return Response.json({ grade: extractJson(text) });
+    }
+    if (mode === "anim") {
+      return Response.json({ anim: extractJson(text) });
     }
     const draft = extractJson(text);
     // KI-Skizzen immer auf neutrales "box"-Feld; grosse Tore -> Minitore.
