@@ -17,7 +17,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
 const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? "";
 const MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-2.5-flash-image";
 // Grafik-Animation (Modus `anim`): Text-Modell mit JSON-Antwort.
-const TEXT_MODEL = Deno.env.get("GEMINI_TEXT_MODEL") ?? "gemini-2.5-flash";
+// gemini-2.5-flash ist fuer neue Nutzer abgeschaltet (Nov. 2026).
+const TEXT_MODEL = Deno.env.get("GEMINI_TEXT_MODEL") ?? "gemini-3.8-flash";
+const TEXT_FALLBACK = "gemini-3.8-flash";
 // KI-Video (Modi `video_start`/`video_poll`): Bild -> Video (Interactions-API).
 // Veo-3.1-Preview wurde am 22.10.2026 abgeschaltet -> Gemini Omni Flash.
 const VIDEO_MODEL = Deno.env.get("GEMINI_VIDEO_MODEL") ??
@@ -238,7 +240,8 @@ Deno.serve(async (req) => {
     // ---- Grafik-Animation einstellen (JSON statt Bild)
     if (mode === "anim") {
       const s0 = stripDataUrl(String(body.image ?? ""));
-      const r = await fetch(`${API}/models/${TEXT_MODEL}:generateContent`, {
+      const ask = (model: string) =>
+        fetch(`${API}/models/${model}:generateContent`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -262,6 +265,11 @@ Deno.serve(async (req) => {
           generationConfig: { responseMimeType: "application/json" },
         }),
       });
+      let r = await ask(TEXT_MODEL);
+      // Eingestelltes Modell abgeschaltet/unbekannt → aktuelles Standardmodell.
+      if (r.status === 404 && TEXT_MODEL !== TEXT_FALLBACK) {
+        r = await ask(TEXT_FALLBACK);
+      }
       if (!r.ok) {
         return new Response("Gemini-Fehler: " + await r.text(), {
           status: 502,
