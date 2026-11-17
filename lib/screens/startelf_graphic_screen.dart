@@ -5167,6 +5167,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     logoCircle: _settings.logoShape == 'circle',
     backgroundOnly: backgroundOnly,
     anim: _animT == null ? null : (_previewAnim ?? _anim),
+    animBase: _format == 'f' ? null : _anim,
     animT: _animT,
     hideBackground: _hideBg,
     showScorers: _settings.showScorers,
@@ -10492,6 +10493,7 @@ class _StartelfGraphic extends StatelessWidget {
     this.bgBlend = BlendMode.srcOver,
     this.backgroundOnly = false,
     this.anim,
+    this.animBase,
     this.animT,
     this.hideBackground = false,
     this.showScorers = true,
@@ -10592,6 +10594,9 @@ class _StartelfGraphic extends StatelessWidget {
   final bool backgroundOnly; // nur die Hintergrund-Ebene (für Export)
   // Animation: Effekte je Element + Zeitpunkt (null = Standbild wie bisher).
   final GraphicAnim? anim;
+  // Gesamte Animation des Designs (auch im Stillstand) – bestimmt den
+  // gleichbleibenden Aufbau (z. B. Glanz-Ebene).
+  final GraphicAnim? animBase;
   final double? animT;
   // Hintergrund weglassen (KI-Video liegt im Video-Export darunter).
   final bool hideBackground;
@@ -10843,14 +10848,18 @@ class _StartelfGraphic extends StatelessWidget {
   /// Element-Animation zum Zeitpunkt [animT] anwenden (Einblenden, Bewegung,
   /// Skalierung, Pulsieren, Glanz). Ohne Animation: unverändert.
   Widget _animWrap(String id, Widget child) {
+    // Immer GLEICHER Aufbau (auch im Stillstand neutral): Fällt eine Hülle
+    // weg (z. B. Deckkraft erreicht 100 % oder Abspielen endet), baut Flutter
+    // das Element neu auf – Bilder blitzen dann kurz weg.
     final a = anim, t = animT;
-    if (a == null || t == null) return child;
-    final e = a.items[id];
-    if (e == null) return child;
-    final st = animState(e, t);
+    final e = a?.items[id];
+    final playing = t != null && e != null;
+    final st = playing
+        ? animState(e, t)
+        : (opacity: 1.0, offset: Offset.zero, scale: 1.0);
     var out = child;
-    final sh = shineAt(e, t);
-    if (sh != null) {
+    if (animBase?.items[id]?.shine ?? false) {
+      final sh = playing ? shineAt(e, t) : null;
       double c(double v) => v.clamp(0.0, 1.0);
       out = ShaderMask(
         blendMode: BlendMode.srcATop,
@@ -10859,23 +10868,24 @@ class _StartelfGraphic extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [
             Colors.white.withValues(alpha: 0),
-            Colors.white.withValues(alpha: 0.75),
+            Colors.white.withValues(alpha: sh == null ? 0 : 0.75),
             Colors.white.withValues(alpha: 0),
           ],
-          stops: [c(sh - 0.15), c(sh), c(sh + 0.15)],
+          stops: sh == null
+              ? const [0.0, 0.5, 1.0]
+              : [c(sh - 0.15), c(sh), c(sh + 0.15)],
         ).createShader(r),
         child: out,
       );
     }
     // Versatz relativ zur Grafikbreite (logisch immer 360).
-    out = Transform.translate(
-      offset: st.offset * 360,
-      child: Transform.scale(scale: st.scale, child: out),
+    return Opacity(
+      opacity: st.opacity.clamp(0.0, 1.0),
+      child: Transform.translate(
+        offset: st.offset * 360,
+        child: Transform.scale(scale: st.scale, child: out),
+      ),
     );
-    if (st.opacity < 1) {
-      out = Opacity(opacity: st.opacity.clamp(0.0, 1.0), child: out);
-    }
-    return out;
   }
 
   /// Text mit animierten Zahlen (Zähler) für Element [id].
@@ -11011,7 +11021,7 @@ class _StartelfGraphic extends StatelessWidget {
     final scale = posterItemScale[id] ?? 1.0;
     final rot = posterItemRot[id] ?? 0.0;
     final selected = posterSelected == id;
-    if (anim != null && animT != null) child = _animWrap(id, child);
+    child = _animWrap(id, child);
     return Builder(
       builder: (nctx) {
         stdNatCtx?[id] = nctx;
@@ -12222,9 +12232,11 @@ class _StartelfGraphic extends StatelessWidget {
   Widget _bgBase({bool radial = false}) {
     if (hideBackground) return const SizedBox.expand();
     final raw = _bgBaseRaw(radial: radial);
+    // Gleicher Aufbau auch im Stillstand (sonst blitzt das Bild beim Wechsel).
     final a = anim, t = animT;
-    if (a == null || t == null || a.bg == 'none') return raw;
-    final b = bgTransform(a.bg, t, a.seconds);
+    final b = (a == null || t == null || a.bg == 'none')
+        ? (scale: 1.0, offset: Offset.zero)
+        : bgTransform(a.bg, t, a.seconds);
     return ClipRect(
       child: Transform.scale(
         scale: b.scale,
