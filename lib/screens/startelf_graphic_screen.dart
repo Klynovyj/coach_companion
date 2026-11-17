@@ -7459,6 +7459,93 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
     final txt = _animTextOf(id);
     final canCount = id == 'std_score' || (txt != null && hasNumber(txt));
+    final kids = <Widget>[
+      DropdownButtonFormField<String>(
+        initialValue: cur.fx,
+        decoration: const InputDecoration(labelText: 'Effekt'),
+        items: [
+          for (final e in ElementAnim.effects.entries)
+            DropdownMenuItem(value: e.key, child: Text(e.value)),
+        ],
+        onChanged: (v) => upd((x) => x.fx = v ?? 'none'),
+      ),
+      Row(
+        children: [
+          const Text('Start'),
+          Expanded(
+            child: Slider(
+              value: cur.start.clamp(0, maxStart).toDouble(),
+              min: 0,
+              max: maxStart,
+              divisions: (maxStart * 10).round(),
+              label: '${cur.start.toStringAsFixed(1)} s',
+              onChanged: (v) => upd((x) => x.start = v, play: false),
+              onChangeEnd: (_) => _playAnim(only: id),
+            ),
+          ),
+          Text('${cur.start.toStringAsFixed(1).replaceAll('.', ',')} s'),
+        ],
+      ),
+      if (canCount)
+        Row(
+          children: [
+            const Text('Zahl'),
+            const SizedBox(width: 12),
+            Expanded(
+              child: SegmentedButton<String>(
+                showSelectedIcon: false,
+                segments: [
+                  for (final e in ElementAnim.counts.entries)
+                    ButtonSegment(value: e.key, label: Text(e.value)),
+                ],
+                selected: {cur.count},
+                onSelectionChanged: (s) => upd((x) {
+                  x.count = s.first;
+                  if (x.count != 'none' && x.len < 1.2) x.len = 1.5;
+                }),
+              ),
+            ),
+          ],
+        ),
+      Wrap(
+        spacing: 8,
+        children: [
+          FilterChip(
+            label: const Text('Glanz'),
+            selected: cur.shine,
+            onSelected: (v) => upd((x) => x.shine = v),
+          ),
+          FilterChip(
+            label: const Text('Pulsieren'),
+            selected: cur.pulse,
+            onSelected: (v) => upd((x) => x.pulse = v),
+          ),
+        ],
+      ),
+      const SizedBox(height: 6),
+      SizedBox(
+        width: double.infinity,
+        child: FilledButton.tonalIcon(
+          onPressed: !cur.isActive
+              ? null
+              : (_animPlaying ? _stopAnim : () => _playAnim(only: id)),
+          icon: Icon(_animPlaying ? Icons.stop : Icons.play_arrow),
+          label: Text(
+            !cur.isActive
+                ? 'Erst einen Effekt wählen'
+                : (_animPlaying ? 'Stopp' : 'Vorschau abspielen'),
+          ),
+        ),
+      ),
+    ];
+    // Im Panel: ohne Klapp-Kachel (Titel steht schon oben), mit Abstand,
+    // damit das Feld-Label nicht abgeschnitten wird.
+    if (open) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [const SizedBox(height: 10), ...kids],
+      );
+    }
     return ExpansionTile(
       leading: const Icon(Icons.animation),
       title: const Text('Animation'),
@@ -7473,85 +7560,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       childrenPadding: EdgeInsets.zero,
       shape: const Border(),
       collapsedShape: const Border(),
-      children: [
-        DropdownButtonFormField<String>(
-          initialValue: cur.fx,
-          decoration: const InputDecoration(labelText: 'Effekt'),
-          items: [
-            for (final e in ElementAnim.effects.entries)
-              DropdownMenuItem(value: e.key, child: Text(e.value)),
-          ],
-          onChanged: (v) => upd((x) => x.fx = v ?? 'none'),
-        ),
-        Row(
-          children: [
-            const Text('Start'),
-            Expanded(
-              child: Slider(
-                value: cur.start.clamp(0, maxStart).toDouble(),
-                min: 0,
-                max: maxStart,
-                divisions: (maxStart * 10).round(),
-                label: '${cur.start.toStringAsFixed(1)} s',
-                onChanged: (v) => upd((x) => x.start = v, play: false),
-                onChangeEnd: (_) => _playAnim(only: id),
-              ),
-            ),
-            Text('${cur.start.toStringAsFixed(1).replaceAll('.', ',')} s'),
-          ],
-        ),
-        if (canCount)
-          Row(
-            children: [
-              const Text('Zahl'),
-              const SizedBox(width: 12),
-              Expanded(
-                child: SegmentedButton<String>(
-                  showSelectedIcon: false,
-                  segments: [
-                    for (final e in ElementAnim.counts.entries)
-                      ButtonSegment(value: e.key, label: Text(e.value)),
-                  ],
-                  selected: {cur.count},
-                  onSelectionChanged: (s) => upd((x) {
-                    x.count = s.first;
-                    if (x.count != 'none' && x.len < 1.2) x.len = 1.5;
-                  }),
-                ),
-              ),
-            ],
-          ),
-        Wrap(
-          spacing: 8,
-          children: [
-            FilterChip(
-              label: const Text('Glanz'),
-              selected: cur.shine,
-              onSelected: (v) => upd((x) => x.shine = v),
-            ),
-            FilterChip(
-              label: const Text('Pulsieren'),
-              selected: cur.pulse,
-              onSelected: (v) => upd((x) => x.pulse = v),
-            ),
-          ],
-        ),
-        const SizedBox(height: 6),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.tonalIcon(
-            onPressed: !cur.isActive
-                ? null
-                : (_animPlaying ? _stopAnim : () => _playAnim(only: id)),
-            icon: Icon(_animPlaying ? Icons.stop : Icons.play_arrow),
-            label: Text(
-              !cur.isActive
-                  ? 'Erst einen Effekt wählen'
-                  : (_animPlaying ? 'Stopp' : 'Vorschau abspielen'),
-            ),
-          ),
-        ),
-      ],
+      children: kids,
     );
   }
 
