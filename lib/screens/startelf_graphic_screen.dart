@@ -34,6 +34,7 @@ import '../widgets/player_picker_page.dart';
 import '../widgets/logo_chip.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/text_look.dart';
+import '../widgets/action_photo.dart';
 import '../widgets/ai_look.dart';
 import 'photo_editor_screen.dart';
 
@@ -3203,11 +3204,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       (p) => p.id == id,
       orElse: () => players.first,
     );
-    final bytes = TeamLogo.decode(player.photoPath);
+    // Grafiken: Actionfoto (fehlt es → Nachfrage). FuPa-Foto: Porträt.
+    final src = _isFupa
+        ? player.photoPath
+        : await resolveActionPhoto(context, player);
+    if (!mounted) return null;
+    final bytes = TeamLogo.decode(src);
     if (bytes == null) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Dieser Spieler hat kein Profilfoto.')),
-      );
+      if (_isFupa) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Dieser Spieler hat kein Profilfoto.')),
+        );
+      }
       return null;
     }
     // Im Editor auf das Zielformat zuschneiden (WYSIWYG), Transparenz erhalten.

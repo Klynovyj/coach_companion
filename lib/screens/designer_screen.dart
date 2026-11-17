@@ -11,6 +11,7 @@ import '../models/match.dart';
 import '../models/match_event.dart';
 import '../models/player.dart';
 import '../state/app_state.dart';
+import '../widgets/action_photo.dart';
 import '../widgets/player_avatar.dart';
 import '../widgets/team_logo.dart';
 import 'compare_graphic_screen.dart';
@@ -234,7 +235,7 @@ class _DesignerScreenState extends State<DesignerScreen> {
         'Spielstand': stand,
       },
     );
-    if (edited == null) return null;
+    if (edited == null || !mounted) return null;
     final n = edited['Torschütze']!.trim();
     final short = scorerShortName(n);
     final info = [
@@ -242,6 +243,8 @@ class _DesignerScreenState extends State<DesignerScreen> {
       if (edited['Minute']!.trim().isNotEmpty) "${edited['Minute']!.trim()}'",
       if (edited['Spielstand']!.trim().isNotEmpty) edited['Spielstand']!.trim(),
     ].join(' · ');
+    final photo = p == null ? null : await resolveActionPhoto(context, p);
+    if (!mounted) return null;
     return DesignerData(
       id: _newId(),
       template: 'goal',
@@ -249,7 +252,7 @@ class _DesignerScreenState extends State<DesignerScreen> {
       headline: 'TOR!',
       infoLine: info,
       matchId: match.id,
-      playerPhoto: p?.photoPath,
+      playerPhoto: photo,
       opponentName: match.opponentName,
       opponentLogo: match.opponentLogoPath,
       isHome: home,
@@ -286,6 +289,8 @@ class _DesignerScreenState extends State<DesignerScreen> {
       else
         'gegen ${match.opponentName.toUpperCase()}',
     ].join(' · ');
+    final photo = await resolveActionPhoto(context, p);
+    if (!mounted) return null;
     return DesignerData(
       id: _newId(),
       template: 'motm',
@@ -293,7 +298,7 @@ class _DesignerScreenState extends State<DesignerScreen> {
       headline: 'SPIELER DES SPIELS',
       infoLine: info,
       matchId: match.id,
-      playerPhoto: p.photoPath,
+      playerPhoto: photo,
       opponentName: match.opponentName,
       opponentLogo: match.opponentLogoPath,
       isHome: home,
@@ -353,13 +358,15 @@ class _DesignerScreenState extends State<DesignerScreen> {
       includeStaff: true,
     );
     if (!mounted) return null;
+    final photo = p == null ? null : await resolveActionPhoto(context, p);
+    if (!mounted) return null;
     return DesignerData(
       id: _newId(),
       template: 'occasion',
       title: '${occ.$1}${p == null ? '' : ' ${p.fullName}'}',
       headline: headline,
       infoLine: p?.fullName.toUpperCase() ?? '',
-      playerPhoto: p?.photoPath,
+      playerPhoto: photo,
     );
   }
 
