@@ -1766,7 +1766,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   bool _editZoomed = false;
   // Freier Editor für ALLE Grafiktypen (Ankündigung/Ergebnis/Startelf); im
   // reinen Branding-Design-Modus deaktiviert (eigenes Layout).
-  bool get _editable => !_settings.designMode;
+  // „Eigenes Branding“ (designMode) gibt es nicht mehr – immer der Editor.
+  bool get _editable => true;
   // Speicher-ID je Spiel UND Grafiktyp (sonst würden sich Ankündigung/Ergebnis/
   // Startelf desselben Spiels überschreiben). match_id-Spalte bleibt die Spiel-ID.
   String get _designStorageId =>
@@ -2163,6 +2164,18 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _teamSettings = settings;
       _loading = false;
     });
+    // Früheres „Eigenes Branding“ (alter Modus) teamweit ausschalten – sonst
+    // hingen andere Geräte/Grafiken noch im alten Modus.
+    if (settings.designMode) {
+      final fixed = settings.copyWith(designMode: false);
+      _settings = _settings.copyWith(designMode: false);
+      _teamSettings = fixed;
+      unawaited(
+        state
+            .saveGraphicSettings(fixed)
+            .then((_) => state.pushGraphicSettingsToCloud()),
+      );
+    }
     // FuPa: eigener, team-weiter Hintergrund (Vorlage „fupa-background").
     if (_isFupa) {
       final presets = await state.graphicPresets();
@@ -3408,9 +3421,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
             children: [
-              const Text(
-                'Name und Logos erscheinen in allen Grafiken des Teams.',
-                style: TextStyle(fontSize: 12),
+              Row(
+                children: [
+                  _teamBadge(),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Name und Logos erscheinen in allen Grafiken des Teams.',
+                      style: TextStyle(fontSize: 12),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               TextField(
@@ -3458,23 +3479,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     : () => apply(_settings.copyWith(clearLogoDark: true)),
                 clearLabel: 'Entfernen',
               ),
-              const SizedBox(height: 4),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Eigenes Branding'),
-                subtitle: const Text(
-                  'Dein Hintergrundbild füllt alles; eigenes Logo/Titel aus, '
-                  'nur Teams/Datum/Score – frei verschiebbar.',
-                ),
-                value: _settings.designMode,
-                onChanged: (v) => apply(
-                  _settings.copyWith(
-                    designMode: v,
-                    // Beim Aktivieren Hintergrund voll zeigen.
-                    overlayOpacity: v ? 20 : _settings.overlayOpacity,
-                  ),
-                ),
-              ),
             ],
           );
         }
@@ -3496,6 +3500,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             _secHead(
               'Vorlagen',
               first: !_isFupa,
+              team: !_isFupa,
               info:
                   'Ein Tipp setzt Farben und Bild auf einmal. Eigene '
                   'Vorlagen gelten für das ganze Team.',
@@ -3584,7 +3589,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 ),
               ),
             ),
-            _secHead('Farben'),
+            _secHead('Farben', team: !_isFupa),
             const Text('Verlauf oben', style: TextStyle(fontSize: 13)),
             const SizedBox(height: 6),
             _swatches(
@@ -3609,6 +3614,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             ),
             _secHead(
               'Bild & Foto',
+              team: !_isFupa,
               info:
                   'Hintergrundbild = ein Bild für den ganzen Hintergrund. '
                   '„Fotos“ legt eigene Fotos als Hintergrund oder in einen '
@@ -5150,9 +5156,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     matchDate: widget.matchDate,
     isHome: widget.isHome,
     opponentName: widget.opponentName,
-    opponentLogo: (_settings.showOpponentLogo || _settings.designMode)
-        ? widget.opponentLogo
-        : null,
+    opponentLogo: _settings.showOpponentLogo ? widget.opponentLogo : null,
     compact: !_story,
     result: widget.result,
     announcement: widget.announcement,
@@ -5160,7 +5164,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     bandPhotos: _bandPhotos,
     showPhotos: _settings.showPhotos,
     photoController: _photoCtrl,
-    designMode: _settings.designMode,
+    designMode: false,
     accent: _settings.accent == null ? null : _hex(_settings.accent!),
     bgOpacity: _settings.bgOpacity / 100,
     bgBlend: _blendModeOf(_settings.bgBlend),
@@ -8622,7 +8626,47 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   );
 
   /// Einheitliche Abschnittsüberschrift im Panel (optional mit ⓘ).
-  Widget _secHead(String title, {String? info, bool first = false}) {
+  /// Kennzeichen „Team“: Option gilt für alle Grafiken des Teams.
+  Widget _teamBadge() {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message:
+          'Gilt für alle Grafiken des Teams – auch bei den anderen Trainern. '
+          'Rückgängig geht wie gewohnt.',
+      triggerMode: TooltipTriggerMode.tap,
+      showDuration: const Duration(seconds: 6),
+      child: Container(
+        margin: const EdgeInsets.only(left: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          color: scheme.tertiaryContainer,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.groups, size: 13, color: scheme.onTertiaryContainer),
+            const SizedBox(width: 3),
+            Text(
+              'Team',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: scheme.onTertiaryContainer,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _secHead(
+    String title, {
+    String? info,
+    bool first = false,
+    bool team = false,
+  }) {
     final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: EdgeInsets.only(top: first ? 2 : 16, bottom: 4),
@@ -8636,6 +8680,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               color: scheme.primary,
             ),
           ),
+          if (team) _teamBadge(),
           if (info != null) _infoIcon(info),
           const SizedBox(width: 8),
           Expanded(child: Divider(color: scheme.outlineVariant)),
@@ -8650,10 +8695,13 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     bool value,
     ValueChanged<bool>? onChanged, {
     String? info,
+    bool team = false,
   }) => Row(
     children: [
-      Expanded(child: Text(title, style: const TextStyle(fontSize: 14))),
+      Flexible(child: Text(title, style: const TextStyle(fontSize: 14))),
+      if (team) _teamBadge(),
       if (info != null) _infoIcon(info),
+      const Spacer(),
       Switch(value: value, onChanged: onChanged),
     ],
   );
@@ -8836,7 +8884,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             ),
         ],
         if (widget.opponentLogo != null || widget.isResult) ...[
-          _secHead('Weitere Inhalte'),
+          _secHead('Weitere Inhalte', team: true),
           if (widget.opponentLogo != null)
             _switchRow(
               'Gegner-Logo',
@@ -8895,6 +8943,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ),
         _secHead(
           'Akzentfarbe',
+          team: true,
           info: 'Farbe für Linien, „vs", Spielstand und Datum.',
         ),
         _swatches(
@@ -8907,7 +8956,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 : s.copyWith(accent: hex),
           ),
         ),
-        _secHead('Logos'),
+        _secHead('Logos', team: true),
         Row(
           children: [
             const Text('Form', style: TextStyle(fontSize: 14)),
@@ -9987,265 +10036,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     if (_editable && _hasStorage && _designLoaded) {
       _scheduleSave();
     }
-    if (_editable) {
-      if (!_hasStorage || _designLoaded) _scheduleHistory();
-      return _buildStudio();
-    }
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          widget.designer != null
-              ? (_designerTitle.isEmpty
-                    ? widget.designer!.templateLabel
-                    : _designerTitle)
-              : widget.isAnnouncement
-              ? 'Spielankündigung'
-              : widget.isResult
-              ? 'Ergebnis-Grafik'
-              : 'Startelf-Grafik',
-          overflow: TextOverflow.ellipsis,
-        ),
-        actions: [
-          if (widget.designer != null)
-            IconButton(
-              tooltip: 'Umbenennen',
-              icon: const Icon(Icons.drive_file_rename_outline),
-              onPressed: _renameDesign,
-            ),
-          IconButton(
-            tooltip: 'Fotos / Bilder',
-            icon: Icon(
-              _photos.isNotEmpty
-                  ? Icons.add_a_photo
-                  : Icons.add_a_photo_outlined,
-            ),
-            onPressed: _managePhotos,
-          ),
-          IconButton(
-            tooltip: 'Grafik anpassen',
-            icon: const Icon(Icons.tune),
-            onPressed: _openCustomize,
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          if (_isFupa)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(12, 10, 12, 4),
-              child: Text(
-                'FuPa-Spielerfoto · 960 × 1200 px (Hochformat 4:5)',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-              child: SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: true, label: Text('Story 9:16')),
-                  ButtonSegment(value: false, label: Text('Post 1:1')),
-                ],
-                selected: {_story},
-                showSelectedIcon: false,
-                onSelectionChanged: (s) {
-                  setState(() => _format = s.first ? 's' : 'p');
-                  _syncFtCtrl(); // Foto-Ausschnitt des anderen Formats laden
-                },
-              ),
-            ),
-          // Ergebnis: Standard oder „Mit Foto" (ENDSTAND, Foto oben).
-          if (widget.isResult)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
-              child: Wrap(
-                alignment: WrapAlignment.center,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 8,
-                runSpacing: 4,
-                children: [
-                  _resultLayoutToggle(),
-                  if (_ftLayout)
-                    OutlinedButton.icon(
-                      icon: const Icon(Icons.add_photo_alternate, size: 18),
-                      label: Text(
-                        _ftPhotoF[_designKey] == null
-                            ? 'Foto oben wählen'
-                            : 'Foto oben ändern',
-                      ),
-                      onPressed: _pickFtPhoto,
-                    ),
-                  if (_ftLayout && _ftPhotoF[_designKey] != null)
-                    SizedBox(width: 420, child: _ftPhotoScaleControls()),
-                ],
-              ),
-            ),
-          Expanded(
-            flex: 3,
-            child: Align(
-              alignment: Alignment.topCenter,
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: _previewStack(interactive: false),
-                ),
-              ),
-            ),
-          ),
-          // Einstellungen in einem SCROLLBAREN Bereich (flex:2) → die Vorschau
-          // oben bleibt immer sichtbar, auch wenn „Profi-Finish" aufgeklappt ist.
-          Expanded(
-            flex: 2,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: Theme.of(context).dividerColor),
-                ),
-              ),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (_settings.designMode)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.open_with,
-                            size: 15,
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Info-Block ziehen zum Platzieren',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.outline,
-                            ),
-                          ),
-                        ],
-                      ),
-                    if (_bandPhotos.length == 1 && !_settings.designMode)
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            Icons.open_with,
-                            size: 15,
-                            color: Theme.of(context).colorScheme.outline,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Foto ziehen & zoomen (Finger)',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(context).colorScheme.outline,
-                            ),
-                          ),
-                        ],
-                      ),
-                    // Profi-Finish (globale Bildkorrektur) – alle Grafiktypen.
-                    _gradeControls(),
-                    const SizedBox(height: 8),
-                    // KI-Bearbeitung nur, wenn die Grafik-KI (Gemini) frei ist.
-                    if (context.watch<AppState>().canAiImage)
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: (_sharing || _aiBusy) ? null : _aiEdit,
-                          icon: _aiBusy
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.auto_awesome),
-                          label: Text(
-                            _aiBusy ? 'KI gestaltet …' : 'Mit KI gestalten',
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          // Hauptaktionen bleiben unten IMMER sichtbar (angepinnt).
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: (_sharing || _aiBusy) ? null : _saveImage,
-                          icon: const Icon(Icons.download),
-                          label: const Text('Bild speichern'),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: (_sharing || _aiBusy)
-                              ? null
-                              : _saveBackground,
-                          icon: const Icon(Icons.wallpaper_outlined),
-                          label: const Text('Nur Hintergrund'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  if (_anim.isActive && _format != 'f') ...[
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.tonalIcon(
-                        onPressed:
-                            VideoEncoder.isSupported &&
-                                !_sharing &&
-                                !_aiBusy &&
-                                !_videoBusy
-                            ? _exportVideo
-                            : null,
-                        icon: const Icon(Icons.movie_outlined),
-                        label: Text(
-                          VideoEncoder.isSupported
-                              ? 'Als Video teilen (Instagram)'
-                              : 'Video nur in der Android-App',
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed: (_sharing || _aiBusy) ? null : _share,
-                      icon: _sharing
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.share),
-                      label: const Text('Teilen (WhatsApp)'),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    if (!_hasStorage || _designLoaded) _scheduleHistory();
+    return _buildStudio();
   }
 }
 
