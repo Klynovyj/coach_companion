@@ -9353,8 +9353,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   Widget _formatMenu(Color fg) {
     final label = _isFupa ? '4:5' : (_story ? '9:16' : '1:1');
-    Widget item(IconData i, String t) =>
-        Row(children: [Icon(i, size: 20), const SizedBox(width: 12), Text(t)]);
+    // Alle Zeilen gleich aufgebaut: Symbol-Spalte (24 px) + Text → bündig.
+    Widget item(IconData? i, String t, {bool bold = false}) => Row(
+      children: [
+        SizedBox(width: 24, child: i == null ? null : Icon(i, size: 20)),
+        const SizedBox(width: 14),
+        Text(
+          t,
+          style: bold ? const TextStyle(fontWeight: FontWeight.w700) : null,
+        ),
+      ],
+    );
     return PopupMenuButton<String>(
       tooltip: 'Format & mehr',
       onSelected: (v) {
@@ -9373,15 +9382,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       },
       itemBuilder: (_) => [
         if (!_isFupa) ...[
-          CheckedPopupMenuItem(
+          PopupMenuItem(
             value: 's',
-            checked: _format == 's',
-            child: const Text('Story 9:16'),
+            child: item(
+              _format == 's' ? Icons.check : null,
+              'Story 9:16',
+              bold: _format == 's',
+            ),
           ),
-          CheckedPopupMenuItem(
+          PopupMenuItem(
             value: 'p',
-            checked: _format == 'p',
-            child: const Text('Post 1:1'),
+            child: item(
+              _format == 'p' ? Icons.check : null,
+              'Post 1:1',
+              bold: _format == 'p',
+            ),
           ),
           if (_canCopyFormats)
             PopupMenuItem(
