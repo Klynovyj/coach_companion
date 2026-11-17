@@ -3287,6 +3287,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     var presets = await state.graphicPresets();
     if (!mounted) return;
     final club = section == 'club';
+    _bgArt = null; // Art beim Öffnen aus dem aktuellen Hintergrund ableiten
     _openPanel(
       club ? 'tool:club' : 'tool:bg',
       club
@@ -3482,49 +3483,72 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             ],
           );
         }
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: [
-            if (_isFupa) ...[
-              _secHead('Art', first: true),
-              _fupaBgToggle(),
-              const Padding(
-                padding: EdgeInsets.only(top: 4),
-                child: Text(
-                  'Gilt für dieses Design und als Vorlage für neue '
-                  'FuPa-Fotos.',
-                  style: TextStyle(fontSize: 12),
-                ),
-              ),
-            ],
-            _secHead(
-              'Vorlagen',
-              first: !_isFupa,
-              team: !_isFupa,
-              info:
-                  'Ein Tipp setzt Farben und Bild auf einmal. Eigene '
-                  'Vorlagen gelten für das ganze Team.',
-            ),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final p in _presets)
-                  ActionChip(
-                    avatar: Container(
-                      width: 18,
-                      height: 18,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(4),
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [_hex(p.$2), _hex(p.$3)],
-                        ),
+        // ---- Hintergrund: erst die Art, dann nur deren Einstellungen ----
+        final scheme = Theme.of(ctx).colorScheme;
+        final hasImage = _photoBg != null || _settings.bgImage != null;
+        final autoArt = _isFupa
+            ? (_fupaBgVar == 'club' ? 'grad' : 'img')
+            : _aiBgSel != null
+            ? 'ai'
+            : hasImage
+            ? 'img'
+            : 'grad';
+        final art = _isFupa ? autoArt : (_bgArt ?? autoArt);
+        final team = !_isFupa;
+        final canAi = context.read<AppState>().canAiImage;
+
+        void removeImages() {
+          setState(() {
+            _aiBgSelF[_designKey] = null;
+            _photos.removeWhere((p) => p.place == _PhotoPlace.background);
+          });
+          apply(_settings.copyWith(clearBgImage: true));
+        }
+
+        final gradient = <Widget>[
+          if (!_isFupa && hasImage)
+            Card(
+              color: scheme.secondaryContainer,
+              margin: const EdgeInsets.only(top: 8, bottom: 4),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 6, 6),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Gerade liegt ein Bild über dem Verlauf.',
+                        style: TextStyle(fontSize: 13),
                       ),
                     ),
-                    label: Text(p.$1),
-                    onPressed: () => apply(
+                    TextButton(
+                      onPressed: removeImages,
+                      child: const Text('Bild entfernen'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          _secHead(
+            'Vorlagen',
+            team: team,
+            info:
+                'Ein Tipp setzt beide Verlaufsfarben (und ggf. die '
+                'Akzentfarbe).',
+          ),
+          SizedBox(
+            height: 78,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              children: [
+                for (final p in _presets)
+                  _gradientTile(
+                    p.$1,
+                    p.$2,
+                    p.$3,
+                    selected:
+                        _settings.gradTop == p.$2 &&
+                        _settings.gradBottom == p.$3,
+                    onTap: () => apply(
                       _settings.copyWith(
                         gradTop: p.$2,
                         gradBottom: p.$3,
@@ -3535,75 +3559,31 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                   ),
               ],
             ),
-            if (_aiBgs.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const Text('KI-Hintergründe', style: TextStyle(fontSize: 13)),
-              const SizedBox(height: 6),
-              _aiBgStrip(ctx, setSheet),
-            ],
-            if (presets.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              const Text('Meine Vorlagen', style: TextStyle(fontSize: 13)),
-              const SizedBox(height: 6),
-              for (final p in presets)
-                Card(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  child: ListTile(
-                    dense: true,
-                    contentPadding: const EdgeInsets.only(left: 10, right: 2),
-                    leading: _presetSwatch(p),
-                    title: Text(
-                      p.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    onTap: () => applyPreset(p),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          tooltip: 'Umbenennen',
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.edit_outlined, size: 20),
-                          onPressed: () => renamePreset(p),
-                        ),
-                        IconButton(
-                          tooltip: 'Löschen',
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.delete_outline, size: 20),
-                          onPressed: () => deletePreset(p),
-                        ),
-                      ],
-                    ),
+          ),
+          _secHead('Farben', team: team),
+          Row(
+            children: [
+              _colorDot('Oben', _settings.gradTop, () async {
+                final hex = await _pickColor(_settings.gradTop);
+                if (hex != null) apply(_settings.copyWith(gradTop: hex));
+              }),
+              IconButton(
+                tooltip: 'Farben tauschen',
+                icon: const Icon(Icons.swap_vert),
+                onPressed: () => apply(
+                  _settings.copyWith(
+                    gradTop: _settings.gradBottom,
+                    gradBottom: _settings.gradTop,
                   ),
                 ),
-            ],
-            const SizedBox(height: 6),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: savePreset,
-                icon: const Icon(Icons.bookmark_add_outlined),
-                label: const Text(
-                  'Aktuellen Hintergrund als Vorlage speichern',
-                ),
               ),
-            ),
-            _secHead('Farben', team: !_isFupa),
-            const Text('Verlauf oben', style: TextStyle(fontSize: 13)),
-            const SizedBox(height: 6),
-            _swatches(
-              selected: _settings.gradTop,
-              onPick: (hex) => apply(_settings.copyWith(gradTop: hex)),
-            ),
-            const SizedBox(height: 10),
-            const Text('Verlauf unten', style: TextStyle(fontSize: 13)),
-            const SizedBox(height: 6),
-            _swatches(
-              selected: _settings.gradBottom,
-              onPick: (hex) => apply(_settings.copyWith(gradBottom: hex)),
-            ),
-            const SizedBox(height: 10),
+              _colorDot('Unten', _settings.gradBottom, () async {
+                final hex = await _pickColor(_settings.gradBottom);
+                if (hex != null) apply(_settings.copyWith(gradBottom: hex));
+              }),
+            ],
+          ),
+          _finetune([
             BgStyleControls(
               shape: _settings.gradShape,
               pattern: _settings.bgPattern,
@@ -3612,50 +3592,89 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               ),
               onPattern: (v) => apply(_settings.copyWith(bgPattern: v)),
             ),
+          ]),
+        ];
+
+        final image = <Widget>[
+          _secHead(
+            _isFupa ? 'Bild' : 'Team-Hintergrundbild',
+            team: team,
+            info: 'Ein Bild für den ganzen Hintergrund.',
+          ),
+          _rowWithImage(
+            label: _settings.bgImage == null ? 'Kein Bild' : 'Bild gewählt',
+            preview: _settings.bgImage,
+            onPick: () async {
+              final url = await _pickImage(
+                asBackground: true,
+                edit: true,
+                aspectRatio: _photoAspect(_PhotoPlace.background),
+              );
+              if (url == null) return;
+              // FuPa: importierter Hintergrund genau wie die Datei –
+              // volle Deckkraft, nicht abgedunkelt.
+              apply(
+                _isFupa
+                    ? _settings.copyWith(
+                        bgImage: url,
+                        bgOpacity: 100,
+                        overlayOpacity: 0,
+                        bgBlend: 'normal',
+                      )
+                    : _settings.copyWith(bgImage: url),
+              );
+            },
+            onClear: _settings.bgImage == null
+                ? null
+                : () => apply(_settings.copyWith(clearBgImage: true)),
+            clearLabel: 'Entfernen',
+          ),
+          if (!_isFupa) ...[
             _secHead(
-              'Bild & Foto',
-              team: !_isFupa,
+              'Foto nur für diese Grafik',
               info:
-                  'Hintergrundbild = ein Bild für den ganzen Hintergrund. '
-                  '„Fotos“ legt eigene Fotos als Hintergrund oder in einen '
-                  'Foto-Bereich.',
+                  'Eigenes Foto (Kamera/Galerie) als Hintergrund oder in '
+                  'einem Foto-Bereich. Liegt über dem Team-Bild und gilt '
+                  'nur für diese Grafik.',
             ),
-            _rowWithImage(
-              label: 'Hintergrundbild',
-              preview: _settings.bgImage,
-              onPick: () async {
-                final url = await _pickImage(
-                  asBackground: true,
-                  edit: true,
-                  aspectRatio: _photoAspect(_PhotoPlace.background),
-                );
-                if (url == null) return;
-                // FuPa: importierter Hintergrund genau wie die Datei –
-                // volle Deckkraft, nicht abgedunkelt.
-                apply(
-                  _isFupa
-                      ? _settings.copyWith(
-                          bgImage: url,
-                          bgOpacity: 100,
-                          overlayOpacity: 0,
-                          bgBlend: 'normal',
-                        )
-                      : _settings.copyWith(bgImage: url),
-                );
-              },
-              onClear: _settings.bgImage == null
-                  ? null
-                  : () => apply(_settings.copyWith(clearBgImage: true)),
-              clearLabel: 'Entfernen',
-            ),
-            const SizedBox(height: 6),
             OutlinedButton.icon(
               onPressed: _managePhotos,
-              icon: const Icon(Icons.photo_library_outlined),
-              label: const Text('Fotos als Hintergrund/Bereich'),
+              icon: const Icon(Icons.add_a_photo_outlined),
+              label: Text(
+                _photos.isEmpty ? 'Foto hinzufügen' : 'Fotos verwalten',
+              ),
             ),
-            if (_settings.bgImage != null) ...[
-              const SizedBox(height: 10),
+          ],
+          if (hasImage) ...[
+            _secHead(
+              'Abdunkeln',
+              info:
+                  'Dunkelt das Bild ab, damit Schrift und Logos besser '
+                  'lesbar sind.',
+            ),
+            Row(
+              children: [
+                Expanded(
+                  child: Slider(
+                    value: _settings.overlayOpacity.toDouble(),
+                    min: 0,
+                    max: 100,
+                    divisions: 20,
+                    label: '${_settings.overlayOpacity}%',
+                    onChanged: (v) =>
+                        apply(_settings.copyWith(overlayOpacity: v.round())),
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    '${_settings.overlayOpacity}%',
+                    textAlign: TextAlign.right,
+                  ),
+                ),
+              ],
+            ),
+            _finetune([
               Row(
                 children: [
                   Text(
@@ -3673,27 +3692,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 label: '${_settings.bgOpacity}%',
                 onChanged: (v) =>
                     apply(_settings.copyWith(bgOpacity: v.round())),
-              ),
-              Row(
-                children: [
-                  Text(
-                    'Abdunkeln ${_settings.overlayOpacity}%',
-                    style: const TextStyle(fontSize: 13),
-                  ),
-                  _infoIcon(
-                    'Dunkelt das Bild ab, damit Schrift und Logos besser '
-                    'lesbar sind.',
-                  ),
-                ],
-              ),
-              Slider(
-                value: _settings.overlayOpacity.toDouble(),
-                min: 0,
-                max: 100,
-                divisions: 20,
-                label: '${_settings.overlayOpacity}%',
-                onChanged: (v) =>
-                    apply(_settings.copyWith(overlayOpacity: v.round())),
               ),
               Row(
                 children: [
@@ -3717,27 +3715,96 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     ),
                 ],
               ),
-            ],
-            if (widget.isResult) ...[
-              _secHead('Aufbau'),
-              Center(
-                child: _resultLayoutToggle(onChanged: () => setSheet(() {})),
+            ]),
+          ],
+        ];
+
+        final ai = <Widget>[
+          _secHead(
+            'KI-Hintergründe',
+            info:
+                'Die KI erzeugt aus deiner Grafik einen neuen Hintergrund. '
+                'Antippen schaltet ihn für diese Grafik ein oder aus.',
+          ),
+          if (canAi || _aiBgs.isNotEmpty)
+            _aiBgStrip(ctx, setSheet)
+          else
+            Text(
+              'KI-Bilder sind für dich nicht freigeschaltet (Admin fragen).',
+              style: TextStyle(fontSize: 12, color: scheme.outline),
+            ),
+        ];
+
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            if (presets.isNotEmpty) ...[
+              _secHead(
+                'Meine Vorlagen',
+                first: true,
+                team: true,
+                info:
+                    'Gespeicherte Hintergründe. Antippen übernimmt, '
+                    'lange drücken = umbenennen/löschen.',
               ),
-              if (_ftLayout) ...[
-                const SizedBox(height: 6),
-                OutlinedButton.icon(
-                  icon: const Icon(Icons.add_photo_alternate, size: 18),
-                  label: Text(
-                    _ftPhotoF[_designKey] == null
-                        ? 'Foto oben wählen'
-                        : 'Foto oben ändern / entfernen',
-                  ),
-                  onPressed: _pickFtPhoto,
+              SizedBox(
+                height: 78,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    for (final p in presets)
+                      _presetTile(
+                        p,
+                        onTap: () => applyPreset(p),
+                        onRename: () => renamePreset(p),
+                        onDelete: () => deletePreset(p),
+                      ),
+                  ],
                 ),
-                if (_ftPhotoF[_designKey] != null)
-                  _ftPhotoScaleControls(refresh: () => setSheet(() {})),
-              ],
+              ),
             ],
+            SizedBox(height: presets.isEmpty ? 4 : 12),
+            if (_isFupa)
+              _fupaBgToggle()
+            else
+              Row(
+                children: [
+                  _bgArtButton('grad', 'Farbverlauf', Icons.gradient, art, () {
+                    setState(() => _bgArt = 'grad');
+                    setSheet(() {});
+                  }),
+                  const SizedBox(width: 8),
+                  _bgArtButton(
+                    'img',
+                    'Bild / Foto',
+                    Icons.image_outlined,
+                    art,
+                    () {
+                      setState(() => _bgArt = 'img');
+                      setSheet(() {});
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _bgArtButton('ai', 'KI', Icons.auto_awesome, art, () {
+                    setState(() => _bgArt = 'ai');
+                    setSheet(() {});
+                  }),
+                ],
+              ),
+            if (art == 'grad') ...gradient,
+            if (art == 'img') ...image,
+            if (art == 'ai') ...ai,
+            const SizedBox(height: 12),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: savePreset,
+                icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+                label: const Text(
+                  'Aktuellen Hintergrund als Vorlage speichern',
+                ),
+              ),
+            ),
           ],
         );
       },
@@ -3772,6 +3839,222 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     await state.saveGraphicSettings(_settings);
     await state.pushGraphicSettingsToCloud();
   }
+
+  // ------------------------------------------- Hintergrund-Bausteine
+  /// Gewählte Art im Hintergrund-Panel (null = aus dem Zustand ableiten).
+  String? _bgArt;
+
+  /// Große Art-Kachel (Farbverlauf / Bild / KI), aktive hervorgehoben.
+  Widget _bgArtButton(
+    String key,
+    String label,
+    IconData icon,
+    String current,
+    VoidCallback onTap,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    final sel = key == current;
+    return Expanded(
+      child: Material(
+        color: sel ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: sel ? scheme.primary : Colors.transparent,
+                width: 2,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  icon,
+                  color: sel ? scheme.onPrimaryContainer : scheme.onSurface,
+                ),
+                const SizedBox(height: 4),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: sel ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Runder Farbknopf mit Beschriftung (öffnet die Farbauswahl).
+  Widget _colorDot(String label, String hex, VoidCallback onTap) {
+    final scheme = Theme.of(context).colorScheme;
+    return Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: _hex(hex),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: scheme.outline),
+                ),
+                child: const Icon(Icons.edit, size: 16, color: Colors.white70),
+              ),
+              const SizedBox(width: 8),
+              Text(label, style: const TextStyle(fontSize: 14)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Verlaufs-Vorlage als Kachel mit Vorschau.
+  Widget _gradientTile(
+    String name,
+    String top,
+    String bottom, {
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: SizedBox(
+          width: 64,
+          child: Column(
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [_hex(top), _hex(bottom)],
+                  ),
+                  border: Border.all(
+                    color: selected ? scheme.primary : Colors.black26,
+                    width: selected ? 3 : 1,
+                  ),
+                ),
+                child: selected
+                    ? const Icon(Icons.check, color: Colors.white)
+                    : null,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Eigene Vorlage als Kachel (Antippen = übernehmen, lange drücken = Menü).
+  Widget _presetTile(
+    GraphicPreset p, {
+    required VoidCallback onTap,
+    required VoidCallback onRename,
+    required VoidCallback onDelete,
+  }) => Padding(
+    padding: const EdgeInsets.only(right: 8),
+    child: InkWell(
+      borderRadius: BorderRadius.circular(10),
+      onTap: onTap,
+      onLongPress: () async {
+        final v = await showModalBottomSheet<String>(
+          context: context,
+          builder: (c) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: Text(
+                    p.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Umbenennen'),
+                  onTap: () => Navigator.pop(c, 'rename'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('Löschen'),
+                  onTap: () => Navigator.pop(c, 'delete'),
+                ),
+              ],
+            ),
+          ),
+        );
+        if (v == 'rename') onRename();
+        if (v == 'delete') onDelete();
+      },
+      child: SizedBox(
+        width: 64,
+        child: Column(
+          children: [
+            SizedBox(
+              width: 52,
+              height: 52,
+              child: FittedBox(child: _presetSwatch(p)),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              p.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  /// Zugeklappte „Feinheiten“ (Profi-Optionen).
+  Widget _finetune(List<Widget> children) => ExpansionTile(
+    title: const Text(
+      'Feinheiten',
+      style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+    ),
+    leading: const Icon(Icons.tune, size: 20),
+    tilePadding: EdgeInsets.zero,
+    childrenPadding: const EdgeInsets.only(bottom: 8),
+    shape: const Border(),
+    collapsedShape: const Border(),
+    expandedCrossAxisAlignment: CrossAxisAlignment.start,
+    children: children,
+  );
 
   Widget _rowWithImage({
     required String label,
@@ -8847,6 +9130,24 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         for (final id in hidden) row(id, isHidden: true),
         if (visible.isEmpty && hidden.isEmpty)
           const Text('Noch nichts in der Grafik.'),
+        if (widget.isResult) ...[
+          _secHead('Aufbau'),
+          Center(child: _resultLayoutToggle(onChanged: () => setSheet(() {}))),
+          if (_ftLayout) ...[
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              icon: const Icon(Icons.add_photo_alternate, size: 18),
+              label: Text(
+                _ftPhotoF[_designKey] == null
+                    ? 'Foto oben wählen'
+                    : 'Foto oben ändern / entfernen',
+              ),
+              onPressed: _pickFtPhoto,
+            ),
+            if (_ftPhotoF[_designKey] != null)
+              _ftPhotoScaleControls(refresh: () => setSheet(() {})),
+          ],
+        ],
         if (hasMain || hasBar) ...[
           _secHead('Sponsoren'),
           if (hasMain) ...[
