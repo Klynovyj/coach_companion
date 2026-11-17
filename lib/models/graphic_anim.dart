@@ -101,8 +101,8 @@ class GraphicAnim {
 
   static const backgrounds = <String, String>{
     'none': 'Aus',
-    'zoom': 'Zoom',
-    'pan': 'Schwenk',
+    'zoom': 'Heranzoomen',
+    'pan': 'Schwenken',
   };
 
   static const presets = <String, String>{

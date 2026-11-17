@@ -3268,14 +3268,17 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     });
   }
 
-  Future<void> _openCustomize() async {
+  Future<void> _openCustomize([String section = 'bg']) async {
     final titleCtrl = TextEditingController(text: _settings.title ?? '');
     final state = context.read<AppState>();
     var presets = await state.graphicPresets();
     if (!mounted) return;
+    final club = section == 'club';
     _openPanel(
-      'tool:bg',
-      _isFupa ? 'FuPa-Hintergrund' : 'Hintergrund & Farben',
+      club ? 'tool:club' : 'tool:bg',
+      club
+          ? 'Vereinsdaten – gilt für alle Grafiken'
+          : (_isFupa ? 'FuPa-Hintergrund' : 'Hintergrund'),
       (ctx, setSheet) {
         void apply(GraphicSettings s) {
           setState(() => _settings = s); // Live-Vorschau hinter dem Sheet
@@ -3401,28 +3404,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           await reloadPresets();
         }
 
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
-          children: [
-            if (_aiBgs.isNotEmpty) ...[
-              _aiBgStrip(ctx, setSheet),
-              const Divider(height: 24),
-            ],
-            if (_isFupa) ...[_fupaBgToggle(), const SizedBox(height: 6)],
-            if (_isFupa)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  '${_fupaBgVar == 'club' ? 'Vereinsverlauf' : 'Bild-Hintergrund'}'
-                  ': gilt für dieses Design und als Vorlage für neue '
-                  'FuPa-Fotos – die anderen Grafiken behalten ihren '
-                  'Hintergrund.',
-                  style: const TextStyle(fontSize: 12),
-                ),
+        if (club) {
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            children: [
+              const Text(
+                'Name und Logos erscheinen in allen Grafiken des Teams.',
+                style: TextStyle(fontSize: 12),
               ),
-            const SizedBox(height: 14),
-            // Titel ------------------------------------------------
-            if (!_isFupa) ...[
+              const SizedBox(height: 12),
               TextField(
                 controller: titleCtrl,
                 textCapitalization: TextCapitalization.words,
@@ -3441,7 +3431,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               const SizedBox(height: 16),
               // Logo -------------------------------------------------
               _rowWithImage(
-                label: 'Logo (hell)',
+                label: 'Vereinslogo',
                 preview: _settings.logo,
                 onPick: () async {
                   final url = await _pickImage(asBackground: false);
@@ -3450,12 +3440,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 onClear: _settings.logo == null
                     ? null
                     : () => apply(_settings.copyWith(clearLogo: true)),
-                clearLabel: 'Team-Logo',
+                clearLabel: 'Zurück zum Team-Logo',
               ),
               const SizedBox(height: 10),
               // Logo für dunkle Hintergründe -------------------------
               _rowWithImage(
-                label: 'Logo (dunkel)',
+                label: 'Logo für dunkle Hintergründe',
                 preview: _settings.logoDark,
                 onPick: () async {
                   final url = await _pickImage(asBackground: false);
@@ -3468,165 +3458,48 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                     : () => apply(_settings.copyWith(clearLogoDark: true)),
                 clearLabel: 'Entfernen',
               ),
-              const SizedBox(height: 10),
-            ],
-            // Form des Logo-Hintergrunds (eckig/rund) -------------
-            Row(
-              children: [
-                const Text('Logo-Hintergrund'),
-                const SizedBox(width: 12),
-                ChoiceChip(
-                  label: const Text('Eckig'),
-                  selected: _settings.logoShape != 'circle',
-                  onSelected: (_) =>
-                      apply(_settings.copyWith(logoShape: 'rounded')),
-                ),
-                const SizedBox(width: 8),
-                ChoiceChip(
-                  label: const Text('Rund'),
-                  selected: _settings.logoShape == 'circle',
-                  onSelected: (_) =>
-                      apply(_settings.copyWith(logoShape: 'circle')),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            // Hintergrundbild -------------------------------------
-            _rowWithImage(
-              label: 'Hintergrundbild',
-              preview: _settings.bgImage,
-              onPick: () async {
-                final url = await _pickImage(
-                  asBackground: true,
-                  edit: true,
-                  aspectRatio: _photoAspect(_PhotoPlace.background),
-                );
-                if (url == null) return;
-                // FuPa: importierter Hintergrund genau wie die Datei –
-                // volle Deckkraft, nicht abgedunkelt.
-                apply(
-                  _isFupa
-                      ? _settings.copyWith(
-                          bgImage: url,
-                          bgOpacity: 100,
-                          overlayOpacity: 0,
-                          bgBlend: 'normal',
-                        )
-                      : _settings.copyWith(bgImage: url),
-                );
-              },
-              onClear: _settings.bgImage == null
-                  ? null
-                  : () => apply(_settings.copyWith(clearBgImage: true)),
-              clearLabel: 'Entfernen',
-            ),
-            const SizedBox(height: 8),
-            // Design-Modus ----------------------------------------
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Design-Modus (eigenes Branding)'),
-              subtitle: const Text(
-                'Dein Hintergrundbild füllt alles; eigenes Logo/Titel aus, '
-                'nur Teams/Datum/Score – frei verschiebbar.',
-              ),
-              value: _settings.designMode,
-              onChanged: (v) => apply(
-                _settings.copyWith(
-                  designMode: v,
-                  // Beim Aktivieren Hintergrund voll zeigen.
-                  overlayOpacity: v ? 20 : _settings.overlayOpacity,
-                ),
-              ),
-            ),
-            // Gegner-Logo ------------------------------------------
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Gegner-Logo anzeigen'),
-              subtitle: const Text('Logo des Gegners neben „vs …"'),
-              value: _settings.showOpponentLogo,
-              onChanged: widget.opponentLogo == null
-                  ? null
-                  : (v) => apply(_settings.copyWith(showOpponentLogo: v)),
-            ),
-            // Torschützen-Block (nur Ergebnis-Grafik) --------------
-            if (widget.isResult)
+              const SizedBox(height: 4),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
-                title: const Text('Torschützen anzeigen'),
-                subtitle: const Text('Liste der Tore (Spieler & Minute)'),
-                value: _settings.showScorers,
-                onChanged: (v) => apply(_settings.copyWith(showScorers: v)),
-              ),
-            // Spielerfotos (nur Ergebnis-Grafik) -------------------
-            if (widget.isResult)
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Spielerfotos anzeigen'),
-                subtitle: const Text('Fotos bei den Torschützen'),
-                value: _settings.showPhotos,
-                onChanged: (v) => apply(_settings.copyWith(showPhotos: v)),
-              ),
-            const SizedBox(height: 8),
-            // Abdunkeln / Transparenz -----------------------------
-            Text(
-              _settings.bgImage == null
-                  ? 'Abdunkeln (nur mit Hintergrundbild wirksam)'
-                  : 'Abdunkeln / Transparenz: ${_settings.overlayOpacity}%',
-            ),
-            Slider(
-              value: _settings.overlayOpacity.toDouble(),
-              min: 0,
-              max: 100,
-              divisions: 20,
-              label: '${_settings.overlayOpacity}%',
-              onChanged: (v) =>
-                  apply(_settings.copyWith(overlayOpacity: v.round())),
-            ),
-            const SizedBox(height: 8),
-            // Hintergrundbild: Deckkraft (Transparenz) + Mischmodus ---
-            Text('Bild-Deckkraft: ${_settings.bgOpacity}%'),
-            Slider(
-              value: _settings.bgOpacity.toDouble(),
-              min: 0,
-              max: 100,
-              divisions: 20,
-              label: '${_settings.bgOpacity}%',
-              onChanged: (v) => apply(_settings.copyWith(bgOpacity: v.round())),
-            ),
-            const SizedBox(height: 4),
-            const Text('Mischmodus (Bild ↔ Hintergrund)'),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 8,
-              runSpacing: 4,
-              children: [
-                for (final b in _blendOptions)
-                  ChoiceChip(
-                    label: Text(b.$2),
-                    selected: _settings.bgBlend == b.$1,
-                    onSelected: (_) => apply(_settings.copyWith(bgBlend: b.$1)),
+                title: const Text('Eigenes Branding'),
+                subtitle: const Text(
+                  'Dein Hintergrundbild füllt alles; eigenes Logo/Titel aus, '
+                  'nur Teams/Datum/Score – frei verschiebbar.',
+                ),
+                value: _settings.designMode,
+                onChanged: (v) => apply(
+                  _settings.copyWith(
+                    designMode: v,
+                    // Beim Aktivieren Hintergrund voll zeigen.
+                    overlayOpacity: v ? 20 : _settings.overlayOpacity,
                   ),
-              ],
+                ),
+              ),
+            ],
+          );
+        }
+        return ListView(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          children: [
+            if (_isFupa) ...[
+              _secHead('Art', first: true),
+              _fupaBgToggle(),
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: Text(
+                  'Gilt für dieses Design und als Vorlage für neue '
+                  'FuPa-Fotos.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+            ],
+            _secHead(
+              'Vorlagen',
+              first: !_isFupa,
+              info:
+                  'Ein Tipp setzt Farben und Bild auf einmal. Eigene '
+                  'Vorlagen gelten für das ganze Team.',
             ),
-            const SizedBox(height: 8),
-            // Verlaufsfarben --------------------------------------
-            const Text('Verlaufsfarbe oben'),
-            const SizedBox(height: 6),
-            _swatches(
-              selected: _settings.gradTop,
-              onPick: (hex) => apply(_settings.copyWith(gradTop: hex)),
-            ),
-            const SizedBox(height: 12),
-            const Text('Verlaufsfarbe unten'),
-            const SizedBox(height: 6),
-            _swatches(
-              selected: _settings.gradBottom,
-              onPick: (hex) => apply(_settings.copyWith(gradBottom: hex)),
-            ),
-            const SizedBox(height: 16),
-            // Presets ---------------------------------------------
-            const Text('Vorlagen'),
-            const SizedBox(height: 6),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -3657,29 +3530,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                   ),
               ],
             ),
-            const SizedBox(height: 12),
-            // Verlaufsform + Splitter-Muster (teamweit) -------------
-            BgStyleControls(
-              shape: _settings.gradShape,
-              pattern: _settings.bgPattern,
-              onShape: (v) => apply(
-                _settings.copyWith(gradShape: v, clearGradShape: v == null),
-              ),
-              onPattern: (v) => apply(_settings.copyWith(bgPattern: v)),
-            ),
-            const SizedBox(height: 10),
-            // Eigene Hintergrund-Vorlagen (kompletter Look) -----------
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: savePreset,
-                icon: const Icon(Icons.bookmark_add_outlined),
-                label: const Text('Aktuellen Look als Vorlage speichern'),
-              ),
-            ),
+            if (_aiBgs.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              const Text('KI-Hintergründe', style: TextStyle(fontSize: 13)),
+              const SizedBox(height: 6),
+              _aiBgStrip(ctx, setSheet),
+            ],
             if (presets.isNotEmpty) ...[
               const SizedBox(height: 10),
-              const Text('Gespeicherte Vorlagen'),
+              const Text('Meine Vorlagen', style: TextStyle(fontSize: 13)),
               const SizedBox(height: 6),
               for (final p in presets)
                 Card(
@@ -3714,20 +3573,165 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                   ),
                 ),
             ],
-            const SizedBox(height: 16),
-            // Akzentfarbe (Linien, VS, Spielstand, Datum/Uhrzeit) -----
-            const Text('Akzentfarbe'),
             const SizedBox(height: 6),
-            _swatches(
-              selected: _settings.accent ?? '#FFFFFF',
-              palette: _accentPalette,
-              allowFree: true,
-              onPick: (hex) => apply(
-                hex == '#FFFFFF'
-                    ? _settings.copyWith(clearAccent: true)
-                    : _settings.copyWith(accent: hex),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: savePreset,
+                icon: const Icon(Icons.bookmark_add_outlined),
+                label: const Text(
+                  'Aktuellen Hintergrund als Vorlage speichern',
+                ),
               ),
             ),
+            _secHead('Farben'),
+            const Text('Verlauf oben', style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 6),
+            _swatches(
+              selected: _settings.gradTop,
+              onPick: (hex) => apply(_settings.copyWith(gradTop: hex)),
+            ),
+            const SizedBox(height: 10),
+            const Text('Verlauf unten', style: TextStyle(fontSize: 13)),
+            const SizedBox(height: 6),
+            _swatches(
+              selected: _settings.gradBottom,
+              onPick: (hex) => apply(_settings.copyWith(gradBottom: hex)),
+            ),
+            const SizedBox(height: 10),
+            BgStyleControls(
+              shape: _settings.gradShape,
+              pattern: _settings.bgPattern,
+              onShape: (v) => apply(
+                _settings.copyWith(gradShape: v, clearGradShape: v == null),
+              ),
+              onPattern: (v) => apply(_settings.copyWith(bgPattern: v)),
+            ),
+            _secHead(
+              'Bild & Foto',
+              info:
+                  'Hintergrundbild = ein Bild für den ganzen Hintergrund. '
+                  '„Fotos“ legt eigene Fotos als Hintergrund oder in einen '
+                  'Foto-Bereich.',
+            ),
+            _rowWithImage(
+              label: 'Hintergrundbild',
+              preview: _settings.bgImage,
+              onPick: () async {
+                final url = await _pickImage(
+                  asBackground: true,
+                  edit: true,
+                  aspectRatio: _photoAspect(_PhotoPlace.background),
+                );
+                if (url == null) return;
+                // FuPa: importierter Hintergrund genau wie die Datei –
+                // volle Deckkraft, nicht abgedunkelt.
+                apply(
+                  _isFupa
+                      ? _settings.copyWith(
+                          bgImage: url,
+                          bgOpacity: 100,
+                          overlayOpacity: 0,
+                          bgBlend: 'normal',
+                        )
+                      : _settings.copyWith(bgImage: url),
+                );
+              },
+              onClear: _settings.bgImage == null
+                  ? null
+                  : () => apply(_settings.copyWith(clearBgImage: true)),
+              clearLabel: 'Entfernen',
+            ),
+            const SizedBox(height: 6),
+            OutlinedButton.icon(
+              onPressed: _managePhotos,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Fotos als Hintergrund/Bereich'),
+            ),
+            if (_settings.bgImage != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Text(
+                    'Deckkraft ${_settings.bgOpacity}%',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  _infoIcon('Wie stark das Bild sichtbar ist.'),
+                ],
+              ),
+              Slider(
+                value: _settings.bgOpacity.toDouble(),
+                min: 0,
+                max: 100,
+                divisions: 20,
+                label: '${_settings.bgOpacity}%',
+                onChanged: (v) =>
+                    apply(_settings.copyWith(bgOpacity: v.round())),
+              ),
+              Row(
+                children: [
+                  Text(
+                    'Abdunkeln ${_settings.overlayOpacity}%',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                  _infoIcon(
+                    'Dunkelt das Bild ab, damit Schrift und Logos besser '
+                    'lesbar sind.',
+                  ),
+                ],
+              ),
+              Slider(
+                value: _settings.overlayOpacity.toDouble(),
+                min: 0,
+                max: 100,
+                divisions: 20,
+                label: '${_settings.overlayOpacity}%',
+                onChanged: (v) =>
+                    apply(_settings.copyWith(overlayOpacity: v.round())),
+              ),
+              Row(
+                children: [
+                  const Text('Mischmodus', style: TextStyle(fontSize: 13)),
+                  _infoIcon(
+                    'Wie das Bild mit dem Farbverlauf verschmilzt – '
+                    'einfach ausprobieren.',
+                  ),
+                ],
+              ),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final b in _blendOptions)
+                    ChoiceChip(
+                      label: Text(b.$2),
+                      selected: _settings.bgBlend == b.$1,
+                      onSelected: (_) =>
+                          apply(_settings.copyWith(bgBlend: b.$1)),
+                    ),
+                ],
+              ),
+            ],
+            if (widget.isResult) ...[
+              _secHead('Aufbau'),
+              Center(
+                child: _resultLayoutToggle(onChanged: () => setSheet(() {})),
+              ),
+              if (_ftLayout) ...[
+                const SizedBox(height: 6),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.add_photo_alternate, size: 18),
+                  label: Text(
+                    _ftPhotoF[_designKey] == null
+                        ? 'Foto oben wählen'
+                        : 'Foto oben ändern / entfernen',
+                  ),
+                  onPressed: _pickFtPhoto,
+                ),
+                if (_ftPhotoF[_designKey] != null)
+                  _ftPhotoScaleControls(refresh: () => setSheet(() {})),
+              ],
+            ],
           ],
         );
       },
@@ -3791,13 +3795,33 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ),
         const SizedBox(width: 12),
         Expanded(
-          child: Text(
-            label,
-            style: const TextStyle(fontWeight: FontWeight.w600),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              if (onClear != null)
+                InkWell(
+                  onTap: onClear,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: Text(
+                      clearLabel,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
           ),
         ),
-        if (onClear != null)
-          TextButton(onPressed: onClear, child: Text(clearLabel)),
+        const SizedBox(width: 8),
         OutlinedButton(onPressed: onPick, child: const Text('Wählen')),
       ],
     );
@@ -4430,16 +4454,19 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         );
 
     final kids = <Widget>[
-      SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Finish anwenden'),
-        subtitle: const Text(
-          'Wirkt nur aufs Gesamtbild – Inhalte bleiben unverändert',
+      if (panel)
+        _switchRow('Filter anwenden', g.on, (v) => setState(() => g.on = v))
+      else
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Finish anwenden'),
+          subtitle: const Text(
+            'Wirkt nur aufs Gesamtbild – Inhalte bleiben unverändert',
+          ),
+          value: g.on,
+          onChanged: (v) => setState(() => g.on = v),
         ),
-        value: g.on,
-        onChanged: (v) => setState(() => g.on = v),
-      ),
-      if (canAi)
+      if (canAi && !panel)
         SizedBox(
           width: double.infinity,
           child: FilledButton.tonalIcon(
@@ -4481,7 +4508,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           ],
         ),
       ),
-      group('Basis', open: true, [
+      group('Basis', open: !panel, [
         slider(
           'Helligkeit',
           g.brightness,
@@ -5678,6 +5705,38 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         }),
       );
 
+      // Überschrift: Vorgabe (z. B. SPIELTAG), Heim/Auswärts oder eigener Text.
+      void setHead(String mode) => apply(() {
+        _annHeadMode = mode;
+        _editorSeq++; // Feld mit neuem Text aufbauen
+      });
+      final Widget headModes = _defaultHeadline.trim().isEmpty
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  ChoiceChip(
+                    label: Text(_defaultHeadline),
+                    selected: _annHeadMode == 'spieltag',
+                    onSelected: (_) => setHead('spieltag'),
+                  ),
+                  if (widget.designer == null)
+                    ChoiceChip(
+                      label: const Text('Heim/Auswärts'),
+                      selected: _annHeadMode == 'auto',
+                      onSelected: (_) => setHead('auto'),
+                    ),
+                  ChoiceChip(
+                    label: const Text('Eigener Text'),
+                    selected: _annHeadMode == 'custom',
+                    onSelected: (_) => setHead('custom'),
+                  ),
+                ],
+              ),
+            );
       final body = <Widget>[
         if (sectionKey == 'text') ...[
           if (id == 'std_title') ...[
@@ -5699,10 +5758,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               },
             ),
             const SizedBox(height: 8),
+            headModes,
             headlineField,
-          ] else if (isHeadline)
-            headlineField
-          else
+          ] else if (isHeadline) ...[
+            headModes,
+            headlineField,
+          ] else
             TextFormField(
               key: ValueKey('sheettxt_${id}_$_editorSeq'),
               initialValue: id == 'info'
@@ -5719,13 +5780,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               decoration: fieldDeco(null),
               onChanged: (v) => apply(() => _textContent[id] = v),
             ),
-        ] else if (sectionKey == 'font') ...[
+        ] else if (sectionKey == 'style') ...[
           section('Ausrichtung', alignRow),
           section('Schrift', fonts),
+          section('Farbe', colors),
           section('Schatten', shadows),
-        ] else if (sectionKey == 'color')
-          section('Farbe', colors)
-        else if (sectionKey == 'anim')
+        ] else if (sectionKey == 'anim')
           _animSection(id, apply, open: true)
         else
           lage,
@@ -5750,11 +5810,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     final isText = _isTextEl(id);
     return [
       if (isText) ('text', 'Text', Icons.edit_outlined),
-      if (isText) ('font', 'Schrift', Icons.font_download_outlined),
-      if (isText) ('color', 'Farbe', Icons.palette_outlined),
-      if (_isImageEl(id)) ('fx', 'Effekte', Icons.auto_fix_high),
-      ('pos', 'Lage', Icons.open_with),
-      if (_format != 'f') ('anim', 'Animation', Icons.animation),
+      if (isText) ('style', 'Stil', Icons.format_paint_outlined),
+      if (_isImageEl(id)) ('fx', 'Bild', Icons.auto_fix_high),
+      ('pos', 'Position', Icons.open_with),
+      if (_format != 'f') ('anim', 'Bewegung', Icons.animation),
     ];
   }
 
@@ -7170,6 +7229,14 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
     final hint = TextStyle(fontSize: 12, color: Theme.of(context).hintColor);
     final kids = <Widget>[
+      if (panel)
+        _secHead(
+          'Vorlage',
+          first: true,
+          info:
+              'Wie die Elemente erscheinen. Einzelne Elemente stellst du '
+              'direkt ein: Element antippen → Bewegung.',
+        ),
       Align(
         alignment: Alignment.centerLeft,
         child: Wrap(
@@ -7201,10 +7268,16 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
           Text('${a.seconds} s'),
         ],
       ),
+      if (panel)
+        _secHead(
+          'Hintergrund bewegt sich',
+          info:
+              'Aus = steht still. Heranzoomen = langsamer Zoom ins Bild. '
+              'Schwenken = langsame Seitwärtsbewegung.',
+        ),
       Row(
         children: [
-          const Text('Hintergrund'),
-          const SizedBox(width: 12),
+          if (!panel) ...[const Text('Hintergrund'), const SizedBox(width: 12)],
           Expanded(
             child: SegmentedButton<String>(
               showSelectedIcon: false,
@@ -7219,7 +7292,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ],
       ),
       const SizedBox(height: 8),
-      if (canClaude || canGemini) ...[
+      if (!panel && (canClaude || canGemini)) ...[
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
@@ -7272,7 +7345,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               label: Text(_animPlaying ? 'Stopp' : 'Abspielen'),
             ),
           ),
-          if (canGemini) ...[
+          if (canGemini && !panel) ...[
             const SizedBox(width: 8),
             Expanded(
               child: OutlinedButton.icon(
@@ -7306,10 +7379,10 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       const SizedBox(height: 4),
       Text(
         VideoEncoder.isSupported
-            ? 'Einzelne Elemente: Element antippen → Animation. '
-                  '„Als Video teilen" erzeugt ein MP4 (Instagram, WhatsApp).'
-            : 'Einzelne Elemente: Element antippen → Animation. Video-Export '
-                  'und KI-Video gibt es in der Android-App.',
+            ? 'Das Video teilst du oben über „Teilen" → „Als Video teilen". '
+                  'KI-Bewegung findest du im Reiter KI.'
+            : 'Video-Export gibt es in der Android-App. KI-Bewegung findest '
+                  'du im Reiter KI.',
         style: hint,
       ),
     ];
@@ -7509,6 +7582,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         if (_posterSel == 'player') _posterSel = null;
         return;
       }
+      if (_kPosterBaseOrder.contains(id)) {
+        // Grundelement: nur ausblenden – Position/Text bleiben erhalten.
+        _posterOrder.remove(id);
+        if (_posterSel == id) _posterSel = null;
+        return;
+      }
       _posterOverlays.removeWhere((o) => o.id == id);
       _textIds.remove(id);
       _textContent.remove(id);
@@ -7648,191 +7727,6 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   /// Zentrale Hintergrund-/Kopf-Eigenschaften (Überschrift, Schrift, Sponsoren,
   /// Logos, Schatten) – im Hintergrund-Menü. [refresh] aktualisiert das Sheet
   /// live (zusätzlich zum setState der Grafik dahinter).
-  Widget _headlineSponsorControls(void Function(VoidCallback) refresh) {
-    void upd(VoidCallback fn) {
-      setState(fn);
-      refresh(() {});
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Wrap(
-          spacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            const Text('Überschrift:', style: TextStyle(fontSize: 12)),
-            ChoiceChip(
-              label: Text(_defaultHeadline),
-              selected: _annHeadMode == 'spieltag',
-              onSelected: (_) => upd(() => _annHeadMode = 'spieltag'),
-            ),
-            ChoiceChip(
-              label: const Text('Heim/Auswärts'),
-              selected: _annHeadMode == 'auto',
-              onSelected: (_) => upd(() => _annHeadMode = 'auto'),
-            ),
-            ChoiceChip(
-              label: const Text('Eigener'),
-              selected: _annHeadMode == 'custom',
-              onSelected: (_) => upd(() => _annHeadMode = 'custom'),
-            ),
-          ],
-        ),
-        if (_annHeadMode == 'custom')
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: TextFormField(
-              initialValue: _annHeadText,
-              textCapitalization: TextCapitalization.characters,
-              decoration: InputDecoration(
-                isDense: true,
-                border: const OutlineInputBorder(),
-                hintText: widget.isAnnouncement
-                    ? 'z. B. DERBY, TOPSPIEL'
-                    : 'z. B. ${_defaultHeadline == 'ERGEBNIS' ? 'AUSWÄRTSSIEG' : 'UNSERE ELF'}',
-              ),
-              onChanged: (v) => upd(() => _annHeadText = v),
-            ),
-          ),
-        const SizedBox(height: 2),
-        Row(
-          children: [
-            const Text('Schrift:', style: TextStyle(fontSize: 12)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: DropdownButton<String>(
-                isExpanded: true,
-                isDense: true,
-                value: _posterFont,
-                items: [
-                  for (final e in _kPosterFonts.entries)
-                    DropdownMenuItem(value: e.key, child: Text(e.value)),
-                ],
-                onChanged: (v) => upd(() => _posterFont = v ?? 'standard'),
-              ),
-            ),
-          ],
-        ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Hauptsponsor anzeigen',
-            style: TextStyle(fontSize: 13),
-          ),
-          value: _showMainSponsor,
-          onChanged: (v) => upd(() => _showMainSponsor = v),
-        ),
-        if (_showMainSponsor)
-          Row(
-            children: [
-              const Text('Hauptsponsor:', style: TextStyle(fontSize: 12)),
-              const SizedBox(width: 8),
-              ChoiceChip(
-                label: const Text('Logo'),
-                selected: _mainSponsorMode == 'logo',
-                onSelected: (_) => upd(() => _mainSponsorMode = 'logo'),
-              ),
-              const SizedBox(width: 6),
-              ChoiceChip(
-                label: const Text('Text'),
-                selected: _mainSponsorMode == 'text',
-                onSelected: (_) => upd(() => _mainSponsorMode = 'text'),
-              ),
-            ],
-          ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Weitere Sponsoren anzeigen',
-            style: TextStyle(fontSize: 13),
-          ),
-          value: _showOtherSponsors,
-          onChanged: (v) => upd(() => _showOtherSponsors = v),
-        ),
-        // Ergebnis/Startelf haben dafür die Logo-Form unter „Hintergrund & Farben".
-        if (widget.isAnnouncement)
-          SwitchListTile(
-            dense: true,
-            contentPadding: EdgeInsets.zero,
-            title: const Text(
-              'Logos auf hellem Kreis',
-              style: TextStyle(fontSize: 13),
-            ),
-            value: _posterLogoDisc,
-            onChanged: (v) => upd(() => _posterLogoDisc = v),
-          ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Spielerfoto ins Bild einblenden',
-            style: TextStyle(fontSize: 13),
-          ),
-          subtitle: const Text(
-            'Randlos mit weichem Übergang (nur bei Fotos ohne Freistellung)',
-            style: TextStyle(fontSize: 10.5),
-          ),
-          value: _posterBlend,
-          onChanged: (v) => upd(() => _posterBlend = v),
-        ),
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Schatten (alle Bilder)',
-            style: TextStyle(fontSize: 13),
-          ),
-          subtitle: const Text(
-            'Gilt für Spieler und alle Overlays; am besten freigestellt',
-            style: TextStyle(fontSize: 10.5),
-          ),
-          value: _posterShadow,
-          onChanged: (v) => upd(() => _posterShadow = v),
-        ),
-        if (_posterShadow) ...[
-          Row(
-            children: [
-              const SizedBox(
-                width: 52,
-                child: Text('Stärke', style: TextStyle(fontSize: 12)),
-              ),
-              Expanded(
-                child: Slider(
-                  value: _posterShadowStrength,
-                  min: 0,
-                  max: 100,
-                  onChanged: (v) => upd(() => _posterShadowStrength = v),
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              const SizedBox(
-                width: 52,
-                child: Text('Winkel', style: TextStyle(fontSize: 12)),
-              ),
-              Expanded(
-                child: Slider(
-                  value: _posterShadowAngle,
-                  min: 0,
-                  max: 360,
-                  divisions: 72,
-                  label: '${_posterShadowAngle.round()}°',
-                  onChanged: (v) => upd(() => _posterShadowAngle = v),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ],
-    );
-  }
-
   /// Langdruck auf den leeren Hintergrund → Objekte hinzufügen + zentrale
   /// Hintergrund-Eigenschaften (wie moderne Design-Apps).
   /// Kurzname eines Looks (Vorlagen-Name oder Anfang des eigenen Textes).
@@ -8601,33 +8495,30 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       _closePanel();
       return;
     }
+    final state = context.read<AppState>();
     switch (key) {
       case 'add':
-        _openPanel('tool:add', 'Hinzufügen', _addPanel);
-      case 'bg':
-        _openCustomize();
-      case 'style':
         _openPanel(
-          'tool:style',
-          'Überschrift, Schrift & Sponsoren',
-          (ctx, setSheet) => ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [_headlineSponsorControls(setSheet)],
-          ),
+          'tool:add',
+          'Elemente',
+          _elementsPanel,
+          onClose: () => _saveSettingsIfDirty(state),
         );
-      case 'finish':
+      case 'bg':
+        _openCustomize('bg');
+      case 'club':
+        _openCustomize('club');
+      case 'look':
         _openPanel(
-          'tool:finish',
-          'Profi-Finish (Gesamtbild)',
-          (ctx, setSheet) => ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            children: [_gradeControls(panel: true)],
-          ),
+          'tool:look',
+          'Look',
+          _lookPanel,
+          onClose: () => _saveSettingsIfDirty(state),
         );
       case 'anim':
         _openPanel(
           'tool:anim',
-          'Animation (Video für Instagram)',
+          'Bewegung (Video für Instagram)',
           (ctx, setSheet) => ListView(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
             children: [_animControls(panel: true)],
@@ -8638,34 +8529,178 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     }
   }
 
-  /// Panel „Hinzufügen": Elemente, Fotos, Ausgeblendetes, Ergebnis-Layout.
-  Widget _addPanel(BuildContext ctx, StateSetter setSheet) {
-    Widget btn(IconData icon, String label, VoidCallback? onTap) =>
-        OutlinedButton.icon(
-          icon: Icon(icon, size: 18),
-          label: Text(label),
-          onPressed: onTap == null
-              ? null
-              : () {
-                  _closePanel();
-                  onTap();
-                },
-        );
+  // Teamweite Grafik-Einstellungen aus Elemente/Look: beim Schließen sichern.
+  bool _settingsDirty = false;
+
+  void _applySettings(GraphicSettings s) {
+    setState(() => _settings = s);
+    _settingsDirty = true;
+    _refreshBgDark();
+  }
+
+  void _saveSettingsIfDirty(AppState state) {
+    if (!_settingsDirty) return;
+    _settingsDirty = false;
+    _saveCustomize(state);
+  }
+
+  // ------------------------------------------------- Panel-Bausteine
+  /// ⓘ: Erklärung beim Antippen (Tooltip).
+  Widget _infoIcon(String text) => Tooltip(
+    message: text,
+    triggerMode: TooltipTriggerMode.tap,
+    showDuration: const Duration(seconds: 6),
+    preferBelow: false,
+    child: Padding(
+      padding: const EdgeInsets.all(6),
+      child: Icon(
+        Icons.info_outline,
+        size: 18,
+        color: Theme.of(context).hintColor,
+      ),
+    ),
+  );
+
+  /// Einheitliche Abschnittsüberschrift im Panel (optional mit ⓘ).
+  Widget _secHead(String title, {String? info, bool first = false}) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: EdgeInsets.only(top: first ? 2 : 16, bottom: 4),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: scheme.primary,
+            ),
+          ),
+          if (info != null) _infoIcon(info),
+          const SizedBox(width: 8),
+          Expanded(child: Divider(color: scheme.outlineVariant)),
+        ],
+      ),
+    );
+  }
+
+  /// Schalter-Zeile mit optionalem ⓘ (kompakt, ohne Untertitel-Wust).
+  Widget _switchRow(
+    String title,
+    bool value,
+    ValueChanged<bool>? onChanged, {
+    String? info,
+  }) => Row(
+    children: [
+      Expanded(child: Text(title, style: const TextStyle(fontSize: 14))),
+      if (info != null) _infoIcon(info),
+      Switch(value: value, onChanged: onChanged),
+    ],
+  );
+
+  IconData _elementIcon(String id) {
+    if (_isTextEl(id) || id == 'headline' || id == 'std_title') {
+      return Icons.text_fields;
+    }
+    if (id == 'player') return Icons.person;
+    if (id.contains('sponsor')) return Icons.handshake_outlined;
+    if (id.contains('logo') || id == 'logos') return Icons.shield_outlined;
+    if (id.contains('score') || id.contains('banner')) return Icons.scoreboard;
+    if (id.contains('lineup')) return Icons.groups_outlined;
+    if (id.contains('scorers')) return Icons.sports_soccer;
+    return Icons.image_outlined;
+  }
+
+  /// Alle gerade sichtbaren Teile der Grafik, oberstes zuerst.
+  List<String> _visibleElements() {
+    bool shown(String id) => _stdCtx[id]?.mounted ?? false;
+    return [
+      for (final id in _posterOrder.reversed)
+        if (shown(id)) id,
+      for (final id in _kStdOrder)
+        if (!_stdHidden.contains(id) && shown(id)) id,
+    ];
+  }
+
+  /// Reiter „Elemente": hinzufügen + Liste aller Teile (Auge = aus/ein).
+  Widget _elementsPanel(BuildContext ctx, StateSetter setSheet) {
+    final scheme = Theme.of(ctx).colorScheme;
+    Widget addBtn(IconData icon, String label, VoidCallback onTap) => Expanded(
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        ),
+        onPressed: () {
+          _closePanel();
+          onTap();
+        },
+        child: Column(
+          children: [
+            Icon(icon, size: 22),
+            const SizedBox(height: 2),
+            FittedBox(fit: BoxFit.scaleDown, child: Text(label)),
+          ],
+        ),
+      ),
+    );
+    final visible = _visibleElements();
+    final hidden = _hiddenItems;
+    Widget row(String id, {required bool isHidden}) {
+      final userMade = id.startsWith('overlay_') || id.startsWith('text_');
+      final label = _pickLabel(id);
+      return ListTile(
+        dense: true,
+        contentPadding: const EdgeInsets.only(left: 4),
+        leading: Icon(
+          _elementIcon(id),
+          color: isHidden ? scheme.outline : scheme.primary,
+        ),
+        title: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: isHidden ? scheme.outline : null),
+        ),
+        selected: _posterSel == id,
+        onTap: isHidden ? null : () => _selectElement(id),
+        trailing: isHidden
+            ? IconButton(
+                tooltip: 'Einblenden',
+                icon: const Icon(Icons.visibility_off_outlined),
+                onPressed: () => _restoreHiddenItem(id),
+              )
+            : (userMade || id == 'player')
+            ? IconButton(
+                tooltip: 'Entfernen',
+                icon: Icon(Icons.delete_outline, color: scheme.error),
+                onPressed: () => _removePosterItem(id),
+              )
+            : IconButton(
+                tooltip: 'Ausblenden',
+                icon: const Icon(Icons.visibility_outlined),
+                onPressed: () => _removePosterItem(id),
+              ),
+      );
+    }
+
+    final s = _settings;
+    final hasMain = _mainSponsor != null;
+    final hasBar = _barSponsors.isNotEmpty;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        _secHead('Hinzufügen', first: true),
+        Row(
           children: [
-            btn(Icons.text_fields, 'Text', _addPosterText),
-            btn(Icons.add_photo_alternate, 'Bild/Grafik', _addPosterOverlay),
-            btn(Icons.person, 'Spielerbild', _addPosterMain),
-            btn(Icons.photo_library_outlined, 'Fotos', _managePhotos),
+            addBtn(Icons.text_fields, 'Text', _addPosterText),
+            const SizedBox(width: 8),
+            addBtn(Icons.add_photo_alternate, 'Bild/Logo', _addPosterOverlay),
+            const SizedBox(width: 8),
+            addBtn(Icons.person, 'Spielerfoto', _addPosterMain),
           ],
         ),
         if (_isFupa) ...[
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
@@ -8693,55 +8728,73 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             ],
           ),
         ],
-        if (_hiddenItems.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          const Text(
-            'Ausgeblendet – antippen zum Einblenden',
-            style: TextStyle(fontSize: 12),
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 6,
-            runSpacing: 4,
-            children: [
-              for (final id in _hiddenItems)
-                ActionChip(
-                  avatar: const Icon(Icons.visibility, size: 16),
-                  label: Text(_posterItemLabel(id)),
-                  onPressed: () {
-                    _restoreHiddenItem(id);
-                    setSheet(() {});
-                  },
-                ),
-            ],
-          ),
-        ],
-        if (widget.isResult) ...[
-          const Divider(height: 24),
-          const Text(
-            'Ergebnis-Layout',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 6),
-          Center(child: _resultLayoutToggle(onChanged: () => setSheet(() {}))),
-          if (_ftLayout) ...[
-            const SizedBox(height: 6),
-            OutlinedButton.icon(
-              icon: const Icon(Icons.add_photo_alternate, size: 18),
-              label: Text(
-                _ftPhotoF[_designKey] == null
-                    ? 'Foto oben wählen'
-                    : 'Foto oben ändern / entfernen',
-              ),
-              onPressed: _pickFtPhoto,
+        _secHead(
+          'In der Grafik',
+          info:
+              'Antippen wählt das Teil aus. Das Auge blendet es aus oder '
+              'wieder ein; selbst hinzugefügte Texte und Bilder werden über '
+              'den Papierkorb entfernt.',
+        ),
+        for (final id in visible) row(id, isHidden: false),
+        for (final id in hidden) row(id, isHidden: true),
+        if (visible.isEmpty && hidden.isEmpty)
+          const Text('Noch nichts in der Grafik.'),
+        if (hasMain || hasBar) ...[
+          _secHead('Sponsoren'),
+          if (hasMain) ...[
+            _switchRow(
+              'Hauptsponsor',
+              _showMainSponsor,
+              (v) => setState(() => _showMainSponsor = v),
             ),
-            if (_ftPhotoF[_designKey] != null)
-              _ftPhotoScaleControls(refresh: () => setSheet(() {})),
-            const SizedBox(height: 2),
-            const Text(
-              'Foto direkt in der Grafik verschieben, mit zwei Fingern '
-              'zoomen. Die Trennlinie am Griff ↕ hoch-/runterziehen.',
-              style: TextStyle(fontSize: 12),
+            if (_showMainSponsor)
+              Row(
+                children: [
+                  const Text('Zeigen als', style: TextStyle(fontSize: 13)),
+                  const SizedBox(width: 10),
+                  ChoiceChip(
+                    label: const Text('Logo'),
+                    selected: _mainSponsorMode == 'logo',
+                    onSelected: (_) =>
+                        setState(() => _mainSponsorMode = 'logo'),
+                  ),
+                  const SizedBox(width: 6),
+                  ChoiceChip(
+                    label: const Text('Text'),
+                    selected: _mainSponsorMode == 'text',
+                    onSelected: (_) =>
+                        setState(() => _mainSponsorMode = 'text'),
+                  ),
+                ],
+              ),
+          ],
+          if (hasBar)
+            _switchRow(
+              'Weitere Sponsoren (Logo-Reihe)',
+              _showOtherSponsors,
+              (v) => setState(() => _showOtherSponsors = v),
+            ),
+        ],
+        if (widget.opponentLogo != null || widget.isResult) ...[
+          _secHead('Weitere Inhalte'),
+          if (widget.opponentLogo != null)
+            _switchRow(
+              'Gegner-Logo',
+              s.showOpponentLogo,
+              (v) => _applySettings(s.copyWith(showOpponentLogo: v)),
+              info: 'Logo des Gegners neben „vs …". Gilt für alle Grafiken.',
+            ),
+          if (widget.isResult) ...[
+            _switchRow(
+              'Torschützen',
+              s.showScorers,
+              (v) => _applySettings(s.copyWith(showScorers: v)),
+              info: 'Liste der Tore mit Spieler und Minute.',
+            ),
+            _switchRow(
+              'Spielerfotos bei den Toren',
+              s.showPhotos,
+              (v) => _applySettings(s.copyWith(showPhotos: v)),
             ),
           ],
         ],
@@ -8749,52 +8802,268 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     );
   }
 
-  /// Panel „KI": ganzes Bild gestalten, KI-Look, KI-Animation.
-  Widget _aiPanel(BuildContext ctx, StateSetter setSheet) {
-    final app = context.watch<AppState>();
-    final canAnim = _format != 'f' && (app.canAiCoach || app.canAiImage);
-    final busy = _aiBusy || _videoBusy || _sharing;
+  /// Reiter „Look": Schrift, Akzentfarbe, Logos, Schatten, Filter.
+  Widget _lookPanel(BuildContext ctx, StateSetter setSheet) {
+    final s = _settings;
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
       children: [
-        if (app.canAiImage)
-          FilledButton.tonalIcon(
-            onPressed: busy
-                ? null
-                : () {
-                    _closePanel();
-                    _aiEdit();
-                  },
-            icon: const Icon(Icons.auto_awesome),
-            label: const Text('Mit KI gestalten (ganzes Bild)'),
+        _secHead(
+          'Schrift',
+          first: true,
+          info:
+              'Grundschrift der Grafik. Einzelne Texte änderst du direkt: '
+              'Text antippen → Stil.',
+        ),
+        DropdownButton<String>(
+          isExpanded: true,
+          value: _posterFont,
+          items: [
+            for (final e in _kPosterFonts.entries)
+              DropdownMenuItem(
+                value: e.key,
+                child: Text(
+                  e.value,
+                  style: posterFontStyle(
+                    e.key,
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+          ],
+          onChanged: (v) => setState(() => _posterFont = v ?? 'standard'),
+        ),
+        _secHead(
+          'Akzentfarbe',
+          info: 'Farbe für Linien, „vs", Spielstand und Datum.',
+        ),
+        _swatches(
+          selected: s.accent ?? '#FFFFFF',
+          palette: _accentPalette,
+          allowFree: true,
+          onPick: (hex) => _applySettings(
+            hex == '#FFFFFF'
+                ? s.copyWith(clearAccent: true)
+                : s.copyWith(accent: hex),
           ),
-        if (canAnim) ...[
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: busy ? null : () => _startAiPick('effects'),
-            icon: const Icon(Icons.animation),
-            label: const Text('Elemente mit KI animieren'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: busy ? null : () => _startAiPick('all'),
-            icon: const Icon(Icons.movie_creation_outlined),
-            label: Text(
-              VideoEncoder.isSupported && app.canAiImage
-                  ? 'Alles mit KI (animieren + Video)'
-                  : 'Alles mit KI animieren',
+        ),
+        _secHead('Logos'),
+        Row(
+          children: [
+            const Text('Form', style: TextStyle(fontSize: 14)),
+            const SizedBox(width: 12),
+            ChoiceChip(
+              label: const Text('Eckig'),
+              selected: s.logoShape != 'circle',
+              onSelected: (_) =>
+                  _applySettings(s.copyWith(logoShape: 'rounded')),
             ),
+            const SizedBox(width: 8),
+            ChoiceChip(
+              label: const Text('Rund'),
+              selected: s.logoShape == 'circle',
+              onSelected: (_) =>
+                  _applySettings(s.copyWith(logoShape: 'circle')),
+            ),
+          ],
+        ),
+        if (widget.isAnnouncement)
+          _switchRow(
+            'Auf hellem Kreis',
+            _posterLogoDisc,
+            (v) => setState(() => _posterLogoDisc = v),
+            info:
+                'Legt die Vereinslogos auf einen hellen Kreis – gut '
+                'lesbar auf dunklem Hintergrund.',
+          ),
+        _secHead(
+          'Schatten',
+          info:
+              'Schlagschatten hinter Spieler und eingefügten Bildern. Wirkt '
+              'am besten bei freigestellten Bildern.',
+        ),
+        _switchRow(
+          'Schatten anzeigen',
+          _posterShadow,
+          (v) => setState(() => _posterShadow = v),
+        ),
+        if (_posterShadow) ...[
+          Row(
+            children: [
+              const SizedBox(width: 60, child: Text('Stärke')),
+              Expanded(
+                child: Slider(
+                  value: _posterShadowStrength,
+                  min: 0,
+                  max: 100,
+                  onChanged: (v) => setState(() => _posterShadowStrength = v),
+                ),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              const SizedBox(width: 60, child: Text('Winkel')),
+              Expanded(
+                child: Slider(
+                  value: _posterShadowAngle,
+                  min: 0,
+                  max: 360,
+                  divisions: 72,
+                  label: '${_posterShadowAngle.round()}°',
+                  onChanged: (v) => setState(() => _posterShadowAngle = v),
+                ),
+              ),
+            ],
           ),
         ],
-        if (app.canAiImage) ...[
-          const Divider(height: 24),
+        if (!_isFupa)
+          _switchRow(
+            'Spielerfoto weich einblenden',
+            _posterBlend,
+            (v) => setState(() => _posterBlend = v),
+            info:
+                'Das Spielerfoto geht randlos mit weichem Übergang in den '
+                'Hintergrund über (nur bei Fotos ohne Freistellung).',
+          ),
+        _secHead(
+          'Filter & Farben',
+          info:
+              'Wirkt wie ein Foto-Filter auf die ganze Grafik – Inhalte '
+              'bleiben unverändert. Erst eine Vorlage wählen, dann bei '
+              'Bedarf nachregeln.',
+        ),
+        _gradeControls(panel: true),
+      ],
+    );
+  }
+
+  /// Reiter „KI": alles mit KI an einem Ort.
+  Widget _aiPanel(BuildContext ctx, StateSetter setSheet) {
+    final app = context.watch<AppState>();
+    final canGemini = app.canAiImage, canClaude = app.canAiCoach;
+    final busy = _aiBusy || _videoBusy || _sharing || _gradeBusy;
+    final hint = TextStyle(fontSize: 12, color: Theme.of(ctx).hintColor);
+    const off = 'Für dich nicht freigeschaltet (Admin fragen).';
+    Widget action(
+      IconData icon,
+      String title,
+      String info,
+      VoidCallback? onTap, {
+      bool allowed = true,
+      bool primary = false,
+    }) {
+      final btn = primary
+          ? FilledButton.icon(
+              onPressed: allowed && !busy ? onTap : null,
+              icon: Icon(icon),
+              label: Text(title),
+            )
+          : OutlinedButton.icon(
+              onPressed: allowed && !busy ? onTap : null,
+              icon: Icon(icon),
+              label: Text(title),
+            );
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Row(
+          children: [
+            Expanded(child: btn),
+            _infoIcon(allowed ? info : '$info\n\n$off'),
+          ],
+        ),
+      );
+    }
+
+    final anim = _format != 'f';
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      children: [
+        _secHead('Bild', first: true),
+        action(
+          Icons.auto_awesome,
+          'Ganzes Bild neu gestalten',
+          'Gemini gestaltet aus deiner Grafik ein neues Bild. Du siehst '
+              'zuerst eine Vorschau und entscheidest dann.',
+          () {
+            _closePanel();
+            _aiEdit();
+          },
+          allowed: canGemini,
+        ),
+        action(
+          Icons.tune,
+          'Filter automatisch einstellen',
+          'Claude schaut sich die Grafik an und stellt „Filter & Farben" '
+              'passend ein (unter Look nachregelbar).',
+          _aiFinish,
+          allowed: canClaude,
+        ),
+        if (anim) ...[
+          _secHead(
+            'Bewegung',
+            info:
+                'Die KI animiert Elemente für ein Instagram-Video. Du tippst '
+                'vorher an, welche Elemente sie bewegen soll.',
+          ),
+          if (canClaude && canGemini)
+            Row(
+              children: [
+                const Text('KI', style: TextStyle(fontSize: 13)),
+                const SizedBox(width: 10),
+                SegmentedButton<String>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: 'claude', label: Text('Claude')),
+                    ButtonSegment(value: 'gemini', label: Text('Gemini')),
+                  ],
+                  selected: {_aiAnimProvider},
+                  onSelectionChanged: (v) =>
+                      setState(() => _aiAnimProvider = v.first),
+                ),
+              ],
+            ),
+          const SizedBox(height: 6),
+          action(
+            Icons.animation,
+            'Elemente animieren lassen',
+            'Du wählst Elemente aus, die KI gibt ihnen passende '
+                'Bewegungen. Die übrigen behalten ihre Einstellung.',
+            () => _startAiPick('effects'),
+            allowed: canClaude || canGemini,
+          ),
+          action(
+            Icons.movie_creation_outlined,
+            VideoEncoder.isSupported && canGemini
+                ? 'Alles mit KI (inkl. Video)'
+                : 'Alles mit KI animieren',
+            'Animiert die gewählten Elemente, erzeugt bei Bedarf einen '
+            'bewegten Hintergrund und macht direkt das Video zum Teilen.',
+            () => _startAiPick('all'),
+            allowed: canClaude || canGemini,
+            primary: true,
+          ),
+          action(
+            Icons.videocam_outlined,
+            'Bewegter KI-Hintergrund',
+            'Gemini macht aus dem Bild ein kurzes Video. Schrift und Logos '
+                'bleiben scharf darüber. Kostet Google-Guthaben, dauert '
+                '1–3 Minuten.',
+            _askAiVideo,
+            allowed: canGemini && VideoEncoder.isSupported,
+          ),
+          if (!VideoEncoder.isSupported)
+            Text('Videos gibt es nur in der Android-App.', style: hint),
+        ],
+        if (canGemini) ...[
+          _secHead(
+            'Deko-Ebene',
+            info:
+                'Die KI malt Effekte (z. B. Licht, Rauch, Funken) als Ebene '
+                'über die Grafik. Deine Inhalte bleiben unverändert.',
+          ),
           _lookSection(ctx, setSheet),
         ],
-        if (!app.canAiImage && !app.canAiCoach)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text('KI ist für dich nicht freigeschaltet.'),
-          ),
       ],
     );
   }
@@ -8807,7 +9076,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
         ButtonSegment(
           value: 'image',
           icon: Icon(Icons.image_outlined),
-          label: Text('Bild-Hintergrund'),
+          label: Text('Bild'),
         ),
         ButtonSegment(
           value: 'club',
@@ -8822,90 +9091,85 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   );
 
   // ------------------------------------------------------------- Leisten
-  Widget _barBtn(
+  Widget _barContent(
     IconData icon,
-    String label,
-    VoidCallback? onTap, {
+    String label, {
     bool active = false,
     bool danger = false,
+    bool enabled = true,
   }) {
     final scheme = Theme.of(context).colorScheme;
-    final color = onTap == null
+    final color = !enabled
         ? scheme.onSurface.withValues(alpha: 0.38)
         : danger
         ? scheme.error
         : active
         ? scheme.onSecondaryContainer
         : scheme.onSurfaceVariant;
-    return SizedBox(
-      width: 70,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
-                  vertical: 3,
-                ),
-                decoration: BoxDecoration(
-                  color: active ? scheme.secondaryContainer : null,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(icon, size: 22, color: color),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 11,
-                  color: color,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+            decoration: BoxDecoration(
+              color: active ? scheme.secondaryContainer : null,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(icon, size: 22, color: color),
           ),
-        ),
+          const SizedBox(height: 3),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: color,
+                fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  /// Knopfreihe: passen alle hinein, werden sie verteilt, sonst scrollen.
-  Widget _barRow(List<Widget> items) => LayoutBuilder(
-    builder: (ctx, c) {
-      final fits = items.length * 70.0 <= c.maxWidth;
-      return SizedBox(
-        height: 64,
-        child: fits
-            ? Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: items,
-              )
-            : ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                children: items,
-              ),
-      );
-    },
+  Widget _barBtn(
+    IconData icon,
+    String label,
+    VoidCallback? onTap, {
+    bool active = false,
+    bool danger = false,
+  }) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(12),
+    child: _barContent(
+      icon,
+      label,
+      active: active,
+      danger: danger,
+      enabled: onTap != null,
+    ),
+  );
+
+  /// Knopfreihe: Knöpfe teilen sich die Breite (Labels verkleinern sich
+  /// notfalls statt abgeschnitten zu werden).
+  Widget _barRow(List<Widget> items) => SizedBox(
+    height: 64,
+    child: Row(children: [for (final i in items) Expanded(child: i)]),
   );
 
   Widget _toolBar() {
-    final app = context.watch<AppState>();
     final tools = <(String, String, IconData)>[
-      ('add', 'Hinzufügen', Icons.add_circle_outline),
+      ('add', 'Elemente', Icons.category_outlined),
       ('bg', 'Hintergrund', Icons.wallpaper_outlined),
-      ('style', 'Stil', Icons.text_format),
-      ('finish', 'Finish', Icons.auto_fix_high),
-      if (_format != 'f') ('anim', 'Animation', Icons.movie_filter_outlined),
-      if (app.canAiImage || app.canAiCoach) ('ai', 'KI', Icons.auto_awesome),
+      ('look', 'Look', Icons.palette_outlined),
+      if (_format != 'f') ('anim', 'Bewegung', Icons.movie_filter_outlined),
+      ('ai', 'KI', Icons.auto_awesome),
     ];
     return _barRow([
       for (final t in tools)
@@ -8918,7 +9182,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     ]);
   }
 
-  /// Kontextleiste fürs gewählte Element.
+  /// Kontextleiste fürs gewählte Element: Fertig, Abschnitte, ⋯ Mehr.
   Widget _contextBar(String id) {
     final isStd = id.startsWith('std_');
     return _barRow([
@@ -8935,24 +9199,55 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               : _showElementProperties(id, s.$1),
           active: _panelKey == 'el:$id:${s.$1}',
         ),
-      if (!isStd) ...[
-        _barBtn(Icons.flip_to_front, 'Nach vorne', () => _reorderPoster(id, 1)),
-        _barBtn(
-          Icons.flip_to_back,
-          'Nach hinten',
-          () => _reorderPoster(id, -1),
-        ),
-      ],
-      if (_canCopyFormats)
-        _barBtn(
-          Icons.copy_all,
-          'In ${_formatName(_otherFormat)}',
-          () => _copyElementToOther(id),
-        ),
-      _barBtn(Icons.delete_outline, _removeLabel(id), () {
-        _closePanel();
-        _removePosterItem(id);
-      }, danger: true),
+      PopupMenuButton<String>(
+        tooltip: 'Mehr',
+        onSelected: (v) {
+          switch (v) {
+            case 'front':
+              _reorderPoster(id, 1);
+            case 'back':
+              _reorderPoster(id, -1);
+            case 'copy':
+              _copyElementToOther(id);
+            case 'remove':
+              _closePanel();
+              _removePosterItem(id);
+          }
+        },
+        itemBuilder: (_) {
+          PopupMenuItem<String> item(String v, IconData i, String t) =>
+              PopupMenuItem(
+                value: v,
+                child: Row(
+                  children: [
+                    Icon(i, size: 20),
+                    const SizedBox(width: 12),
+                    Text(t),
+                  ],
+                ),
+              );
+          return [
+            if (!isStd) ...[
+              item('front', Icons.flip_to_front, 'Nach vorne'),
+              item('back', Icons.flip_to_back, 'Nach hinten'),
+            ],
+            if (_canCopyFormats)
+              item(
+                'copy',
+                Icons.copy_all,
+                'In ${_formatName(_otherFormat)} kopieren',
+              ),
+            item(
+              'remove',
+              id.startsWith('overlay_') || id.startsWith('text_')
+                  ? Icons.delete_outline
+                  : Icons.visibility_off_outlined,
+              _removeLabel(id),
+            ),
+          ];
+        },
+        child: _barContent(Icons.more_horiz, 'Mehr'),
+      ),
     ]);
   }
 
@@ -9068,6 +9363,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             _setFormat(v);
           case 'copy':
             _copyDesignFromOther();
+          case 'club':
+            _toggleTool('club');
           case 'rename':
             _renameDesign();
           case 'reset':
@@ -9096,6 +9393,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
             ),
           const PopupMenuDivider(),
         ],
+        if (!_isFupa)
+          PopupMenuItem(
+            value: 'club',
+            child: item(Icons.shield_outlined, 'Vereinsdaten (Name, Logos)'),
+          ),
         if (widget.designer != null)
           PopupMenuItem(
             value: 'rename',
@@ -9182,7 +9484,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
       titleSpacing: 0,
       title: GestureDetector(
         onTap: widget.designer != null ? _renameDesign : null,
-        child: Text(_busyText ?? _screenTitle, overflow: TextOverflow.ellipsis),
+        child: Text(
+          _busyText ?? _screenTitle,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600),
+        ),
       ),
       bottom: _busyText != null
           ? const PreferredSize(
