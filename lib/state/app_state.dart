@@ -2545,7 +2545,18 @@ class AppState extends ChangeNotifier {
       return {'venue': clean(home['venue']), 'address': clean(home['address'])};
     }
     final ann = await matchAnnouncement(match.id);
-    return {'venue': clean(ann['venue']), 'address': clean(ann['address'])};
+    final av = clean(ann['venue']), aa = clean(ann['address']);
+    if (av.isNotEmpty || aa.isNotEmpty) return {'venue': av, 'address': aa};
+    // Auswärts ohne erfassten Ort: Spielort/Sportplatz des Gegners von FuPa.
+    final opp = match.opponentTeamId == null
+        ? null
+        : await _repo.getTeam(match.opponentTeamId!);
+    final fu = await _importer.fetchVenue(
+      matchSlug: match.fupaMatchSlug,
+      teamUrl: match.opponentFupaUrl ?? opp?.fupaUrl,
+    );
+    if (fu == null) return {'venue': '', 'address': ''};
+    return {'venue': fu.venue, 'address': fu.address};
   }
 
   /// Abweichende Rückennummern für genau ein Spiel (Spieler-ID → Nummer).

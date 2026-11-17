@@ -787,6 +787,59 @@ class FupaReduxImporter {
     return '$base/$sub';
   }
 
+  /// Spielort von FuPa: zuerst der Ort des Spiels ([matchSlug]), sonst die
+  /// Sportstätte des Vereins hinter [teamUrl]. Null = nichts gefunden.
+  Future<({String venue, String address})?> fetchVenue({
+    String? matchSlug,
+    String? teamUrl,
+  }) async {
+    Future<Object?> api(String path) async {
+      try {
+        return jsonDecode(await _fetchHtml('https://api.fupa.net/v1/$path'));
+      } catch (_) {
+        return null;
+      }
+    }
+
+    final ms = matchSlug?.trim() ?? '';
+    if (ms.isNotEmpty) {
+      final m = await api('matches/${Uri.encodeComponent(ms)}');
+      final v = m is Map ? parseVenue(m['venue']) : null;
+      if (v != null) return v;
+    }
+    final ts = teamUrl == null ? '' : _teamSlug(teamUrl);
+    if (ts.isEmpty) return null;
+    final t = await api('teams/${Uri.encodeComponent(ts)}');
+    if (t is! Map) return null;
+    final club =
+        (t['clubSlug'] as String?) ??
+        ((t['club'] is Map) ? (t['club'] as Map)['slug'] as String? : null);
+    if (club == null || club.isEmpty) return null;
+    final c = await api('clubs/${Uri.encodeComponent(club)}');
+    if (c is! Map) return null;
+    final venues = c['venues'];
+    if (venues is List && venues.isNotEmpty) {
+      final v = parseVenue(venues.first);
+      if (v != null) return v;
+    }
+    final addr = (c['address'] as String?)?.trim() ?? '';
+    return addr.isEmpty ? null : (venue: '', address: addr);
+  }
+
+  /// FuPa-Sportstätte (`name`, `street`, `postcode`, `city`) → Name + Adresse.
+  static ({String venue, String address})? parseVenue(Object? v) {
+    if (v is! Map) return null;
+    String s(Object? x) => (x ?? '').toString().trim();
+    final name = s(v['name']);
+    final city = [s(v['postcode']), s(v['city'])].where((e) => e.isNotEmpty);
+    final addr = [
+      s(v['street']),
+      city.join(' '),
+    ].where((e) => e.isNotEmpty).join(', ');
+    if (name.isEmpty && addr.isEmpty) return null;
+    return (venue: name, address: addr);
+  }
+
   static String _teamSlug(String url) {
     final m = RegExp(r'/team/([^/?#]+)', caseSensitive: false).firstMatch(url);
     return (m?.group(1) ?? '').toLowerCase();

@@ -5166,7 +5166,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     bgBlend: _blendModeOf(_settings.bgBlend),
     logoCircle: _settings.logoShape == 'circle',
     backgroundOnly: backgroundOnly,
-    anim: _animT == null ? null : _anim,
+    anim: _animT == null ? null : (_previewAnim ?? _anim),
     animT: _animT,
     hideBackground: _hideBg,
     showScorers: _settings.showScorers,
@@ -5197,7 +5197,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     posterItemPos: _posterPos,
     posterItemScale: _posterScale,
     posterItemRot: _posterRot,
-    posterSelected: _posterSel,
+    posterSelected: _animT == null ? _posterSel : null,
     posterCentered: _posCentered,
     onPosterAnchor: (id, rel) {
       if (!mounted || _posCentered.contains(id)) return;
@@ -5278,7 +5278,7 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
     onFtPhotoChanged: () =>
         setState(() => _ftMatrixF[_designKey] = _ftCtrl.value.storage.toList()),
     ftSplit: _ftSplit,
-    editing: _editable && _aiPick == null,
+    editing: _editable && _aiPick == null && _animT == null,
     infoOverride: widget.designer?.infoLine,
     onFtSplitDrag: (dFrac) => setState(
       () => _ftSplitF[_designKey] = (_ftSplit + dFrac).clamp(0.2, 0.85),
@@ -6514,17 +6514,41 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   bool get _animPlaying => _animTicker?.isActive ?? false;
 
-  /// Animation einmal abspielen (Vorschau).
-  void _playAnim() {
+  /// Nur ein Element animieren (Vorschau im Element-Panel); null = alle.
+  GraphicAnim? _previewAnim;
+
+  /// Animation einmal abspielen (Vorschau). [only] spielt nur die Bewegung
+  /// dieses Elements (die übrigen stehen still) – Auswahl/Panel bleiben.
+  void _playAnim({String? only}) {
     _animTicker?.dispose();
+    var from = 0.0, to = _anim.seconds.toDouble();
+    GraphicAnim? pa;
+    if (only != null) {
+      final it = _anim.items[only];
+      if (it == null || !it.isActive) {
+        _stopAnim();
+        return;
+      }
+      pa = _anim.copy()
+        ..items.removeWhere((k, _) => k != only)
+        ..bg = 'none';
+      // Kurz vor dem Start beginnen, nach dem Effekt noch kurz stehen lassen.
+      from = math.max(0, it.start - 0.3);
+      final pulse = it.pulse || it.shine;
+      to = math.min(
+        _anim.seconds.toDouble(),
+        it.start + it.len + (pulse ? 2.5 : 0.8),
+      );
+    }
     setState(() {
-      _posterSel = null;
-      _animT = 0;
+      if (only == null) _posterSel = null;
+      _previewAnim = pa;
+      _animT = from;
     });
     _animTicker = createTicker((elapsed) {
       if (!mounted) return;
-      final t = elapsed.inMicroseconds / 1e6;
-      if (t >= _anim.seconds) {
+      final t = from + elapsed.inMicroseconds / 1e6;
+      if (t >= to) {
         _stopAnim();
         return;
       }
@@ -6535,7 +6559,12 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   void _stopAnim() {
     _animTicker?.dispose();
     _animTicker = null;
-    if (mounted) setState(() => _animT = null);
+    if (mounted) {
+      setState(() {
+        _animT = null;
+        _previewAnim = null;
+      });
+    }
   }
 
   /// Text für den Zähler (Zahlen hochzählen/rollen) beim Abspielen.
@@ -7414,15 +7443,20 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
   }) {
     final cur = _anim.items[id] ?? ElementAnim();
     final maxStart = math.max(1, _anim.seconds - 1).toDouble();
-    void upd(void Function(ElementAnim x) f) => apply(() {
-      final x = _anim.items[id] ?? ElementAnim();
-      f(x);
-      if (x.isActive) {
-        _anim.items[id] = x;
-      } else {
-        _anim.items.remove(id);
-      }
-    });
+    void upd(void Function(ElementAnim x) f, {bool play = true}) {
+      apply(() {
+        final x = _anim.items[id] ?? ElementAnim();
+        f(x);
+        if (x.isActive) {
+          _anim.items[id] = x;
+        } else {
+          _anim.items.remove(id);
+        }
+      });
+      // Änderung direkt in der Grafik zeigen (nur dieses Element).
+      if (play) _playAnim(only: id);
+    }
+
     final txt = _animTextOf(id);
     final canCount = id == 'std_score' || (txt != null && hasNumber(txt));
     return ExpansionTile(
@@ -7459,7 +7493,8 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 max: maxStart,
                 divisions: (maxStart * 10).round(),
                 label: '${cur.start.toStringAsFixed(1)} s',
-                onChanged: (v) => upd((x) => x.start = v),
+                onChanged: (v) => upd((x) => x.start = v, play: false),
+                onChangeEnd: (_) => _playAnim(only: id),
               ),
             ),
             Text('${cur.start.toStringAsFixed(1).replaceAll('.', ',')} s'),
@@ -7500,6 +7535,21 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
               onSelected: (v) => upd((x) => x.pulse = v),
             ),
           ],
+        ),
+        const SizedBox(height: 6),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.tonalIcon(
+            onPressed: !cur.isActive
+                ? null
+                : (_animPlaying ? _stopAnim : () => _playAnim(only: id)),
+            icon: Icon(_animPlaying ? Icons.stop : Icons.play_arrow),
+            label: Text(
+              !cur.isActive
+                  ? 'Erst einen Effekt wählen'
+                  : (_animPlaying ? 'Stopp' : 'Vorschau abspielen'),
+            ),
+          ),
         ),
       ],
     );
@@ -9220,7 +9270,11 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
                 value: v,
                 child: Row(
                   children: [
-                    Icon(i, size: 20),
+                    Icon(
+                      i,
+                      size: 20,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                     const SizedBox(width: 12),
                     Text(t),
                   ],
@@ -9353,10 +9407,15 @@ class _StartelfGraphicScreenState extends State<StartelfGraphicScreen>
 
   Widget _formatMenu(Color fg) {
     final label = _isFupa ? '4:5' : (_story ? '9:16' : '1:1');
+    final iconColor = Theme.of(context).colorScheme.onSurfaceVariant;
     // Alle Zeilen gleich aufgebaut: Symbol-Spalte (24 px) + Text → bündig.
     Widget item(IconData? i, String t, {bool bold = false}) => Row(
       children: [
-        SizedBox(width: 24, child: i == null ? null : Icon(i, size: 20)),
+        SizedBox(
+          width: 24,
+          // Feste Farbe: sonst erbt das Symbol das Weiß der Kopfzeile.
+          child: i == null ? null : Icon(i, size: 20, color: iconColor),
+        ),
         const SizedBox(width: 14),
         Text(
           t,
