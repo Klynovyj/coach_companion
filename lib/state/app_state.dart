@@ -1117,6 +1117,7 @@ class AppState extends ChangeNotifier {
       await _pullEventsFromCloud(teamId, replace: false);
       await _pullAuxFromCloud(teamId, replace: false);
       await _pullStatsFromCloud(teamId);
+      await dedupeFupaMatches(teamId);
     } catch (_) {
       // Offline/Teilfehler – lokaler Stand bleibt gültig.
     }
@@ -1904,10 +1905,75 @@ class AppState extends ChangeNotifier {
     final team = await ensureOwnTeam();
     final matches = await _fullSchedule(url);
     final added = await _persist.syncSchedule(team.id, matches);
+    await dedupeFupaMatches(team.id);
     await _reload();
     notifyListeners();
     await pushTeamToCloud();
     return added;
+  }
+
+  /// Führt doppelte FuPa-Spiele zusammen (gleicher FuPa-Spiel-Slug bzw.
+  /// gleiche external_id). Entsteht, wenn zwei Geräte/Trainer den Spielplan
+  /// unabhängig importieren – jeder vergibt eine eigene Spiel-ID. Behalten
+  /// wird das Spiel mit Inhalten (Nominierung, Aufstellung, Ereignisse …),
+  /// sonst deterministisch die kleinste ID (alle Geräte entscheiden gleich).
+  /// Leere Duplikate werden lokal und in der Cloud entfernt; haben mehrere
+  /// Inhalte, bleiben sie bestehen (nichts geht verloren).
+  @visibleForTesting
+  Future<int> dedupeFupaMatches(String ownTeamId) async {
+    final all = await _repo.getMatches(ownTeamId);
+    final groups = <String, List<GameMatch>>{};
+    for (final m in all) {
+      final slug = m.fupaMatchSlug ?? '';
+      final ext = m.externalId ?? '';
+      final key = slug.isNotEmpty
+          ? 's:$slug'
+          : ext.isNotEmpty
+          ? 'e:$ext'
+          : null;
+      if (key != null) groups.putIfAbsent(key, () => []).add(m);
+    }
+    var removed = 0;
+    for (final g in groups.values.where((g) => g.length > 1)) {
+      final content = <String, int>{
+        for (final m in g) m.id: await _repo.matchContentCount(m.id),
+      };
+      final sorted = [...g]
+        ..sort((a, b) {
+          final c = content[b.id]!.compareTo(content[a.id]!);
+          if (c != 0) return c;
+          final s = (b.status != MatchStatus.scheduled ? 1 : 0).compareTo(
+            a.status != MatchStatus.scheduled ? 1 : 0,
+          );
+          return s != 0 ? s : a.id.compareTo(b.id);
+        });
+      var keeper = sorted.first;
+      for (final dup in sorted.skip(1)) {
+        if (content[dup.id]! > 0) continue; // beide mit Inhalt → behalten
+        keeper = keeper.copyWith(
+          competition: keeper.competition ?? dup.competition,
+          matchday: keeper.matchday ?? dup.matchday,
+          externalId: keeper.externalId ?? dup.externalId,
+          fupaMatchSlug: keeper.fupaMatchSlug ?? dup.fupaMatchSlug,
+          opponentFupaUrl: keeper.opponentFupaUrl ?? dup.opponentFupaUrl,
+          opponentLogoPath: keeper.opponentLogoPath ?? dup.opponentLogoPath,
+          opponentTeamId: keeper.opponentTeamId ?? dup.opponentTeamId,
+        );
+        await _repo.deleteMatch(dup.id);
+        if (_activeCloudTeamId != null &&
+            CloudService.ready &&
+            CloudService.signedIn) {
+          try {
+            await CloudService.deleteWhere('matches', {'id': dup.id});
+          } catch (_) {
+            // Offline/keine Rechte – nächster Sync versucht es erneut.
+          }
+        }
+        removed++;
+      }
+      await _repo.upsertMatch(keeper);
+    }
+    return removed;
   }
 
   /// Team-Spielplan (ab aktuellem Spieltag) + ganze Saison aus der Liga-API

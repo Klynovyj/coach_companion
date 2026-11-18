@@ -447,6 +447,42 @@ class CoachRepository {
     await db.delete('matches', where: 'id = ?', whereArgs: [id]);
   }
 
+  /// Anzahl der Inhalte, die an einem Spiel hängen (Nominierung, Aufstellung,
+  /// Ereignisse, Karten, Bewertungen, Notizen, Grafiken). 0 = leeres Spiel,
+  /// das als Duplikat gefahrlos entfernt werden kann.
+  Future<int> matchContentCount(String matchId) async {
+    final db = await _db;
+    var n = 0;
+    for (final t in const [
+      'match_nominations',
+      'match_events',
+      'card_entries',
+      'match_ratings',
+      'player_ratings',
+      'player_notes',
+      'announcement_designs',
+    ]) {
+      try {
+        final r = await db.rawQuery(
+          'SELECT COUNT(*) AS c FROM $t WHERE match_id = ?',
+          [matchId],
+        );
+        n += (r.first['c'] as num?)?.toInt() ?? 0;
+      } catch (_) {
+        // Tabelle fehlt in alter DB – ignorieren.
+      }
+    }
+    // Leere Aufstellungs-Zeilen entstehen schon beim Öffnen – nur Einträge
+    // zählen.
+    final r = await db.rawQuery(
+      'SELECT COUNT(*) AS c FROM lineup_entries e '
+      'JOIN lineups l ON l.id = e.lineup_id WHERE l.match_id = ?',
+      [matchId],
+    );
+    n += (r.first['c'] as num?)?.toInt() ?? 0;
+    return n;
+  }
+
   // ----------------------------------------------------------------- Lineups
   /// Beste Aufstellung für Anzeige/Live: freigegebene zuerst, sonst die mit den
   /// meisten Einträgen (damit eine leere lokale Zeile die übernommene volle

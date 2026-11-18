@@ -172,12 +172,18 @@ class FupaPersistence {
   ) async {
     final existing = await _repo.getMatches(ownTeamId);
     final byExternal = <String, GameMatch>{};
+    final bySlug = <String, GameMatch>{};
     final byKey = <String, GameMatch>{};
     for (final m in existing) {
       if (m.externalId != null && m.externalId!.isNotEmpty) {
         byExternal[m.externalId!] = m;
       }
-      byKey[_matchKey(m.opponentName, m.kickoff)] = m;
+      // Spiele, die (z.B. von einem anderen Gerät) aus der Cloud kamen, haben
+      // keine external_id, aber den FuPa-Spiel-Slug.
+      if (m.fupaMatchSlug != null && m.fupaMatchSlug!.isNotEmpty) {
+        bySlug.putIfAbsent(m.fupaMatchSlug!, () => m);
+      }
+      byKey.putIfAbsent(_matchKey(m.opponentName, m.kickoff), () => m);
     }
 
     var added = 0;
@@ -185,6 +191,9 @@ class FupaPersistence {
       GameMatch? match;
       if (data.externalId != null && data.externalId!.isNotEmpty) {
         match = byExternal[data.externalId!];
+      }
+      if (data.fupaMatchSlug != null && data.fupaMatchSlug!.isNotEmpty) {
+        match ??= bySlug[data.fupaMatchSlug!];
       }
       match ??= byKey[_matchKey(data.opponentName, data.kickoff)];
 
