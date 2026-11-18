@@ -36,6 +36,19 @@ class FupaReduxImporter {
   /// true, wenn [text] (getrimmt) eine FuPa-Team-URL ist.
   static bool isTeamUrl(String text) => _teamUrl.hasMatch(text.trim());
 
+  /// Sucht in beliebigem Text (z. B. geteilter FuPa-Link mit Begleittext oder
+  /// Link auf eine Unterseite wie …/team/xyz/matches) eine FuPa-Teamseite und
+  /// liefert sie normalisiert als `https://www.fupa.net/team/<slug>`.
+  static String? extractTeamUrl(String text) {
+    final m = RegExp(
+      r'https?://(?:www\.)?fupa\.(?:net|de)/team/([A-Za-z0-9\-_]+)',
+      caseSensitive: false,
+    ).firstMatch(text);
+    final slug = m?.group(1)?.toLowerCase();
+    if (slug == null || slug.isEmpty) return null;
+    return 'https://www.fupa.net/team/$slug';
+  }
+
   /// true für jede verarbeitbare FuPa-URL (Spieler oder Team).
   static bool isFupaUrl(String text) => isPlayerUrl(text) || isTeamUrl(text);
 

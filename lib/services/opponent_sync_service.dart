@@ -88,7 +88,7 @@ class OpponentSyncService {
       status: ImportStatus.manualRequired,
       message:
           'Kein FuPa-Link für den Gegner hinterlegt. „${team.name}“ wurde angelegt – '
-          'Kader bitte manuell ergänzen (oder Spielplan aus FuPa importieren).',
+          'Kader manuell ergänzen oder den FuPa-Link des Gegners hinzufügen.',
     );
   }
 

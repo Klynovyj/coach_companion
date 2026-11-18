@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/enums.dart';
 import '../models/match.dart';
 import '../state/app_state.dart';
+import '../widgets/match_edit_sheet.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/ui_bits.dart';
 import 'match_center_screen.dart';
@@ -159,16 +160,18 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (_) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('Karten-App konnte nicht geöffnet werden.')),
+        const SnackBar(
+          content: Text('Karten-App konnte nicht geöffnet werden.'),
+        ),
       );
     }
   }
 
   Future<void> _addMatch(BuildContext context) async {
-    final result = await showModalBottomSheet<_NewMatchData>(
+    final result = await showModalBottomSheet<MatchEditData>(
       context: context,
       isScrollControlled: true,
-      builder: (_) => const _NewMatchSheet(),
+      builder: (_) => const MatchEditSheet(),
     );
     if (result == null || !context.mounted) return;
     final match = await context.read<AppState>().addMatch(
@@ -176,6 +179,8 @@ class _ScheduleScreenState extends State<ScheduleScreen> {
       kickoff: result.kickoff,
       venue: result.venue,
       competition: result.competition,
+      opponentFupaUrl: result.fupaUrl,
+      opponentLogoPath: result.logo,
     );
     if (!context.mounted) return;
     await Navigator.push(
@@ -356,122 +361,5 @@ class _EmptySchedule extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _NewMatchData {
-  final String opponent;
-  final DateTime? kickoff;
-  final Venue venue;
-  final String? competition;
-  _NewMatchData(this.opponent, this.kickoff, this.venue, this.competition);
-}
-
-class _NewMatchSheet extends StatefulWidget {
-  const _NewMatchSheet();
-  @override
-  State<_NewMatchSheet> createState() => _NewMatchSheetState();
-}
-
-class _NewMatchSheetState extends State<_NewMatchSheet> {
-  final _opp = TextEditingController();
-  final _comp = TextEditingController();
-  DateTime? _kickoff;
-  Venue _venue = Venue.home;
-
-  @override
-  void dispose() {
-    _opp.dispose();
-    _comp.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final df = DateFormat('dd.MM.yyyy HH:mm', 'de_DE');
-    return Padding(
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text('Neues Spiel', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _opp,
-            decoration: const InputDecoration(labelText: 'Gegner'),
-          ),
-          const SizedBox(height: 12),
-          SegmentedButton<Venue>(
-            segments: const [
-              ButtonSegment(value: Venue.home, label: Text('Heim')),
-              ButtonSegment(value: Venue.away, label: Text('Auswärts')),
-            ],
-            selected: {_venue},
-            onSelectionChanged: (s) => setState(() => _venue = s.first),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _pickDate,
-            icon: const Icon(Icons.schedule),
-            label: Text(
-              _kickoff == null ? 'Anstoßzeit wählen' : df.format(_kickoff!),
-            ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _comp,
-            decoration: const InputDecoration(
-              labelText: 'Wettbewerb (optional)',
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: () {
-              if (_opp.text.trim().isEmpty) return;
-              Navigator.pop(
-                context,
-                _NewMatchData(
-                  _opp.text.trim(),
-                  _kickoff,
-                  _venue,
-                  _comp.text.trim().isEmpty ? null : _comp.text.trim(),
-                ),
-              );
-            },
-            child: const Text('Spiel anlegen'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _pickDate() async {
-    final now = DateTime.now();
-    final date = await showDatePicker(
-      context: context,
-      initialDate: now,
-      firstDate: DateTime(now.year - 1),
-      lastDate: DateTime(now.year + 2),
-    );
-    if (date == null || !mounted) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 15, minute: 0),
-    );
-    setState(() {
-      _kickoff = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time?.hour ?? 15,
-        time?.minute ?? 0,
-      );
-    });
   }
 }

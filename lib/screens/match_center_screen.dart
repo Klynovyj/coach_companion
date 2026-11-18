@@ -9,6 +9,7 @@ import '../models/team.dart';
 import '../services/fupa/fupa_dtos.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
+import '../widgets/match_edit_sheet.dart';
 import '../widgets/reset_dialog.dart';
 import '../widgets/squad_list_view.dart';
 import '../widgets/team_logo.dart';
@@ -150,8 +151,30 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
                   if (v == 'rate') _openRating();
                   if (v == 'announce') _shareAnnouncement();
                   if (v == 'adopt_fupa') _adoptFupaResult();
+                  if (v == 'edit') _editMatch();
+                  if (v == 'delete') _deleteMatch();
                 },
                 itemBuilder: (_) => [
+                  if (AppState.isManualMatch(match)) ...[
+                    const PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.edit_outlined),
+                        title: Text('Spiel bearbeiten'),
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        leading: Icon(Icons.delete_outline),
+                        title: Text('Spiel löschen'),
+                      ),
+                    ),
+                  ],
                   if (match.locallyManaged)
                     const PopupMenuItem(
                       value: 'adopt_fupa',
@@ -213,7 +236,16 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
             ),
             if (_syncResult != null &&
                 _syncResult!.status != ImportStatus.alreadyPresent)
-              _SyncBanner(result: _syncResult!),
+              _SyncBanner(
+                result: _syncResult!,
+                onAddLink:
+                    isTrainer &&
+                        AppState.isManualMatch(match) &&
+                        (match.opponentFupaUrl == null ||
+                            _syncResult!.status == ImportStatus.error)
+                    ? _editMatch
+                    : null,
+              ),
             Expanded(
               child: TabBarView(
                 children: [
@@ -413,6 +445,77 @@ class _MatchCenterScreenState extends State<MatchCenterScreen> {
     if (mounted) {
       _load(); // Nominierungen neu laden (Kader-Filter + Aufstellung-Gate)
     }
+  }
+
+  /// Manuell angelegtes Spiel bearbeiten (inkl. FuPa-Link des Gegners).
+  Future<void> _editMatch() async {
+    final match = _match;
+    if (match == null) return;
+    final state = context.read<AppState>();
+    final messenger = ScaffoldMessenger.of(context);
+    final data = await showModalBottomSheet<MatchEditData>(
+      context: context,
+      isScrollControlled: true,
+      builder: (_) => MatchEditSheet(initial: match),
+    );
+    if (data == null || !mounted) return;
+    setState(() => _loading = true);
+    ImportResult? result;
+    try {
+      result = await state.editMatch(
+        match.id,
+        opponentName: data.opponent,
+        kickoff: data.kickoff,
+        venue: data.venue,
+        competition: data.competition,
+        opponentFupaUrl: data.fupaUrl,
+      );
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('$e')));
+    }
+    if (!mounted) return;
+    if (result != null) _syncResult = result;
+    await _load();
+    messenger.showSnackBar(
+      SnackBar(content: Text(result?.message ?? 'Spiel gespeichert.')),
+    );
+  }
+
+  Future<void> _deleteMatch() async {
+    final match = _match;
+    if (match == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Spiel löschen?'),
+        content: Text(
+          'Das Spiel gegen ${match.opponentName} wird mit Nominierung, '
+          'Aufstellung und Spielverlauf für das ganze Team gelöscht. Das '
+          'lässt sich nicht rückgängig machen.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(ctx).colorScheme.error,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Löschen'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final state = context.read<AppState>();
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    _app.removeListener(_onChanged);
+    await state.deleteMatchEverywhere(match.id);
+    nav.pop();
+    messenger.showSnackBar(const SnackBar(content: Text('Spiel gelöscht.')));
   }
 
   Future<void> _resetMatch() async {
@@ -921,8 +1024,9 @@ class _Header extends StatelessWidget {
 }
 
 class _SyncBanner extends StatelessWidget {
-  const _SyncBanner({required this.result});
+  const _SyncBanner({required this.result, this.onAddLink});
   final ImportResult result;
+  final VoidCallback? onAddLink;
 
   @override
   Widget build(BuildContext context) {
@@ -941,9 +1045,22 @@ class _SyncBanner extends StatelessWidget {
           Icon(icon, color: color, size: 20),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              result.message,
-              style: Theme.of(context).textTheme.bodySmall,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  result.message,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                if (onAddLink != null) ...[
+                  const SizedBox(height: 6),
+                  FilledButton.tonalIcon(
+                    onPressed: onAddLink,
+                    icon: const Icon(Icons.link, size: 18),
+                    label: const Text('FuPa-Link des Gegners hinzufügen'),
+                  ),
+                ],
+              ],
             ),
           ),
         ],

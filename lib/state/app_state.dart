@@ -2479,6 +2479,8 @@ class AppState extends ChangeNotifier {
     DateTime? kickoff,
     Venue venue = Venue.home,
     String? competition,
+    String? opponentFupaUrl,
+    String? opponentLogoPath,
   }) async {
     final team = await ensureOwnTeam();
     final match = GameMatch(
@@ -2488,9 +2490,14 @@ class AppState extends ChangeNotifier {
       kickoff: kickoff,
       venue: venue,
       competition: competition,
+      opponentFupaUrl: (opponentFupaUrl == null || opponentFupaUrl.isEmpty)
+          ? null
+          : opponentFupaUrl,
+      opponentLogoPath: opponentLogoPath,
       createdAt: DateTime.now(),
     );
     await _repo.upsertMatch(match);
+    await _pushMatchToCloud(match);
     await _reload();
     notifyListeners();
     return match;
@@ -2508,7 +2515,156 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// true = selbst angelegtes Spiel (nicht aus dem FuPa-Spielplan) – nur
+  /// diese dürfen frei bearbeitet/gelöscht werden, sonst überschreibt der
+  /// nächste FuPa-Abgleich die Änderung bzw. legt das Spiel neu an.
+  static bool isManualMatch(GameMatch m) =>
+      (m.externalId == null || m.externalId!.isEmpty) &&
+      (m.fupaMatchSlug == null || m.fupaMatchSlug!.isEmpty);
+
+  /// Bearbeitet ein manuell angelegtes Spiel (Gegner, Heim/Auswärts, Anstoß,
+  /// Wettbewerb). Ein neuer/geänderter FuPa-Link des Gegners lädt sofort
+  /// Kader und Wappen. Gibt das Import-Ergebnis zurück (null = kein Import).
+  Future<ImportResult?> editMatch(
+    String matchId, {
+    required String opponentName,
+    DateTime? kickoff,
+    required Venue venue,
+    String? competition,
+    String? opponentFupaUrl,
+  }) async {
+    final m = await _repo.getMatch(matchId);
+    if (m == null) return null;
+    final name = opponentName.trim();
+    final map = m.toMap()
+      ..['opponent_name'] = name
+      ..['kickoff'] = kickoff?.toIso8601String()
+      ..['venue'] = venue.storageKey
+      ..['competition'] = (competition == null || competition.trim().isEmpty)
+          ? null
+          : competition.trim();
+    var updated = GameMatch.fromMap(map);
+    await _repo.upsertMatch(updated);
+    // Platzhalter-Gegner (ohne FuPa) mit umbenennen.
+    if (name != m.opponentName && m.opponentTeamId != null) {
+      final opp = await _repo.getTeam(m.opponentTeamId!);
+      if (opp != null && (opp.fupaUrl == null || opp.fupaUrl!.isEmpty)) {
+        await _repo.upsertTeam(opp.copyWith(name: name));
+      }
+    }
+    await _pushMatchToCloud(updated);
+    ImportResult? result;
+    final link = opponentFupaUrl == null
+        ? null
+        : FupaReduxImporter.extractTeamUrl(opponentFupaUrl);
+    if (link != null && link != m.opponentFupaUrl) {
+      result = await linkOpponentFupa(matchId, link);
+    }
+    await _reload();
+    notifyListeners();
+    return result;
+  }
+
+  /// Löscht ein Spiel lokal und in der Cloud (mit allen Daten am Spiel).
+  Future<void> deleteMatchEverywhere(String id) async {
+    await _repo.deleteMatch(id);
+    if (_activeCloudTeamId != null &&
+        CloudService.ready &&
+        CloudService.signedIn) {
+      try {
+        await CloudService.deleteWhere('matches', {'id': id});
+      } catch (_) {
+        // Offline/keine Rechte – lokal ist es weg.
+      }
+    }
+    await _reload();
+    notifyListeners();
+  }
+
+  /// Spiegelt EIN Spiel in die Cloud (nur bei aktivem Cloud-Team).
+  Future<void> _pushMatchToCloud(GameMatch m) async {
+    final cloudTeam = _activeCloudTeamId;
+    if (cloudTeam == null || !CloudService.ready || !CloudService.signedIn) {
+      return;
+    }
+    try {
+      await CloudService.upsertMatches([
+        {
+          'id': m.id,
+          'team_id': cloudTeam,
+          'opponent': m.opponentName,
+          'opponent_logo': m.opponentLogoPath,
+          'kickoff': m.kickoff?.toUtc().toIso8601String(),
+          'venue': m.venue == Venue.home ? 'Heim' : 'Auswärts',
+          'own_score': m.ownScore,
+          'opponent_score': m.opponentScore,
+          'status': m.status.storageKey,
+          'locally_managed': m.locallyManaged,
+          'fupa_match_slug': m.fupaMatchSlug,
+        },
+      ]);
+    } catch (_) {
+      // Offline – der nächste Voll-Abgleich holt es nach.
+    }
+  }
+
   Future<GameMatch?> getMatch(String id) => _repo.getMatch(id);
+
+  /// Vorschau einer FuPa-Teamseite (Name + Wappen) für den Dialog
+  /// „Neues Spiel". Wirft bei ungültigem Link oder Abruffehler.
+  Future<({String? name, String? logo})> fupaTeamPreview(String url) async {
+    final data = await _importer.importTeam(url);
+    return (name: data.name, logo: data.logoDataUrl);
+  }
+
+  /// Hinterlegt (oder ändert) den FuPa-Teamlink des Gegners eines Spiels und
+  /// importiert sofort Kader, Wappen und Statistik. Ein bisheriger Platzhalter-
+  /// Gegner (manuell angelegt) wird weiterverwendet – keine Dublette, manuell
+  /// ergänzte Spieler bleiben erhalten.
+  Future<ImportResult> linkOpponentFupa(String matchId, String text) async {
+    final url = FupaReduxImporter.extractTeamUrl(text);
+    if (url == null) {
+      throw FupaImportException(
+        'Das ist kein FuPa-Mannschaftslink (…fupa.net/team/…).',
+      );
+    }
+    final match = await _repo.getMatch(matchId);
+    if (match == null) throw FupaImportException('Spiel nicht gefunden.');
+    final slug = FupaReduxImporter.teamSlugFromUrl(url)!;
+    // Platzhalter ohne FuPa-Bezug an den neuen Link binden, damit der Import
+    // genau dieses Team befüllt.
+    final oldId = match.opponentTeamId;
+    if (oldId != null) {
+      final old = await _repo.getTeam(oldId);
+      if (old != null && (old.fupaUrl == null || old.fupaUrl!.isEmpty)) {
+        final existing = await _repo.findOpponentTeam(fupaRef: slug);
+        if (existing == null) {
+          await _repo.upsertTeam(old.copyWith(fupaRef: slug));
+        }
+      }
+    }
+    await _repo.upsertMatch(
+      match.copyWith(opponentFupaUrl: url, opponentImported: false),
+    );
+    final updated = (await _repo.getMatch(matchId))!;
+    final result = await openMatch(updated, force: true);
+    // Wappen auch am Spiel hinterlegen (Spielplan-Karte, Grafiken).
+    final after = await _repo.getMatch(matchId);
+    final oppId = after?.opponentTeamId;
+    final opp = oppId == null ? null : await _repo.getTeam(oppId);
+    final logo = opp?.logoPath;
+    if (after != null && logo != null && logo.isNotEmpty) {
+      await _repo.upsertMatch(after.copyWith(opponentLogoPath: logo));
+      if (CloudService.ready && CloudService.signedIn) {
+        try {
+          await CloudService.updateMatch(matchId, {'opponent_logo': logo});
+        } catch (_) {}
+      }
+      await _reload();
+      notifyListeners();
+    }
+    return result;
+  }
 
   /// Zusatz-Infos je Spiel für die Mannschafts-Kadernachricht (Spielstätte,
   /// Adresse, Treffpunkt). Pro Spiel als JSON in den Settings gehalten.
@@ -2734,6 +2890,16 @@ class AppState extends ChangeNotifier {
           await _importStatsInto(oppId, url);
         } catch (_) {
           // Statistik ist optional.
+        }
+      }
+      // Manuell angelegtes Spiel ohne Wappen: Wappen vom importierten Gegner.
+      if (updated != null &&
+          oppId != null &&
+          (updated.opponentLogoPath == null ||
+              updated.opponentLogoPath!.isEmpty)) {
+        final logo = (await _repo.getTeam(oppId))?.logoPath;
+        if (logo != null && logo.isNotEmpty) {
+          await _repo.upsertMatch(updated.copyWith(opponentLogoPath: logo));
         }
       }
     }
