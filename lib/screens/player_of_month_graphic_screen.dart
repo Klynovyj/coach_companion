@@ -11,12 +11,14 @@ import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/graphic_settings.dart';
 import '../models/player.dart';
 import '../models/player_stat.dart';
 import '../models/sponsor.dart';
 import '../services/fupa/fupa_dtos.dart';
+import '../services/logo_tools.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/bg_pattern.dart';
@@ -53,6 +55,17 @@ extension _FmtX on _Fmt {
     _Fmt.post => 'Post',
     _Fmt.story => 'Story',
     _Fmt.urkunde => 'Urkunde-A4',
+  };
+}
+
+/// Welche Sponsoren auf der Grafik/Urkunde erscheinen.
+enum _SponsorMode { all, mainOnly, none }
+
+extension _SponsorModeX on _SponsorMode {
+  String get label => switch (this) {
+    _SponsorMode.all => 'Alle',
+    _SponsorMode.mainOnly => 'Nur Hauptsponsor',
+    _SponsorMode.none => 'Aus',
   };
 }
 
@@ -128,6 +141,7 @@ class _PlayerOfMonthGraphicScreenState
   late bool _showTotal = !_hasMonth; // Gesamt (alle getrackten Spiele)
   bool _showFupa = true; // FuPa-Saison
   late bool _showFupaClub = !_hasMonth; // FuPa gesamt (Verein)
+  _SponsorMode _sponsorMode = _SponsorMode.all; // Sponsoren-Leiste (umschaltbar)
   /// Vereins-Gesamtwerte (offizielle Spiele; FuPa führt keine Freundschafts-
   /// spiele in der Laufbahn). Null ohne Daten.
   FupaClubTotal? get _fupaClub {
@@ -593,7 +607,8 @@ class _PlayerOfMonthGraphicScreenState
     );
     if (!mounted) return;
     setState(() {
-      _sponsors = sponsors;
+      // Deaktivierte Sponsoren erscheinen auf keiner Grafik.
+      _sponsors = sponsors.where((s) => s.enabled).toList();
       _settings = settings;
       _month = month;
       _total = total;
@@ -619,8 +634,35 @@ class _PlayerOfMonthGraphicScreenState
     _sheetSetState?.call(() {});
   }
 
-  List<Sponsor> get _barSponsors =>
-      _sponsors.where((s) => s.logo != null).toList();
+  /// Gibt es überhaupt Sponsoren mit Logo (steuert die Sichtbarkeit des Reglers).
+  bool get _hasSponsorLogos => _sponsors.any((s) => s.logo != null);
+
+  List<Sponsor> get _barSponsors {
+    if (_sponsorMode == _SponsorMode.none) return const [];
+    final withLogo = _sponsors.where((s) => s.logo != null);
+    if (_sponsorMode == _SponsorMode.mainOnly) {
+      return withLogo.where((s) => s.isMain).toList();
+    }
+    return withLogo.toList();
+  }
+
+  // Vereinslogo mit freigestelltem (weißem) Hintergrund für die farbigen
+  // Grafiken (Post/Story). Weiß wird nur vom Rand her entfernt – weiße Flächen
+  // INNEN im Logo (z. B. Schrift) bleiben erhalten. Ergebnis wird gecacht.
+  String? _logoNoWhiteSrc;
+  String? _logoNoWhiteCache;
+  String? get _logoNoWhite {
+    final src = _logo;
+    if (src == null) return null;
+    if (_logoNoWhiteSrc == src) return _logoNoWhiteCache;
+    final bytes = TeamLogo.decode(src);
+    final out = bytes == null
+        ? src
+        : 'data:image/png;base64,${base64Encode(removeWhiteBackground(bytes))}';
+    _logoNoWhiteSrc = src;
+    _logoNoWhiteCache = out;
+    return out;
+  }
 
   // Effektive Anzeige-Werte (Einstellung überschreibt die Defaults).
   String get _title =>
@@ -1031,6 +1073,29 @@ class _PlayerOfMonthGraphicScreenState
                             : 'Keine FuPa-Laufbahndaten gefunden.',
                       ),
                     ),
+                  if (_hasSponsorLogos) ...[
+                    const SizedBox(height: 8),
+                    const Divider(),
+                    const Text(
+                      'Sponsoren',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        for (final m in _SponsorMode.values)
+                          ChoiceChip(
+                            label: Text(m.label),
+                            selected: _sponsorMode == m,
+                            onSelected: (_) {
+                              setState(() => _sponsorMode = m);
+                              setSheet(() {});
+                            },
+                          ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -1180,6 +1245,16 @@ class _PlayerOfMonthGraphicScreenState
               title: const Text('Foto aufnehmen'),
               onTap: () => Navigator.pop(ctx, 'camera'),
             ),
+            ListTile(
+              leading: const Icon(Icons.photo),
+              title: const Text('Google Fotos'),
+              subtitle: Text(
+                Platform.isAndroid
+                    ? 'Im Foto-Picker auf Google Fotos wechseln'
+                    : 'Öffnet Google Fotos im Browser zum Herunterladen',
+              ),
+              onTap: () => Navigator.pop(ctx, 'google'),
+            ),
             if (_player.hasCustomPhoto)
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.red),
@@ -1199,6 +1274,23 @@ class _PlayerOfMonthGraphicScreenState
       );
       await context.read<AppState>().updatePlayer(updated);
       if (mounted) setState(() => _player = updated);
+      return;
+    }
+    // Google Fotos: Android = System-Foto-Picker (dort Google Fotos als Quelle
+    // wählbar) → wie Galerie. Desktop = im Browser öffnen, Hinweis zeigen.
+    if (choice == 'google' && !Platform.isAndroid) {
+      await launchUrl(
+        Uri.parse('https://photos.google.com'),
+        mode: LaunchMode.externalApplication,
+      );
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Bild in Google Fotos herunterladen, dann über „Aus Galerie wählen".',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
       return;
     }
     try {
@@ -1276,7 +1368,7 @@ class _PlayerOfMonthGraphicScreenState
         : _SocialGraphic(
             player: _player,
             teamName: _title,
-            teamLogo: _logo,
+            teamLogo: _logoNoWhite,
             occasion: _occasion,
             subtitle: _subtitle,
             looks: _looks,
