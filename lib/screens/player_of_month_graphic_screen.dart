@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -134,7 +135,71 @@ class _PlayerOfMonthGraphicScreenState
     final c = _fupaCareer;
     if (c == null) return null;
     final t = c.total();
-    return t.hasAny ? t : null;
+    final adj = FupaClubTotal(
+      clubName: t.clubName,
+      seasons: t.seasons,
+      matches: math.max(0, t.matches + _adjMatches),
+      goals: math.max(0, t.goals + _adjGoals),
+      assists: math.max(0, t.assists + _adjAssists),
+    );
+    return adj.hasAny ? adj : null;
+  }
+
+  // ------------------------------------------------ Korrektur (+1/−1) je Spieler
+  /// Manuelle Korrektur der FuPa-Vereinswerte (z.B. 99 → 100 Spiele für die
+  /// Urkunde zum 100. Spiel). Je Spieler auf dem Gerät gespeichert.
+  int _adjMatches = 0;
+  int _adjGoals = 0;
+  int _adjAssists = 0;
+  bool get _hasAdj => _adjMatches != 0 || _adjGoals != 0 || _adjAssists != 0;
+  String get _adjPref => 'honor_adj_${widget.player.id}';
+
+  Future<void> _loadAdj() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final m = jsonDecode(p.getString(_adjPref) ?? '{}');
+      if (m is! Map || !mounted) return;
+      setState(() {
+        _adjMatches = (m['m'] as num?)?.toInt() ?? 0;
+        _adjGoals = (m['g'] as num?)?.toInt() ?? 0;
+        _adjAssists = (m['a'] as num?)?.toInt() ?? 0;
+      });
+      _sheetSetState?.call(() {});
+    } catch (_) {}
+  }
+
+  Future<void> _saveAdj() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      if (!_hasAdj) {
+        await p.remove(_adjPref);
+      } else {
+        await p.setString(
+          _adjPref,
+          jsonEncode({'m': _adjMatches, 'g': _adjGoals, 'a': _adjAssists}),
+        );
+      }
+    } catch (_) {}
+  }
+
+  // ------------------------------------------------------ Sponsoren an/aus
+  /// Sponsoren-Leiste auf Ehrungs-Grafik/Urkunde (gerätweit gespeichert).
+  bool _showSponsors = true;
+  static const _sponsorPref = 'honor_show_sponsors';
+
+  Future<void> _loadShowSponsors() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final v = p.getBool(_sponsorPref);
+      if (v != null && mounted) setState(() => _showSponsors = v);
+    } catch (_) {}
+  }
+
+  Future<void> _saveShowSponsors() async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.setBool(_sponsorPref, _showSponsors);
+    } catch (_) {}
   }
 
   /// KI-Look (Deko-Ebene) je Format, auf dem Gerät je Spieler gespeichert.
@@ -570,6 +635,8 @@ class _PlayerOfMonthGraphicScreenState
     _loadLooks();
     _loadCrop();
     _loadAiLooks();
+    _loadAdj();
+    _loadShowSponsors();
   }
 
   Future<void> _load() async {
@@ -619,8 +686,10 @@ class _PlayerOfMonthGraphicScreenState
     _sheetSetState?.call(() {});
   }
 
-  List<Sponsor> get _barSponsors =>
+  List<Sponsor> get _allBarSponsors =>
       _sponsors.where((s) => s.logo != null).toList();
+  List<Sponsor> get _barSponsors =>
+      _showSponsors ? _allBarSponsors : const <Sponsor>[];
 
   // Effektive Anzeige-Werte (Einstellung überschreibt die Defaults).
   String get _title =>
@@ -1001,22 +1070,31 @@ class _PlayerOfMonthGraphicScreenState
                   else if (_fupaCareer != null)
                     Builder(
                       builder: (_) {
-                        final club = _fupaCareer!.total();
-                        return SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(
-                            'FuPa gesamt (${club.clubName.isEmpty ? 'Verein' : club.clubName})',
-                          ),
-                          subtitle: Text(
-                            'Pflichtspiele beim Verein: '
-                            '${club.matches} Spiele, ${club.goals} Tore, '
-                            '${club.assists} Vorlagen',
-                          ),
-                          value: _showFupaClub,
-                          onChanged: (v) {
-                            setState(() => _showFupaClub = v);
-                            setSheet(() {});
-                          },
+                        final raw = _fupaCareer!.total();
+                        final club = _fupaClub ?? raw;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SwitchListTile(
+                              contentPadding: EdgeInsets.zero,
+                              title: Text(
+                                'FuPa gesamt (${raw.clubName.isEmpty ? 'Verein' : raw.clubName})',
+                              ),
+                              subtitle: Text(
+                                'Beim Verein: '
+                                '${club.matches} Spiele, ${club.goals} Tore, '
+                                '${club.assists} Vorlagen'
+                                '${_hasAdj ? ' (korrigiert)' : ''}',
+                              ),
+                              value: _showFupaClub,
+                              onChanged: (v) {
+                                setState(() => _showFupaClub = v);
+                                setSheet(() {});
+                              },
+                            ),
+                            if (_showFupaClub) _adjEditor(raw, club, setSheet),
+                          ],
                         );
                       },
                     )
@@ -1031,6 +1109,23 @@ class _PlayerOfMonthGraphicScreenState
                             : 'Keine FuPa-Laufbahndaten gefunden.',
                       ),
                     ),
+                  if (_allBarSponsors.isNotEmpty) ...[
+                    const Divider(height: 24),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: const Icon(Icons.handshake_outlined),
+                      title: const Text('Sponsoren anzeigen'),
+                      subtitle: const Text(
+                        'Logo-Leiste auf Grafik und Urkunde',
+                      ),
+                      value: _showSponsors,
+                      onChanged: (v) {
+                        setState(() => _showSponsors = v);
+                        setSheet(() {});
+                        _saveShowSponsors();
+                      },
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   SizedBox(
                     width: double.infinity,
@@ -1051,6 +1146,122 @@ class _PlayerOfMonthGraphicScreenState
     final state = context.read<AppState>();
     await state.saveGraphicSettings(_settings);
     await state.pushGraphicSettingsToCloud();
+  }
+
+  /// +1/−1-Korrektur der Vereinswerte (Spiele/Tore/Vorlagen) im Sheet.
+  Widget _adjEditor(
+    FupaClubTotal raw,
+    FupaClubTotal club,
+    void Function(VoidCallback) setSheet,
+  ) {
+    final scheme = Theme.of(context).colorScheme;
+    void change(VoidCallback fn) {
+      setState(fn);
+      setSheet(() {});
+      _saveAdj();
+    }
+
+    Widget row(
+      String label,
+      int fupa,
+      int shown,
+      int adj,
+      void Function(int d) onDelta,
+    ) {
+      final hint = adj == 0
+          ? 'FuPa $fupa'
+          : 'FuPa $fupa · ${adj > 0 ? '+' : ''}$adj';
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Row(
+          children: [
+            SizedBox(width: 78, child: Text(label)),
+            IconButton.filledTonal(
+              tooltip: '$label −1',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.remove),
+              onPressed: shown > 0 ? () => change(() => onDelta(-1)) : null,
+            ),
+            SizedBox(
+              width: 44,
+              child: Text(
+                '$shown',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                ),
+              ),
+            ),
+            IconButton.filledTonal(
+              tooltip: '$label +1',
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.add),
+              onPressed: () => change(() => onDelta(1)),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                hint,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: adj == 0 ? scheme.onSurfaceVariant : scheme.primary,
+                  fontWeight: adj == 0 ? FontWeight.normal : FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Werte anpassen (z. B. 100. Spiel)',
+            style: Theme.of(context).textTheme.labelLarge,
+          ),
+          const SizedBox(height: 4),
+          row('Spiele', raw.matches, club.matches, _adjMatches, (d) {
+            _adjMatches = math.max(-raw.matches, _adjMatches + d);
+          }),
+          row('Tore', raw.goals, club.goals, _adjGoals, (d) {
+            _adjGoals = math.max(-raw.goals, _adjGoals + d);
+          }),
+          row('Vorlagen', raw.assists, club.assists, _adjAssists, (d) {
+            _adjAssists = math.max(-raw.assists, _adjAssists + d);
+          }),
+          const SizedBox(height: 4),
+          Text(
+            'Korrektur bleibt beim Spieler gespeichert. Sobald FuPa '
+            'nachzieht, wieder auf 0 setzen.',
+            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+          ),
+          if (_hasAdj)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => change(() {
+                  _adjMatches = 0;
+                  _adjGoals = 0;
+                  _adjAssists = 0;
+                }),
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: const Text('Korrektur zurücksetzen'),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _rowWithImage({
