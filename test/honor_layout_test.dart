@@ -56,7 +56,14 @@ void main() {
     l.texts['name'] = 'Furkan-Mustafa Bulut';
     l.texts['ulabel'] = 'EHRENURKUNDE';
     l.format('post').setItem('photo', const HonorElementEdit(scale: 2));
+    l.photoSlot = 'action';
+    l.photoData = 'data:image/jpeg;base64,AAAA';
+    final back = HonorLayout.decode(l.encode());
+    expect(back.photoSlot, 'action');
+    expect(back.photoData, 'data:image/jpeg;base64,AAAA');
     final t = l.forTemplate();
+    expect(t.photoSlot, isNull);
+    expect(t.photoData, isNull);
     expect(t.texts.containsKey('name'), isFalse);
     expect(t.texts['ulabel'], 'EHRENURKUNDE');
     expect(t.format('post').item('photo').scale, 2);

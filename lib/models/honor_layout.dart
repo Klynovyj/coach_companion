@@ -15,8 +15,16 @@ class HonorLayout {
   HonorLayout({
     Map<String, String>? texts,
     Map<String, HonorFormatLayout>? fmts,
+    this.photoSlot,
+    this.photoData,
   }) : texts = texts ?? {},
        formats = fmts ?? {};
+
+  /// Foto nur für diese Ehrung: eines der Spielerfotos (`fupa`/`own`/`club`/
+  /// `action`) oder ein eigenes Bild ([photoData], quadratische Data-URL).
+  /// Beides null = Profilbild des Spielers. Nie Teil einer Vorlage.
+  String? photoSlot;
+  String? photoData;
 
   /// Text-Overrides je Element-ID (z. B. `occasion`, `honor`, `stat:Spiele`).
   final Map<String, String> texts;
@@ -33,7 +41,11 @@ class HonorLayout {
   /// Spielerbezogene Texte, die eine Vorlage NIE mitnimmt.
   static const playerOnlyTexts = {'name'};
 
-  bool get isEmpty => texts.isEmpty && formats.values.every((f) => f.isEmpty);
+  bool get isEmpty =>
+      texts.isEmpty &&
+      photoSlot == null &&
+      photoData == null &&
+      formats.values.every((f) => f.isEmpty);
 
   HonorFormatLayout format(String fmt) =>
       formats.putIfAbsent(fmt, HonorFormatLayout.new);
@@ -42,12 +54,16 @@ class HonorLayout {
   HonorLayout forTemplate() {
     final c = HonorLayout.fromJson(toJson());
     c.texts.removeWhere((k, _) => playerOnlyTexts.contains(k));
+    c.photoSlot = null;
+    c.photoData = null;
     return c;
   }
 
   Map<String, dynamic> toJson() => {
     'v': 1,
     if (texts.isNotEmpty) 'texts': texts,
+    if (photoSlot != null) 'photoSlot': photoSlot,
+    if (photoData != null) 'photoData': photoData,
     'formats': {
       for (final e in formats.entries)
         if (!e.value.isEmpty) e.key: e.value.toJson(),
@@ -70,6 +86,8 @@ class HonorLayout {
                   ),
             }
           : null,
+      photoSlot: j['photoSlot'] as String?,
+      photoData: j['photoData'] as String?,
     );
   }
 

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -21,9 +22,11 @@ import '../models/player.dart';
 import '../models/player_stat.dart';
 import '../models/sponsor.dart';
 import '../services/fupa/fupa_dtos.dart';
+import '../services/player_photos.dart';
 import '../services/share_service.dart';
 import '../state/app_state.dart';
 import '../widgets/bg_pattern.dart';
+import '../widgets/logo_chip.dart';
 import '../widgets/team_logo.dart';
 import '../widgets/ai_look.dart';
 import '../widgets/text_look.dart';
@@ -1497,6 +1500,7 @@ class _PlayerOfMonthGraphicScreenState
       if (_selected != null && !_exists(_selected!)) _selected = null;
     });
     if (reset) _hist.reset(l.encode());
+    _resolvePhoto();
   }
 
   /// Nach jeder Änderung: Verlaufsschritt (gebündelt) + verzögert speichern.
@@ -2061,6 +2065,22 @@ class _PlayerOfMonthGraphicScreenState
                 maxLines: 2,
               ),
             if (id == 'photo') ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.tonalIcon(
+                      icon: const Icon(Icons.photo_library_outlined),
+                      label: const Text('Foto austauschen'),
+                      onPressed: _pickHonorPhoto,
+                    ),
+                  ),
+                  if (_layout.photoSlot != null || _layout.photoData != null)
+                    TextButton(
+                      onPressed: () => _setPhoto(null, null),
+                      child: const Text('Profilbild'),
+                    ),
+                ],
+              ),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 dense: true,
@@ -2146,6 +2166,175 @@ class _PlayerOfMonthGraphicScreenState
     );
   }
 
+  // ------------------------------------------------ Foto der Ehrung
+  String? _photoShown; // aufgelöstes Ehrungs-Foto (Data-URL), null = Profil
+  final Map<String, String> _slotThumbs = {};
+
+  /// Spieler, wie er auf der Grafik erscheint (ggf. mit Ehrungs-Foto).
+  Player get _shownPlayer => _photoShown == null
+      ? _player
+      : _player.copyWith(customPhoto: _photoShown, useCustomPhoto: true);
+
+  Future<String?> _slotThumb(PlayerPhotoSlot slot) async {
+    final cached = _slotThumbs[slot.key];
+    if (cached != null) return cached;
+    String? thumb;
+    try {
+      final orig = await _app.playerPhoto(_player.id, slot);
+      if (orig != null) {
+        thumb = await compute(_honorThumb, orig);
+      } else if (slot == PlayerPhotoSlot.fupa && _player.hasFupaPhoto) {
+        thumb = _player.fupaPhoto;
+      }
+    } catch (_) {}
+    if (thumb != null) _slotThumbs[slot.key] = thumb;
+    return thumb;
+  }
+
+  Future<void> _resolvePhoto() async {
+    final slot = PlayerPhotoSlot.fromKey(_layout.photoSlot);
+    var shown = _layout.photoData;
+    if (shown == null && slot != null) shown = await _slotThumb(slot);
+    if (mounted && shown != _photoShown) setState(() => _photoShown = shown);
+  }
+
+  void _setPhoto(String? slot, String? data) {
+    setState(() {
+      _layout.photoSlot = slot;
+      _layout.photoData = data;
+      _rev++;
+    });
+    _changed();
+    _resolvePhoto();
+  }
+
+  /// Foto aus Galerie/Kamera, quadratisch zugeschnitten (Data-URL) oder null.
+  Future<String?> _pickCroppedPhoto(ImageSource source) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final file = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 92,
+      );
+      if (file == null) return null;
+      final raw = await file.readAsBytes();
+      if (!mounted) return null;
+      final cropped = await Navigator.of(context).push<Uint8List>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => PhotoCropScreen(imageBytes: raw),
+        ),
+      );
+      if (cropped == null) return null;
+      return _encodeSquareJpeg(cropped);
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Foto konnte nicht geladen werden: $e')),
+      );
+      return null;
+    }
+  }
+
+  /// Foto der Ehrung austauschen: Spielerfotos (FuPa, eigenes, Verein,
+  /// Action), Galerie/Kamera – nur für diese Ehrung, das Profilbild bleibt.
+  Future<void> _pickHonorPhoto() async {
+    final thumbs = <PlayerPhotoSlot, String>{};
+    for (final sl in PlayerPhotoSlot.values) {
+      final t = await _slotThumb(sl);
+      if (t != null) thumbs[sl] = t;
+    }
+    if (!mounted) return;
+    final cur = _layout.photoData != null
+        ? 'custom'
+        : (_layout.photoSlot ?? 'profile');
+    Widget avatar(String? dataUrl) {
+      final b = TeamLogo.decode(dataUrl);
+      return CircleAvatar(
+        radius: 22,
+        backgroundColor: _greenDark,
+        backgroundImage: b == null ? null : MemoryImage(b),
+        child: b == null ? const Icon(Icons.person, color: Colors.white) : null,
+      );
+    }
+
+    const check = Icon(Icons.check);
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (ctx) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const ListTile(
+                title: Text(
+                  'Foto für diese Ehrung',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                subtitle: Text(
+                  'Gilt nur für diese Grafik – das Profilbild des Spielers '
+                  'bleibt unverändert.',
+                ),
+              ),
+              ListTile(
+                leading: avatar(_player.photoPath),
+                title: const Text('Profilbild'),
+                subtitle: const Text('Standard'),
+                trailing: cur == 'profile' ? check : null,
+                onTap: () => Navigator.pop(ctx, 'profile'),
+              ),
+              for (final e in thumbs.entries)
+                ListTile(
+                  leading: avatar(e.value),
+                  title: Text(e.key.label),
+                  subtitle: Text(e.key.description),
+                  trailing: cur == e.key.key ? check : null,
+                  onTap: () => Navigator.pop(ctx, 'slot:${e.key.key}'),
+                ),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Aus Galerie wählen'),
+                trailing: cur == 'custom' ? check : null,
+                onTap: () => Navigator.pop(ctx, 'gallery'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text('Foto aufnehmen'),
+                onTap: () => Navigator.pop(ctx, 'camera'),
+              ),
+              ListTile(
+                leading: const Icon(Icons.account_circle_outlined),
+                title: const Text('Profilbild des Spielers ändern …'),
+                subtitle: const Text(
+                  'Teamweit – auch für Kader und andere Grafiken',
+                ),
+                onTap: () => Navigator.pop(ctx, 'profileEdit'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (choice == null || !mounted) return;
+    switch (choice) {
+      case 'profile':
+        _setPhoto(null, null);
+      case 'gallery' || 'camera':
+        final data = await _pickCroppedPhoto(
+          choice == 'camera' ? ImageSource.camera : ImageSource.gallery,
+        );
+        if (data != null && mounted) _setPhoto(null, data);
+      case 'profileEdit':
+        await _changePhoto();
+      default:
+        if (choice.startsWith('slot:')) _setPhoto(choice.substring(5), null);
+    }
+  }
+
   /// Eigene Texte (frei platziert) über der Grafik.
   Widget _freeLayer(Size size) {
     final urk = _fmt == _Fmt.urkunde;
@@ -2196,7 +2385,7 @@ class _PlayerOfMonthGraphicScreenState
     final stats = _stats;
     final graphic = _fmt == _Fmt.urkunde
         ? _UrkundeGraphic(
-            player: _player,
+            player: _shownPlayer,
             teamLogo: _logo,
             texts: texts,
             edits: _fl,
@@ -2208,7 +2397,7 @@ class _PlayerOfMonthGraphicScreenState
             showRating: _showRating,
           )
         : _SocialGraphic(
-            player: _player,
+            player: _shownPlayer,
             teamLogo: _logo,
             texts: texts,
             edits: _fl,
@@ -2224,6 +2413,7 @@ class _PlayerOfMonthGraphicScreenState
             bgImage: _settings.bgImage,
             overlayOpacity: _settings.overlayOpacity / 100,
             showRating: _showRating,
+            logoCircle: _settings.logoShape == 'circle',
             compact: _fmt == _Fmt.post,
           );
     final editingView = _editing && !_capturing;
@@ -2351,9 +2541,9 @@ class _PlayerOfMonthGraphicScreenState
               ]
             : [
                 IconButton(
-                  tooltip: 'Spielerfoto (Galerie/Kamera)',
+                  tooltip: 'Foto austauschen',
                   icon: const Icon(Icons.add_a_photo_outlined),
-                  onPressed: _changePhoto,
+                  onPressed: _pickHonorPhoto,
                 ),
                 IconButton(
                   tooltip: 'Grafik anpassen',
@@ -2626,6 +2816,7 @@ class _SocialGraphic extends StatelessWidget {
     required this.bgImage,
     required this.overlayOpacity,
     required this.showRating,
+    this.logoCircle = false,
     required this.compact,
   });
 
@@ -2647,6 +2838,7 @@ class _SocialGraphic extends StatelessWidget {
   final String? bgImage;
   final double overlayOpacity; // 0..1
   final bool showRating;
+  final bool logoCircle; // Logo auf rundem statt eckigem Feld
   final bool compact;
 
   String _t(String id, [String def = '']) => texts[id] ?? def;
@@ -2780,7 +2972,14 @@ class _SocialGraphic extends StatelessWidget {
           child: Row(
             children: [
               if (teamLogo != null) ...[
-                TeamLogo(logoPath: teamLogo, size: compact ? 30 : 38),
+                if (TeamLogo.decode(teamLogo) case final lb?)
+                  LogoChip(
+                    bytes: lb,
+                    height: compact ? 34 : 44,
+                    circle: logoCircle,
+                  )
+                else
+                  TeamLogo(logoPath: teamLogo, size: compact ? 30 : 38),
                 const SizedBox(width: 10),
               ],
               Expanded(
@@ -3543,4 +3742,21 @@ class _RingCropScope extends InheritedWidget {
   @override
   bool updateShouldNotify(_RingCropScope old) =>
       old.crop != crop || old.enabled != enabled;
+}
+
+/// Ehrungs-Foto aus einem Spielerfoto: höchstens 1024 px (scharf im
+/// A4-Export, klein genug für Layout + Cloud). Läuft per compute().
+String? _honorThumb(String dataUrl) {
+  final bytes = dataUrlBytes(dataUrl);
+  if (bytes == null) return null;
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) return null;
+  final baked = img.bakeOrientation(decoded);
+  final small = (baked.width > 1024 || baked.height > 1024)
+      ? (baked.width >= baked.height
+            ? img.copyResize(baked, width: 1024)
+            : img.copyResize(baked, height: 1024))
+      : baked;
+  return 'data:image/jpeg;base64,'
+      '${base64Encode(img.encodeJpg(small, quality: 88))}';
 }
