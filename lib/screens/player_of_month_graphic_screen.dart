@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -13,7 +14,9 @@ import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../models/editor_helpers.dart';
 import '../models/graphic_settings.dart';
+import '../models/honor_layout.dart';
 import '../models/player.dart';
 import '../models/player_stat.dart';
 import '../models/sponsor.dart';
@@ -116,8 +119,8 @@ class _PlayerOfMonthGraphicScreenState
   GraphicSettings _settings = const GraphicSettings(id: 'local');
 
   // Anlass (Eyebrow) + Untertitel – editierbar.
-  late String _occasion = widget.defaultOccasion;
-  late String _subtitle =
+  late final String _occasion = widget.defaultOccasion;
+  late final String _subtitle =
       widget.defaultSubtitle ?? (widget.yearMonth != null ? _monthLabel : '');
 
   bool get _hasMonth => widget.yearMonth != null;
@@ -564,69 +567,15 @@ class _PlayerOfMonthGraphicScreenState
     } catch (_) {}
   }
 
-  Future<void> _saveLooks() async {
-    try {
-      final p = await SharedPreferences.getInstance();
-      await p.setString(_looksPref, TextLook.encodeMap(_looks));
-    } catch (_) {}
-  }
-
-  /// „Aa"-Knopf neben einem Textfeld → Text gestalten.
-  Widget _lookButton(String key, String title, TextAlign defaultAlign) =>
-      IconButton.filledTonal(
-        tooltip: 'Text gestalten',
-        icon: const Icon(Icons.text_format),
-        onPressed: () => showTextLookSheet(
-          context,
-          title: title,
-          initial: _looks[key] ?? const TextLook(),
-          defaultAlign: defaultAlign,
-          palette: [
-            ('Weiß', Colors.white),
-            ('Gold', _gold),
-            ('Schwarz', Colors.black),
-            ('Dunkel', _ink),
-            ('Vereinsfarbe', _hex(_settings.gradTop)),
-            ('Rot', const Color(0xFFD32F2F)),
-          ],
-          onChanged: (l) {
-            setState(() => _looks = {..._looks, key: l});
-            _saveLooks();
-          },
-        ),
-      );
-
-  /// Textfeld + „Aa"-Knopf nebeneinander.
-  Widget _withLook(
-    Widget field,
-    String key,
-    String title, [
-    TextAlign defaultAlign = TextAlign.center,
-  ]) => Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Expanded(child: field),
-      const SizedBox(width: 8),
-      Padding(
-        padding: const EdgeInsets.only(top: 4),
-        child: _lookButton(key, title, defaultAlign),
-      ),
-    ],
-  );
-
   // Spieler (lokal veränderbar – z.B. neues Foto) und editierbarer Text.
   late Player _player = widget.player;
-  String? _honorText;
 
+  // Standardtexte mit sinnvollen Umbrüchen (Umbruch nur per Enter).
   String get _defaultHonor => _hasMonth
-      ? 'wird für herausragende Leistungen im Monat $_monthLabel zum '
-            'Spieler des Monats ernannt.'
-      : 'wird für seine Verdienste um den Verein geehrt. '
+      ? 'wird für herausragende Leistungen im Monat $_monthLabel\n'
+            'zum Spieler des Monats ernannt.'
+      : 'wird für seine Verdienste um den Verein geehrt.\n'
             'Herzlichen Glückwunsch und vielen Dank!';
-  String get _effectiveHonor =>
-      (_honorText != null && _honorText!.trim().isNotEmpty)
-      ? _honorText!.trim()
-      : _defaultHonor;
 
   @override
   void initState() {
@@ -637,6 +586,17 @@ class _PlayerOfMonthGraphicScreenState
     _loadAiLooks();
     _loadAdj();
     _loadShowSponsors();
+    _app = context.read<AppState>();
+    _hist.reset(_layout.encode());
+    _loadLayout();
+  }
+
+  @override
+  void dispose() {
+    _histTimer?.cancel();
+    _saveTimer?.cancel();
+    if (_layoutDirty) _flushSave();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -738,9 +698,6 @@ class _PlayerOfMonthGraphicScreenState
 
   Future<void> _openCustomize() async {
     final titleCtrl = TextEditingController(text: _settings.title ?? '');
-    final honorCtrl = TextEditingController(text: _effectiveHonor);
-    final occasionCtrl = TextEditingController(text: _occasion);
-    final subtitleCtrl = TextEditingController(text: _subtitle);
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -777,58 +734,21 @@ class _PlayerOfMonthGraphicScreenState
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   const SizedBox(height: 12),
-                  // Anlass: Vorlagen + frei editierbar.
-                  const Text(
-                    'Anlass',
-                    style: TextStyle(fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 6),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final p in _occasionPresets)
-                        ActionChip(
-                          label: Text(p),
-                          onPressed: () {
-                            occasionCtrl.text = p;
-                            setState(() => _occasion = p);
-                            setSheet(() {});
-                          },
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  _withLook(
-                    TextField(
-                      controller: occasionCtrl,
-                      textCapitalization: TextCapitalization.words,
-                      minLines: 1,
-                      maxLines: 3,
-                      decoration: const InputDecoration(
-                        labelText: 'Anlass-Titel',
-                        helperText: 'Große Überschrift der Grafik',
-                        border: OutlineInputBorder(),
+                  Card(
+                    margin: EdgeInsets.zero,
+                    child: ListTile(
+                      leading: const Icon(Icons.edit_outlined),
+                      title: const Text('Texte & Elemente bearbeiten'),
+                      subtitle: const Text(
+                        'Titel, Untertitel, Urkunden-Text und alle anderen '
+                        'Texte direkt auf der Grafik antippen (Stift oben '
+                        'rechts). Zeilenumbruch nur mit Enter.',
                       ),
-                      onChanged: (v) => setState(() => _occasion = v),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        if (!_editing) _toggleEdit();
+                      },
                     ),
-                    'occasion',
-                    'Anlass-Titel',
-                  ),
-                  const SizedBox(height: 10),
-                  _withLook(
-                    TextField(
-                      controller: subtitleCtrl,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: InputDecoration(
-                        labelText: 'Untertitel (optional)',
-                        hintText: _hasMonth ? _monthLabel : 'z.B. Garather SV',
-                        border: const OutlineInputBorder(),
-                      ),
-                      onChanged: (v) => setState(() => _subtitle = v),
-                    ),
-                    'subtitle',
-                    'Untertitel',
                   ),
                   const Divider(height: 28),
                   _cropSection(setSheet),
@@ -860,52 +780,20 @@ class _PlayerOfMonthGraphicScreenState
                     ),
                   ),
                   const SizedBox(height: 14),
-                  _withLook(
-                    TextField(
-                      controller: titleCtrl,
-                      textCapitalization: TextCapitalization.words,
-                      decoration: InputDecoration(
-                        labelText: 'Titel (Vereinsname)',
-                        hintText: widget.teamName,
-                        border: const OutlineInputBorder(),
-                      ),
-                      onChanged: (v) => apply(
-                        _settings.copyWith(
-                          title: v.trim(),
-                          clearTitle: v.trim().isEmpty,
-                        ),
+                  TextField(
+                    controller: titleCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: InputDecoration(
+                      labelText: 'Titel (Vereinsname)',
+                      hintText: widget.teamName,
+                      border: const OutlineInputBorder(),
+                    ),
+                    onChanged: (v) => apply(
+                      _settings.copyWith(
+                        title: v.trim(),
+                        clearTitle: v.trim().isEmpty,
                       ),
                     ),
-                    'team',
-                    'Vereinsname',
-                    TextAlign.left,
-                  ),
-                  const SizedBox(height: 16),
-                  // Urkunden-Text – jederzeit frei eingebbar.
-                  _withLook(
-                    TextField(
-                      controller: honorCtrl,
-                      minLines: 2,
-                      maxLines: 4,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: InputDecoration(
-                        labelText: 'Urkunden-Text',
-                        helperText: 'Erscheint auf der Urkunde unter dem Namen',
-                        border: const OutlineInputBorder(),
-                        suffixIcon: IconButton(
-                          tooltip: 'Auf Standardtext zurücksetzen',
-                          icon: const Icon(Icons.restart_alt),
-                          onPressed: () {
-                            honorCtrl.text = _defaultHonor;
-                            setState(() => _honorText = null);
-                            setSheet(() {});
-                          },
-                        ),
-                      ),
-                      onChanged: (v) => setState(() => _honorText = v),
-                    ),
-                    'honor',
-                    'Urkunden-Text',
                   ),
                   const SizedBox(height: 16),
                   _rowWithImage(
@@ -1336,9 +1224,17 @@ class _PlayerOfMonthGraphicScreenState
 
   Future<void> _share() async {
     if (_sharing) return;
-    setState(() => _sharing = true);
+    setState(() {
+      _sharing = true;
+      // Auswahlrahmen, Hilfslinien und halbtransparente (ausgeblendete)
+      // Elemente gehören nicht ins Bild.
+      _capturing = true;
+      _guides = const [];
+    });
     final messenger = ScaffoldMessenger.of(context);
+    unawaited(_flushSave());
     try {
+      await WidgetsBinding.instance.endOfFrame;
       final boundary =
           _boundaryKey.currentContext?.findRenderObject()
               as RenderRepaintBoundary?;
@@ -1349,10 +1245,17 @@ class _PlayerOfMonthGraphicScreenState
       final data = await image.toByteData(format: ui.ImageByteFormat.png);
       if (data == null) return;
       final safeName = _player.fullName.replaceAll(' ', '-');
+      final title = (_layout.texts['occasion'] ?? _occasion)
+          .replaceAll('\n', ' ')
+          .trim();
       final savedPath = await shareOrSaveImage(
         data.buffer.asUint8List(),
-        'SpielerDesMonats_${safeName}_${widget.yearMonth}_${_fmt.fileSuffix}',
-        text: 'Spieler des Monats $_monthLabel – ${_player.fullName}',
+        _hasMonth
+            ? 'SpielerDesMonats_${safeName}_${widget.yearMonth}_${_fmt.fileSuffix}'
+            : 'Ehrung_${safeName}_${_fmt.fileSuffix}',
+        text: _hasMonth
+            ? 'Spieler des Monats $_monthLabel – ${_player.fullName}'
+            : '$title – ${_player.fullName}',
       );
       if (savedPath != null && mounted) {
         messenger.showSnackBar(
@@ -1367,7 +1270,12 @@ class _PlayerOfMonthGraphicScreenState
         SnackBar(content: Text('Teilen fehlgeschlagen: $e')),
       );
     } finally {
-      if (mounted) setState(() => _sharing = false);
+      if (mounted) {
+        setState(() {
+          _sharing = false;
+          _capturing = false;
+        });
+      }
     }
   }
 
@@ -1456,47 +1364,858 @@ class _PlayerOfMonthGraphicScreenState
     return 'data:image/jpeg;base64,${base64Encode(jpg)}';
   }
 
+  // ================================================ Freie Bearbeitung
+  // Bedienung wie im Designer: Element antippen = auswählen, ziehen =
+  // verschieben, zwei Finger / Mausrad = Größe + Drehung. Texte gelten für
+  // alle Formate, Position/Größe/Stil je Format. Je Spieler gespeichert
+  // (Cloud-synchron), optional als Vorlage für alle.
+  late final AppState _app;
+  HonorLayout _layout = HonorLayout();
+  int _rev = 0; // Layout geändert → Grafik neu zeichnen
+  int _fieldRev = 0; // Textfelder neu befüllen (Laden/Rückgängig/Vorlage)
+  bool _editing = false;
+  bool _capturing = false; // Export läuft → Bearbeiten-Optik aus
+  String? _selected;
+  bool _cropMode = false; // Foto: Ausschnitt im Ring statt Element bewegen
+  bool _layoutDirty = false;
+  final DesignHistory _hist = DesignHistory();
+  Timer? _saveTimer;
+  Timer? _histTimer;
+  final GlobalKey _canvasKey = GlobalKey();
+  List<({bool vertical, double at})> _guides = const [];
+  String? _gId;
+  Offset _gRaw = Offset.zero;
+  double _gScale0 = 1;
+  double _gRot0 = 0;
+  Offset? _gLast;
+
+  HonorFormatLayout get _fl => _layout.format(_fmt.name);
+
+  static const _textIds = {
+    'team',
+    'occasion',
+    'ulabel',
+    'subtitle',
+    'name',
+    'honor',
+    'number',
+    'legend',
+  };
+  static const _elNames = {
+    'bar': 'Goldbalken',
+    'team': 'Verein',
+    'occasion': 'Titel (Anlass)',
+    'ulabel': 'Urkunden-Zeile',
+    'subtitle': 'Untertitel',
+    'photo': 'Spielerfoto',
+    'name': 'Name',
+    'honor': 'Urkunden-Text',
+    'number': 'Nummer · Position',
+    'rating': 'Bewertung',
+    'stats': 'Statistik',
+    'legend': 'Legende',
+    'sponsors': 'Sponsoren',
+  };
+
+  String _elName(String id) =>
+      id.startsWith('free:') ? 'Eigener Text' : (_elNames[id] ?? id);
+
+  HonorFreeText? _freeOf(String id) {
+    for (final f in _fl.free) {
+      if (f.itemId == id) return f;
+    }
+    return null;
+  }
+
+  bool _exists(String id) => !id.startsWith('free:') || _freeOf(id) != null;
+
+  _Stats get _stats => _Stats(
+    month: _month,
+    total: _total,
+    fupa: _fupa,
+    club: _fupaClub,
+    showMonth: _showMonth,
+    showTotal: _showTotal,
+    showFupa: _showFupa,
+    showClub: _showFupaClub,
+  );
+
+  /// Standardtexte der Elemente (ohne Änderung des Nutzers).
+  Map<String, String> get _defaultTexts {
+    final p = _player;
+    final sub = _subtitle.trim();
+    return {
+      'team': _title.toUpperCase(),
+      'occasion': _occasion.toUpperCase(),
+      'subtitle': sub.toUpperCase(),
+      'ulabel': sub.isEmpty ? 'URKUNDE' : 'URKUNDE · ${sub.toUpperCase()}',
+      'name': _fmt == _Fmt.urkunde ? p.fullName : p.fullName.toUpperCase(),
+      'honor': _defaultHonor,
+      'number': [
+        if (p.number != null) '#${p.number}',
+        if ((p.position ?? '').isNotEmpty) p.position!,
+      ].join('  ·  ').toUpperCase(),
+      'legend': _stats.socialLegend(),
+      'sponsorsTitle': 'MIT FREUNDLICHER UNTERSTÜTZUNG',
+    };
+  }
+
+  /// Stil eines Elements; Rückfall auf die bisherigen gerätweiten Looks.
+  TextLook _lookOf(String id) =>
+      _fl.item(id).look ??
+      _looks[id == 'ulabel' ? 'subtitle' : id] ??
+      const TextLook();
+
+  // ------------------------------------------------ Laden / Speichern
+  Future<void> _loadLayout() async {
+    final id = HonorLayout.playerRowId(widget.player.id);
+    Future<String?> read() async =>
+        await _app.loadAnnouncementDesign(id) ??
+        await _app.loadAnnouncementDesign(HonorLayout.templateRowId);
+    try {
+      final local = await read();
+      if (!mounted) return;
+      if (local != null) _applyLayout(HonorLayout.decode(local), reset: true);
+      // Neuere Version eines anderen Geräts holen.
+      await _app.refreshAnnouncementDesign(id);
+      await _app.refreshAnnouncementDesign(HonorLayout.templateRowId);
+      final fresh = await read();
+      if (!mounted || _layoutDirty) return;
+      if (fresh != null && fresh != local) {
+        _applyLayout(HonorLayout.decode(fresh), reset: true);
+      }
+    } catch (_) {
+      // Offline/Tabelle fehlt – Standard-Layout bleibt.
+    }
+  }
+
+  void _applyLayout(HonorLayout l, {bool reset = false}) {
+    setState(() {
+      _layout = l;
+      _rev++;
+      _fieldRev++;
+      if (_selected != null && !_exists(_selected!)) _selected = null;
+    });
+    if (reset) _hist.reset(l.encode());
+  }
+
+  /// Nach jeder Änderung: Verlaufsschritt (gebündelt) + verzögert speichern.
+  void _changed() {
+    _layoutDirty = true;
+    _histTimer?.cancel();
+    _histTimer = Timer(const Duration(milliseconds: 400), _recordHist);
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 800), _flushSave);
+  }
+
+  void _recordHist() {
+    _histTimer?.cancel();
+    _histTimer = null;
+    if (_hist.record(_layout.encode()) && mounted) setState(() {});
+  }
+
+  Future<void> _flushSave() async {
+    _saveTimer?.cancel();
+    _saveTimer = null;
+    if (!_layoutDirty) return;
+    _layoutDirty = false;
+    try {
+      await _app.saveAnnouncementDesign(
+        HonorLayout.playerRowId(widget.player.id),
+        null,
+        _layout.encode(),
+        title: 'Ehrung ${widget.player.fullName}',
+        kind: HonorLayout.kindPlayer,
+      );
+    } catch (_) {
+      _layoutDirty = true; // nächster Versuch beim nächsten Speichern
+    }
+  }
+
+  void _undoRedo(bool undo) {
+    if (_histTimer != null) _recordHist();
+    final st = undo ? _hist.undo() : _hist.redo();
+    if (st == null) return;
+    _applyLayout(HonorLayout.decode(st));
+    _layoutDirty = true;
+    _saveTimer?.cancel();
+    _saveTimer = Timer(const Duration(milliseconds: 800), _flushSave);
+  }
+
+  // ------------------------------------------------ Änderungen
+  void _edit(
+    String id,
+    HonorElementEdit Function(HonorElementEdit e) fn, {
+    bool commit = true,
+  }) {
+    setState(() {
+      _fl.setItem(id, fn(_fl.item(id)));
+      _rev++;
+    });
+    if (commit) _changed();
+  }
+
+  void _setText(String id, String v, String def) {
+    setState(() {
+      if (v == def) {
+        _layout.texts.remove(id);
+      } else {
+        _layout.texts[id] = v;
+      }
+      _rev++;
+    });
+    _changed();
+  }
+
+  void _select(String? id) {
+    if (_selected == id) return;
+    setState(() {
+      _selected = id;
+      _cropMode = false;
+    });
+  }
+
+  void _toggleEdit() {
+    setState(() {
+      _editing = !_editing;
+      _selected = null;
+      _cropMode = false;
+      _guides = const [];
+    });
+    if (!_editing) _flushSave();
+  }
+
+  // ------------------------------------------------ Gesten
+  void _gStart(String id, ScaleStartDetails d, BuildContext ctx) {
+    _select(id);
+    final e = _fl.item(id);
+    _gId = id;
+    _gRaw = e.off;
+    _gScale0 = e.scale;
+    _gRot0 = e.rot;
+    _gLast = d.focalPoint;
+  }
+
+  void _gUpdate(String id, ScaleUpdateDetails d, BuildContext ctx) {
+    if (_gId != id) return;
+    final rb = ctx.findRenderObject();
+    if (rb is! RenderBox || !rb.attached || !rb.hasSize) return;
+    // rb = äußerste Transform-Box: ihr Koordinatensystem ist das des
+    // Eltern-Layouts (alle FittedBox-Skalierungen sind herausgerechnet).
+    final last = _gLast ?? d.focalPoint;
+    _gRaw += rb.globalToLocal(d.focalPoint) - rb.globalToLocal(last);
+    _gLast = d.focalPoint;
+    var e = _fl.item(id).copyWith(off: _gRaw);
+    if (d.pointerCount >= 2) {
+      e = e.copyWith(scale: _gScale0 * d.scale, rot: _gRot0 + d.rotation);
+      _guides = const [];
+    } else {
+      e = _snap(rb, e);
+    }
+    setState(() {
+      _fl.setItem(id, e);
+      _rev++;
+    });
+  }
+
+  void _gEnd(String id) {
+    if (_gId != id) return;
+    _gId = null;
+    _gLast = null;
+    setState(() => _guides = const []);
+    _changed();
+  }
+
+  void _wheel(String id, double dy) {
+    _select(id);
+    _edit(id, (e) => e.copyWith(scale: e.scale * (dy < 0 ? 1.06 : 1 / 1.06)));
+  }
+
+  /// Einrasten an Mitte und 16-px-Rändern der Grafik (Hilfslinien).
+  HonorElementEdit _snap(RenderBox rb, HonorElementEdit e) {
+    final canvas = _canvasKey.currentContext?.findRenderObject();
+    if (canvas is! RenderBox || !canvas.attached) {
+      _guides = const [];
+      return e;
+    }
+    Offset toC(Offset q) => canvas.globalToLocal(rb.localToGlobal(q));
+    final o = toC(Offset.zero);
+    final ratio = (toC(const Offset(1, 0)) - o).distance;
+    if (ratio <= 0) return e;
+    final c = toC(rb.size.center(Offset.zero)) + e.off * ratio;
+    final w = _fmt.logical.width;
+    final h = _fmt.logical.height;
+    final sx = snapAxis(
+      center: c.dx,
+      half: rb.size.width * ratio * e.scale / 2,
+      centerLines: [w / 2],
+      edgeLines: [16, w - 16],
+    );
+    final sy = snapAxis(
+      center: c.dy,
+      half: rb.size.height * ratio * e.scale / 2,
+      centerLines: [h / 2],
+      edgeLines: [16, h - 16],
+    );
+    _guides = [
+      if (sx.line != null) (vertical: true, at: sx.line!),
+      if (sy.line != null) (vertical: false, at: sy.line!),
+    ];
+    return e.copyWith(off: e.off + Offset(sx.offset, sy.offset) / ratio);
+  }
+
+  // ------------------------------------------------ Menü
+  Future<void> _menu(String v) async {
+    switch (v) {
+      case 'add':
+        _addFree();
+      case 'hidden':
+        await _showHidden();
+      case 'saveTpl':
+        await _saveTemplate();
+      case 'loadTpl':
+        await _loadTemplate();
+      case 'reset':
+        await _resetFormat();
+      case 'resetTexts':
+        await _resetTexts();
+    }
+  }
+
+  void _addFree() {
+    final f = HonorFreeText(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      text: 'Neuer Text',
+    );
+    setState(() {
+      _fl.free.add(f);
+      _rev++;
+      _selected = f.itemId;
+      _cropMode = false;
+    });
+    _changed();
+  }
+
+  void _removeFree(HonorFreeText f) {
+    setState(() {
+      _fl.free.remove(f);
+      _fl.items.remove(f.itemId);
+      _selected = null;
+      _rev++;
+    });
+    _changed();
+  }
+
+  Future<void> _showHidden() async {
+    final hidden = [
+      for (final e in _fl.items.entries)
+        if (e.value.hidden && _exists(e.key)) e.key,
+    ];
+    if (hidden.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('In diesem Format ist nichts ausgeblendet.'),
+        ),
+      );
+      return;
+    }
+    final id = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const ListTile(
+              title: Text(
+                'Ausgeblendete Elemente',
+                style: TextStyle(fontWeight: FontWeight.bold),
+              ),
+              subtitle: Text('Antippen zum Einblenden'),
+            ),
+            for (final h in hidden)
+              ListTile(
+                leading: const Icon(Icons.visibility_outlined),
+                title: Text(_elName(h)),
+                onTap: () => Navigator.pop(ctx, h),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (id == null || !mounted) return;
+    _edit(id, (e) => e.copyWith(hidden: false));
+    _select(id);
+  }
+
+  Future<void> _saveTemplate() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _app.saveAnnouncementDesign(
+        HonorLayout.templateRowId,
+        null,
+        _layout.forTemplate().encode(),
+        title: 'Ehrung – Vorlage',
+        kind: HonorLayout.kindTemplate,
+      );
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Als Vorlage gespeichert. Spieler ohne eigenes Layout starten '
+            'damit – Name, Foto und Werte kommen je Spieler.',
+          ),
+        ),
+      );
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Vorlage konnte nicht gespeichert werden: $e')),
+      );
+    }
+  }
+
+  Future<void> _loadTemplate() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await _app.refreshAnnouncementDesign(HonorLayout.templateRowId);
+    } catch (_) {}
+    final raw = await _app.loadAnnouncementDesign(HonorLayout.templateRowId);
+    if (!mounted) return;
+    if (raw == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Noch keine Vorlage – zuerst „Als Vorlage für alle speichern“.',
+          ),
+        ),
+      );
+      return;
+    }
+    final ok = await _confirm(
+      'Vorlage laden?',
+      'Das Layout dieses Spielers (alle Formate) wird durch die Vorlage '
+          'ersetzt. Rückgängig ist möglich.',
+    );
+    if (!ok) return;
+    final t = HonorLayout.decode(raw);
+    final name = _layout.texts['name'];
+    if (name != null) t.texts['name'] = name;
+    _applyLayout(t);
+    _changed();
+  }
+
+  Future<void> _resetFormat() async {
+    final ok = await _confirm(
+      'Layout zurücksetzen?',
+      '${_fmt.label}: Position, Größe, Drehung, Stil und eigene Texte gehen '
+          'zurück auf Standard. Die Texte der Elemente bleiben.',
+    );
+    if (!ok) return;
+    setState(() {
+      _layout.formats.remove(_fmt.name);
+      _selected = null;
+      _rev++;
+    });
+    _changed();
+  }
+
+  Future<void> _resetTexts() async {
+    final ok = await _confirm(
+      'Alle Texte zurücksetzen?',
+      'Alle geänderten Texte (in allen Formaten) gehen zurück auf den '
+          'Standard.',
+    );
+    if (!ok) return;
+    setState(() {
+      _layout.texts.clear();
+      _rev++;
+      _fieldRev++;
+    });
+    _changed();
+  }
+
+  Future<bool> _confirm(String title, String body) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(title),
+          content: Text(body),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Abbrechen'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      ) ??
+      false;
+
+  // ------------------------------------------------ Panel
+  Future<void> _styleSheet(String id) => showTextLookSheet(
+    context,
+    title: 'Text gestalten – ${_elName(id)}',
+    initial: _lookOf(id),
+    defaultAlign: id == 'team' && _fmt != _Fmt.urkunde
+        ? TextAlign.left
+        : TextAlign.center,
+    palette: [
+      ('Weiß', Colors.white),
+      ('Gold', _gold),
+      ('Schwarz', Colors.black),
+      ('Dunkel', _ink),
+      ('Vereinsfarbe', _hex(_settings.gradTop)),
+      ('Rot', const Color(0xFFD32F2F)),
+    ],
+    onChanged: (l) => _edit(id, (e) => e.copyWith(look: l)),
+  );
+
+  Widget _textField(
+    String id,
+    String def, {
+    String label = 'Text',
+    int maxLines = 6,
+    String? helper,
+  }) {
+    final changed = _layout.texts.containsKey(id);
+    return TextFormField(
+      key: ValueKey('txt:$id:$_fieldRev'),
+      initialValue: _layout.texts[id] ?? def,
+      minLines: 1,
+      maxLines: maxLines,
+      keyboardType: TextInputType.multiline,
+      decoration: InputDecoration(
+        labelText: label,
+        helperText: helper,
+        isDense: true,
+        border: const OutlineInputBorder(),
+        suffixIcon: changed
+            ? IconButton(
+                tooltip: 'Standardtext',
+                icon: const Icon(Icons.restart_alt),
+                onPressed: () {
+                  setState(() {
+                    _layout.texts.remove(id);
+                    _rev++;
+                    _fieldRev++;
+                  });
+                  _changed();
+                },
+              )
+            : null,
+      ),
+      onChanged: (v) => _setText(id, v, def),
+    );
+  }
+
+  Widget _freeField(HonorFreeText f) => TextFormField(
+    key: ValueKey('free:${f.id}:$_fieldRev'),
+    initialValue: f.text,
+    minLines: 1,
+    maxLines: 6,
+    keyboardType: TextInputType.multiline,
+    decoration: const InputDecoration(
+      labelText: 'Text',
+      helperText: 'Zeilenumbruch nur mit Enter',
+      isDense: true,
+      border: OutlineInputBorder(),
+    ),
+    onChanged: (v) {
+      setState(() {
+        f.text = v;
+        _rev++;
+      });
+      _changed();
+    },
+  );
+
+  List<Widget> _statFields() {
+    final st = _stats;
+    final fields = <(String, String, String)>[];
+    if (_fmt == _Fmt.urkunde) {
+      final labels = <String>{};
+      for (final c in st.urkundeCols()) {
+        fields.add(('stat:t:${c.key}', c.title, 'Spaltentitel'));
+        labels.addAll(c.rows.map((r) => r.$1));
+      }
+      for (final l in labels) {
+        fields.add(('stat:$l', l, 'Bezeichnung'));
+      }
+    } else {
+      for (final t in st.socialTiles()) {
+        fields.add(('stat:${t.$1}', t.$1.toUpperCase(), 'Bezeichnung'));
+      }
+    }
+    return [
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          'Texte der Statistik – die Zahlen kommen aus den Daten '
+          '(Korrektur über Grafik anpassen → Daten anzeigen).',
+          style: Theme.of(context).textTheme.bodySmall,
+        ),
+      ),
+      for (final f in fields)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _textField(f.$1, f.$2, label: f.$3, maxLines: 2),
+        ),
+    ];
+  }
+
+  Widget _editPanel() {
+    final id = _selected!;
+    final e = _fl.item(id);
+    final free = _freeOf(id);
+    final isText = free != null || _textIds.contains(id);
+    final defs = _defaultTexts;
+    final deg = e.rot * 180 / math.pi;
+    return Material(
+      elevation: 8,
+      color: Theme.of(context).colorScheme.surfaceContainer,
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.42,
+        ),
+        child: ListView(
+          shrinkWrap: true,
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _elName(id),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                    ),
+                  ),
+                ),
+                if (isText)
+                  IconButton(
+                    tooltip: 'Schrift, Farbe, Schatten, Ausrichtung',
+                    icon: const Icon(Icons.text_format),
+                    onPressed: () => _styleSheet(id),
+                  ),
+                IconButton(
+                  tooltip: e.hidden ? 'Einblenden' : 'Ausblenden',
+                  icon: Icon(
+                    e.hidden
+                        ? Icons.visibility_outlined
+                        : Icons.visibility_off_outlined,
+                  ),
+                  onPressed: () =>
+                      _edit(id, (x) => x.copyWith(hidden: !x.hidden)),
+                ),
+                if (free != null)
+                  IconButton(
+                    tooltip: 'Text löschen',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _removeFree(free),
+                  ),
+                IconButton(
+                  tooltip: 'Fertig',
+                  icon: const Icon(Icons.check),
+                  onPressed: () => _select(null),
+                ),
+              ],
+            ),
+            if (free != null)
+              _freeField(free)
+            else if (_textIds.contains(id))
+              _textField(
+                id,
+                defs[id] ?? '',
+                helper: 'Zeilenumbruch nur mit Enter',
+              ),
+            if (id == 'occasion') ...[
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final p in _occasionPresets)
+                    ActionChip(
+                      label: Text(p),
+                      onPressed: () {
+                        setState(() {
+                          _layout.texts['occasion'] = p.toUpperCase();
+                          _rev++;
+                          _fieldRev++;
+                        });
+                        _changed();
+                      },
+                    ),
+                ],
+              ),
+            ],
+            if (id == 'stats') ..._statFields(),
+            if (id == 'sponsors' && _fmt == _Fmt.urkunde)
+              _textField(
+                'sponsorsTitle',
+                defs['sponsorsTitle']!,
+                label: 'Überschrift',
+                maxLines: 2,
+              ),
+            if (id == 'photo') ...[
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                title: const Text('Ausschnitt im Ring anpassen'),
+                subtitle: const Text(
+                  'An: Ziehen/Zoomen bewegt das Foto im Ring statt das Element',
+                ),
+                value: _cropMode,
+                onChanged: (v) => setState(() => _cropMode = v),
+              ),
+              if (_cropMode) _cropSection((fn) => setState(fn)),
+            ],
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const SizedBox(width: 64, child: Text('Größe')),
+                Expanded(
+                  child: Slider(
+                    value: e.scale.clamp(0.3, 3.0),
+                    min: 0.3,
+                    max: 3.0,
+                    onChanged: (v) =>
+                        _edit(id, (x) => x.copyWith(scale: v), commit: false),
+                    onChangeEnd: (_) => _changed(),
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    '${(e.scale * 100).round()}%',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            Row(
+              children: [
+                const SizedBox(width: 64, child: Text('Drehung')),
+                Expanded(
+                  child: Slider(
+                    value: deg.clamp(-180.0, 180.0),
+                    min: -180,
+                    max: 180,
+                    onChanged: (v) {
+                      var d = v;
+                      for (final s in const [-180.0, -90.0, 0.0, 90.0, 180.0]) {
+                        if ((d - s).abs() < 4) d = s;
+                      }
+                      _edit(
+                        id,
+                        (x) => x.copyWith(rot: d * math.pi / 180),
+                        commit: false,
+                      );
+                    },
+                    onChangeEnd: (_) => _changed(),
+                  ),
+                ),
+                SizedBox(
+                  width: 44,
+                  child: Text(
+                    '${deg.round()}°',
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: const Text('Position, Größe & Drehung zurück'),
+                onPressed: () => _edit(
+                  id,
+                  (x) => x.copyWith(off: Offset.zero, scale: 1, rot: 0),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Eigene Texte (frei platziert) über der Grafik.
+  Widget _freeLayer(Size size) {
+    final urk = _fmt == _Fmt.urkunde;
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        for (final f in _fl.free)
+          Positioned(
+            left: f.x * size.width,
+            top: f.y * size.height,
+            child: FractionalTranslation(
+              translation: const Offset(-0.5, -0.5),
+              child: _Editable(
+                f.itemId,
+                child: Builder(
+                  builder: (_) {
+                    final l = _lookOf(f.itemId);
+                    return Text(
+                      f.text.isEmpty ? ' ' : f.text,
+                      softWrap: false,
+                      textAlign: l.textAlign(TextAlign.center),
+                      style: l.apply(
+                        TextStyle(
+                          color: urk ? _ink : Colors.white,
+                          fontSize: urk ? 20 : 24,
+                          fontWeight: FontWeight.w800,
+                          height: 1.1,
+                        ),
+                        glow: _gold,
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     final size = _fmt.logical;
+    final texts = {..._defaultTexts, ..._layout.texts};
+    final stats = _stats;
     final graphic = _fmt == _Fmt.urkunde
         ? _UrkundeGraphic(
             player: _player,
-            teamName: _title,
             teamLogo: _logo,
-            occasion: _occasion,
-            subtitle: _subtitle,
-            honorText: _effectiveHonor,
+            texts: texts,
+            edits: _fl,
             looks: _looks,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
-            month: _month,
-            total: _total,
-            fupa: _fupa,
-            fupaClub: _fupaClub,
+            stats: stats,
             barSponsors: _barSponsors,
             showRating: _showRating,
-            showMonth: _showMonth,
-            showTotal: _showTotal,
-            showFupa: _showFupa,
-            showFupaClub: _showFupaClub,
           )
         : _SocialGraphic(
             player: _player,
-            teamName: _title,
             teamLogo: _logo,
-            occasion: _occasion,
-            subtitle: _subtitle,
+            texts: texts,
+            edits: _fl,
             looks: _looks,
             avg: widget.avg,
             ratedCount: widget.ratedCount,
-            month: _month,
-            total: _total,
-            fupa: _fupa,
-            fupaClub: _fupaClub,
+            stats: stats,
             barSponsors: _barSponsors,
             gradTop: _hex(_settings.gradTop),
             gradBottom: _hex(_settings.gradBottom),
@@ -1505,27 +2224,148 @@ class _PlayerOfMonthGraphicScreenState
             bgImage: _settings.bgImage,
             overlayOpacity: _settings.overlayOpacity / 100,
             showRating: _showRating,
-            showMonth: _showMonth,
-            showTotal: _showTotal,
-            showFupa: _showFupa,
-            showFupaClub: _showFupaClub,
             compact: _fmt == _Fmt.post,
           );
+    final editingView = _editing && !_capturing;
+    final sel = _selected != null && _exists(_selected!) ? _selected : null;
+    final canvas = _EditScope(
+      layout: _fl,
+      rev: _rev,
+      editing: editingView,
+      selected: _capturing ? null : sel,
+      onSelect: _select,
+      onStart: _gStart,
+      onUpdate: _gUpdate,
+      onEnd: _gEnd,
+      onWheel: _wheel,
+      child: SizedBox(
+        key: _canvasKey,
+        width: size.width,
+        height: size.height,
+        // KI-Look liegt über der Grafik (auch im Export), eigene Texte oben.
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _RingCropScope(
+              crop: _crop,
+              enabled: !_editing || (sel == 'photo' && _cropMode),
+              onStart: () => _cropZ0 = _crop.z,
+              onUpdate: (d, diameter) => _setCrop(
+                z: d.pointerCount >= 2 ? _cropZ0 * d.scale : null,
+                dx: _crop.dx + d.focalPointDelta.dx / diameter,
+                dy: _crop.dy + d.focalPointDelta.dy / diameter,
+                save: false,
+              ),
+              onEnd: _saveCrop,
+              onWheel: (dy) =>
+                  _setCrop(z: _crop.z * (dy < 0 ? 1.08 : 1 / 1.08)),
+              child: graphic,
+            ),
+            if (_aiLooks[_fmt] case final look?)
+              if (TeamLogo.decode(look.dataUrl) case final b?)
+                IgnorePointer(
+                  child: Opacity(
+                    opacity: look.opacity.clamp(0.1, 1.0),
+                    child: Image.memory(
+                      b,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                    ),
+                  ),
+                ),
+            _freeLayer(size),
+          ],
+        ),
+      ),
+    );
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Grafik teilen'),
-        actions: [
-          IconButton(
-            tooltip: 'Spielerfoto (Galerie/Kamera)',
-            icon: const Icon(Icons.add_a_photo_outlined),
-            onPressed: _changePhoto,
-          ),
-          IconButton(
-            tooltip: 'Grafik anpassen',
-            icon: const Icon(Icons.tune),
-            onPressed: _openCustomize,
-          ),
-        ],
+        title: Text(_editing ? 'Bearbeiten' : 'Grafik teilen'),
+        actions: _editing
+            ? [
+                IconButton(
+                  tooltip: 'Rückgängig',
+                  icon: const Icon(Icons.undo),
+                  onPressed: _hist.canUndo || _histTimer != null
+                      ? () => _undoRedo(true)
+                      : null,
+                ),
+                IconButton(
+                  tooltip: 'Wiederholen',
+                  icon: const Icon(Icons.redo),
+                  onPressed: _hist.canRedo ? () => _undoRedo(false) : null,
+                ),
+                PopupMenuButton<String>(
+                  tooltip: 'Mehr',
+                  onSelected: _menu,
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'add',
+                      child: ListTile(
+                        leading: Icon(Icons.title),
+                        title: Text('Text hinzufügen'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'hidden',
+                      child: ListTile(
+                        leading: Icon(Icons.visibility_outlined),
+                        title: Text('Ausgeblendete Elemente'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'saveTpl',
+                      child: ListTile(
+                        leading: Icon(Icons.bookmark_add_outlined),
+                        title: Text('Als Vorlage für alle speichern'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'loadTpl',
+                      child: ListTile(
+                        leading: Icon(Icons.bookmark_outline),
+                        title: Text('Vorlage laden'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'reset',
+                      child: ListTile(
+                        leading: Icon(Icons.restart_alt),
+                        title: Text('Layout zurücksetzen (dieses Format)'),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: 'resetTexts',
+                      child: ListTile(
+                        leading: Icon(Icons.format_clear),
+                        title: Text('Alle Texte zurücksetzen'),
+                      ),
+                    ),
+                  ],
+                ),
+                IconButton(
+                  tooltip: 'Bearbeiten beenden',
+                  icon: const Icon(Icons.check),
+                  onPressed: _toggleEdit,
+                ),
+              ]
+            : [
+                IconButton(
+                  tooltip: 'Spielerfoto (Galerie/Kamera)',
+                  icon: const Icon(Icons.add_a_photo_outlined),
+                  onPressed: _changePhoto,
+                ),
+                IconButton(
+                  tooltip: 'Grafik anpassen',
+                  icon: const Icon(Icons.tune),
+                  onPressed: _openCustomize,
+                ),
+                IconButton(
+                  tooltip: 'Texte & Elemente bearbeiten',
+                  icon: const Icon(Icons.edit_outlined),
+                  onPressed: _toggleEdit,
+                ),
+              ],
       ),
       body: Column(
         children: [
@@ -1538,81 +2378,79 @@ class _PlayerOfMonthGraphicScreenState
               ],
               selected: {_fmt},
               showSelectedIcon: false,
-              onSelectionChanged: (s) => setState(() => _fmt = s.first),
+              onSelectionChanged: (s) => setState(() {
+                _fmt = s.first;
+                _selected = null;
+                _cropMode = false;
+              }),
             ),
           ),
           Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: FittedBox(
-                  fit: BoxFit.contain,
-                  child: RepaintBoundary(
-                    key: _boundaryKey,
-                    child: SizedBox(
-                      width: size.width,
-                      height: size.height,
-                      // KI-Look liegt über allem (auch im Export).
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _RingCropScope(
-                            crop: _crop,
-                            onStart: () => _cropZ0 = _crop.z,
-                            onUpdate: (d, diameter) => _setCrop(
-                              z: d.pointerCount >= 2 ? _cropZ0 * d.scale : null,
-                              dx: _crop.dx + d.focalPointDelta.dx / diameter,
-                              dy: _crop.dy + d.focalPointDelta.dy / diameter,
-                              save: false,
-                            ),
-                            onEnd: _saveCrop,
-                            onWheel: (dy) => _setCrop(
-                              z: _crop.z * (dy < 0 ? 1.08 : 1 / 1.08),
-                            ),
-                            child: graphic,
-                          ),
-                          if (_aiLooks[_fmt] case final look?)
-                            if (TeamLogo.decode(look.dataUrl) case final b?)
-                              IgnorePointer(
-                                child: Opacity(
-                                  opacity: look.opacity.clamp(0.1, 1.0),
-                                  child: Image.memory(
-                                    b,
-                                    fit: BoxFit.cover,
-                                    gaplessPlayback: true,
-                                  ),
-                                ),
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: _editing ? () => _select(null) : null,
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: FittedBox(
+                    fit: BoxFit.contain,
+                    child: Stack(
+                      children: [
+                        RepaintBoundary(key: _boundaryKey, child: canvas),
+                        if (_guides.isNotEmpty)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: CustomPaint(
+                                painter: _GuidePainter(_guides),
                               ),
-                        ],
-                      ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
           ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-              child: SizedBox(
-                width: double.infinity,
-                child: FilledButton.icon(
-                  onPressed: _sharing ? null : _share,
-                  icon: _sharing
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.ios_share),
-                  label: Text(
-                    _fmt == _Fmt.urkunde ? 'Urkunde teilen/drucken' : 'Teilen',
+          if (_editing && sel != null)
+            SafeArea(top: false, child: _editPanel())
+          else ...[
+            if (_editing)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 2),
+                child: Text(
+                  'Element antippen = bearbeiten · ziehen = verschieben · '
+                  'zwei Finger/Mausrad = Größe & Drehung · ⋯ = eigener Text, '
+                  'Vorlage',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _sharing ? null : _share,
+                    icon: _sharing
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.ios_share),
+                    label: Text(
+                      _fmt == _Fmt.urkunde
+                          ? 'Urkunde teilen/drucken'
+                          : 'Teilen',
+                    ),
                   ),
                 ),
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -1702,7 +2540,7 @@ class _PhotoRing extends StatelessWidget {
               ),
             ),
     );
-    if (scope == null || bytes == null) return ring;
+    if (scope == null || bytes == null || !scope.enabled) return ring;
     return Listener(
       onPointerSignal: (e) {
         if (e is! PointerScrollEvent) return;
@@ -1755,7 +2593,7 @@ class _StatTile extends StatelessWidget {
         ),
         const SizedBox(height: 2),
         Text(
-          label.toUpperCase(),
+          label,
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.75),
             fontSize: 9,
@@ -1769,20 +2607,17 @@ class _StatTile extends StatelessWidget {
 }
 
 /// Moderne Social-Grafik (Instagram). [compact] = Post 1:1, sonst Story 9:16.
+/// Jedes Element liegt in einer [_Editable]-Hülle (Designer-Bedienung).
 class _SocialGraphic extends StatelessWidget {
   const _SocialGraphic({
     required this.player,
-    required this.teamName,
     required this.teamLogo,
-    required this.occasion,
-    required this.subtitle,
+    required this.texts,
+    required this.edits,
     this.looks = const {},
     required this.avg,
     required this.ratedCount,
-    required this.month,
-    required this.total,
-    required this.fupa,
-    required this.fupaClub,
+    required this.stats,
     required this.barSponsors,
     required this.gradTop,
     required this.gradBottom,
@@ -1791,25 +2626,19 @@ class _SocialGraphic extends StatelessWidget {
     required this.bgImage,
     required this.overlayOpacity,
     required this.showRating,
-    required this.showMonth,
-    required this.showTotal,
-    required this.showFupa,
-    required this.showFupaClub,
     required this.compact,
   });
 
   final Player player;
-  final String teamName;
   final String? teamLogo;
-  final String occasion;
-  final String subtitle;
+
+  /// Wirksame Texte je Element (Standard + Änderungen des Nutzers).
+  final Map<String, String> texts;
+  final HonorFormatLayout edits;
   final Map<String, TextLook> looks;
   final double? avg;
   final int ratedCount;
-  final PlayerMonthStats month;
-  final PlayerMonthStats total;
-  final PlayerStat? fupa;
-  final FupaClubTotal? fupaClub;
+  final _Stats stats;
   final List<Sponsor> barSponsors;
   final Color gradTop;
   final Color gradBottom;
@@ -1818,17 +2647,28 @@ class _SocialGraphic extends StatelessWidget {
   final String? bgImage;
   final double overlayOpacity; // 0..1
   final bool showRating;
-  final bool showMonth;
-  final bool showTotal;
-  final bool showFupa;
-  final bool showFupaClub;
   final bool compact;
+
+  String _t(String id, [String def = '']) => texts[id] ?? def;
+  TextLook _look(String id) =>
+      edits.item(id).look ?? looks[id] ?? const TextLook();
+
+  Widget _text(
+    String id,
+    TextStyle base, {
+    TextAlign align = TextAlign.center,
+  }) {
+    final l = _look(id);
+    final a = l.textAlign(align);
+    return _placed(id, _ftext(_t(id), l.apply(base, glow: _gold), a), a);
+  }
 
   @override
   Widget build(BuildContext context) {
     final pad = compact ? 18.0 : 22.0;
     final photo = compact ? 120.0 : 168.0;
     final bgBytes = TeamLogo.decode(bgImage);
+    final tiles = stats.socialTiles();
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -1868,12 +2708,14 @@ class _SocialGraphic extends StatelessWidget {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _PhotoRing(player: player, diameter: photo),
+                        _Editable(
+                          'photo',
+                          child: _PhotoRing(player: player, diameter: photo),
+                        ),
                         const SizedBox(height: 12),
-                        Text(
-                          player.fullName.toUpperCase(),
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
+                        _text(
+                          'name',
+                          const TextStyle(
                             color: Colors.white,
                             fontSize: 26,
                             fontWeight: FontWeight.w900,
@@ -1881,16 +2723,11 @@ class _SocialGraphic extends StatelessWidget {
                             height: 1.05,
                           ),
                         ),
-                        if ((player.position ?? '').isNotEmpty ||
-                            player.number != null) ...[
+                        if (_t('number').trim().isNotEmpty) ...[
                           const SizedBox(height: 2),
-                          Text(
-                            [
-                              if (player.number != null) '#${player.number}',
-                              if ((player.position ?? '').isNotEmpty)
-                                player.position!,
-                            ].join('  ·  ').toUpperCase(),
-                            style: const TextStyle(
+                          _text(
+                            'number',
+                            const TextStyle(
                               color: _gold,
                               fontSize: 12,
                               fontWeight: FontWeight.w800,
@@ -1899,9 +2736,24 @@ class _SocialGraphic extends StatelessWidget {
                           ),
                         ],
                         const SizedBox(height: 12),
-                        if (avg != null && showRating) _noteBadge(),
+                        if (avg != null && showRating)
+                          _Editable('rating', child: _noteBadge()),
                         const SizedBox(height: 14),
-                        _statRow(),
+                        if (tiles.isNotEmpty)
+                          _Editable('stats', child: _statRow(tiles)),
+                        if (tiles.isNotEmpty &&
+                            _t('legend').trim().isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          _text(
+                            'legend',
+                            TextStyle(
+                              color: Colors.white.withValues(alpha: 0.6),
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1909,7 +2761,7 @@ class _SocialGraphic extends StatelessWidget {
               ),
               if (barSponsors.isNotEmpty) ...[
                 SizedBox(height: compact ? 8 : 12),
-                _sponsorBar(),
+                _Editable('sponsors', child: _sponsorBar()),
               ],
             ],
           ),
@@ -1918,77 +2770,63 @@ class _SocialGraphic extends StatelessWidget {
     );
   }
 
-  TextLook _look(String k) => looks[k] ?? const TextLook();
-
   Widget _header() {
+    final team = _look('team');
+    final teamAlign = team.textAlign(TextAlign.left);
     return Column(
       children: [
-        Row(
-          children: [
-            if (teamLogo != null) ...[
-              TeamLogo(logoPath: teamLogo, size: compact ? 30 : 38),
-              const SizedBox(width: 10),
-            ],
-            Expanded(
-              child: Text(
-                teamName.toUpperCase(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: _look('team').textAlign(TextAlign.left),
-                style: _look('team').apply(
-                  TextStyle(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    fontSize: compact ? 12 : 14,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 0.5,
-                  ),
-                  glow: _gold,
-                ),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            crossAxisAlignment: _look(
-              'occasion',
-            ).crossAxis(CrossAxisAlignment.center),
+        _Editable(
+          'team',
+          child: Row(
             children: [
-              Text(
-                occasion.toUpperCase(),
-                textAlign: _look('occasion').textAlign(TextAlign.center),
-                style: _look('occasion').apply(
-                  TextStyle(
-                    color: _gold,
-                    fontSize: compact ? 22 : 26,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.5,
-                    height: 1.0,
+              if (teamLogo != null) ...[
+                TeamLogo(logoPath: teamLogo, size: compact ? 30 : 38),
+                const SizedBox(width: 10),
+              ],
+              Expanded(
+                child: Align(
+                  alignment: _alignOf(teamAlign),
+                  child: _ftext(
+                    _t('team'),
+                    team.apply(
+                      TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        fontSize: compact ? 12 : 14,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.5,
+                      ),
+                      glow: _gold,
+                    ),
+                    teamAlign,
                   ),
-                  glow: _gold,
                 ),
               ),
-              if (subtitle.trim().isNotEmpty) ...[
-                const SizedBox(height: 2),
-                Text(
-                  subtitle.toUpperCase(),
-                  textAlign: _look('subtitle').textAlign(TextAlign.center),
-                  style: _look('subtitle').apply(
-                    TextStyle(
-                      color: Colors.white.withValues(alpha: 0.85),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 2,
-                    ),
-                    glow: _gold,
-                  ),
-                ),
-              ],
             ],
           ),
         ),
+        const SizedBox(height: 8),
+        _text(
+          'occasion',
+          TextStyle(
+            color: _gold,
+            fontSize: compact ? 22 : 26,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1.5,
+            height: 1.0,
+          ),
+        ),
+        if (_t('subtitle').trim().isNotEmpty) ...[
+          const SizedBox(height: 2),
+          _text(
+            'subtitle',
+            TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 2,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -2027,68 +2865,17 @@ class _SocialGraphic extends StatelessWidget {
     );
   }
 
-  Widget _statRow() {
-    final tiles = <Widget>[];
-    void add(String v, String l) => tiles.add(_StatTile(value: v, label: l));
-    final monthShown = showMonth && month.hasAny;
-    if (monthShown) {
-      add('${month.goals}', 'Tore M.');
-      add('${month.assists}', 'Vorl. M.');
-      if (month.redTotal > 0) add('${month.redTotal}', 'Rot M.');
-      if (month.yellow > 0) add('${month.yellow}', 'Gelb M.');
-    }
-    final totalShown = showTotal && total.hasAny;
-    if (totalShown) {
-      add('${total.games}', 'Spiele G.');
-      add('${total.goals}', 'Tore G.');
-      add('${total.assists}', 'Vorl. G.');
-    }
-    final f = fupa;
-    final fupaShown = showFupa && f != null;
-    if (fupaShown) {
-      add('${f.matches}', 'Spiele S.');
-      add('${f.goals}', 'Tore S.');
-      add('${f.assists}', 'Vorl. S.');
-      add('${f.minutes}', 'Min. S.');
-      if (f.topEleven > 0) add('${f.topEleven}', '⭐ Top11');
-    }
-    final fc = fupaClub;
-    final clubShown = showFupaClub && fc != null && fc.hasAny;
-    if (clubShown) {
-      add('${fc.matches}', 'Spiele V.');
-      add('${fc.goals}', 'Tore V.');
-      add('${fc.assists}', 'Vorl. V.');
-      add('${fc.scorerPoints}', 'Scorer V.');
-    }
-    if (tiles.isEmpty) return const SizedBox.shrink();
-    final legend = [
-      if (monthShown) 'M. = Monat',
-      if (totalShown) 'G. = Gesamt',
-      if (fupaShown) 'S. = Saison (FuPa)',
-      if (clubShown)
-        'V. = ${fc.clubName.isEmpty ? 'Verein' : fc.clubName} gesamt (FuPa)',
-    ].join(' · ');
-    return Column(
+  Widget _statRow(List<(String, String)> tiles) {
+    return Wrap(
+      alignment: WrapAlignment.center,
+      spacing: 22,
+      runSpacing: 10,
       children: [
-        Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 22,
-          runSpacing: 10,
-          children: tiles,
-        ),
-        if (legend.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(
-            legend,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.6),
-              fontSize: 9,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.5,
-            ),
+        for (final (label, value) in tiles)
+          _StatTile(
+            value: value,
+            label: _t('stat:$label', label.toUpperCase()),
           ),
-        ],
       ],
     );
   }
@@ -2115,55 +2902,48 @@ class _SocialGraphic extends StatelessWidget {
 }
 
 /// Klassische DIN-A4-Urkunde (Hochformat) zum Drucken. Der Inhalt skaliert
-/// über eine FittedBox sicher in das A4-Format (kein Überlauf).
+/// über eine FittedBox sicher in das A4-Format (kein Überlauf). Jedes Element
+/// liegt in einer [_Editable]-Hülle (Designer-Bedienung).
 class _UrkundeGraphic extends StatelessWidget {
   const _UrkundeGraphic({
     required this.player,
-    required this.teamName,
     required this.teamLogo,
-    required this.occasion,
-    required this.subtitle,
-    required this.honorText,
+    required this.texts,
+    required this.edits,
     this.looks = const {},
     required this.avg,
     required this.ratedCount,
-    required this.month,
-    required this.total,
-    required this.fupa,
-    required this.fupaClub,
+    required this.stats,
     required this.barSponsors,
     required this.showRating,
-    required this.showMonth,
-    required this.showTotal,
-    required this.showFupa,
-    required this.showFupaClub,
   });
 
   final Player player;
-  final String teamName;
   final String? teamLogo;
-  final String occasion;
-  final String subtitle;
-  final String honorText;
+  final Map<String, String> texts;
+  final HonorFormatLayout edits;
   final Map<String, TextLook> looks;
-
-  TextLook _look(String k) => looks[k] ?? const TextLook();
   final double? avg;
   final int ratedCount;
-  final PlayerMonthStats month;
-  final PlayerMonthStats total;
-  final PlayerStat? fupa;
-  final FupaClubTotal? fupaClub;
+  final _Stats stats;
   final List<Sponsor> barSponsors;
   final bool showRating;
-  final bool showMonth;
-  final bool showTotal;
-  final bool showFupa;
-  final bool showFupaClub;
 
   static const _line = Color(0xFFE7E3D8);
 
-  bool get _clubShown => showFupaClub && fupaClub != null && fupaClub!.hasAny;
+  String _t(String id, [String def = '']) => texts[id] ?? def;
+  TextLook _look(String id) =>
+      edits.item(id).look ??
+      looks[id == 'ulabel' ? 'subtitle' : id] ??
+      const TextLook();
+
+  Widget _text(String id, TextStyle base, {EdgeInsets? pad}) {
+    final l = _look(id);
+    final a = l.textAlign(TextAlign.center);
+    Widget w = _ftext(_t(id), l.apply(base, glow: _gold), a);
+    if (pad != null) w = Padding(padding: pad, child: w);
+    return _placed(id, w, a);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2182,7 +2962,7 @@ class _UrkundeGraphic extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(height: 6, color: _gold), // moderner Akzent
+              _Editable('bar', child: Container(height: 6, color: _gold)),
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
                 // Skaliert den Inhalt sicher ins A4-Format (nie Überlauf).
@@ -2199,74 +2979,74 @@ class _UrkundeGraphic extends StatelessWidget {
   }
 
   Widget _content() {
+    final team = _look('team');
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // Kopf: Logo + Verein.
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            if (teamLogo != null) ...[
-              TeamLogo(logoPath: teamLogo, size: 34),
-              const SizedBox(width: 10),
-            ],
-            Flexible(
-              child: Text(
-                teamName.toUpperCase(),
-                textAlign: _look('team').textAlign(TextAlign.center),
-                style: _look('team').apply(
-                  TextStyle(
-                    color: _ink.withValues(alpha: 0.75),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.5,
+        Center(
+          child: _Editable(
+            'team',
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (teamLogo != null) ...[
+                  TeamLogo(logoPath: teamLogo, size: 34),
+                  const SizedBox(width: 10),
+                ],
+                Flexible(
+                  child: _ftext(
+                    _t('team'),
+                    team.apply(
+                      TextStyle(
+                        color: _ink.withValues(alpha: 0.75),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.5,
+                      ),
+                      glow: _gold,
+                    ),
+                    team.textAlign(TextAlign.center),
                   ),
-                  glow: _gold,
                 ),
-              ),
+              ],
             ),
-          ],
+          ),
         ),
         const SizedBox(height: 20),
         // Eyebrow (Anlass) + kleines URKUNDE-Label.
-        Text(
-          occasion.toUpperCase(),
-          textAlign: _look('occasion').textAlign(TextAlign.center),
-          style: _look('occasion').apply(
-            const TextStyle(
-              color: _gold,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 3,
-              height: 1.05,
-            ),
-            glow: _gold,
+        _text(
+          'occasion',
+          const TextStyle(
+            color: _gold,
+            fontSize: 20,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 3,
+            height: 1.05,
           ),
         ),
         const SizedBox(height: 6),
-        Text(
-          subtitle.trim().isEmpty
-              ? 'URKUNDE'
-              : 'URKUNDE · ${subtitle.toUpperCase()}',
-          textAlign: _look('subtitle').textAlign(TextAlign.center),
-          style: _look('subtitle').apply(
-            TextStyle(
-              color: _ink.withValues(alpha: 0.55),
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 2,
-            ),
-            glow: _gold,
+        _text(
+          'ulabel',
+          TextStyle(
+            color: _ink.withValues(alpha: 0.55),
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 2,
           ),
         ),
         const SizedBox(height: 20),
-        Center(child: _PhotoRing(player: player, diameter: 104)),
+        Center(
+          child: _Editable(
+            'photo',
+            child: _PhotoRing(player: player, diameter: 104),
+          ),
+        ),
         const SizedBox(height: 14),
-        Text(
-          player.fullName,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
+        _text(
+          'name',
+          const TextStyle(
             color: _ink,
             fontSize: 28,
             fontWeight: FontWeight.w900,
@@ -2274,32 +3054,26 @@ class _UrkundeGraphic extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 8),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
-          child: Text(
-            honorText,
-            textAlign: _look('honor').textAlign(TextAlign.center),
-            style: _look('honor').apply(
-              TextStyle(
-                color: _ink.withValues(alpha: 0.72),
-                fontSize: 12.5,
-                height: 1.45,
-              ),
-              glow: _gold,
-            ),
+        _text(
+          'honor',
+          TextStyle(
+            color: _ink.withValues(alpha: 0.72),
+            fontSize: 12.5,
+            height: 1.45,
           ),
+          pad: const EdgeInsets.symmetric(horizontal: 6),
         ),
         if (showRating && avg != null) ...[
           const SizedBox(height: 14),
-          Center(child: _notePill()),
+          Center(child: _Editable('rating', child: _notePill())),
         ],
-        if (showMonth || showTotal || showFupa || _clubShown) ...[
+        if (stats.urkundeAny) ...[
           const SizedBox(height: 16),
-          _statsBlock(),
+          _Editable('stats', child: _statsBlock()),
         ],
         if (barSponsors.isNotEmpty) ...[
           const SizedBox(height: 18),
-          _sponsorBar(),
+          Center(child: _Editable('sponsors', child: _sponsorBar())),
         ],
       ],
     );
@@ -2340,93 +3114,52 @@ class _UrkundeGraphic extends StatelessWidget {
   }
 
   Widget _statsBlock() {
-    final f = fupa;
-    Widget col(String title, List<(String, String)> rows) => Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              color: _gold,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1,
-            ),
-          ),
-          const SizedBox(height: 4),
-          for (final r in rows)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 1),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    r.$1,
-                    style: TextStyle(
-                      color: _ink.withValues(alpha: 0.7),
-                      fontSize: 10,
-                    ),
-                  ),
-                  Text(
-                    r.$2,
-                    style: const TextStyle(
-                      color: _ink,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ],
+    Widget col(String key, String title, List<(String, String)> rows) =>
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                _t('stat:t:$key', title),
+                style: const TextStyle(
+                  color: _gold,
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1,
+                ),
               ),
-            ),
-        ],
-      ),
-    );
-
-    final monthRows = <(String, String)>[
-      ('Spiele', '${month.games}'),
-      ('Tore', '${month.goals}'),
-      ('Vorlagen', '${month.assists}'),
-      if (month.yellow > 0) ('Gelbe Karten', '${month.yellow}'),
-      if (month.redTotal > 0) ('Rote Karten', '${month.redTotal}'),
-    ];
-    final totalRows = <(String, String)>[
-      ('Spiele', '${total.games}'),
-      ('Tore', '${total.goals}'),
-      ('Vorlagen', '${total.assists}'),
-      if (total.yellow > 0) ('Gelbe Karten', '${total.yellow}'),
-      if (total.redTotal > 0) ('Rote Karten', '${total.redTotal}'),
-    ];
-    final seasonRows = <(String, String)>[
-      ('Spiele', '${f?.matches ?? 0}'),
-      ('Tore', '${f?.goals ?? 0}'),
-      ('Vorlagen', '${f?.assists ?? 0}'),
-      ('Scorerpunkte', '${f?.scorerPoints ?? 0}'),
-      ('Minuten', '${f?.minutes ?? 0}'),
-      if ((f?.yellowCards ?? 0) > 0) ('Gelbe', '${f!.yellowCards}'),
-      if ((f?.yellowRedCards ?? 0) > 0) ('Gelb-Rot', '${f!.yellowRedCards}'),
-      if ((f?.redCards ?? 0) > 0) ('Rote', '${f!.redCards}'),
-      if ((f?.topEleven ?? 0) > 0) ('⭐ Top11', '${f!.topEleven}'),
-    ];
-
-    final fc = fupaClub;
-    final clubRows = <(String, String)>[
-      ('Spiele', '${fc?.matches ?? 0}'),
-      ('Tore', '${fc?.goals ?? 0}'),
-      ('Vorlagen', '${fc?.assists ?? 0}'),
-      ('Scorerpunkte', '${fc?.scorerPoints ?? 0}'),
-    ];
+              const SizedBox(height: 4),
+              for (final r in rows)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 1),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        _t('stat:${r.$1}', r.$1),
+                        style: TextStyle(
+                          color: _ink.withValues(alpha: 0.7),
+                          fontSize: 10,
+                        ),
+                      ),
+                      Text(
+                        r.$2,
+                        style: const TextStyle(
+                          color: _ink,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        );
 
     // Nur die aktivierten Quellen – Spalten nebeneinander.
-    final cols = <Widget>[
-      if (showMonth) col('Dieser Monat', monthRows),
-      if (showTotal) col('Gesamt', totalRows),
-      if (showFupa) col('Saison (FuPa)', seasonRows),
-      if (_clubShown)
-        col(
-          '${fc!.clubName.isEmpty ? 'Verein' : fc.clubName} gesamt',
-          clubRows,
-        ),
+    final cols = [
+      for (final c in stats.urkundeCols()) col(c.key, c.title, c.rows),
     ];
 
     return Container(
@@ -2459,7 +3192,8 @@ class _UrkundeGraphic extends StatelessWidget {
     return Column(
       children: [
         Text(
-          'MIT FREUNDLICHER UNTERSTÜTZUNG',
+          _t('sponsorsTitle', 'MIT FREUNDLICHER UNTERSTÜTZUNG'),
+          textAlign: TextAlign.center,
           style: TextStyle(
             color: _ink.withValues(alpha: 0.5),
             fontSize: 8,
@@ -2498,6 +3232,289 @@ class _UrkundeGraphic extends StatelessWidget {
   }
 }
 
+/// Statistik-Daten der Ehrung – gemeinsam für Grafik und Bearbeiten-Panel
+/// (welche Spalten/Kacheln und Bezeichnungen gerade sichtbar sind).
+class _Stats {
+  const _Stats({
+    required this.month,
+    required this.total,
+    required this.fupa,
+    required this.club,
+    required this.showMonth,
+    required this.showTotal,
+    required this.showFupa,
+    required this.showClub,
+  });
+
+  final PlayerMonthStats month;
+  final PlayerMonthStats total;
+  final PlayerStat? fupa;
+  final FupaClubTotal? club;
+  final bool showMonth;
+  final bool showTotal;
+  final bool showFupa;
+  final bool showClub;
+
+  bool get clubShown => showClub && club != null && club!.hasAny;
+  String get clubName =>
+      (club == null || club!.clubName.isEmpty) ? 'Verein' : club!.clubName;
+  bool get urkundeAny => showMonth || showTotal || showFupa || clubShown;
+
+  /// Spalten der Urkunde: key, Standard-Titel, Zeilen (Bezeichnung, Wert).
+  List<({String key, String title, List<(String, String)> rows})>
+  urkundeCols() {
+    final f = fupa;
+    final fc = club;
+    return [
+      if (showMonth)
+        (
+          key: 'month',
+          title: 'DIESER MONAT',
+          rows: [
+            ('Spiele', '${month.games}'),
+            ('Tore', '${month.goals}'),
+            ('Vorlagen', '${month.assists}'),
+            if (month.yellow > 0) ('Gelbe Karten', '${month.yellow}'),
+            if (month.redTotal > 0) ('Rote Karten', '${month.redTotal}'),
+          ],
+        ),
+      if (showTotal)
+        (
+          key: 'total',
+          title: 'GESAMT',
+          rows: [
+            ('Spiele', '${total.games}'),
+            ('Tore', '${total.goals}'),
+            ('Vorlagen', '${total.assists}'),
+            if (total.yellow > 0) ('Gelbe Karten', '${total.yellow}'),
+            if (total.redTotal > 0) ('Rote Karten', '${total.redTotal}'),
+          ],
+        ),
+      if (showFupa)
+        (
+          key: 'season',
+          title: 'SAISON (FUPA)',
+          rows: [
+            ('Spiele', '${f?.matches ?? 0}'),
+            ('Tore', '${f?.goals ?? 0}'),
+            ('Vorlagen', '${f?.assists ?? 0}'),
+            ('Scorerpunkte', '${f?.scorerPoints ?? 0}'),
+            ('Minuten', '${f?.minutes ?? 0}'),
+            if ((f?.yellowCards ?? 0) > 0) ('Gelbe', '${f!.yellowCards}'),
+            if ((f?.yellowRedCards ?? 0) > 0)
+              ('Gelb-Rot', '${f!.yellowRedCards}'),
+            if ((f?.redCards ?? 0) > 0) ('Rote', '${f!.redCards}'),
+            if ((f?.topEleven ?? 0) > 0) ('⭐ Top11', '${f!.topEleven}'),
+          ],
+        ),
+      if (clubShown)
+        (
+          key: 'club',
+          title: '${clubName.toUpperCase()} GESAMT',
+          rows: [
+            ('Spiele', '${fc!.matches}'),
+            ('Tore', '${fc.goals}'),
+            ('Vorlagen', '${fc.assists}'),
+            ('Scorerpunkte', '${fc.scorerPoints}'),
+          ],
+        ),
+    ];
+  }
+
+  bool get _monthShown => showMonth && month.hasAny;
+  bool get _totalShown => showTotal && total.hasAny;
+  bool get _fupaShown => showFupa && fupa != null;
+
+  /// Kacheln der Social-Grafik: (Bezeichnung, Wert).
+  List<(String, String)> socialTiles() {
+    final f = fupa;
+    final fc = club;
+    return [
+      if (_monthShown) ...[
+        ('Tore M.', '${month.goals}'),
+        ('Vorl. M.', '${month.assists}'),
+        if (month.redTotal > 0) ('Rot M.', '${month.redTotal}'),
+        if (month.yellow > 0) ('Gelb M.', '${month.yellow}'),
+      ],
+      if (_totalShown) ...[
+        ('Spiele G.', '${total.games}'),
+        ('Tore G.', '${total.goals}'),
+        ('Vorl. G.', '${total.assists}'),
+      ],
+      if (_fupaShown) ...[
+        ('Spiele S.', '${f!.matches}'),
+        ('Tore S.', '${f.goals}'),
+        ('Vorl. S.', '${f.assists}'),
+        ('Min. S.', '${f.minutes}'),
+        if (f.topEleven > 0) ('⭐ Top11', '${f.topEleven}'),
+      ],
+      if (clubShown) ...[
+        ('Spiele V.', '${fc!.matches}'),
+        ('Tore V.', '${fc.goals}'),
+        ('Vorl. V.', '${fc.assists}'),
+        ('Scorer V.', '${fc.scorerPoints}'),
+      ],
+    ];
+  }
+
+  String socialLegend() => [
+    if (_monthShown) 'M. = Monat',
+    if (_totalShown) 'G. = Gesamt',
+    if (_fupaShown) 'S. = Saison (FuPa)',
+    if (clubShown) 'V. = $clubName gesamt (FuPa)',
+  ].join(' · ');
+}
+
+Alignment _alignOf(TextAlign a) => switch (a) {
+  TextAlign.left || TextAlign.start => Alignment.centerLeft,
+  TextAlign.right || TextAlign.end => Alignment.centerRight,
+  _ => Alignment.center,
+};
+
+/// Text, der nur bei Enter umbricht; zu breite Zeilen werden verkleinert.
+Widget _ftext(String text, TextStyle style, TextAlign align) => FittedBox(
+  fit: BoxFit.scaleDown,
+  alignment: _alignOf(align),
+  child: Text(
+    text.isEmpty ? ' ' : text,
+    textAlign: align,
+    softWrap: false,
+    style: style,
+  ),
+);
+
+/// Element an seiner Standardstelle (Ausrichtung) mit Bearbeiten-Hülle.
+Widget _placed(String id, Widget child, TextAlign a) => Align(
+  alignment: _alignOf(a),
+  child: _Editable(id, child: child),
+);
+
+/// Reicht das Layout und die Gesten-Rückrufe an alle [_Editable]-Hüllen.
+class _EditScope extends InheritedWidget {
+  const _EditScope({
+    required this.layout,
+    required this.rev,
+    required this.editing,
+    required this.selected,
+    required this.onSelect,
+    required this.onStart,
+    required this.onUpdate,
+    required this.onEnd,
+    required this.onWheel,
+    required super.child,
+  });
+
+  final HonorFormatLayout layout;
+  final int rev;
+  final bool editing;
+  final String? selected;
+  final ValueChanged<String> onSelect;
+  final void Function(String id, ScaleStartDetails d, BuildContext ctx) onStart;
+  final void Function(String id, ScaleUpdateDetails d, BuildContext ctx)
+  onUpdate;
+  final ValueChanged<String> onEnd;
+  final void Function(String id, double dy) onWheel;
+
+  static _EditScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_EditScope>();
+
+  @override
+  bool updateShouldNotify(_EditScope old) =>
+      old.rev != rev ||
+      old.layout != layout ||
+      old.editing != editing ||
+      old.selected != selected;
+}
+
+/// Hülle eines Grafik-Elements: Versatz, Drehung, Größe, ausgeblendet; im
+/// Bearbeiten-Modus antippbar/ziehbar mit Auswahlrahmen. Die äußerste Box
+/// (Transform.translate) liegt im Koordinatensystem des Eltern-Layouts –
+/// darüber rechnet der Editor Fingerbewegungen um.
+class _Editable extends StatelessWidget {
+  const _Editable(this.id, {required this.child});
+
+  final String id;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final s = _EditScope.maybeOf(context);
+    if (s == null) return child;
+    final e = s.layout.item(id);
+    var w = child;
+    if (s.editing && s.selected == id) {
+      w = DecoratedBox(
+        position: DecorationPosition.foreground,
+        decoration: BoxDecoration(
+          border: Border.all(
+            color: const Color(0xFFE91E63),
+            width: 1.4 / e.scale,
+          ),
+          borderRadius: BorderRadius.circular(3),
+        ),
+        child: w,
+      );
+    }
+    if (e.hidden) {
+      w = s.editing
+          ? Opacity(opacity: 0.25, child: w)
+          : Visibility(
+              visible: false,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: w,
+            );
+    }
+    if (s.editing) {
+      w = Listener(
+        onPointerSignal: (ev) {
+          if (ev is! PointerScrollEvent) return;
+          GestureBinding.instance.pointerSignalResolver.register(
+            ev,
+            (x) => s.onWheel(id, (x as PointerScrollEvent).scrollDelta.dy),
+          );
+        },
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => s.onSelect(id),
+          onScaleStart: (d) => s.onStart(id, d, context),
+          onScaleUpdate: (d) => s.onUpdate(id, d, context),
+          onScaleEnd: (_) => s.onEnd(id),
+          child: w,
+        ),
+      );
+    }
+    if (e.scale != 1) w = Transform.scale(scale: e.scale, child: w);
+    if (e.rot != 0) w = Transform.rotate(angle: e.rot, child: w);
+    return Transform.translate(offset: e.off, child: w);
+  }
+}
+
+/// Magenta-Hilfslinien beim Einrasten (liegen außerhalb des Exports).
+class _GuidePainter extends CustomPainter {
+  _GuidePainter(this.lines);
+
+  final List<({bool vertical, double at})> lines;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final p = Paint()
+      ..color = const Color(0xFFE91E63)
+      ..strokeWidth = 1;
+    for (final l in lines) {
+      if (l.vertical) {
+        canvas.drawLine(Offset(l.at, 0), Offset(l.at, size.height), p);
+      } else {
+        canvas.drawLine(Offset(0, l.at), Offset(size.width, l.at), p);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GuidePainter old) => old.lines != lines;
+}
+
 /// Gibt den Ausschnitt (Zoom/Verschiebung) und die Gesten-Rückrufe an das
 /// runde Spielerfoto weiter – ohne sie durch alle Grafik-Klassen zu reichen.
 class _RingCropScope extends InheritedWidget {
@@ -2507,8 +3524,12 @@ class _RingCropScope extends InheritedWidget {
     required this.onUpdate,
     required this.onEnd,
     required this.onWheel,
+    this.enabled = true,
     required super.child,
   });
+
+  /// false = Gesten gehen an den Element-Editor (Bearbeiten-Modus).
+  final bool enabled;
 
   final ({double z, double dx, double dy}) crop;
   final VoidCallback onStart;
@@ -2520,5 +3541,6 @@ class _RingCropScope extends InheritedWidget {
       context.dependOnInheritedWidgetOfExactType<_RingCropScope>();
 
   @override
-  bool updateShouldNotify(_RingCropScope old) => old.crop != crop;
+  bool updateShouldNotify(_RingCropScope old) =>
+      old.crop != crop || old.enabled != enabled;
 }
