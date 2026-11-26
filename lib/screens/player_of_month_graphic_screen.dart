@@ -1889,6 +1889,7 @@ class _PlayerOfMonthGraphicScreenState
       initialValue: _layout.texts[id] ?? def,
       minLines: 1,
       maxLines: maxLines,
+      style: const TextStyle(fontSize: 14),
       keyboardType: TextInputType.multiline,
       decoration: InputDecoration(
         labelText: label,
@@ -1914,17 +1915,18 @@ class _PlayerOfMonthGraphicScreenState
     );
   }
 
-  Widget _freeField(HonorFreeText f) => TextFormField(
+  Widget _freeField(HonorFreeText f, {bool compact = false}) => TextFormField(
     key: ValueKey('free:${f.id}:$_fieldRev'),
     initialValue: f.text,
     minLines: 1,
-    maxLines: 6,
+    maxLines: compact ? 3 : 6,
+    style: const TextStyle(fontSize: 14),
     keyboardType: TextInputType.multiline,
-    decoration: const InputDecoration(
+    decoration: InputDecoration(
       labelText: 'Text',
-      helperText: 'Zeilenumbruch nur mit Enter',
+      helperText: compact ? null : 'Zeilenumbruch nur mit Enter',
       isDense: true,
-      border: OutlineInputBorder(),
+      border: const OutlineInputBorder(),
     ),
     onChanged: (v) {
       setState(() {
@@ -1976,12 +1978,15 @@ class _PlayerOfMonthGraphicScreenState
     final isText = free != null || _textIds.contains(id);
     final defs = _defaultTexts;
     final deg = e.rot * 180 / math.pi;
+    // Tastatur offen → nur Kopf + Textfeld, damit die Grafik (und damit die
+    // Umbrüche) sichtbar bleibt.
+    final kb = MediaQuery.viewInsetsOf(context).bottom > 0;
     return Material(
       elevation: 8,
       color: Theme.of(context).colorScheme.surfaceContainer,
       child: ConstrainedBox(
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(context).height * 0.42,
+          maxHeight: kb ? 150 : MediaQuery.sizeOf(context).height * 0.42,
         ),
         child: ListView(
           shrinkWrap: true,
@@ -2028,142 +2033,217 @@ class _PlayerOfMonthGraphicScreenState
               ],
             ),
             if (free != null)
-              _freeField(free)
+              _freeField(free, compact: kb)
             else if (_textIds.contains(id))
               _textField(
                 id,
                 defs[id] ?? '',
-                helper: 'Zeilenumbruch nur mit Enter',
+                maxLines: kb ? 3 : 6,
+                helper: kb ? null : 'Zeilenumbruch nur mit Enter',
               ),
-            if (id == 'occasion') ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final p in _occasionPresets)
-                    ActionChip(
-                      label: Text(p),
-                      onPressed: () {
-                        setState(() {
-                          _layout.texts['occasion'] = p.toUpperCase();
-                          _rev++;
-                          _fieldRev++;
-                        });
-                        _changed();
-                      },
-                    ),
-                ],
-              ),
-            ],
-            if (id == 'stats') ..._statFields(),
-            if (id == 'sponsors' && _fmt == _Fmt.urkunde)
-              _textField(
-                'sponsorsTitle',
-                defs['sponsorsTitle']!,
-                label: 'Überschrift',
-                maxLines: 2,
-              ),
-            if (id == 'photo') ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.tonalIcon(
-                      icon: const Icon(Icons.photo_library_outlined),
-                      label: const Text('Foto austauschen'),
-                      onPressed: _pickHonorPhoto,
-                    ),
-                  ),
-                  if (_layout.photoSlot != null || _layout.photoData != null)
-                    TextButton(
-                      onPressed: () => _setPhoto(null, null),
-                      child: const Text('Profilbild'),
-                    ),
-                ],
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                title: const Text('Ausschnitt im Ring anpassen'),
-                subtitle: const Text(
-                  'An: Ziehen/Zoomen bewegt das Foto im Ring statt das Element',
+            if (isText && !kb) _fontRow(id, e),
+            if (kb) ...[
+              if (id == 'stats') ..._statFields(),
+              if (id == 'sponsors' && _fmt == _Fmt.urkunde)
+                _textField(
+                  'sponsorsTitle',
+                  defs['sponsorsTitle']!,
+                  label: 'Überschrift',
+                  maxLines: 2,
                 ),
-                value: _cropMode,
-                onChanged: (v) => setState(() => _cropMode = v),
-              ),
-              if (_cropMode) _cropSection((fn) => setState(fn)),
-            ],
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const SizedBox(width: 64, child: Text('Größe')),
-                Expanded(
-                  child: Slider(
-                    value: e.scale.clamp(0.3, 3.0),
-                    min: 0.3,
-                    max: 3.0,
-                    onChanged: (v) =>
-                        _edit(id, (x) => x.copyWith(scale: v), commit: false),
-                    onChangeEnd: (_) => _changed(),
-                  ),
-                ),
-                SizedBox(
-                  width: 44,
-                  child: Text(
-                    '${(e.scale * 100).round()}%',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-            Row(
-              children: [
-                const SizedBox(width: 64, child: Text('Drehung')),
-                Expanded(
-                  child: Slider(
-                    value: deg.clamp(-180.0, 180.0),
-                    min: -180,
-                    max: 180,
-                    onChanged: (v) {
-                      var d = v;
-                      for (final s in const [-180.0, -90.0, 0.0, 90.0, 180.0]) {
-                        if ((d - s).abs() < 4) d = s;
-                      }
-                      _edit(
-                        id,
-                        (x) => x.copyWith(rot: d * math.pi / 180),
-                        commit: false,
-                      );
-                    },
-                    onChangeEnd: (_) => _changed(),
-                  ),
-                ),
-                SizedBox(
-                  width: 44,
-                  child: Text(
-                    '${deg.round()}°',
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ],
-            ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                icon: const Icon(Icons.restart_alt, size: 18),
-                label: const Text('Position, Größe & Drehung zurück'),
-                onPressed: () => _edit(
-                  id,
-                  (x) => x.copyWith(off: Offset.zero, scale: 1, rot: 0),
-                ),
-              ),
-            ),
+            ] else
+              ..._panelRest(id, e, deg, defs),
           ],
         ),
       ),
     );
+  }
+
+  /// Schriftgröße: A− / Regler / A+ (Faktor auf die Standardgröße).
+  Widget _fontRow(String id, HonorElementEdit e) {
+    void set(double v) => _edit(id, (x) => x.copyWith(fs: v));
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        children: [
+          const SizedBox(width: 64, child: Text('Schrift')),
+          IconButton(
+            tooltip: 'Schrift kleiner',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.text_decrease),
+            onPressed: e.fs > HonorElementEdit.minFs
+                ? () => set(((e.fs - 0.1) * 10).round() / 10)
+                : null,
+          ),
+          Expanded(
+            child: Slider(
+              value: e.fs.clamp(0.4, 3.0),
+              min: 0.4,
+              max: 3.0,
+              onChanged: (v) =>
+                  _edit(id, (x) => x.copyWith(fs: v), commit: false),
+              onChangeEnd: (_) => _changed(),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Schrift größer',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.text_increase),
+            onPressed: e.fs < HonorElementEdit.maxFs
+                ? () => set(((e.fs + 0.1) * 10).round() / 10)
+                : null,
+          ),
+          SizedBox(
+            width: 44,
+            child: Text(
+              '${(e.fs * 100).round()}%',
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Rest des Panels (ohne Tastatur): Vorlagen, Statistik-Texte, Foto,
+  /// Größe/Drehung, Zurücksetzen.
+  List<Widget> _panelRest(
+    String id,
+    HonorElementEdit e,
+    double deg,
+    Map<String, String> defs,
+  ) {
+    return [
+      if (id == 'occasion') ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (final p in _occasionPresets)
+              ActionChip(
+                label: Text(p),
+                onPressed: () {
+                  setState(() {
+                    _layout.texts['occasion'] = p.toUpperCase();
+                    _rev++;
+                    _fieldRev++;
+                  });
+                  _changed();
+                },
+              ),
+          ],
+        ),
+      ],
+      if (id == 'stats') ..._statFields(),
+      if (id == 'sponsors' && _fmt == _Fmt.urkunde)
+        _textField(
+          'sponsorsTitle',
+          defs['sponsorsTitle']!,
+          label: 'Überschrift',
+          maxLines: 2,
+        ),
+      if (id == 'photo') ...[
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.tonalIcon(
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Foto austauschen'),
+                onPressed: _pickHonorPhoto,
+              ),
+            ),
+            if (_layout.photoSlot != null || _layout.photoData != null)
+              TextButton(
+                onPressed: () => _setPhoto(null, null),
+                child: const Text('Profilbild'),
+              ),
+          ],
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Ausschnitt im Ring anpassen'),
+          subtitle: const Text(
+            'An: Ziehen/Zoomen bewegt das Foto im Ring statt das Element',
+          ),
+          value: _cropMode,
+          onChanged: (v) => setState(() => _cropMode = v),
+        ),
+        if (_cropMode) _cropSection((fn) => setState(fn)),
+      ],
+      const SizedBox(height: 4),
+      Row(
+        children: [
+          const SizedBox(width: 64, child: Text('Größe')),
+          Expanded(
+            child: Slider(
+              value: e.scale.clamp(0.3, 3.0),
+              min: 0.3,
+              max: 3.0,
+              onChanged: (v) =>
+                  _edit(id, (x) => x.copyWith(scale: v), commit: false),
+              onChangeEnd: (_) => _changed(),
+            ),
+          ),
+          SizedBox(
+            width: 44,
+            child: Text(
+              '${(e.scale * 100).round()}%',
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+      Row(
+        children: [
+          const SizedBox(width: 64, child: Text('Drehung')),
+          Expanded(
+            child: Slider(
+              value: deg.clamp(-180.0, 180.0),
+              min: -180,
+              max: 180,
+              onChanged: (v) {
+                var d = v;
+                for (final s in const [-180.0, -90.0, 0.0, 90.0, 180.0]) {
+                  if ((d - s).abs() < 4) d = s;
+                }
+                _edit(
+                  id,
+                  (x) => x.copyWith(rot: d * math.pi / 180),
+                  commit: false,
+                );
+              },
+              onChangeEnd: (_) => _changed(),
+            ),
+          ),
+          SizedBox(
+            width: 44,
+            child: Text(
+              '${deg.round()}°',
+              textAlign: TextAlign.right,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: TextButton.icon(
+          icon: const Icon(Icons.restart_alt, size: 18),
+          label: const Text('Position, Größe & Drehung zurück'),
+          onPressed: () =>
+              _edit(id, (x) => x.copyWith(off: Offset.zero, scale: 1, rot: 0)),
+        ),
+      ),
+      Text(
+        'Größe = ganzes Element. Schrift = nur die Schrift; zu lange '
+        'Zeilen werden automatisch kleiner – dann mit Enter umbrechen.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ];
   }
 
   // ------------------------------------------------ Foto der Ehrung
@@ -2359,7 +2439,7 @@ class _PlayerOfMonthGraphicScreenState
                       style: l.apply(
                         TextStyle(
                           color: urk ? _ink : Colors.white,
-                          fontSize: urk ? 20 : 24,
+                          fontSize: (urk ? 20 : 24) * _fl.item(f.itemId).fs,
                           fontWeight: FontWeight.w800,
                           height: 1.1,
                         ),
@@ -2559,22 +2639,23 @@ class _PlayerOfMonthGraphicScreenState
       ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
-            child: SegmentedButton<_Fmt>(
-              segments: [
-                for (final f in _Fmt.values)
-                  ButtonSegment(value: f, label: Text(f.label)),
-              ],
-              selected: {_fmt},
-              showSelectedIcon: false,
-              onSelectionChanged: (s) => setState(() {
-                _fmt = s.first;
-                _selected = null;
-                _cropMode = false;
-              }),
+          if (MediaQuery.viewInsetsOf(context).bottom == 0)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+              child: SegmentedButton<_Fmt>(
+                segments: [
+                  for (final f in _Fmt.values)
+                    ButtonSegment(value: f, label: Text(f.label)),
+                ],
+                selected: {_fmt},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) => setState(() {
+                  _fmt = s.first;
+                  _selected = null;
+                  _cropMode = false;
+                }),
+              ),
             ),
-          ),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.translucent,
@@ -2845,6 +2926,10 @@ class _SocialGraphic extends StatelessWidget {
   TextLook _look(String id) =>
       edits.item(id).look ?? looks[id] ?? const TextLook();
 
+  /// Stil + Schriftgröße (Faktor) eines Text-Elements.
+  TextStyle _st(String id, TextStyle base) =>
+      _look(id).apply(_fsz(base, edits.item(id).fs), glow: _gold);
+
   Widget _text(
     String id,
     TextStyle base, {
@@ -2852,7 +2937,7 @@ class _SocialGraphic extends StatelessWidget {
   }) {
     final l = _look(id);
     final a = l.textAlign(align);
-    return _placed(id, _ftext(_t(id), l.apply(base, glow: _gold), a), a);
+    return _placed(id, _ftext(_t(id), _st(id, base), a), a);
   }
 
   @override
@@ -2987,14 +3072,14 @@ class _SocialGraphic extends StatelessWidget {
                   alignment: _alignOf(teamAlign),
                   child: _ftext(
                     _t('team'),
-                    team.apply(
+                    _st(
+                      'team',
                       TextStyle(
                         color: Colors.white.withValues(alpha: 0.9),
                         fontSize: compact ? 12 : 14,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 0.5,
                       ),
-                      glow: _gold,
                     ),
                     teamAlign,
                   ),
@@ -3136,10 +3221,14 @@ class _UrkundeGraphic extends StatelessWidget {
       looks[id == 'ulabel' ? 'subtitle' : id] ??
       const TextLook();
 
+  /// Stil + Schriftgröße (Faktor) eines Text-Elements.
+  TextStyle _st(String id, TextStyle base) =>
+      _look(id).apply(_fsz(base, edits.item(id).fs), glow: _gold);
+
   Widget _text(String id, TextStyle base, {EdgeInsets? pad}) {
     final l = _look(id);
     final a = l.textAlign(TextAlign.center);
-    Widget w = _ftext(_t(id), l.apply(base, glow: _gold), a);
+    Widget w = _ftext(_t(id), _st(id, base), a);
     if (pad != null) w = Padding(padding: pad, child: w);
     return _placed(id, w, a);
   }
@@ -3197,14 +3286,14 @@ class _UrkundeGraphic extends StatelessWidget {
                 Flexible(
                   child: _ftext(
                     _t('team'),
-                    team.apply(
+                    _st(
+                      'team',
                       TextStyle(
                         color: _ink.withValues(alpha: 0.75),
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 1.5,
                       ),
-                      glow: _gold,
                     ),
                     team.textAlign(TextAlign.center),
                   ),
@@ -3760,3 +3849,7 @@ String? _honorThumb(String dataUrl) {
   return 'data:image/jpeg;base64,'
       '${base64Encode(img.encodeJpg(small, quality: 88))}';
 }
+
+/// Schriftgröße mit Faktor [f] (1 = Standard).
+TextStyle _fsz(TextStyle s, double f) =>
+    f == 1 ? s : s.copyWith(fontSize: (s.fontSize ?? 14) * f);

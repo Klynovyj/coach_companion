@@ -160,7 +160,8 @@ class HonorFormatLayout {
 }
 
 /// Anpassung eines Elements: Versatz (logische px), Größe, Drehung (rad),
-/// ausgeblendet, Text-Stil.
+/// ausgeblendet, Text-Stil und Schriftgröße ([fs] = Faktor auf die
+/// Standard-Schriftgröße; anders als [scale] ändert sie nur die Schrift).
 class HonorElementEdit {
   const HonorElementEdit({
     this.off = Offset.zero,
@@ -168,22 +169,27 @@ class HonorElementEdit {
     this.rot = 0,
     this.hidden = false,
     this.look,
+    this.fs = 1,
   });
 
   static const minScale = 0.3;
   static const maxScale = 5.0;
+  static const minFs = 0.4;
+  static const maxFs = 4.0;
 
   final Offset off;
   final double scale;
   final double rot;
   final bool hidden;
   final TextLook? look;
+  final double fs;
 
   bool get isDefault =>
       off == Offset.zero &&
       scale == 1 &&
       rot == 0 &&
       !hidden &&
+      fs == 1 &&
       (look == null || look!.isDefault);
 
   HonorElementEdit copyWith({
@@ -192,12 +198,14 @@ class HonorElementEdit {
     double? rot,
     bool? hidden,
     Object? look = _unset,
+    double? fs,
   }) => HonorElementEdit(
     off: off ?? this.off,
     scale: (scale ?? this.scale).clamp(minScale, maxScale).toDouble(),
     rot: rot ?? this.rot,
     hidden: hidden ?? this.hidden,
     look: identical(look, _unset) ? this.look : look as TextLook?,
+    fs: (fs ?? this.fs).clamp(minFs, maxFs).toDouble(),
   );
   static const _unset = Object();
 
@@ -206,6 +214,7 @@ class HonorElementEdit {
     if (scale != 1) 'scale': _r(scale),
     if (rot != 0) 'rot': _r(rot),
     if (hidden) 'hidden': true,
+    if (fs != 1) 'fs': _r(fs),
     if (look != null && !look!.isDefault) 'look': look!.toJson(),
   };
 
@@ -222,6 +231,7 @@ class HonorElementEdit {
       rot: (j['rot'] as num?)?.toDouble() ?? 0,
       hidden: j['hidden'] == true,
       look: l is Map ? TextLook.fromJson(Map<String, dynamic>.from(l)) : null,
+      fs: ((j['fs'] as num?)?.toDouble() ?? 1).clamp(minFs, maxFs).toDouble(),
     );
   }
 }

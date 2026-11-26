@@ -75,5 +75,10 @@ void main() {
     const e = HonorElementEdit();
     expect(e.copyWith(scale: 99).scale, HonorElementEdit.maxScale);
     expect(e.copyWith(scale: 0).scale, HonorElementEdit.minScale);
+    expect(e.copyWith(fs: 99).fs, HonorElementEdit.maxFs);
+    // Schriftgröße überlebt den Roundtrip und macht das Element „geändert“.
+    final f = HonorElementEdit.fromJson(e.copyWith(fs: 1.5).toJson());
+    expect(f.fs, 1.5);
+    expect(f.isDefault, isFalse);
   });
 }
